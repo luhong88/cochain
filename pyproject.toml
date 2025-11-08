@@ -1,0 +1,19 @@
+[project]
+name = "cochain"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "jaxtyping>=0.3.3",
+    "torch>=2.9.0",
+    "torchvision>=0.24.0",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+    "ipython>=9.7.0",
+    "pytest>=8.4.2",
+    "ruff>=0.14.3",
+]
