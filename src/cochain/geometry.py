@@ -7,6 +7,9 @@ from .complex import Simplicial2Complex
 def cotan_laplacian(
     simp_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert"]:
+    """
+    Computes the cotan Laplacian (L0) for a 2D mesh.
+    """
     # For each triangle, compute the cotan of the angle at each vertex.
     tri_vert_coord: Float[t.Tensor, "tri 3 3"] = simp_mesh.vert_coords[simp_mesh.tris]
 
