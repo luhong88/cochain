@@ -218,8 +218,11 @@ class _DifferentiableCotanLaplacian(t.autograd.Function):
         )
 
         # Force dense grad_outputs
-        grad = grad_outputs.to_dense() if grad_outputs.is_sparse() else grad_outputs
-
+        grad = (
+            grad_outputs.to_dense()
+            if grad_outputs.layout != t.strided
+            else grad_outputs
+        )
         # The final gradient of loss w.r.t. vertex coordinates, which we denote
         # as dV_kl, can be computed via chain rule as dV_kl= sum_ij[grad_ij*dLdV_ijkl];
         # note that l is a dense dimension. In addition, since vert_coords is dense,
