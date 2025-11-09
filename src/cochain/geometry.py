@@ -172,7 +172,7 @@ def _d_cotan_laplacian_d_vert_coords(
     dLdV_val = -0.5 * tri_vert_grad[
         :,
         [0, 0, 0, 1, 1, 1, 2, 2, 2],
-        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 2, 0, 1, 1, 2, 0],
     ].transpose(dim0=0, dim1=1).flatten(end_dim=-2)
     asym_dLdV = t.sparse_coo_tensor(
         dLdV_idx, dLdV_val, (n_verts, n_verts, n_verts, 3)
