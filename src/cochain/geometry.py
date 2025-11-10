@@ -42,9 +42,10 @@ def _cotan_laplacian(
     edge_ns_ps_cross = t.linalg.norm(t.cross(edge_ns, edge_ps, dim=-1), dim=-1)
     cot_s: Float[t.Tensor, "tri 3"] = edge_ns_ps_dot / (1e-9 + edge_ns_ps_cross)
 
-    # For each triangle snp, and each vertex s, scatter cot_s to
-    # edge np in the laplacian (L_np); i.e., each triangle ijk contributes the
-    # following values to the asym_laplacian (in COO format):
+    # For each triangle snp, and each vertex s, scatter cot_s to edge np in the
+    # laplacian (L_np); i.e., each triangle ijk contributes the following values
+    # to the asym_laplacian (in COO format):
+    #
     # [
     #   (j, k, -0.5*cot_i),
     #   (i, k, -0.5*cot_j),
@@ -226,7 +227,7 @@ class _DifferentiableCotanLaplacian(t.autograd.Function):
             if grad_outputs.layout != t.strided
             else grad_outputs
         )
-        # The final gradient of loss w.r.t. vertex coordinates, which we denote
+        # The final gradient of loss wrt vertex coordinates, which we denote
         # as dV_kl, can be computed via chain rule as dV_kl= sum_ij[grad_ij*dLdV_ijkl];
         # note that l is a dense dimension. In addition, since vert_coords is dense,
         # dV will also need to be a dense tensor.
@@ -238,10 +239,10 @@ class _DifferentiableCotanLaplacian(t.autograd.Function):
         )
 
         dV = t.zeros_like(vert_coords)
-        # TODO: use torch_scatter to improve performance
+        # TODO: use torch_scatter to improve performance.
         dV.index_add_(0, dLdV_idx_k, dV_values)
 
-        # Cannot compute gradient w.r.t. topology (yet)
+        # Cannot compute gradient w.r.t. topology (yet).
         dT = None
 
         return (dV, dT)
