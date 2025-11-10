@@ -29,7 +29,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           # Pin to a recent version that supports '--group'.
-          uv-version: '0.8.0'
+          version: '0.8.0'
 
       # 4. Install all locked dependencies (main + dev)
       - name: Install dependencies
