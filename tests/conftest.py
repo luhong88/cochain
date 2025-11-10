@@ -25,3 +25,18 @@ def icosphere_mesh():
     cochain_sphere = Simplicial2Complex.from_mesh(vert_coords_t, tris_t)
 
     return cochain_sphere
+
+
+@pytest.fixture
+def icosphere_mesh_double():
+    trimesh_sphere = trimesh.creation.icosphere(subdivisions=1)
+
+    vert_coords_np = np.asarray(trimesh_sphere.vertices)
+    tris_np = np.asarray(trimesh_sphere.faces)
+
+    vert_coords_t = t.from_numpy(vert_coords_np).to(dtype=t.double)
+    tris_t = t.from_numpy(tris_np)
+
+    cochain_sphere = Simplicial2Complex.from_mesh(vert_coords_t, tris_t)
+
+    return cochain_sphere

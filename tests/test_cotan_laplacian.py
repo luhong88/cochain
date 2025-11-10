@@ -33,15 +33,16 @@ def test_cotan_laplacian_PSD(icosphere_mesh):
     assert eigs.min() >= -1e-6
 
 
-def test_cotan_laplacian_gradcheck(two_tris_mesh):
+def test_cotan_laplacian_gradcheck(icosphere_mesh):
     def gradcheck_func(vert_coords, tris):
         L_sparse = _DifferentiableCotanLaplacian.apply(vert_coords, tris)
         L_dense = L_sparse.to_dense()
 
         return (L_dense**2).sum()
 
-    two_tris_mesh.vert_coords.requires_grad = True
+    vert_coords_double = icosphere_mesh.vert_coords.to(t.double)
+    vert_coords_double.requires_grad = True
 
     assert t.autograd.gradcheck(
-        gradcheck_func, (two_tris_mesh.vert_coords, two_tris_mesh.tris)
+        gradcheck_func, (vert_coords_double, icosphere_mesh.tris)
     )
