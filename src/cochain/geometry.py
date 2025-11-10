@@ -31,30 +31,31 @@ def _cotan_laplacian(
     """
     n_verts = vert_coords.shape[0]
 
-    # For each triangle, compute the cotan of the angle at each vertex.
-    tri_vert_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
+    # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
+    # and use them to compute the cotan of the angle at s.
+    vert_s_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
 
-    tri_vert_vec1 = tri_vert_coord[:, [1, 2, 0], :] - tri_vert_coord
-    tri_vert_vec2 = tri_vert_coord[:, [2, 0, 1], :] - tri_vert_coord
+    edge_ns = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
+    edge_ps = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
 
-    tri_vert_ang_dot = t.sum(tri_vert_vec1 * tri_vert_vec2, dim=-1)
-    tri_vert_ang_cross = t.linalg.norm(
-        t.cross(tri_vert_vec1, tri_vert_vec2, dim=-1), dim=-1
-    )
-    tri_vert_ang_cotan: Float[t.Tensor, "tri 3"] = tri_vert_ang_dot / (
-        1e-9 + tri_vert_ang_cross
-    )
+    edge_ns_ps_dot = t.sum(edge_ns * edge_ps, dim=-1)
+    edge_ns_ps_cross = t.linalg.norm(t.cross(edge_ns, edge_ps, dim=-1), dim=-1)
+    cot_s: Float[t.Tensor, "tri 3"] = edge_ns_ps_dot / (1e-9 + edge_ns_ps_cross)
 
-    # For each triangle ijk, and each of its vertex i, scatter the cotan at i to
-    # edge jk in the laplacian (L_jk); i.e., each triangle ijk contributes the
+    # For each triangle snp, and each vertex s, scatter cot_s to
+    # edge np in the laplacian (L_np); i.e., each triangle ijk contributes the
     # following values to the asym_laplacian (in COO format):
     # [
     #   (j, k, -0.5*cot_i),
     #   (i, k, -0.5*cot_j),
     #   (i, j, -0.5*cot_k),
     # ]
-    laplacian_idx = tris[:, [1, 0, 0, 2, 2, 1]].T.flatten().reshape(2, -1)
-    laplacian_val = -0.5 * tri_vert_ang_cotan[:, [0, 1, 2]].T.flatten()
+
+    # Translate the ijk notation to actual indices to access tensor elements.
+    i, j, k = 0, 1, 2
+
+    laplacian_idx = tris[:, [j, i, i, k, k, j]].T.flatten().reshape(2, -1)
+    laplacian_val = -0.5 * cot_s[:, [i, j, k]].T.flatten()
     asym_laplacian = t.sparse_coo_tensor(
         laplacian_idx, laplacian_val, (n_verts, n_verts)
     )
@@ -132,8 +133,8 @@ def _d_cotan_laplacian_d_vert_coords(
     #   * cot_grad_sp contributes to dL_npp,
     #
     # We can therefore workout all 9 contributions of each triangle ijk to the
-    # asymmetric dL_ijk, in the COO format, by setting self to i, j, k and using
-    # the local -> global index mapping:
+    # asymmetric dL_ijk, in the COO format, by setting s to i, j, k and using
+    # the local snp -> global ijk index mapping:
     #
     # [
     #   (j, k, i, -0.5*cot_grad_is),
