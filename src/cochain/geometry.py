@@ -66,27 +66,27 @@ def _d_cotan_laplacian_d_vert_coords(
     n_verts = vert_coords.shape[0]
 
     # For each triangle ijk, and for each of its vertex i, define (according to
-    # the given triangle orientation), the CW neighbor edge ij (vec1) and the CCW
-    # neighbor edge ik (vec2). Compute the ij, ik edge lengths, the vector normal
-    # to ijk at i (ij x ik), and the sine (squared) of the angle at i.
-    tri_vert_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
+    # the given triangle orientation), the "next" neighbor edge ij (vec1) and the
+    # "previous" neighbor edge ik (vec2). Compute the ij, ik edge lengths, the
+    # vector normal to ijk at i (ij x ik), and the sine (squared) of the angle at i.
+    vert_self_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
 
-    tri_vert_vec1 = tri_vert_coord[:, [1, 2, 0], :] - tri_vert_coord
-    tri_vert_vec2 = tri_vert_coord[:, [2, 0, 1], :] - tri_vert_coord
+    edge_next_self = vert_self_coord[:, [1, 2, 0], :] - vert_self_coord
+    edge_prev_selv = vert_self_coord[:, [2, 0, 1], :] - vert_self_coord
 
-    tri_vert_vec1_len = t.linalg.norm(tri_vert_vec1, dim=-1, keepdim=True) + 1e-9
-    tri_vert_vec2_len = t.linalg.norm(tri_vert_vec2, dim=-1, keepdim=True) + 1e-9
+    edge_next_self_len = t.linalg.norm(edge_next_self, dim=-1, keepdim=True) + 1e-9
+    edge_prev_self_len = t.linalg.norm(edge_prev_selv, dim=-1, keepdim=True) + 1e-9
 
-    tri_vert_uvec1 = tri_vert_vec1 / tri_vert_vec1_len
-    tri_vert_uvec2 = tri_vert_vec2 / tri_vert_vec2_len
+    uedge_next_self = edge_next_self / edge_next_self_len
+    uedge_prev_self = edge_prev_selv / edge_prev_self_len
 
-    tri_vert_norm: Float[t.Tensor, "tri 3 3"] = t.cross(
-        tri_vert_uvec1, tri_vert_uvec2, dim=-1
+    norm_self: Float[t.Tensor, "tri 3 3"] = t.cross(
+        uedge_next_self, uedge_prev_self, dim=-1
     )
-    tri_vert_ang_sin_sq: Float[t.Tensor, "tri 3 1"] = (
-        t.sum(tri_vert_norm**2, dim=-1, keepdim=True) + 1e-9
+    sin_sq_self: Float[t.Tensor, "tri 3 1"] = (
+        t.sum(norm_self**2, dim=-1, keepdim=True) + 1e-9
     )
-    tri_vert_unorm = tri_vert_norm / t.sqrt(tri_vert_ang_sin_sq)
+    unorm_self = norm_self / t.sqrt(sin_sq_self)
 
     # For each triangle ijk, and for each of its vertex i, compute
     #   * grad_j: the gradient of cotan at i w.r.t. CW neighbor vertex j with
@@ -97,82 +97,77 @@ def _d_cotan_laplacian_d_vert_coords(
     #     * along the direction (ij x ik) x ki (note the sign flip)
     #   * grad_i: the gradient of cotan at i w.r.t. vertex i itself; this is given
     #     by -(grad1 + grad2), due to translational symmetry.
-    tri_vert_grad_j = t.cross(tri_vert_unorm, tri_vert_uvec1, dim=-1) / (
-        tri_vert_vec1_len * tri_vert_ang_sin_sq
+    cot_grad_self_wrt_next = t.cross(unorm_self, uedge_next_self, dim=-1) / (
+        edge_next_self_len * sin_sq_self
     )
-    tri_vert_grad_k = t.cross(tri_vert_unorm, -tri_vert_uvec2, dim=-1) / (
-        tri_vert_vec2_len * tri_vert_ang_sin_sq
+    cot_grad_self_wrt_prev = t.cross(unorm_self, -uedge_prev_self, dim=-1) / (
+        edge_prev_self_len * sin_sq_self
     )
-    tri_vert_grad_i = -(tri_vert_grad_j + tri_vert_grad_k)
+    cot_grad_self_wrt_self = -(cot_grad_self_wrt_next + cot_grad_self_wrt_prev)
 
-    tri_vert_grad: Float[t.Tensor, "tri vert=3 grad=3 coord=3"] = t.stack(
-        (tri_vert_grad_i, tri_vert_grad_j, tri_vert_grad_k), dim=2
+    cot_grad: Float[t.Tensor, "tri vert=3 neighbor=3 coord=3"] = t.stack(
+        (cot_grad_self_wrt_self, cot_grad_self_wrt_next, cot_grad_self_wrt_prev), dim=2
     )
 
     # First, we build the asymmetric, "off-diagonal" version of dL_ijk.
     #
-    # For a given triangle ijk, because cot_i contributes to L_jk and cot_i is a
-    # function of all three vertices i, j, and k, vertex i contributes three gradient
-    # terms:
-    #   * grad_ii (grad_i of cot_i) contributes to dL_jki,
-    #   * grad_ij (grad_j of cot_i) contributes to dL_jkj,
-    #   * grad_ik (grad_k of cot_i) contributes to dL_jkk,
+    # For a triangle ijk, the "self"/"next"/"prev" relation is defined as follows:
     #
-    # Using symmetry, we can work out all 9 contributions to the asymmetric dL_ijk;
-    # writing this in COO format:
+    # --------------
+    # self next prev
+    # --------------
+    # i    j    k
+    # j    k    i
+    # k    i    j
+    # --------------
+    #
+    # For a given vertex "self" in triangle ijk, because cot_self contributes to
+    # L_next/prev and cot_self is a function of all three vertices ("self", "next",
+    # and "prev"), this vertex contributes three gradient terms:
+    #   * cot_grad_self_wrt_self contributes to dL_next/prev/self,
+    #   * cot_grad_self_wrt_next contributes to dL_next/prev/next,
+    #   * cot_grad_self_wrt_prev contributes to dL_next/prev/prev,
+    #
+    # We can therefore workout all 9 contributions of each triangle ijk to the
+    # asymmetric dL_ijk, in the COO format, by setting self to i, j, k and using
+    # the local -> global index mapping:
+    #
     # [
-    #   (j, k, i, -0.5*grad_ii),
-    #   (j, k, j, -0.5*grad_ij),
-    #   (j, k, k, -0.5*grad_ik),
+    #   (j, k, i, -0.5*cot_grad_ii),
+    #   (j, k, j, -0.5*cot_grad_ij),
+    #   (j, k, k, -0.5*cot_grad_ik),
     #
-    #   (i, k, i, -0.5*grad_ji),
-    #   (i, k, j, -0.5*grad_jj),
-    #   (i, k, k, -0.5*grad_jk),
+    #   (k, i, j, -0.5*cot_grad_ji),
+    #   (k, i, k, -0.5*cot_grad_jj),
+    #   (k, i, i, -0.5*cot_grad_jk),
     #
-    #   (i, j, i, -0.5*grad_ki),
-    #   (i, j, j, -0.5*grad_kj),
-    #   (i, j, k, -0.5*grad_kk),
+    #   (i, j, k, -0.5*cot_grad_ki),
+    #   (i, j, i, -0.5*cot_grad_kj),
+    #   (i, j, j, -0.5*cot_grad_kk),
     # ]
+
+    # Translate the i,j,k notation to actual indices to access tensor elements.
+    i, j, k = 0, 1, 2
+
+    # fmt: off
     dLdV_idx = (
         tris[
             :,
             [
-                1,
-                1,
-                1,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                2,
-                2,
-                2,
-                2,
-                2,
-                2,
-                1,
-                1,
-                1,
-                0,
-                1,
-                2,
-                0,
-                1,
-                2,
-                0,
-                1,
-                2,
+                j, j, j, k, k, k, i, i, i, # first column/index
+                k, k, k, i, i, i, j, j, j, # second column/index
+                i, j, k, j, k, i, k, i, j, # third column/index
             ],
         ]
-        .T.flatten()
+        .T
+        .flatten()
         .reshape(3, -1)
     )
-    dLdV_val = -0.5 * tri_vert_grad[
+    # fmt: on
+    dLdV_val = -0.5 * cot_grad[
         :,
-        [0, 0, 0, 1, 1, 1, 2, 2, 2],
-        [0, 1, 2, 2, 0, 1, 1, 2, 0],
+        [i, i, i, j, j, j, k, k, k],
+        [i, j, k, i, j, k, i, j, k],
     ].transpose(dim0=0, dim1=1).flatten(end_dim=-2)
     asym_dLdV = t.sparse_coo_tensor(
         dLdV_idx, dLdV_val, (n_verts, n_verts, n_verts, 3)

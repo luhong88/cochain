@@ -27,10 +27,3 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.ruff.lint]
-typing-modules = ["jaxtyping"]
-
-# instruct ruff to ignore the "Syntax error in forward annotation"
-# error, which is a known false positive with jaxtyping.
-ignore = ["F722"]
