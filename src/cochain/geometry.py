@@ -3,6 +3,23 @@ from jaxtyping import Float, Integer
 
 from .complex import Simplicial2Complex
 
+# We adopt the following convention for describing the relation between vertices
+# in a triangle. For a given triangle represented by three vertex indices, we refer
+# the first, second, and third vertex with index i, j, and k. This effectively
+# assigns an orientation to the triangle, and allows us to distinguish the neighbors
+# for each vertex ("self", or s) as either the "next" (n) and "previous" (p) vertex.
+# For a triangle ijk, the "self"/"next"/"prev" relation is defined as follows:
+#
+# -------
+# s  n  p
+# -------
+# i  j  k
+# j  k  i
+# k  i  j
+# -------
+#
+# We will refer to a triangle as ijk or snp, depending on the context.
+
 
 def _cotan_laplacian(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
@@ -65,89 +82,79 @@ def _d_cotan_laplacian_d_vert_coords(
 ) -> Float[t.Tensor, "vert vert vert 3"]:
     n_verts = vert_coords.shape[0]
 
-    # For each triangle ijk, and for each of its vertex i, define (according to
-    # the given triangle orientation), the "next" neighbor edge ij (vec1) and the
-    # "previous" neighbor edge ik (vec2). Compute the ij, ik edge lengths, the
-    # vector normal to ijk at i (ij x ik), and the sine (squared) of the angle at i.
-    vert_self_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
+    # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
+    # and a vector normal to the triangle at s (sn x sp), and the sine (squared)
+    # of the angle at s.
+    vert_s_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
 
-    edge_next_self = vert_self_coord[:, [1, 2, 0], :] - vert_self_coord
-    edge_prev_selv = vert_self_coord[:, [2, 0, 1], :] - vert_self_coord
+    edge_ns = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
+    edge_ps = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
 
-    edge_next_self_len = t.linalg.norm(edge_next_self, dim=-1, keepdim=True) + 1e-9
-    edge_prev_self_len = t.linalg.norm(edge_prev_selv, dim=-1, keepdim=True) + 1e-9
+    edge_ns_len = t.linalg.norm(edge_ns, dim=-1, keepdim=True) + 1e-9
+    edge_ps_len = t.linalg.norm(edge_ps, dim=-1, keepdim=True) + 1e-9
 
-    uedge_next_self = edge_next_self / edge_next_self_len
-    uedge_prev_self = edge_prev_selv / edge_prev_self_len
+    uedge_ns = edge_ns / edge_ns_len
+    uedge_ps = edge_ps / edge_ps_len
 
-    norm_self: Float[t.Tensor, "tri 3 3"] = t.cross(
-        uedge_next_self, uedge_prev_self, dim=-1
+    norm_s: Float[t.Tensor, "tri 3 3"] = t.cross(uedge_ns, uedge_ps, dim=-1)
+    sin_squared_s: Float[t.Tensor, "tri 3 1"] = (
+        t.sum(norm_s**2, dim=-1, keepdim=True) + 1e-9
     )
-    sin_sq_self: Float[t.Tensor, "tri 3 1"] = (
-        t.sum(norm_self**2, dim=-1, keepdim=True) + 1e-9
-    )
-    unorm_self = norm_self / t.sqrt(sin_sq_self)
+    unorm_s = norm_s / t.sqrt(sin_squared_s)
 
-    # For each triangle ijk, and for each of its vertex i, compute
-    #   * grad_j: the gradient of cotan at i w.r.t. CW neighbor vertex j with
-    #     * length 1/(|ij|*sin_i**2), where |ij| is the length of edge ij,
-    #     * along the direction (ij x ik) x ij;
-    #   * grad_k: the gradient of cotan at i w.r.t. CCW neighbor vertex k with
-    #     * length 1/(|ik|*sin_i**2),
-    #     * along the direction (ij x ik) x ki (note the sign flip)
-    #   * grad_i: the gradient of cotan at i w.r.t. vertex i itself; this is given
-    #     by -(grad1 + grad2), due to translational symmetry.
-    cot_grad_self_wrt_next = t.cross(unorm_self, uedge_next_self, dim=-1) / (
-        edge_next_self_len * sin_sq_self
-    )
-    cot_grad_self_wrt_prev = t.cross(unorm_self, -uedge_prev_self, dim=-1) / (
-        edge_prev_self_len * sin_sq_self
-    )
-    cot_grad_self_wrt_self = -(cot_grad_self_wrt_next + cot_grad_self_wrt_prev)
+    # For each triangle snp, and for each of its vertex s, compute
+    #   * cot_grad_sn: the gradient of cotan at s wrt n with
+    #     * length 1/(|sn|*sin_s**2), where |sn| is the length of edge sn,
+    #     * along the direction (sn x sp) x sn;
+    #   * cot_grad_sp: the gradient of cotan at s wrt p with
+    #     * length 1/(|sp|*sin_s**2),
+    #     * along the direction (sn x sp) x ps (note the sign flip)
+    #   * cot_grad_ss: the gradient of cotan at s wrt s itself; this is given
+    #     by -(cot_grad_sn + cot_grad_sp), due to translational symmetry.
+    cot_grad_sn = t.cross(unorm_s, uedge_ns, dim=-1) / (edge_ns_len * sin_squared_s)
+    cot_grad_sp = t.cross(unorm_s, -uedge_ps, dim=-1) / (edge_ps_len * sin_squared_s)
+    cot_grad_ss = -(cot_grad_sn + cot_grad_sp)
 
+    # note that the neighbor dimension is ordered by local relation (snp), while
+    # the vert dimension is ordered by global orientation (ijk)
     cot_grad: Float[t.Tensor, "tri vert=3 neighbor=3 coord=3"] = t.stack(
-        (cot_grad_self_wrt_self, cot_grad_self_wrt_next, cot_grad_self_wrt_prev), dim=2
+        (cot_grad_ss, cot_grad_sn, cot_grad_sp), dim=2
     )
 
     # First, we build the asymmetric, "off-diagonal" version of dL_ijk.
     #
-    # For a triangle ijk, the "self"/"next"/"prev" relation is defined as follows:
+    # For a given vertex s in triangle snp, because cot_s contributes to
+    # L_np and cot_s is a function of all three vertices s, n, and p,
+    # this vertex contributes three gradient terms:
     #
-    # --------------
-    # self next prev
-    # --------------
-    # i    j    k
-    # j    k    i
-    # k    i    j
-    # --------------
-    #
-    # For a given vertex "self" in triangle ijk, because cot_self contributes to
-    # L_next/prev and cot_self is a function of all three vertices ("self", "next",
-    # and "prev"), this vertex contributes three gradient terms:
-    #   * cot_grad_self_wrt_self contributes to dL_next/prev/self,
-    #   * cot_grad_self_wrt_next contributes to dL_next/prev/next,
-    #   * cot_grad_self_wrt_prev contributes to dL_next/prev/prev,
+    #   * cot_grad_ss contributes to dL_nps,
+    #   * cot_grad_sn contributes to dL_npn,
+    #   * cot_grad_sp contributes to dL_npp,
     #
     # We can therefore workout all 9 contributions of each triangle ijk to the
     # asymmetric dL_ijk, in the COO format, by setting self to i, j, k and using
     # the local -> global index mapping:
     #
     # [
-    #   (j, k, i, -0.5*cot_grad_ii),
-    #   (j, k, j, -0.5*cot_grad_ij),
-    #   (j, k, k, -0.5*cot_grad_ik),
+    #   (j, k, i, -0.5*cot_grad_is),
+    #   (j, k, j, -0.5*cot_grad_in),
+    #   (j, k, k, -0.5*cot_grad_ip),
     #
-    #   (k, i, j, -0.5*cot_grad_ji),
-    #   (k, i, k, -0.5*cot_grad_jj),
-    #   (k, i, i, -0.5*cot_grad_jk),
+    #   (k, i, j, -0.5*cot_grad_js),
+    #   (k, i, k, -0.5*cot_grad_jn),
+    #   (k, i, i, -0.5*cot_grad_jp),
     #
-    #   (i, j, k, -0.5*cot_grad_ki),
-    #   (i, j, i, -0.5*cot_grad_kj),
-    #   (i, j, j, -0.5*cot_grad_kk),
+    #   (i, j, k, -0.5*cot_grad_ks),
+    #   (i, j, i, -0.5*cot_grad_kn),
+    #   (i, j, j, -0.5*cot_grad_kp),
     # ]
+    #
+    # Note that, since the neighbor dimension of cot_grad is ordered by snp,
+    # it is unaffected by how i, j, or k relates to s.
 
-    # Translate the i,j,k notation to actual indices to access tensor elements.
+    # Translate the ijk and snp notation to actual indices to access tensor elements.
     i, j, k = 0, 1, 2
+    s, n, p = 0, 1, 2
 
     # fmt: off
     dLdV_idx = (
@@ -167,7 +174,7 @@ def _d_cotan_laplacian_d_vert_coords(
     dLdV_val = -0.5 * cot_grad[
         :,
         [i, i, i, j, j, j, k, k, k],
-        [i, j, k, i, j, k, i, j, k],
+        [s, n, p, s, n, p, s, n, p],
     ].transpose(dim0=0, dim1=1).flatten(end_dim=-2)
     asym_dLdV = t.sparse_coo_tensor(
         dLdV_idx, dLdV_val, (n_verts, n_verts, n_verts, 3)
