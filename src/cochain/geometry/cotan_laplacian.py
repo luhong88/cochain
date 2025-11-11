@@ -4,18 +4,11 @@ from jaxtyping import Float, Integer
 from ..complex import Simplicial2Complex
 
 
-def cotan_laplacian(
-    simplicial_mesh: Simplicial2Complex,
+def _compute_cotan_weights_matrix(
+    vert_coords: Float[t.Tensor, "vert 3"],
+    tris: Integer[t.LongTensor, "tri 3"],
+    n_verts: int,
 ) -> Float[t.Tensor, "vert vert"]:
-    """
-    Computes the cotan Laplacian (L0) for a 2D mesh.
-
-    The input vert_coords and tris need to be on the same device
-    """
-    vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
-    tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
-    n_verts = simplicial_mesh.n_verts
-
     # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
     # and use them to compute the cotan of the angle at s.
     vert_s_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
@@ -48,6 +41,21 @@ def cotan_laplacian(
 
     # Symmetrize so that the cotan at i is scattered to both jk and kj.
     sym_laplacian = (asym_laplacian + asym_laplacian.T).coalesce()
+
+    return sym_laplacian
+
+
+def cotan_laplacian(
+    simplicial_mesh: Simplicial2Complex,
+) -> Float[t.Tensor, "vert vert"]:
+    """
+    Computes the cotan Laplacian (L0) for a 2D mesh.
+
+    The input vert_coords and tris need to be on the same device
+    """
+    sym_laplacian = _compute_cotan_weights_matrix(
+        simplicial_mesh.vert_coords, simplicial_mesh.tris, simplicial_mesh.n_verts
+    )
 
     # Compute the diagonal elements of the laplacian.
     laplacian_diag = t.sparse.sum(sym_laplacian, dim=-1)
