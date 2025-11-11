@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from .complex import Simplicial2Complex
+from ..complex import Simplicial2Complex
 
 # We adopt the following convention for describing the relation between vertices
 # in a triangle. For a given triangle represented by three vertex indices, we refer

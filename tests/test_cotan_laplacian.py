@@ -1,6 +1,9 @@
 import torch as t
 
-from cochain.geometry import cotan_laplacian, d_cotan_laplacian_d_vert_coords
+from cochain.geometry.cotan_laplacian import (
+    cotan_laplacian,
+    d_cotan_laplacian_d_vert_coords,
+)
 
 
 def test_cotan_laplacian_kernel(icosphere_mesh):
