@@ -21,14 +21,16 @@ from .complex import Simplicial2Complex
 # We will refer to a triangle as ijk or snp, depending on the context.
 
 
-def _cotan_laplacian(
-    vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
+def cotan_laplacian(
+    simplicial_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert"]:
     """
     Computes the cotan Laplacian (L0) for a 2D mesh.
 
     The input vert_coords and tris need to be on the same device
     """
+    vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
+    tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
     n_verts = vert_coords.shape[0]
 
     # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
@@ -78,10 +80,14 @@ def _cotan_laplacian(
     return laplacian
 
 
-def _d_cotan_laplacian_d_vert_coords(
-    vert_coords: Float[t.Tensor, "vert 3"],
-    tris: Integer[t.LongTensor, "tri 3"],
+def d_cotan_laplacian_d_vert_coords(
+    simplicial_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert vert 3"]:
+    """
+    Compute the jacobian of the cotan Laplacian with respect to the vertex coordinates.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
+    tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
     n_verts = vert_coords.shape[0]
 
     # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
@@ -199,58 +205,3 @@ def _d_cotan_laplacian_d_vert_coords(
     ).coalesce()
 
     return dLdV
-
-
-class _DifferentiableCotanLaplacian(t.autograd.Function):
-    def forward(
-        ctx,
-        vert_coords: Float[t.Tensor, "vert 3"],
-        tris: Integer[t.LongTensor, "tri 3"],
-    ) -> Float[t.Tensor, "vert vert"]:
-        ctx.save_for_backward(vert_coords, tris)
-
-        return _cotan_laplacian(vert_coords, tris).to_sparse_csr()
-
-    def backward(
-        ctx,
-        grad_outputs: Float[t.Tensor, "vert vert"],
-    ):
-        vert_coords, tris = ctx.saved_tensors
-
-        dLdV: Float[t.Tensor, "vert vert vert 3"] = _d_cotan_laplacian_d_vert_coords(
-            vert_coords, tris
-        )
-
-        # Force dense grad_outputs
-        grad = (
-            grad_outputs.to_dense()
-            if grad_outputs.layout != t.strided
-            else grad_outputs
-        )
-        # The final gradient of loss wrt vertex coordinates, which we denote
-        # as dV_kl, can be computed via chain rule as dV_kl= sum_ij[grad_ij*dLdV_ijkl];
-        # note that l is a dense dimension. In addition, since vert_coords is dense,
-        # dV will also need to be a dense tensor.
-        dLdV_values: Float[t.Tensor, "nz 3"] = dLdV.values()
-        dLdV_idx_i, dLdV_idx_j, dLdV_idx_k = dLdV.indices()
-
-        dV_values: Float[t.Tensor, "nz 3"] = (
-            grad[dLdV_idx_i, dLdV_idx_j].unsqueeze(-1) * dLdV_values
-        )
-
-        dV = t.zeros_like(vert_coords)
-        # TODO: use torch_scatter to improve performance.
-        dV.index_add_(0, dLdV_idx_k, dV_values)
-
-        # Cannot compute gradient w.r.t. topology (yet).
-        dT = None
-
-        return (dV, dT)
-
-
-def cotan_laplacian(
-    simplicial_mesh: Simplicial2Complex,
-) -> Float[t.Tensor, "vert vert"]:
-    return _DifferentiableCotanLaplacian().apply(
-        simplicial_mesh.vert_coords, simplicial_mesh.tris
-    )
