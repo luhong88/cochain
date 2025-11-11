@@ -33,6 +33,17 @@ def test_cotan_laplacian_PSD(icosphere_mesh):
     assert eigs.min() >= -1e-6
 
 
+def test_cotan_laplacian_planar(square_mesh):
+    """
+    The Laplacian acting on a planar mesh coordinates should result in zero (
+    for interior vertices).
+    """
+    L0 = cotan_laplacian(square_mesh).to_dense()
+    zero_tensor = L0 @ square_mesh.vert_coords
+
+    assert t.allclose(zero_tensor[-1], t.tensor(0.0), atol=1e-6)
+
+
 def test_cotan_laplacian_autograd(two_tris_mesh):
     """
     Check that the custom gradient matches the automatic gradient.

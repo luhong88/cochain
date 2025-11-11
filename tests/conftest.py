@@ -13,6 +13,11 @@ def two_tris_mesh():
 
 
 @pytest.fixture
+def square_mesh():
+    return datasets.load_square_mesh()
+
+
+@pytest.fixture
 def icosphere_mesh():
     trimesh_sphere = trimesh.creation.icosphere(subdivisions=1)
 
