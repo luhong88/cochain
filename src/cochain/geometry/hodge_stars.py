@@ -20,8 +20,9 @@ def _compute_tri_area(
 
 def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri tri"]:
     """
-    The Hodge 2-star operator acts on the triangles in a mesh and returns the area
-    of the dual 1-cells, which is assigned the area of the primal triangle.
+    The Hodge 2-star operator acts on the triangles in a mesh and returns the ratio
+    of the "volume" of the dual 0-cells (which is 1 by convention) to the area of
+    the primal triangles.
     """
     n_tris = simplicial_mesh.n_tris
 
@@ -29,7 +30,7 @@ def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri tri"]:
 
     matrix = (
         t.sparse_coo_tensor(
-            t.stack([t.arange(n_tris), t.arange(n_tris)]), area, (n_tris, n_tris)
+            t.stack([t.arange(n_tris), t.arange(n_tris)]), 1.0 / area, (n_tris, n_tris)
         )
         .coalesce()
         .to_sparse_csr()
@@ -41,7 +42,7 @@ def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri tri"]:
 def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge edge"]:
     """
     The Hodge 1-star operator acts on the edges in a mesh and returns the length
-    of the dual 1-cells, given by the cotan formula
+    ratio of the dual 1-cells to the primal edges, which is given by the cotan formula.
     """
     vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
