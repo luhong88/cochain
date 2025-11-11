@@ -1,0 +1,33 @@
+import torch as t
+
+from .complex import Simplicial2Complex
+
+
+def load_two_tris_mesh() -> Simplicial2Complex:
+    """
+    A simple 2D mesh embedded in R^3 composed of two triangles sharing one edge.
+    """
+    return Simplicial2Complex.from_mesh(
+        vert_coords=t.Tensor(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        ),
+        tris=t.LongTensor([[0, 1, 2], [1, 2, 3]]),
+    )
+
+
+def load_square_mesh() -> Simplicial2Complex:
+    """
+    A simple triangulated square consisting of 4 triangles in the z = 0 plane.
+    """
+    return Simplicial2Complex.from_mesh(
+        vert_coords=t.Tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.5, 0.5, 0.0],
+            ]
+        ),
+        tris=t.LongTensor([[0, 4, 1], [1, 2, 4], [2, 3, 4], [3, 0, 4]]),
+    )
