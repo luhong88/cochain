@@ -14,7 +14,7 @@ def cotan_laplacian(
     """
     vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
-    n_verts = vert_coords.shape[0]
+    n_verts = simplicial_mesh.n_verts
 
     # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
     # and use them to compute the cotan of the angle at s.
@@ -55,10 +55,14 @@ def cotan_laplacian(
     diag_idx = t.concatenate([laplacian_diag.indices(), laplacian_diag.indices()])
 
     # Generate the final, complete Laplacian operator.
-    laplacian = t.sparse_coo_tensor(
-        t.hstack((sym_laplacian.indices(), diag_idx)),
-        t.concatenate((sym_laplacian.values(), -laplacian_diag.values())),
-    ).coalesce()
+    laplacian = (
+        t.sparse_coo_tensor(
+            t.hstack((sym_laplacian.indices(), diag_idx)),
+            t.concatenate((sym_laplacian.values(), -laplacian_diag.values())),
+        )
+        .coalesce()
+        .to_sparse_csr()
+    )
 
     return laplacian
 
@@ -71,7 +75,7 @@ def d_cotan_laplacian_d_vert_coords(
     """
     vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
-    n_verts = vert_coords.shape[0]
+    n_verts = simplicial_mesh.n_verts
 
     # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
     # and a vector normal to the triangle at s (sn x sp), and the sine (squared)
@@ -181,10 +185,14 @@ def d_cotan_laplacian_d_vert_coords(
     diag_idx = t.vstack((diag_idx_i, diag_idx_i, diag_idx_k))
 
     # Generate the final, complete dLdV gradients.
-    dLdV = t.sparse_coo_tensor(
-        t.hstack((sym_dLdV.indices(), diag_idx)),
-        t.concatenate((sym_dLdV.values(), -dLdV_diag.values())),
-        (n_verts, n_verts, n_verts, 3),
-    ).coalesce()
+    dLdV = (
+        t.sparse_coo_tensor(
+            t.hstack((sym_dLdV.indices(), diag_idx)),
+            t.concatenate((sym_dLdV.values(), -dLdV_diag.values())),
+            (n_verts, n_verts, n_verts, 3),
+        )
+        .coalesce()
+        .to_sparse_csr()
+    )
 
     return dLdV
