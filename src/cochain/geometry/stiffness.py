@@ -45,7 +45,7 @@ def _compute_cotan_weights_matrix(
     return sym_laplacian
 
 
-def stiffness(
+def stiffness_matrix(
     simplicial_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert"]:
     """

@@ -2,7 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..complex import Simplicial2Complex
-from .cotan_laplacian import _compute_cotan_weights_matrix
+from .stiffness import _compute_cotan_weights_matrix
 
 
 def _compute_tri_area(
