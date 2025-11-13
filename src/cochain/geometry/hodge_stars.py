@@ -8,6 +8,9 @@ from .cotan_laplacian import _compute_cotan_weights_matrix
 def _compute_tri_area(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
 ) -> Float[t.Tensor, "tri"]:
+    """
+    Compute the area of all triangles in a 2D mesh.
+    """
     vert_s_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
 
     edge_ij = vert_s_coord[:, 1] - vert_s_coord[:, 0]
@@ -18,11 +21,25 @@ def _compute_tri_area(
     return area
 
 
+def _star_inv(star: Float[t.Tensor, "simp simp"]) -> Float[t.Tensor, "simp simp"]:
+    """
+    Compute the inverse of the diagonal hodge star operators.
+
+    The input matris is assumed to be in a sprase CSR format.
+    """
+    return t.sparse_csr_tensor(
+        star.crow_indices(), star.col_indices(), 1.0 / star.values(), star.shape
+    )
+
+
+# TODO: analytical gradient for the hodge stars
+
+
 def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri tri"]:
     """
-    The Hodge 2-star operator acts on the triangles in a mesh and returns the ratio
-    of the "volume" of the dual 0-cells (which is 1 by convention) to the area of
-    the primal triangles.
+    The Hodge 2-star operator maps the 2-simplices (triangles) in a mesh to their
+    dual 0-cells. This function computes the ratio of the "size" of the dual 0-cells
+    (which is 1 by convention) to the area of the primal triangles.
     """
     n_tris = simplicial_mesh.n_tris
 
@@ -41,8 +58,9 @@ def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri tri"]:
 
 def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge edge"]:
     """
-    The Hodge 1-star operator acts on the edges in a mesh and returns the length
-    ratio of the dual 1-cells to the primal edges, which is given by the cotan formula.
+    The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the dual
+    1-cells. This function computes the length ratio of the dual 1-cells to the
+    primal edges, which is given by the cotan formula.
     """
     vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
@@ -87,10 +105,13 @@ def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge edge"]:
 
 def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
     """
-    The Hodge 0-star operator acts on the vertices in a mesh and returns the area
-    of the dual 2-cells; here, we adopt the convention that this area is the
-    barycentric dual area for each vertex, which is the sum of 1/3 of the areas
-    of all triangles that share the vertex as a face.
+    The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
+    dual 2-cells. This function computes the ratio of the area of the dual 2-cells
+    to the "size" of the vertices (which is 1 by convention).
+
+    This function assumes that the area of the dual 2-cell is the barycentric dual
+    area for each vertex, which is the sum of 1/3 of the areas of all triangles
+    that share the vertex as a face.
     """
     n_verts = simplicial_mesh.n_verts
 

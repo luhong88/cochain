@@ -45,11 +45,11 @@ def _compute_cotan_weights_matrix(
     return sym_laplacian
 
 
-def cotan_laplacian(
+def stiffness(
     simplicial_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert"]:
     """
-    Computes the cotan Laplacian (L0) for a 2D mesh.
+    Computes the stiffness matrix for a 2D mesh.
 
     The input vert_coords and tris need to be on the same device
     """
@@ -75,7 +75,7 @@ def cotan_laplacian(
     return laplacian
 
 
-def d_cotan_laplacian_d_vert_coords(
+def d_stiffness_d_vert_coords(
     simplicial_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert vert 3"]:
     """
@@ -178,13 +178,13 @@ def d_cotan_laplacian_d_vert_coords(
         :,
         [i, i, i, j, j, j, k, k, k],
         [s, n, p, s, n, p, s, n, p],
-    ].transpose(dim0=0, dim1=1).flatten(end_dim=-2)
+    ].transpose(0, 1).flatten(end_dim=-2)
     asym_dLdV = t.sparse_coo_tensor(
         dLdV_idx, dLdV_val, (n_verts, n_verts, n_verts, 3)
     ).coalesce()
 
     # Symmetrize so that dL_ijk = dL_jki
-    sym_dLdV = (asym_dLdV + asym_dLdV.transpose(dim0=0, dim1=1)).coalesce()
+    sym_dLdV = (asym_dLdV + asym_dLdV.transpose(0, 1)).coalesce()
 
     # Compute the "diagonal" elements dL_iik
     dLdV_diag: Float[t.Tensor, "vert vert 3"] = t.sparse.sum(sym_dLdV, dim=1)
