@@ -155,3 +155,60 @@ def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
     )
 
     return matrix
+
+
+def d_star_0_d_vert_coords(
+    simplicial_mesh: Simplicial2Complex,
+) -> Float[t.Tensor, "vert vert vert 3"]:
+    """
+    Compute the Jacobian of the Hodge 0-star matrix with respect to vertec coordinates.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
+    tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
+    n_verts = simplicial_mesh.n_verts
+
+    dAdV: Float[t.Tensor, "tri vert 3"] = _d_tri_area_d_vert_coords(vert_coords, tris)
+
+    # For each triangle ijk and each vertex s, dAdV_ijk_s contributes to the gradient
+    # star0_ll wrt s whenever l = s or js is an edge in the mesh. Therefore, each
+    # triangle ijk contributes 9 gradient terms, in COO format:
+    # [
+    #   (i, i, i, dAdV_ijk_i/3),
+    #   (i, i, j, dAdV_ijk_j/3),
+    #   (i, i, k, dAdV_ijk_k/3),
+    #
+    #   (j, j, i, dAdV_ijk_i/3),
+    #   (j, j, j, dAdV_ijk_j/3),
+    #   (j, j, k, dAdV_ijk_k/3),
+    #
+    #   (k, k, i, dAdV_ijk_i/3),
+    #   (k, k, j, dAdV_ijk_j/3),
+    #   (k, k, k, dAdV_ijk_k/3),
+    # ]
+
+    # Translate the ijk notation to actual indices to access tensor elements.
+    i, j, k = 0, 1, 2
+
+    # fmt: off
+    dSdV_idx = (
+        tris[
+            :,
+            [
+                i, i, i, j, j, j, k, k, k, # first column/index
+                i, i, i, j, j, j, k, k, k, # second column/index
+                i, j, k, i, j, k, i, j, k, # third column/index
+            ],
+        ]
+        .T
+        .flatten()
+        .reshape(3, -1)
+    )
+    # fmt: on
+    dSdV_val = t.repeat_interleave(dAdV, repeats=3, dim=0).flatten(end_dim=1) / 3.0
+    dSdV = (
+        t.sparse_coo_tensor(dSdV_idx, dSdV_val, (n_verts, n_verts, n_verts, 3))
+        .coalesce()
+        .to_sparse_csr()
+    )
+
+    return dSdV
