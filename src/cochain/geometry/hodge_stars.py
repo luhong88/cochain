@@ -5,7 +5,7 @@ from ..complex import Simplicial2Complex
 from .stiffness import _compute_cotan_weights_matrix
 
 
-def _compute_tri_area(
+def _tri_area(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
 ) -> Float[t.Tensor, "tri"]:
     """
@@ -19,6 +19,32 @@ def _compute_tri_area(
     area = 0.5 * t.linalg.norm(t.cross(edge_ij, edge_ik, dim=-1), dim=-1) + 1e-9
 
     return area
+
+
+def _d_tri_area_d_vert_coords(
+    vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
+) -> Float[t.Tensor, "tri vert 3"]:
+    """
+    Compute the gradient of the triangle areas with respect to vertex coordinates.
+    """
+    # For each triangle snp, and each vertex s, find the edge vectors sn, sp, and
+    # np, and a vector normal to the triangle at s (sn x sp).
+    vert_s_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
+
+    edge_ns = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
+    edge_ps = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
+    edge_np = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord[:, [1, 2, 0], :]
+
+    norm_s: Float[t.Tensor, "tri 3 3"] = t.cross(edge_ns, edge_ps, dim=-1)
+    norm_s_len = t.linalg.norm(norm_s, dim=-1, keepdim=True) + 1e-9
+
+    unorm_s = norm_s / norm_s_len
+
+    # For each triangle snp, the gradient of its area with respect to each vertex
+    # s is given by (unorm_s x edge_np)/2
+    dAdV = t.cross(unorm_s, edge_np, dim=-1) / 2.0
+
+    return dAdV
 
 
 def _star_inv(star: Float[t.Tensor, "simp simp"]) -> Float[t.Tensor, "simp simp"]:
@@ -43,7 +69,7 @@ def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri tri"]:
     """
     n_tris = simplicial_mesh.n_tris
 
-    area = _compute_tri_area(simplicial_mesh.vert_coords, simplicial_mesh.tris)
+    area = _tri_area(simplicial_mesh.vert_coords, simplicial_mesh.tris)
 
     matrix = (
         t.sparse_coo_tensor(
@@ -115,7 +141,7 @@ def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
     """
     n_verts = simplicial_mesh.n_verts
 
-    tri_area = _compute_tri_area(simplicial_mesh.vert_coords, simplicial_mesh.tris)
+    tri_area = _tri_area(simplicial_mesh.vert_coords, simplicial_mesh.tris)
 
     star_0_idx = t.vstack(
         (simplicial_mesh.tris.flatten(), simplicial_mesh.tris.flatten())

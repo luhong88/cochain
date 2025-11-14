@@ -49,7 +49,8 @@ def stiffness_matrix(
     simplicial_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert"]:
     """
-    Computes the stiffness matrix for a 2D mesh.
+    Computes the stiffness matrix for a 2D mesh, sometimes also known as the "cotan
+    Laplacian".
 
     The input vert_coords and tris need to be on the same device
     """
