@@ -20,8 +20,8 @@ class Simplicial2Complex:
         cochain_2: Float[t.Tensor, "tri *tri_feat"] | None = None,
         vert_coords: Float[t.Tensor, "vert 3"] | None = None,
     ):
-        self.coboundary_0 = coboundary_0.to_sparse_csr()
-        self.coboundary_1 = coboundary_1.to_sparse_csr()
+        self.coboundary_0 = coboundary_0
+        self.coboundary_1 = coboundary_1
 
         self.edges = edges
         self.tris = tris

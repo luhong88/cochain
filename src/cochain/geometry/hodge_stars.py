@@ -47,46 +47,32 @@ def _d_tri_area_d_vert_coords(
     return dAdV
 
 
-def _star_inv(star: Float[t.Tensor, "simp simp"]) -> Float[t.Tensor, "simp simp"]:
+def _star_inv(star: Float[t.Tensor, "simp"]) -> Float[t.Tensor, "simp"]:
     """
     Compute the inverse of the diagonal hodge star operators.
-
-    The input matris is assumed to be in a sprase CSR format.
     """
-    return t.sparse_csr_tensor(
-        star.crow_indices(), star.col_indices(), 1.0 / star.values(), star.shape
-    )
+    return 1.0 / star
 
 
 # TODO: analytical gradient for the hodge stars
 
 
-def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri tri"]:
+def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri"]:
     """
     The Hodge 2-star operator maps the 2-simplices (triangles) in a mesh to their
     dual 0-cells. This function computes the ratio of the "size" of the dual 0-cells
-    (which is 1 by convention) to the area of the primal triangles.
+    (which is 1 by convention) to the area of the primal triangles. The returned tensor
+    forms the diagonal of the 2-star tensor.
     """
-    n_tris = simplicial_mesh.n_tris
-
-    area = _tri_area(simplicial_mesh.vert_coords, simplicial_mesh.tris)
-
-    matrix = (
-        t.sparse_coo_tensor(
-            t.stack([t.arange(n_tris), t.arange(n_tris)]), 1.0 / area, (n_tris, n_tris)
-        )
-        .coalesce()
-        .to_sparse_csr()
-    )
-
-    return matrix
+    return 1.0 / _tri_area(simplicial_mesh.vert_coords, simplicial_mesh.tris)
 
 
-def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge edge"]:
+def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
     """
     The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the dual
     1-cells. This function computes the length ratio of the dual 1-cells to the
-    primal edges, which is given by the cotan formula.
+    primal edges, which is given by the cotan formula. The returned tensor forms
+    the diagonal of the 1-star tensor.
     """
     vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
@@ -116,24 +102,15 @@ def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge edge"]:
     subset_idx = t.searchsorted(all_idx_flat, edge_idx_flat)
     subset_vals = stiff_off_diag.values()[subset_idx]
 
-    matrix = (
-        t.sparse_coo_tensor(
-            t.stack([t.arange(n_edges), t.arange(n_edges)]),
-            -subset_vals,  # note the negative sign to get dual edge lengths
-            (n_edges, n_edges),
-        )
-        .coalesce()
-        .to_sparse_csr()
-    )
-
-    return matrix
+    return -subset_vals  # note the negative sign to get dual edge lengths
 
 
 def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
     """
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
     dual 2-cells. This function computes the ratio of the area of the dual 2-cells
-    to the "size" of the vertices (which is 1 by convention).
+    to the "size" of the vertices (which is 1 by convention). The returned tensor
+    forms the diagonal of the 0-star tensor.
 
     This function assumes that the area of the dual 2-cell is the barycentric dual
     area for each vertex, which is the sum of 1/3 of the areas of all triangles
@@ -143,25 +120,22 @@ def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
 
     tri_area = _tri_area(simplicial_mesh.vert_coords, simplicial_mesh.tris)
 
-    star_0_idx = t.vstack(
-        (simplicial_mesh.tris.flatten(), simplicial_mesh.tris.flatten())
-    )
-    star_0_val = t.repeat_interleave(tri_area / 3.0, 3)
-
-    matrix = (
-        t.sparse_coo_tensor(star_0_idx, star_0_val, (n_verts, n_verts))
-        .coalesce()
-        .to_sparse_csr()
+    diag = t.zeros(n_verts, device=simplicial_mesh.vert_coords.device)
+    diag.scatter_add_(
+        dim=0,
+        index=simplicial_mesh.tris.flatten(),
+        src=t.repeat_interleave(tri_area / 3.0, 3),
     )
 
-    return matrix
+    return diag
 
 
 def d_star_0_d_vert_coords(
     simplicial_mesh: Simplicial2Complex,
-) -> Float[t.Tensor, "vert vert vert 3"]:
+) -> Float[t.Tensor, "vert vert 3"]:
     """
-    Compute the Jacobian of the Hodge 0-star matrix with respect to vertec coordinates.
+    Compute the Jacobian of the Hodge 0-star matrix (diagonal elements) with respect
+    to vertex coordinates.
     """
     vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
@@ -173,17 +147,17 @@ def d_star_0_d_vert_coords(
     # star0_ll wrt s whenever l = s or js is an edge in the mesh. Therefore, each
     # triangle ijk contributes 9 gradient terms, in COO format:
     # [
-    #   (i, i, i, dAdV_ijk_i/3),
-    #   (i, i, j, dAdV_ijk_j/3),
-    #   (i, i, k, dAdV_ijk_k/3),
+    #   (i, i, dAdV_ijk_i/3),
+    #   (i, j, dAdV_ijk_j/3),
+    #   (i, k, dAdV_ijk_k/3),
     #
-    #   (j, j, i, dAdV_ijk_i/3),
-    #   (j, j, j, dAdV_ijk_j/3),
-    #   (j, j, k, dAdV_ijk_k/3),
+    #   (j, i, dAdV_ijk_i/3),
+    #   (j, j, dAdV_ijk_j/3),
+    #   (j, k, dAdV_ijk_k/3),
     #
-    #   (k, k, i, dAdV_ijk_i/3),
-    #   (k, k, j, dAdV_ijk_j/3),
-    #   (k, k, k, dAdV_ijk_k/3),
+    #   (k, i, dAdV_ijk_i/3),
+    #   (k, j, dAdV_ijk_j/3),
+    #   (k, k, dAdV_ijk_k/3),
     # ]
 
     # Translate the ijk notation to actual indices to access tensor elements.
@@ -195,8 +169,7 @@ def d_star_0_d_vert_coords(
             :,
             [
                 i, i, i, j, j, j, k, k, k, # first column/index
-                i, i, i, j, j, j, k, k, k, # second column/index
-                i, j, k, i, j, k, i, j, k, # third column/index
+                i, j, k, i, j, k, i, j, k, # second column/index
             ],
         ]
         .T
@@ -204,11 +177,7 @@ def d_star_0_d_vert_coords(
         .reshape(3, -1)
     )
     # fmt: on
-    dSdV_val = t.repeat_interleave(dAdV, repeats=3, dim=0).flatten(end_dim=1) / 3.0
-    dSdV = (
-        t.sparse_coo_tensor(dSdV_idx, dSdV_val, (n_verts, n_verts, n_verts, 3))
-        .coalesce()
-        .to_sparse_csr()
-    )
+    dSdV_val = t.repeat_interleave(dAdV, repeats=2, dim=0).flatten(end_dim=1) / 3.0
+    dSdV = t.sparse_coo_tensor(dSdV_idx, dSdV_val, (n_verts, n_verts, 3)).coalesce()
 
     return dSdV

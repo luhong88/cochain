@@ -64,14 +64,10 @@ def stiffness_matrix(
     diag_idx = t.concatenate([laplacian_diag.indices(), laplacian_diag.indices()])
 
     # Generate the final, complete Laplacian operator.
-    laplacian = (
-        t.sparse_coo_tensor(
-            t.hstack((sym_laplacian.indices(), diag_idx)),
-            t.concatenate((sym_laplacian.values(), -laplacian_diag.values())),
-        )
-        .coalesce()
-        .to_sparse_csr()
-    )
+    laplacian = t.sparse_coo_tensor(
+        t.hstack((sym_laplacian.indices(), diag_idx)),
+        t.concatenate((sym_laplacian.values(), -laplacian_diag.values())),
+    ).coalesce()
 
     return laplacian
 
@@ -194,14 +190,10 @@ def d_stiffness_d_vert_coords(
     diag_idx = t.vstack((diag_idx_i, diag_idx_i, diag_idx_k))
 
     # Generate the final, complete dLdV gradients.
-    dLdV = (
-        t.sparse_coo_tensor(
-            t.hstack((sym_dLdV.indices(), diag_idx)),
-            t.concatenate((sym_dLdV.values(), -dLdV_diag.values())),
-            (n_verts, n_verts, n_verts, 3),
-        )
-        .coalesce()
-        .to_sparse_csr()
-    )
+    dLdV = t.sparse_coo_tensor(
+        t.hstack((sym_dLdV.indices(), diag_idx)),
+        t.concatenate((sym_dLdV.values(), -dLdV_diag.values())),
+        (n_verts, n_verts, n_verts, 3),
+    ).coalesce()
 
     return dLdV
