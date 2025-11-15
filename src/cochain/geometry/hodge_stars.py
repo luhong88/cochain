@@ -97,7 +97,7 @@ def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
     return -subset_vals  # note the negative sign to get dual edge lengths
 
 
-def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
+def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert"]:
     """
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
     dual 2-cells. This function computes the ratio of the area of the dual 2-cells
@@ -166,10 +166,29 @@ def d_star_0_d_vert_coords(
         ]
         .T
         .flatten()
-        .reshape(3, -1)
+        .reshape(2, -1)
     )
     # fmt: on
-    dSdV_val = t.repeat_interleave(dAdV, repeats=2, dim=0).flatten(end_dim=1) / 3.0
+    dSdV_val = t.repeat_interleave(dAdV, repeats=3, dim=0).flatten(end_dim=1) / 3.0
     dSdV = t.sparse_coo_tensor(dSdV_idx, dSdV_val, (n_verts, n_verts, 3)).coalesce()
 
     return dSdV
+
+
+def d_inv_star_0_d_vert_coords(
+    simplicial_mesh: Simplicial2Complex,
+) -> Float[t.Tensor, "vert vert 3"]:
+    """
+    Compute the Jacobian of the inverse Hodge 0-star matrix (diagonal elements)
+    with respect to vertex coordinates.
+    """
+    dSdV = d_star_0_d_vert_coords(simplicial_mesh)
+
+    s0 = star_0(simplicial_mesh)[dSdV.indices()[0]]
+    inv_scale = -1.0 / (s0.square()[:, None] + 1e-9)
+
+    d_inv_S_dV = t.sparse_coo_tensor(
+        dSdV.indices(), dSdV.values() * inv_scale, dSdV.shape
+    )
+
+    return d_inv_S_dV

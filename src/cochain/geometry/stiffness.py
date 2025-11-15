@@ -98,7 +98,7 @@ def d_stiffness_d_vert_coords(
 
     norm_s: Float[t.Tensor, "tri 3 3"] = t.cross(uedge_ns, uedge_ps, dim=-1)
     sin_squared_s: Float[t.Tensor, "tri 3 1"] = (
-        t.sum(norm_s**2, dim=-1, keepdim=True) + 1e-9
+        t.sum(norm_s.square(), dim=-1, keepdim=True) + 1e-9
     )
     unorm_s = norm_s / t.sqrt(sin_squared_s)
 
