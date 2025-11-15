@@ -2,7 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..complex import Simplicial2Complex
-from .stiffness import _compute_cotan_weights_matrix
+from .stiffness import _cotan_weights, _d_cotan_weights_d_vert_coords
 
 
 def _tri_area(
@@ -60,6 +60,49 @@ def star_2(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri"]:
     return 1.0 / _tri_area(simplicial_mesh.vert_coords, simplicial_mesh.tris)
 
 
+def d_inv_star_2_d_vert_coords(
+    simplicial_mesh: Simplicial2Complex,
+) -> Float[t.Tensor, "tri vert 3"]:
+    """
+    Compute the Jacobian of the inverse Hodge 2-star matrix (diagonal elements)
+    with respect to vertex coordinates.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
+    tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
+
+    n_verts = simplicial_mesh.n_verts
+    n_tris = simplicial_mesh.n_tris
+
+    dAdV = _d_tri_area_d_vert_coords(vert_coords, tris)
+
+    dSdV_idx = t.vstack(
+        (t.repeat_interleave(t.arange(n_tris, device=tris.device), 3), tris.flatten())
+    )
+    dSdV_val = dAdV.flatten(end_dim=1)
+    dSdV = t.sparse_coo_tensor(dSdV_idx, dSdV_val, (n_tris, n_verts, 3))
+
+    return dSdV
+
+
+def d_star_2_d_vert_coords(
+    simplicial_mesh: Simplicial2Complex,
+) -> Float[t.Tensor, "tri vert 3"]:
+    """
+    Compute the Jacobian of the Hodge 2-star matrix (diagonal elements) with respect
+    to vertex coordinates.
+    """
+    d_inv_S_dV = d_inv_star_2_d_vert_coords(simplicial_mesh)
+
+    s2 = star_2(simplicial_mesh)[d_inv_S_dV.indices()[0]]
+    inv_scale = -s2.square()[:, None]
+
+    dSdV = t.sparse_coo_tensor(
+        d_inv_S_dV.indices(), d_inv_S_dV.values() * inv_scale, d_inv_S_dV.shape
+    )
+
+    return dSdV
+
+
 def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
     """
     The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the dual
@@ -72,16 +115,15 @@ def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
 
     n_verts = simplicial_mesh.n_verts
 
-    # The off-diagonal elements of the stiff matrix already contains the desired
-    # values; i.e., S_ij = -0.5*sum_k[cot_k] for all k that forms a triangle with
-    # i and j.
-    stiff_off_diag: Float[t.Tensor, "vert vert"] = _compute_cotan_weights_matrix(
-        vert_coords, tris, n_verts
-    )
-    # For the stiff matrix S_ij in COO format, the first row of its index tensor
+    # The cotan weights matrix (i.e., off-diagonal elements of the stiffness matrix)
+    # already contains the desired values; i.e., S_ij = -0.5*sum_k[cot_k] for all
+    # k that forms a triangle with i and j.
+    weights: Float[t.Tensor, "vert vert"] = _cotan_weights(vert_coords, tris, n_verts)
+
+    # For the weights matrix W_ij in COO format, the first row of its index tensor
     # is for the i dimension, and the second row is for the j dimension. We flatten
     # the two dimensions into a 1D index with (i, j) -> i*n_verts + j.
-    all_idx = stiff_off_diag.indices()
+    all_idx = weights.indices()
     all_idx_flat = all_idx[0] * n_verts + all_idx[1]
 
     # Similarly, we convert the canonical edges represented by a vertex-indexing tuple
@@ -89,12 +131,66 @@ def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
     edges: Integer[t.Tensor, "edge 2"] = simplicial_mesh.edges
     edge_idx_flat = edges[:, 0] * n_verts + edges[:, 1]
 
-    # Identify the location of the canonical edge ij in the sparse S_ij indices,
+    # Identify the location of the canonical edge ij in the sparse W_ij indices,
     # using the flattened indices, and use the location to extract the cotan values.
     subset_idx = t.searchsorted(all_idx_flat, edge_idx_flat)
-    subset_vals = stiff_off_diag.values()[subset_idx]
+    subset_vals = weights.values()[subset_idx]
 
     return -subset_vals  # note the negative sign to get dual edge lengths
+
+
+def d_star_1_d_vert_coords(
+    simplicial_mesh: Simplicial2Complex,
+) -> Float[t.Tensor, "edge vert 3"]:
+    """
+    Compute the Jacobian of the Hodge 1-star matrix (diagonal elements) with respect
+    to vertex coordinates.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
+    tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
+
+    n_verts = simplicial_mesh.n_verts
+    n_edges = simplicial_mesh.n_edges
+
+    # Similar to how the 1-star can be computed by extracting the correct elements
+    # from the cotan weights matrix, its jacobian can be computed by extracting
+    # the correct elements from the jacobian of the cotan weights matrix. More
+    # specifically, We will extract gradient vectors -dWdV_ijk for all canonical
+    # edges e = ij, and store them in a new tensor dSdV_ek.
+    dWdV: Float[t.Tensor, "vert vert vert 3"] = _d_cotan_weights_d_vert_coords(
+        vert_coords, tris
+    )
+
+    # Compute a flat index for all edges ij represented in dWdV_ijk.
+    all_edge_idx = dWdV.indices()
+    all_edge_idx_flat = all_edge_idx[0] * n_verts + all_edge_idx[1]
+
+    # Similarly, compute a flat index for all canonical edges.
+    canon_edges: Integer[t.Tensor, "edge 2"] = simplicial_mesh.edges
+    canon_edge_idx_flat = canon_edges[:, 0] * n_verts + canon_edges[:, 1]
+
+    # Find the "insertion location" of each edge into the list of canonical edges,
+    # in a way that preserves the flat index ordering.
+    all_edge_insert_loc = t.searchsorted(canon_edge_idx_flat, all_edge_idx_flat)
+    # An edge is canonical iff its flat index matches the flat index of the canonical
+    # edge at its insertion location. To perform this check, we need to prevent
+    # out-of-bound errors by capping insertion locations to the number of canonical
+    # edges.
+    edge_insert_loc_clipped = t.clip(all_edge_insert_loc, 0, n_edges - 1)
+    canon_edge_mask = canon_edge_idx_flat[edge_insert_loc_clipped] == all_edge_idx_flat
+
+    # Final assembly.
+    dSdV_e_idx = all_edge_insert_loc[canon_edge_mask]
+    dSdV_k_idx = dWdV.indices()[2, canon_edge_mask]
+    dSdV_val = -dWdV.values()[canon_edge_mask]
+
+    dSdV = t.sparse_coo_tensor(
+        t.vstack((dSdV_e_idx, dSdV_k_idx)),
+        dSdV_val,
+        (n_edges, n_verts, 3),
+    ).coalesce()
+
+    return dSdV
 
 
 def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert"]:
