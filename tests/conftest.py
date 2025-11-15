@@ -18,6 +18,16 @@ def square_mesh():
 
 
 @pytest.fixture
+def tent_mesh():
+    return datasets.load_tent_mesh()
+
+
+@pytest.fixture
+def tet_mesh():
+    return datasets.load_tet_mesh()
+
+
+@pytest.fixture
 def icosphere_mesh():
     trimesh_sphere = trimesh.creation.icosphere(subdivisions=1)
 
