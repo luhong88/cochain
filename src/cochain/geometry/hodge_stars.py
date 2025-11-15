@@ -2,6 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..complex import Simplicial2Complex
+from ..utils.constants import EPS
 from .stiffness import _cotan_weights, _d_cotan_weights_d_vert_coords
 
 
@@ -16,7 +17,7 @@ def _tri_area(
     edge_ij = vert_s_coord[:, 1] - vert_s_coord[:, 0]
     edge_ik = vert_s_coord[:, 2] - vert_s_coord[:, 0]
 
-    area = 0.5 * t.linalg.norm(t.cross(edge_ij, edge_ik, dim=-1), dim=-1) + 1e-9
+    area = 0.5 * t.linalg.norm(t.cross(edge_ij, edge_ik, dim=-1), dim=-1) + EPS
 
     return area
 
@@ -36,7 +37,7 @@ def _d_tri_area_d_vert_coords(
     edge_np = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord[:, [1, 2, 0], :]
 
     norm_s: Float[t.Tensor, "tri 3 3"] = t.cross(edge_ns, edge_ps, dim=-1)
-    norm_s_len = t.linalg.norm(norm_s, dim=-1, keepdim=True) + 1e-9
+    norm_s_len = t.linalg.norm(norm_s, dim=-1, keepdim=True) + EPS
 
     unorm_s = norm_s / norm_s_len
 
@@ -193,6 +194,25 @@ def d_star_1_d_vert_coords(
     return dSdV
 
 
+def d_inv_star_1_d_vert_coords(
+    simplicial_mesh: Simplicial2Complex,
+) -> Float[t.Tensor, "edge vert 3"]:
+    """
+    Compute the Jacobian of the inverse Hodge 1-star matrix (diagonal elements)
+    with respect to vertex coordinates.
+    """
+    dSdV = d_star_1_d_vert_coords(simplicial_mesh)
+
+    s1 = star_1(simplicial_mesh)[dSdV.indices()[0]]
+    inv_scale = -1.0 / (s1.square()[:, None] + EPS)
+
+    d_inv_S_dV = t.sparse_coo_tensor(
+        dSdV.indices(), dSdV.values() * inv_scale, dSdV.shape
+    )
+
+    return d_inv_S_dV
+
+
 def star_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert"]:
     """
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
@@ -281,7 +301,7 @@ def d_inv_star_0_d_vert_coords(
     dSdV = d_star_0_d_vert_coords(simplicial_mesh)
 
     s0 = star_0(simplicial_mesh)[dSdV.indices()[0]]
-    inv_scale = -1.0 / (s0.square()[:, None] + 1e-9)
+    inv_scale = -1.0 / (s0.square()[:, None] + EPS)
 
     d_inv_S_dV = t.sparse_coo_tensor(
         dSdV.indices(), dSdV.values() * inv_scale, dSdV.shape

@@ -2,6 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..complex import Simplicial2Complex
+from ..utils.constants import EPS
 
 
 def _cotan_weights(
@@ -18,7 +19,7 @@ def _cotan_weights(
 
     edge_ns_ps_dot = t.sum(edge_ns * edge_ps, dim=-1)
     edge_ns_ps_cross = t.linalg.norm(t.cross(edge_ns, edge_ps, dim=-1), dim=-1)
-    cot_s: Float[t.Tensor, "tri 3"] = edge_ns_ps_dot / (1e-9 + edge_ns_ps_cross)
+    cot_s: Float[t.Tensor, "tri 3"] = edge_ns_ps_dot / (EPS + edge_ns_ps_cross)
 
     # For each triangle snp, and each vertex s, scatter cot_s to edge np in the
     # weight matrix (W_np); i.e., each triangle ijk contributes the following
@@ -56,15 +57,15 @@ def _d_cotan_weights_d_vert_coords(
     edge_ns = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
     edge_ps = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
 
-    edge_ns_len = t.linalg.norm(edge_ns, dim=-1, keepdim=True) + 1e-9
-    edge_ps_len = t.linalg.norm(edge_ps, dim=-1, keepdim=True) + 1e-9
+    edge_ns_len = t.linalg.norm(edge_ns, dim=-1, keepdim=True) + EPS
+    edge_ps_len = t.linalg.norm(edge_ps, dim=-1, keepdim=True) + EPS
 
     uedge_ns = edge_ns / edge_ns_len
     uedge_ps = edge_ps / edge_ps_len
 
     norm_s: Float[t.Tensor, "tri 3 3"] = t.cross(uedge_ns, uedge_ps, dim=-1)
     sin_squared_s: Float[t.Tensor, "tri 3 1"] = (
-        t.sum(norm_s.square(), dim=-1, keepdim=True) + 1e-9
+        t.sum(norm_s.square(), dim=-1, keepdim=True) + EPS
     )
     unorm_s = norm_s / t.sqrt(sin_squared_s)
 
