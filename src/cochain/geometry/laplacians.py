@@ -2,7 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..complex import Simplicial2Complex
-from .hodge_stars import _star_inv, star_0, star_1, star_2
+from .hodge_stars import star_0, star_1, star_2
 from .stiffness import stiffness_matrix
 
 # Laplacian_k = (
@@ -19,18 +19,42 @@ from .stiffness import stiffness_matrix
 # codiff_k = inv_star_{k-1} @ d_{k-1}.T @ star_k
 
 
+def _diag_sp_mm(
+    diag: Float[t.Tensor, "r"], sp: Float[t.Tensor, "r c"]
+) -> Float[t.Tensor, "r c"]:
+    """
+    Performs the matrix multiplication `D@A` where `D` is diagonal and `A` is a
+    2D sparse tensor in COO format. Effectively, `D@A` scales the `i`th row of `A`
+    by the `i`th element of `D`.
+    """
+    rows = sp.indices()[0]
+    scaled_vals = sp.values() * diag[rows]
+    return t.sparse_coo_tensor(sp.indices(), scaled_vals, sp.size()).coalesce()
+
+
+def _sp_diag_mm(
+    sp: Float[t.Tensor, "r c"], diag: Float[t.Tensor, "c"]
+) -> Float[t.Tensor, "r c"]:
+    """
+    Performs the matrix multiplication `A@D` where `D` is diagonal and `A` is a
+    2D sparse tensor in COO format. Effectively, `A@D` scales the `i`th col of `A`
+    by the `i`th element of `D`.
+    """
+    cols = sp.indices()[1]
+    scaled_vals = sp.values() * diag[cols]
+    return t.sparse_coo_tensor(sp.indices(), scaled_vals, sp.size()).coalesce()
+
+
 def codifferential_1(simplicial_mesh) -> Float[t.Tensor, "vert edge"]:
     """
     Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
     """
-    d0 = simplicial_mesh.coboundary_0.to_sparse_csr()
-    d0_T = d0.transpose(0, 1).to_sparse_csr()
+    d0_T = simplicial_mesh.coboundary_0.transpose(0, 1)
 
     s0 = star_0(simplicial_mesh)
     s1 = star_1(simplicial_mesh)
-    s0_inv = _star_inv(s0)
 
-    codiff_1 = s0_inv @ d0_T @ s1
+    codiff_1 = _diag_sp_mm(1.0 / s0, _sp_diag_mm(d0_T, s1))
 
     return codiff_1
 
@@ -39,14 +63,12 @@ def codifferential_2(simplicial_mesh) -> Float[t.Tensor, "edge tri"]:
     """
     Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
     """
-    d1 = simplicial_mesh.coboundary_1.to_sparse_csr()
-    d1_T = d1.transpose(0, 1).to_sparse_csr()
+    d1_T = simplicial_mesh.coboundary_1.transpose(0, 1)
 
     s1 = star_1(simplicial_mesh)
     s2 = star_2(simplicial_mesh)
-    s1_inv = _star_inv(s1)
 
-    codiff_2 = s1_inv @ d1_T @ s2
+    codiff_2 = _diag_sp_mm(1.0 / s1, _sp_diag_mm(d1_T, s2))
 
     return codiff_2
 
@@ -59,10 +81,7 @@ def laplacian_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert ve
     This function uses the cotan weights to compute `d0.T @ star_1 @ d0`,
     i.e., the stiffness matrix.
     """
-    s0 = star_0(simplicial_mesh)
-    s0_inv = _star_inv(s0)
-
-    return s0_inv @ stiffness_matrix(simplicial_mesh)
+    return _diag_sp_mm(1.0 / star_0(simplicial_mesh), stiffness_matrix(simplicial_mesh))
 
 
 def laplacian_1_div_grad(
@@ -72,7 +91,7 @@ def laplacian_1_div_grad(
     """
     Compute the div grad component of the 1-Laplacian, `d0 @ codiff_1`.
     """
-    d0 = simplicial_mesh.coboundary_0.to_sparse_csr()
+    d0 = simplicial_mesh.coboundary_0
 
     if codiff_1 is None:
         codiff_1 = codifferential_1(simplicial_mesh)
@@ -87,7 +106,7 @@ def laplacian_1_curl_curl(
     """
     Computes the curl curl component of the 1-Laplacian, `codiff_2 @ d1`.
     """
-    d1 = simplicial_mesh.coboundary_1.to_sparse_csr()
+    d1 = simplicial_mesh.coboundary_1
 
     if codiff_2 is None:
         codiff_2 = codifferential_2(simplicial_mesh)
@@ -120,7 +139,7 @@ def laplacian_2(
     Compute the 2-Laplacian (face Laplacian).
     L2 = d1 @ codiff_2
     """
-    d1 = simplicial_mesh.coboundary_1.to_sparse_csr()
+    d1 = simplicial_mesh.coboundary_1
 
     if codiff_2 is None:
         codiff_2 = codifferential_2(simplicial_mesh)

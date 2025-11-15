@@ -47,13 +47,6 @@ def _d_tri_area_d_vert_coords(
     return dAdV
 
 
-def _star_inv(star: Float[t.Tensor, "simp"]) -> Float[t.Tensor, "simp"]:
-    """
-    Compute the inverse of the diagonal hodge star operators.
-    """
-    return 1.0 / star
-
-
 # TODO: analytical gradient for the hodge stars
 
 
@@ -78,7 +71,6 @@ def star_1(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
     tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
 
     n_verts = simplicial_mesh.n_verts
-    n_edges = simplicial_mesh.n_edges
 
     # The off-diagonal elements of the stiff matrix already contains the desired
     # values; i.e., S_ij = -0.5*sum_k[cot_k] for all k that forms a triangle with
