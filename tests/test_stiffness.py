@@ -1,3 +1,4 @@
+import potpourri3d as pp3d
 import torch as t
 
 from cochain.complex import Simplicial2Complex
@@ -5,6 +6,24 @@ from cochain.geometry.stiffness import (
     d_stiffness_d_vert_coords,
     stiffness_matrix,
 )
+
+
+def test_stiffness_with_pp3d(tet_mesh):
+    """
+    Validate the stiffness matrix calculation using the external library
+    `potpourri3d`, which performs the same calculation with the `cotan_laplacian()`
+    function.
+    """
+    pp3d_cotan_laplacian = t.from_numpy(
+        pp3d.cotan_laplacian(
+            tet_mesh.vert_coords.cpu().detach().numpy(),
+            tet_mesh.tris.cpu().detach().numpy(),
+        ).todense()
+    )
+
+    cochain_cotan_laplacian = stiffness_matrix(tet_mesh).to_dense()
+
+    t.testing.assert_close(pp3d_cotan_laplacian, cochain_cotan_laplacian)
 
 
 def test_stiffness_kernel(icosphere_mesh: Simplicial2Complex):
