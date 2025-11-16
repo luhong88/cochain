@@ -100,7 +100,7 @@ def test_star_jacobian(star, d_star_d_vert_coords, tet_mesh: Simplicial2Complex)
     tris = tet_mesh.tris.clone()
 
     autograd_jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: star(Simplicial2Complex.from_mesh(vert_coords, tris)),
+        lambda vert_coords: star(Simplicial2Complex.from_tri_mesh(vert_coords, tris)),
         vert_coords,
     )
 
@@ -124,7 +124,8 @@ def test_inv_star_jacobian(
     tris = tet_mesh.tris.clone()
 
     autograd_jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: 1.0 / star(Simplicial2Complex.from_mesh(vert_coords, tris)),
+        lambda vert_coords: 1.0
+        / star(Simplicial2Complex.from_tri_mesh(vert_coords, tris)),
         vert_coords,
     )
 

@@ -45,35 +45,35 @@ def _sp_diag_mm(
     return t.sparse_coo_tensor(sp.indices(), scaled_vals, sp.size()).coalesce()
 
 
-def codifferential_1(simplicial_mesh) -> Float[t.Tensor, "vert edge"]:
+def codifferential_1(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert edge"]:
     """
     Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
     """
-    d0_T = simplicial_mesh.coboundary_0.transpose(0, 1)
+    d0_T = tri_mesh.coboundary_0.transpose(0, 1)
 
-    s0 = star_0(simplicial_mesh)
-    s1 = star_1(simplicial_mesh)
+    s0 = star_0(tri_mesh)
+    s1 = star_1(tri_mesh)
 
     codiff_1 = _diag_sp_mm(1.0 / s0, _sp_diag_mm(d0_T, s1))
 
     return codiff_1
 
 
-def codifferential_2(simplicial_mesh) -> Float[t.Tensor, "edge tri"]:
+def codifferential_2(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge tri"]:
     """
     Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
     """
-    d1_T = simplicial_mesh.coboundary_1.transpose(0, 1)
+    d1_T = tri_mesh.coboundary_1.transpose(0, 1)
 
-    s1 = star_1(simplicial_mesh)
-    s2 = star_2(simplicial_mesh)
+    s1 = star_1(tri_mesh)
+    s2 = star_2(tri_mesh)
 
     codiff_2 = _diag_sp_mm(1.0 / s1, _sp_diag_mm(d1_T, s2))
 
     return codiff_2
 
 
-def laplacian_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
+def laplacian_0(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
     """
     Compute the 0-Laplacian (vertex Laplacian).
     L0 = codiff_1 @ d0 = inv_star_0 @ d0.T @ star_1 @ d0
@@ -81,41 +81,41 @@ def laplacian_0(simplicial_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert ve
     This function uses the cotan weights to compute `d0.T @ star_1 @ d0`,
     i.e., the stiffness matrix.
     """
-    return _diag_sp_mm(1.0 / star_0(simplicial_mesh), stiffness_matrix(simplicial_mesh))
+    return _diag_sp_mm(1.0 / star_0(tri_mesh), stiffness_matrix(tri_mesh))
 
 
 def laplacian_1_div_grad(
-    simplicial_mesh: Simplicial2Complex,
+    tri_mesh: Simplicial2Complex,
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
     """
     Compute the div grad component of the 1-Laplacian, `d0 @ codiff_1`.
     """
-    d0 = simplicial_mesh.coboundary_0
+    d0 = tri_mesh.coboundary_0
 
     if codiff_1 is None:
-        codiff_1 = codifferential_1(simplicial_mesh)
+        codiff_1 = codifferential_1(tri_mesh)
 
     return (d0 @ codiff_1).coalesce()
 
 
 def laplacian_1_curl_curl(
-    simplicial_mesh: Simplicial2Complex,
+    tri_mesh: Simplicial2Complex,
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
     """
     Computes the curl curl component of the 1-Laplacian, `codiff_2 @ d1`.
     """
-    d1 = simplicial_mesh.coboundary_1
+    d1 = tri_mesh.coboundary_1
 
     if codiff_2 is None:
-        codiff_2 = codifferential_2(simplicial_mesh)
+        codiff_2 = codifferential_2(tri_mesh)
 
     return (codiff_2 @ d1).coalesce()
 
 
 def laplacian_1(
-    simplicial_mesh: Simplicial2Complex,
+    tri_mesh: Simplicial2Complex,
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
@@ -124,24 +124,24 @@ def laplacian_1(
     L1 = (codiff_2 @ d1) + (d0 @ codiff_1)
     """
     laplacian_1 = (
-        laplacian_1_div_grad(simplicial_mesh, codiff_1)
-        + laplacian_1_curl_curl(simplicial_mesh, codiff_2)
+        laplacian_1_div_grad(tri_mesh, codiff_1)
+        + laplacian_1_curl_curl(tri_mesh, codiff_2)
     ).coalesce()
 
     return laplacian_1
 
 
 def laplacian_2(
-    simplicial_mesh: Simplicial2Complex,
+    tri_mesh: Simplicial2Complex,
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "tri tri"]:
     """
     Compute the 2-Laplacian (face Laplacian).
     L2 = d1 @ codiff_2
     """
-    d1 = simplicial_mesh.coboundary_1
+    d1 = tri_mesh.coboundary_1
 
     if codiff_2 is None:
-        codiff_2 = codifferential_2(simplicial_mesh)
+        codiff_2 = codifferential_2(tri_mesh)
 
     return (d1 @ codiff_2).coalesce()

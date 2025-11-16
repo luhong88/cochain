@@ -43,7 +43,7 @@ class Simplicial2Complex:
 
     # TODO: check for immersion
     @classmethod
-    def from_mesh(
+    def from_tri_mesh(
         cls,
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],

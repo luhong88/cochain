@@ -37,6 +37,6 @@ def icosphere_mesh():
     vert_coords_t = t.from_numpy(vert_coords_np).to(dtype=t.float)
     tris_t = t.from_numpy(tris_np)
 
-    cochain_sphere = Simplicial2Complex.from_mesh(vert_coords_t, tris_t)
+    cochain_sphere = Simplicial2Complex.from_tri_mesh(vert_coords_t, tris_t)
 
     return cochain_sphere

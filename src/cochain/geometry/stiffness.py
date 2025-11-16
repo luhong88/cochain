@@ -154,7 +154,7 @@ def _d_cotan_weights_d_vert_coords(
 
 
 def stiffness_matrix(
-    simplicial_mesh: Simplicial2Complex,
+    tri_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert"]:
     """
     Computes the stiffness matrix for a 2D mesh, sometimes also known as the "cotan
@@ -163,7 +163,7 @@ def stiffness_matrix(
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
     sym_stiffness = _cotan_weights(
-        simplicial_mesh.vert_coords, simplicial_mesh.tris, simplicial_mesh.n_verts
+        tri_mesh.vert_coords, tri_mesh.tris, tri_mesh.n_verts
     )
 
     # Compute the diagonal elements of the stiffness matrix.
@@ -181,15 +181,15 @@ def stiffness_matrix(
 
 
 def d_stiffness_d_vert_coords(
-    simplicial_mesh: Simplicial2Complex,
+    tri_mesh: Simplicial2Complex,
 ) -> Float[t.Tensor, "vert vert vert 3"]:
     """
     Compute the jacobian of the stiffness matrix/cotan Laplacian with respect to
     the vertex coordinates.
     """
-    vert_coords: Float[t.Tensor, "vert 3"] = simplicial_mesh.vert_coords
-    tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
-    n_verts = simplicial_mesh.n_verts
+    vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
+    tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
+    n_verts = tri_mesh.n_verts
 
     # dWdV gives dSdV except for the diagonal elements.
     sym_dSdV = _d_cotan_weights_d_vert_coords(vert_coords, tris, n_verts)
