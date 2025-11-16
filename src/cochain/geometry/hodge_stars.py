@@ -24,7 +24,7 @@ def _tri_area(
 
 def _d_tri_area_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
-) -> Float[t.Tensor, "tri vert 3"]:
+) -> Float[t.Tensor, "tri 3 3"]:
     """
     Compute the gradient of the triangle areas with respect to vertex coordinates.
     """
@@ -80,7 +80,7 @@ def d_inv_star_2_d_vert_coords(
         (t.repeat_interleave(t.arange(n_tris, device=tris.device), 3), tris.flatten())
     )
     dSdV_val = dAdV.flatten(end_dim=1)
-    dSdV = t.sparse_coo_tensor(dSdV_idx, dSdV_val, (n_tris, n_verts, 3))
+    dSdV = t.sparse_coo_tensor(dSdV_idx, dSdV_val, (n_tris, n_verts, 3)).coalesce()
 
     return dSdV
 
@@ -99,7 +99,7 @@ def d_star_2_d_vert_coords(
 
     dSdV = t.sparse_coo_tensor(
         d_inv_S_dV.indices(), d_inv_S_dV.values() * inv_scale, d_inv_S_dV.shape
-    )
+    ).coalesce()
 
     return dSdV
 
@@ -159,7 +159,7 @@ def d_star_1_d_vert_coords(
     # specifically, We will extract gradient vectors -dWdV_ijk for all canonical
     # edges e = ij, and store them in a new tensor dSdV_ek.
     dWdV: Float[t.Tensor, "vert vert vert 3"] = _d_cotan_weights_d_vert_coords(
-        vert_coords, tris
+        vert_coords, tris, n_verts
     )
 
     # Compute a flat index for all edges ij represented in dWdV_ijk.
@@ -208,7 +208,7 @@ def d_inv_star_1_d_vert_coords(
 
     d_inv_S_dV = t.sparse_coo_tensor(
         dSdV.indices(), dSdV.values() * inv_scale, dSdV.shape
-    )
+    ).coalesce()
 
     return d_inv_S_dV
 
@@ -249,7 +249,7 @@ def d_star_0_d_vert_coords(
     tris: Integer[t.LongTensor, "tri 3"] = simplicial_mesh.tris
     n_verts = simplicial_mesh.n_verts
 
-    dAdV: Float[t.Tensor, "tri vert 3"] = _d_tri_area_d_vert_coords(vert_coords, tris)
+    dAdV: Float[t.Tensor, "tri 3 3"] = _d_tri_area_d_vert_coords(vert_coords, tris)
 
     # For each triangle ijk and each vertex s, dAdV_ijk_s contributes to the gradient
     # star0_ll wrt s whenever l = s or js is an edge in the mesh. Therefore, each
@@ -271,20 +271,18 @@ def d_star_0_d_vert_coords(
     # Translate the ijk notation to actual indices to access tensor elements.
     i, j, k = 0, 1, 2
 
-    # fmt: off
     dSdV_idx = (
         tris[
             :,
             [
-                i, i, i, j, j, j, k, k, k, # first column/index
-                i, j, k, i, j, k, i, j, k, # second column/index
+                [i, i, i, j, j, j, k, k, k],  # first column/index
+                [i, j, k, i, j, k, i, j, k],  # second column/index
             ],
         ]
-        .T
-        .flatten()
-        .reshape(2, -1)
+        .transpose(0, 1)
+        .flatten(start_dim=1)
     )
-    # fmt: on
+
     dSdV_val = t.repeat_interleave(dAdV, repeats=3, dim=0).flatten(end_dim=1) / 3.0
     dSdV = t.sparse_coo_tensor(dSdV_idx, dSdV_val, (n_verts, n_verts, 3)).coalesce()
 
@@ -305,6 +303,6 @@ def d_inv_star_0_d_vert_coords(
 
     d_inv_S_dV = t.sparse_coo_tensor(
         dSdV.indices(), dSdV.values() * inv_scale, dSdV.shape
-    )
+    ).coalesce()
 
     return d_inv_S_dV
