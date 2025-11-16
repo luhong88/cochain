@@ -18,6 +18,16 @@ def square_mesh():
 
 
 @pytest.fixture
+def tent_mesh():
+    return datasets.load_tent_mesh()
+
+
+@pytest.fixture
+def tet_mesh():
+    return datasets.load_tet_mesh()
+
+
+@pytest.fixture
 def icosphere_mesh():
     trimesh_sphere = trimesh.creation.icosphere(subdivisions=1)
 
@@ -25,21 +35,6 @@ def icosphere_mesh():
     tris_np = np.asarray(trimesh_sphere.faces)
 
     vert_coords_t = t.from_numpy(vert_coords_np).to(dtype=t.float)
-    tris_t = t.from_numpy(tris_np)
-
-    cochain_sphere = Simplicial2Complex.from_mesh(vert_coords_t, tris_t)
-
-    return cochain_sphere
-
-
-@pytest.fixture
-def icosphere_mesh_double():
-    trimesh_sphere = trimesh.creation.icosphere(subdivisions=1)
-
-    vert_coords_np = np.asarray(trimesh_sphere.vertices)
-    tris_np = np.asarray(trimesh_sphere.faces)
-
-    vert_coords_t = t.from_numpy(vert_coords_np).to(dtype=t.double)
     tris_t = t.from_numpy(tris_np)
 
     cochain_sphere = Simplicial2Complex.from_mesh(vert_coords_t, tris_t)

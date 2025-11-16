@@ -82,6 +82,7 @@ dependencies = [
 dev = [
     { name = "ipykernel" },
     { name = "ipython" },
+    { name = "potpourri3d" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -100,6 +101,7 @@ requires-dist = [
 dev = [
     { name = "ipykernel", specifier = ">=7.1.0" },
     { name = "ipython", specifier = ">=9.7.0" },
+    { name = "potpourri3d", specifier = ">=1.3" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "ruff", specifier = ">=0.14.3" },
 ]
@@ -687,6 +689,26 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
+name = "potpourri3d"
+version = "1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/f8/52b8973fef56c0a0f725d4d9734a1cfa8596bc3c105c22368be97deb0b05/potpourri3d-1.3.tar.gz", hash = "sha256:5a8d3578ea1013fbb990520297acb7afd25c2231870537757541980b6cea3a5e", size = 30453485, upload-time = "2025-07-02T07:32:27.844Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/1e/c70dfd006395ca34170373e32535d7fc7e9b493ac53b2cbecf8ebb501538/potpourri3d-1.3-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:d6f03c83a9843984e602ccd4f7ca6ba41c2f8ca003adf9142207efce8f11610d", size = 3694624, upload-time = "2025-07-02T07:31:05.484Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/39/1dafc02cc51896fee15b2a1ed9dab474531dfaf2b7d37d4282583b123965/potpourri3d-1.3-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:43f23c908d8aa6f82a2f00d43a9e4ff0af9d3d357402f672bcef4174d4b537bf", size = 3254609, upload-time = "2025-07-02T07:31:06.899Z" },
+    { url = "https://files.pythonhosted.org/packages/de/b4/f2f8cc6af9520292b8018a917c6b71e7c269abf4af72c73550df81c78803/potpourri3d-1.3-cp313-cp313-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:add7f889b08dd47a7a1bc6d27221ca0ff836f01fb90e41c421a22f1984cc0574", size = 3668167, upload-time = "2025-07-02T07:31:08.801Z" },
+    { url = "https://files.pythonhosted.org/packages/50/b7/dce291a0172e58cfd219aab80f2d4650d342418e3d68292cb20221bcad78/potpourri3d-1.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:50296cd3f2897d7b63d3f639379f1b7bf0c092242cabe94178df6747aa0d2d8c", size = 3451083, upload-time = "2025-07-02T07:31:10.574Z" },
+    { url = "https://files.pythonhosted.org/packages/84/e9/ec4984b209600b9af856638fa647ab487b6b893eb36313c2b57b69f839ba/potpourri3d-1.3-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:abe9fa4552525ef73383cb9c919d28ce8c8aeef23c94b0a18dd946cb9e59ed3a", size = 4902471, upload-time = "2025-07-02T07:31:12.068Z" },
+    { url = "https://files.pythonhosted.org/packages/58/a2/59d8fb65b9b7b3d3c497cf924ab3914a6376b5646d4d6b83f2aac925ebdd/potpourri3d-1.3-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:3e1d8fed8654a6b054d07265bf499b9da756912d2f8f1d720e62a94aaacf1f38", size = 4634551, upload-time = "2025-07-02T07:31:13.575Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/81/71ae8674a00a7ce3178d5fb68f3af449d3decafa600c37ecf202ba49c233/potpourri3d-1.3-cp313-cp313-win32.whl", hash = "sha256:745e05a80309d5fc053316fbb662e46bac925e2a095792af5159f488279edac3", size = 4451446, upload-time = "2025-07-02T07:31:15.014Z" },
+    { url = "https://files.pythonhosted.org/packages/39/18/61f85875356fdac2b213db9adcce2aa2380fcfb7d03c11334a4bb9c8b473/potpourri3d-1.3-cp313-cp313-win_amd64.whl", hash = "sha256:f7eafd4270c9a65439120e39f626ba82d2a770e93c49af96297e7fa29c10200c", size = 6112930, upload-time = "2025-07-02T07:31:16.44Z" },
 ]
 
 [[package]]

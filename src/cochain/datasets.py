@@ -31,3 +31,39 @@ def load_square_mesh() -> Simplicial2Complex:
         ),
         tris=t.LongTensor([[0, 4, 1], [1, 2, 4], [2, 3, 4], [3, 0, 4]]),
     )
+
+
+def load_tent_mesh() -> Simplicial2Complex:
+    """
+    Similar to the square mesh, but the central vertex is elevated above the z=0
+    plane.
+    """
+    return Simplicial2Complex.from_mesh(
+        vert_coords=t.Tensor(
+            [
+                [0.5, 0.5, 1.0],
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ]
+        ),
+        tris=t.LongTensor([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]]),
+    )
+
+
+def load_tet_mesh() -> Simplicial2Complex:
+    """
+    A simple 2D mesh for the boundary of a tetrahedron.
+    """
+    return Simplicial2Complex.from_mesh(
+        vert_coords=t.Tensor(
+            [
+                [0.0, 0.0, 2.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.5, 0.0],
+                [-0.5, -1.0, 0.0],
+            ]
+        ),
+        tris=t.LongTensor([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]),
+    )
