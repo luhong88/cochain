@@ -49,7 +49,7 @@ def codifferential_1(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert edge
     """
     Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
     """
-    d0_T = tri_mesh.coboundary_0.transpose(0, 1)
+    d0_T = tri_mesh.coboundary_0.transpose(0, 1).coalesce()
 
     s0 = star_0(tri_mesh)
     s1 = star_1(tri_mesh)
@@ -63,7 +63,7 @@ def codifferential_2(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge tri"
     """
     Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
     """
-    d1_T = tri_mesh.coboundary_1.transpose(0, 1)
+    d1_T = tri_mesh.coboundary_1.transpose(0, 1).coalesce()
 
     s1 = star_1(tri_mesh)
     s2 = star_2(tri_mesh)

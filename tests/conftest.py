@@ -40,3 +40,10 @@ def icosphere_mesh():
     cochain_sphere = Simplicial2Complex.from_tri_mesh(vert_coords_t, tris_t)
 
     return cochain_sphere
+
+
+@pytest.fixture
+def flat_annulus_mesh():
+    return datasets.load_flat_annulus_mesh(
+        r_in=0.5, r_out=1.0, n_segments_in=5, n_segments_out=10
+    )
