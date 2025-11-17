@@ -86,6 +86,10 @@ def test_laplacian_0_kernel(tent_mesh: Simplicial2Complex):
 
 
 def test_laplacian_2_kernel(tet_mesh: Simplicial2Complex):
+    """
+    Check that the triangle area vector is in the kernel of the 2-Laplacian for
+    a closed mesh.
+    """
     l2 = laplacians.laplacian_2(tet_mesh)
     areas = hodge_stars._tri_area(tet_mesh.vert_coords, tet_mesh.tris)
 
