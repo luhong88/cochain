@@ -48,9 +48,6 @@ def _d_tri_area_d_vert_coords(
     return dAdV
 
 
-# TODO: analytical gradient for the hodge stars
-
-
 def star_2(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri"]:
     """
     The Hodge 2-star operator maps the 2-simplices (triangles) in a mesh to their
