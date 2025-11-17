@@ -106,10 +106,12 @@ def d_star_2_d_vert_coords(
 
 def star_1(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
     """
-    The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the dual
-    1-cells. This function computes the length ratio of the dual 1-cells to the
-    primal edges, which is given by the cotan formula. The returned tensor forms
-    the diagonal of the 1-star tensor.
+    The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the
+    circumcentric dual 1-cells. This function computes the length ratio of the dual
+    1-cells to the primal edges, which is given by the cotan formula. The returned
+    tensor forms the diagonal of the 1-star tensor.
+
+    The circumcentric 1-star is only well-defined for acutely triangulated meshes.
     """
     vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
@@ -216,13 +218,12 @@ def d_inv_star_1_d_vert_coords(
 def star_0(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert"]:
     """
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
-    dual 2-cells. This function computes the ratio of the area of the dual 2-cells
-    to the "size" of the vertices (which is 1 by convention). The returned tensor
-    forms the diagonal of the 0-star tensor.
+    barycentric dual 2-cells. This function computes the ratio of the area of the
+    dual 2-cells to the "size" of the vertices (which is 1 by convention). The
+    returned tensor forms the diagonal of the 0-star tensor.
 
-    This function assumes that the area of the dual 2-cell is the barycentric dual
-    area for each vertex, which is the sum of 1/3 of the areas of all triangles
-    that share the vertex as a face.
+    The barycentric dual area for each vertex is the sum of 1/3 of the areas of
+    all triangles that share the vertex as a face.
     """
     n_verts = tri_mesh.n_verts
 
