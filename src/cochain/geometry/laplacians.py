@@ -1,5 +1,5 @@
 import torch as t
-from jaxtyping import Float, Integer
+from jaxtyping import Float
 
 from ..complex import Simplicial2Complex
 from .hodge_stars import star_0, star_1, star_2
