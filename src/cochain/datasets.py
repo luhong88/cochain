@@ -67,7 +67,7 @@ def load_tet_mesh() -> Simplicial2Complex:
                 [-0.5, -1.0, 0.0],
             ]
         ),
-        tris=t.LongTensor([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]),
+        tris=t.LongTensor([[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]]),
     )
 
 

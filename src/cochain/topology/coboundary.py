@@ -52,7 +52,7 @@ def coboundary_from_tri_mesh(
     )
 
     # Generate the 1st-coboundary operator.
-    # for a triangle ijk, d1(ijk) = jk - ik + jk, which is represented by the
+    # for a triangle ijk, d1(ijk) = jk - ik + ij, which is represented by the
     # "topological signs".
     edge_topo_signs = t.repeat_interleave(t.Tensor([1.0, -1.0, 1.0]), n_tris)
     # each oriented edge ji that has the opposite orientation as the corresponding
