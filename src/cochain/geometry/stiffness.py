@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..complex import Simplicial2Complex
+from ..complex import SimplicialComplex
 from ..utils.constants import EPS
 
 
@@ -154,7 +154,7 @@ def _d_cotan_weights_d_vert_coords(
 
 
 def stiffness_matrix(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "vert vert"]:
     """
     Computes the stiffness matrix for a 2D mesh, sometimes also known as the "cotan
@@ -181,7 +181,7 @@ def stiffness_matrix(
 
 
 def d_stiffness_d_vert_coords(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "vert vert vert 3"]:
     """
     Compute the jacobian of the stiffness matrix/cotan Laplacian with respect to

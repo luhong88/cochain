@@ -1,7 +1,7 @@
 import potpourri3d as pp3d
 import torch as t
 
-from cochain.complex import Simplicial2Complex
+from cochain.complex import SimplicialComplex
 from cochain.geometry.stiffness import (
     d_stiffness_d_vert_coords,
     stiffness_matrix,
@@ -26,7 +26,7 @@ def test_stiffness_with_pp3d(tet_mesh):
     t.testing.assert_close(pp3d_cotan_laplacian, cochain_cotan_laplacian)
 
 
-def test_stiffness_kernel(icosphere_mesh: Simplicial2Complex):
+def test_stiffness_kernel(icosphere_mesh: SimplicialComplex):
     """
     The stiffness matrix acting on a constant function over the vertices should
     return the zero vector. This can be checked by comparing the row sum of the
@@ -37,7 +37,7 @@ def test_stiffness_kernel(icosphere_mesh: Simplicial2Complex):
     t.testing.assert_close(row_sum, t.zeros_like(row_sum))
 
 
-def test_stiffness_symmetry(icosphere_mesh: Simplicial2Complex):
+def test_stiffness_symmetry(icosphere_mesh: SimplicialComplex):
     """
     The stifness matrix should be a symmetric matrix.
     """
@@ -46,7 +46,7 @@ def test_stiffness_symmetry(icosphere_mesh: Simplicial2Complex):
     t.testing.assert_close(sphere_S_dense, sphere_S_dense.T)
 
 
-def test_stiffness_PSD(icosphere_mesh: Simplicial2Complex):
+def test_stiffness_PSD(icosphere_mesh: SimplicialComplex):
     """
     The stiffness matrix should be a positive semi-definite matrix.
     """
@@ -56,7 +56,7 @@ def test_stiffness_PSD(icosphere_mesh: Simplicial2Complex):
     assert eigs.min() >= -1e-6
 
 
-def test_stiffness_planar(square_mesh: Simplicial2Complex):
+def test_stiffness_planar(square_mesh: SimplicialComplex):
     """
     The stiffness matrix acting on a planar mesh coordinates should result in
     zero (for interior vertices).
@@ -67,7 +67,7 @@ def test_stiffness_planar(square_mesh: Simplicial2Complex):
     t.testing.assert_close(zero_tensor[-1], t.zeros_like(zero_tensor[-1]))
 
 
-def test_stiffness_autograd(two_tris_mesh: Simplicial2Complex):
+def test_stiffness_autograd(two_tris_mesh: SimplicialComplex):
     """
     Check that the custom gradient matches the automatic gradient for the stiffness
     matrix.

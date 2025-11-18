@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float
 
-from ..complex import Simplicial2Complex
+from ..complex import SimplicialComplex
 from .hodge_stars import star_0, star_1, star_2
 from .stiffness import stiffness_matrix
 
@@ -48,7 +48,7 @@ def _sp_diag_mm(
     return t.sparse_coo_tensor(sp.indices(), scaled_vals, sp.size()).coalesce()
 
 
-def codifferential_1(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert edge"]:
+def codifferential_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert edge"]:
     """
     Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
     """
@@ -62,7 +62,7 @@ def codifferential_1(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert edge
     return codiff_1
 
 
-def codifferential_2(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge tri"]:
+def codifferential_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge tri"]:
     """
     Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
     """
@@ -76,7 +76,7 @@ def codifferential_2(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge tri"
     return codiff_2
 
 
-def laplacian_0(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
+def laplacian_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert vert"]:
     """
     Compute the 0-Laplacian (vertex Laplacian).
     L0 = codiff_1 @ d0 = inv_star_0 @ d0.T @ star_1 @ d0
@@ -88,7 +88,7 @@ def laplacian_0(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert vert"]:
 
 
 def laplacian_1_div_grad(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
     """
@@ -103,7 +103,7 @@ def laplacian_1_div_grad(
 
 
 def laplacian_1_curl_curl(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
     """
@@ -118,7 +118,7 @@ def laplacian_1_curl_curl(
 
 
 def laplacian_1(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
@@ -135,7 +135,7 @@ def laplacian_1(
 
 
 def laplacian_2(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "tri tri"]:
     """
