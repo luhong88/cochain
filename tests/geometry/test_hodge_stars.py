@@ -100,7 +100,7 @@ def test_star_jacobian(star, d_star_d_vert_coords, tet_mesh: Simplicial2Complex)
     tris = tet_mesh.tris.clone()
 
     autograd_jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: star(Simplicial2Complex.from_mesh(vert_coords, tris)),
+        lambda vert_coords: star(Simplicial2Complex.from_tri_mesh(vert_coords, tris)),
         vert_coords,
     )
 
@@ -124,10 +124,45 @@ def test_inv_star_jacobian(
     tris = tet_mesh.tris.clone()
 
     autograd_jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: 1.0 / star(Simplicial2Complex.from_mesh(vert_coords, tris)),
+        lambda vert_coords: 1.0
+        / star(Simplicial2Complex.from_tri_mesh(vert_coords, tris)),
         vert_coords,
     )
 
     analytical_jacobian = d_inv_star_d_vert_coords(tet_mesh).to_dense()
 
     t.testing.assert_close(autograd_jacobian, analytical_jacobian)
+
+
+def test_tri_area_with_pp3d(flat_annulus_mesh: Simplicial2Complex):
+    tri_areas = hodge_stars._tri_area(
+        flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
+    )
+
+    true_tri_areas = t.from_numpy(
+        pp3d.face_areas(
+            flat_annulus_mesh.vert_coords.cpu().detach().numpy(),
+            flat_annulus_mesh.tris.cpu().detach().numpy(),
+        )
+    )
+
+    t.testing.assert_close(tri_areas, true_tri_areas)
+
+
+def test_d_tri_area_d_vert_coords(tet_mesh: Simplicial2Complex):
+    # Note that this function does not return the Jacobian; rather, for each
+    # triangle, it returns the gradient of its area wrt each of its three verticies.
+    dAdV = hodge_stars._d_tri_area_d_vert_coords(
+        tet_mesh.vert_coords, tet_mesh.tris
+    ).flatten(end_dim=1)
+
+    jacobian = t.autograd.functional.jacobian(
+        lambda vert_coords: hodge_stars._tri_area(vert_coords, tet_mesh.tris),
+        tet_mesh.vert_coords,
+    )
+    # Extract the nonzero components of the Jacobian.
+    dAdV_true = jacobian[
+        t.repeat_interleave(t.arange(tet_mesh.n_tris), 3), tet_mesh.tris.flatten()
+    ]
+
+    t.testing.assert_close(dAdV, dAdV_true)

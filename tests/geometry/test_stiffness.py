@@ -34,7 +34,7 @@ def test_stiffness_kernel(icosphere_mesh: Simplicial2Complex):
     """
     sphere_S = stiffness_matrix(icosphere_mesh)
     row_sum = sphere_S.to_dense().sum(dim=-1)
-    assert t.allclose(row_sum, t.tensor(0.0), atol=1e-6)
+    t.testing.assert_close(row_sum, t.zeros_like(row_sum))
 
 
 def test_stiffness_symmetry(icosphere_mesh: Simplicial2Complex):
@@ -43,7 +43,7 @@ def test_stiffness_symmetry(icosphere_mesh: Simplicial2Complex):
     """
     sphere_S = stiffness_matrix(icosphere_mesh)
     sphere_S_dense = sphere_S.to_dense()
-    assert t.allclose(sphere_S_dense, sphere_S_dense.T, atol=1e-6)
+    t.testing.assert_close(sphere_S_dense, sphere_S_dense.T)
 
 
 def test_stiffness_PSD(icosphere_mesh: Simplicial2Complex):
@@ -64,7 +64,7 @@ def test_stiffness_planar(square_mesh: Simplicial2Complex):
     plane_S = stiffness_matrix(square_mesh).to_dense()
     zero_tensor = plane_S @ square_mesh.vert_coords
 
-    assert t.allclose(zero_tensor[-1], t.tensor(0.0), atol=1e-6)
+    t.testing.assert_close(zero_tensor[-1], t.zeros_like(zero_tensor[-1]))
 
 
 def test_stiffness_autograd(two_tris_mesh: Simplicial2Complex):
