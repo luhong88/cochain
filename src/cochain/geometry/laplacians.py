@@ -17,6 +17,9 @@ from .stiffness import stiffness_matrix
 # where
 #
 # codiff_k = inv_star_{k-1} @ d_{k-1}.T @ star_k
+#
+# Note here that d_k stands for the k-coboundary operator,
+# while d_k.T stands for the k-boundary operator.
 
 
 def _diag_sp_mm(
