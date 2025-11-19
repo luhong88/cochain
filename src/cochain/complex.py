@@ -169,12 +169,7 @@ class SimplicialBatch(SimplicialComplex):
 def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     """
     The "magic" function that creates a SimplicialBatch.
-    Uses torch.block_diag() on operators and torch.cat() on features.
     """
-    # 1. Cat all x_k
-    # 2. Block_diag all d_k
-    # 3. Create batch_k pointer tensors
-    # 4. Return a new SimplicialBatch
 
     batch_size = len(sc_batch)
 
@@ -184,14 +179,15 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     dtype = sc_batch[0].coboundary_0.dtype
 
     # Generate a cumsum n_sc list for each simplex dimension
-    n_verts_batch = [0] + [sc.n_verts for sc in sc_batch]
-    n_edges_batch = [0] + [sc.n_edges for sc in sc_batch]
-    n_tris_batch = [0] + [sc.n_tris for sc in sc_batch]
-    n_tets_batch = [0] + [sc.n_tets for sc in sc_batch]
-
     n_simp_batch = t.hstack(
-        (n_verts_batch, n_edges_batch, n_tris_batch, n_tets_batch)
+        [
+            [0] + [sc.n_verts for sc in sc_batch],
+            [0] + [sc.n_edges for sc in sc_batch],
+            [0] + [sc.n_tris for sc in sc_batch],
+            [0] + [sc.n_tets for sc in sc_batch],
+        ]
     ).to(dtype=t.long, device=device)
+
     n_simp_cumsum_batch = t.cumsum(n_simp_batch, dim=-1)
 
     # Generate the batch tensor for each simplex dimension
@@ -210,7 +206,7 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
             indices=t.hstack(
                 [
                     getattr(sc, f"coboundary_{k}").indices()
-                    + n_simp_cumsum_batch[idx, [k + 1, k]]
+                    + n_simp_cumsum_batch[idx, [k + 1, k]][:, None]
                     for idx, sc in enumerate(sc_batch)
                 ]
             ),
