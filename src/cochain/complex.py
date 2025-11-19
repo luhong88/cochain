@@ -1,5 +1,5 @@
 import torch as t
-from jaxtyping import Float, Integer, Real
+from jaxtyping import Float, Integer
 
 from .topology import coboundaries
 

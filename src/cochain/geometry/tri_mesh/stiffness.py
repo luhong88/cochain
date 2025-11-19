@@ -1,8 +1,8 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..complex import SimplicialComplex
-from ..utils.constants import EPS
+from ...complex import SimplicialComplex
+from ...utils.constants import EPS
 
 
 def _cotan_weights(

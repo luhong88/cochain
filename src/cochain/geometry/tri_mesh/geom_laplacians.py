@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float
 
-from ..complex import SimplicialComplex
+from ...complex import SimplicialComplex
 from .hodge_stars import star_0, star_1, star_2
 from .stiffness import stiffness_matrix
 

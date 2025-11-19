@@ -2,8 +2,8 @@ import pytest
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry import geom_laplacians, hodge_stars
-from cochain.geometry.stiffness import stiffness_matrix
+from cochain.geometry.tri_mesh import geom_laplacians, hodge_stars
+from cochain.geometry.tri_mesh.stiffness import stiffness_matrix
 
 
 def test_l0_stiffness_relation(two_tris_mesh: SimplicialComplex):

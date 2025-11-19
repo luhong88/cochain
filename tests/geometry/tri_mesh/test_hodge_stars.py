@@ -6,7 +6,7 @@ import pytest
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry import hodge_stars
+from cochain.geometry.tri_mesh import hodge_stars
 
 # Test 0-, 1-, and 2-star operators on a watertight mesh and a mesh with boundaries.
 
