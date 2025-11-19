@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer, Real
 
-from .topology import coboundary
+from .topology import coboundaries
 
 
 class SimplicialComplex:
@@ -98,7 +98,7 @@ class SimplicialComplex:
         will assign a "canonical" orientation to each edge ij such that i < j.
         """
         unique_canon_edges, coboundary_0, coboundary_1 = (
-            coboundary.coboundaries_from_tri_mesh(vert_coords, tris)
+            coboundaries.coboundaries_from_tri_mesh(vert_coords, tris)
         )
 
         coboundary_2 = t.sparse_coo_tensor(
