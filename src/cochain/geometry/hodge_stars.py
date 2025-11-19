@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..complex import Simplicial2Complex
+from ..complex import SimplicialComplex
 from ..utils.constants import EPS
 from .stiffness import _cotan_weights, _d_cotan_weights_d_vert_coords
 
@@ -48,7 +48,7 @@ def _d_tri_area_d_vert_coords(
     return dAdV
 
 
-def star_2(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri"]:
+def star_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
     """
     The Hodge 2-star operator maps the 2-simplices (triangles) in a mesh to their
     dual 0-cells. This function computes the ratio of the "size" of the dual 0-cells
@@ -59,7 +59,7 @@ def star_2(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "tri"]:
 
 
 def d_inv_star_2_d_vert_coords(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "tri vert 3"]:
     """
     Compute the Jacobian of the inverse Hodge 2-star matrix (diagonal elements)
@@ -83,7 +83,7 @@ def d_inv_star_2_d_vert_coords(
 
 
 def d_star_2_d_vert_coords(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "tri vert 3"]:
     """
     Compute the Jacobian of the Hodge 2-star matrix (diagonal elements) with respect
@@ -101,7 +101,7 @@ def d_star_2_d_vert_coords(
     return dSdV
 
 
-def star_1(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
+def star_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
     """
     The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the
     circumcentric dual 1-cells. This function computes the length ratio of the dual
@@ -140,7 +140,7 @@ def star_1(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "edge"]:
 
 
 def d_star_1_d_vert_coords(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "edge vert 3"]:
     """
     Compute the Jacobian of the Hodge 1-star matrix (diagonal elements) with respect
@@ -194,7 +194,7 @@ def d_star_1_d_vert_coords(
 
 
 def d_inv_star_1_d_vert_coords(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "edge vert 3"]:
     """
     Compute the Jacobian of the inverse Hodge 1-star matrix (diagonal elements)
@@ -212,7 +212,7 @@ def d_inv_star_1_d_vert_coords(
     return d_inv_S_dV
 
 
-def star_0(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert"]:
+def star_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     """
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
     barycentric dual 2-cells. This function computes the ratio of the area of the
@@ -237,7 +237,7 @@ def star_0(tri_mesh: Simplicial2Complex) -> Float[t.Tensor, "vert"]:
 
 
 def d_star_0_d_vert_coords(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "vert vert 3"]:
     """
     Compute the Jacobian of the Hodge 0-star matrix (diagonal elements) with respect
@@ -288,7 +288,7 @@ def d_star_0_d_vert_coords(
 
 
 def d_inv_star_0_d_vert_coords(
-    tri_mesh: Simplicial2Complex,
+    tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "vert vert 3"]:
     """
     Compute the Jacobian of the inverse Hodge 0-star matrix (diagonal elements)

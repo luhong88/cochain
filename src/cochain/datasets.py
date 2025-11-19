@@ -2,14 +2,14 @@ import numpy as np
 import torch as t
 from scipy.spatial import Delaunay
 
-from .complex import Simplicial2Complex
+from .complex import SimplicialComplex
 
 
-def load_two_tris_mesh() -> Simplicial2Complex:
+def load_two_tris_mesh() -> SimplicialComplex:
     """
     A simple 2D mesh embedded in R^3 composed of two triangles sharing one edge.
     """
-    return Simplicial2Complex.from_tri_mesh(
+    return SimplicialComplex.from_tri_mesh(
         vert_coords=t.Tensor(
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         ),
@@ -17,11 +17,11 @@ def load_two_tris_mesh() -> Simplicial2Complex:
     )
 
 
-def load_square_mesh() -> Simplicial2Complex:
+def load_square_mesh() -> SimplicialComplex:
     """
     A simple triangulated square consisting of 4 triangles in the z = 0 plane.
     """
-    return Simplicial2Complex.from_tri_mesh(
+    return SimplicialComplex.from_tri_mesh(
         vert_coords=t.Tensor(
             [
                 [0.0, 0.0, 0.0],
@@ -35,12 +35,12 @@ def load_square_mesh() -> Simplicial2Complex:
     )
 
 
-def load_tent_mesh() -> Simplicial2Complex:
+def load_tent_mesh() -> SimplicialComplex:
     """
     Similar to the square mesh, but the central vertex is elevated above the z=0
     plane.
     """
-    return Simplicial2Complex.from_tri_mesh(
+    return SimplicialComplex.from_tri_mesh(
         vert_coords=t.Tensor(
             [
                 [0.5, 0.5, 1.0],
@@ -54,11 +54,11 @@ def load_tent_mesh() -> Simplicial2Complex:
     )
 
 
-def load_tet_mesh() -> Simplicial2Complex:
+def load_tet_mesh() -> SimplicialComplex:
     """
     A simple 2D mesh for the boundary of a tetrahedron.
     """
-    return Simplicial2Complex.from_tri_mesh(
+    return SimplicialComplex.from_tri_mesh(
         vert_coords=t.Tensor(
             [
                 [0.0, 0.0, 2.0],
@@ -76,7 +76,7 @@ def load_flat_annulus_mesh(
     r_out: float = 1.0,
     n_segments_in: int = 5,
     n_segments_out: int = 10,
-) -> Simplicial2Complex:
+) -> SimplicialComplex:
     """
     Generates a 2D annulus mesh using Delaunay triangulation. The mesh is created
     from points on two concentric circles.
@@ -115,7 +115,7 @@ def load_flat_annulus_mesh(
     keep_mask = np.any(all_triangles >= n_segments_in, axis=1)
     annulus_tris = all_triangles[keep_mask]
 
-    annulus_mesh = Simplicial2Complex.from_tri_mesh(
+    annulus_mesh = SimplicialComplex.from_tri_mesh(
         t.from_numpy(vert_coords_3d).to(dtype=t.float),
         t.from_numpy(annulus_tris).to(dtype=t.long),
     )
