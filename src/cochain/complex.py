@@ -1,3 +1,5 @@
+from typing import Sequence
+
 import torch as t
 from jaxtyping import Float, Integer, Real
 
@@ -11,17 +13,17 @@ class SimplicialComplex:
 
     def __init__(
         self,
-        coboundaries: tuple[
+        coboundaries: Sequence[
             Float[t.Tensor, "edge vert"],
             Float[t.Tensor, "tri edge"],
             Float[t.Tensor, "tet tri"],
         ],
-        simplices: tuple[
-            Float[t.Tensor, "edge 2"],
-            Float[t.Tensor, "tri 3"],
-            Float[t.Tensor, "tet 4"],
+        simplices: Sequence[
+            Integer[t.LongTensor, "edge 2"],
+            Integer[t.LongTensor, "tri 3"],
+            Integer[t.LongTensor, "tet 4"],
         ],
-        cochains: tuple[
+        cochains: Sequence[
             Float[t.Tensor, "vert *vert_feat"] | None,
             Float[t.Tensor, "edge *edge_feat"] | None,
             Float[t.Tensor, "tri *tri_feat"] | None,
@@ -82,7 +84,7 @@ class SimplicialComplex:
         cls,
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],
-        cochains: tuple[
+        cochains: Sequence[
             Float[t.Tensor, "vert *vert_feat"] | None,
             Float[t.Tensor, "edge *edge_feat"] | None,
             Float[t.Tensor, "tri *tri_feat"] | None,
@@ -136,24 +138,35 @@ class SimplicialComplex:
 
 class SimplicialBatch(SimplicialComplex):
     """
-    A "batch" of complexes, represented as a single large,
-    disconnected complex. This is what the DataLoader returns.
+    A "batch" of complexes, represented as a single large, disconnected complex.
+    This is what the DataLoader returns.
     """
 
-    def __init__(self, batch_0, batch_1, batch_2, *args, **kwargs):
+    def __init__(
+        self,
+        batch_verts: Integer[t.LongTensor, "vert"],
+        batch_edges: Integer[t.LongTensor, "edge"],
+        batch_tris: Integer[t.LongTensor, "tri"],
+        batch_tets: Integer[t.LongTensor, "tet"],
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
-        # "Pointer" tensors that map items back to their original complex
-        # A tensor mapping each node to its original complex (e.g., [0, 0, 0, ..., 1, 1, 1, ..., 2, 2, 2]).
-        self.batch_0 = batch_0  # [N_total]
-        self.batch_1 = batch_1  # [E_total]
-        self.batch_2 = batch_2  # [F_total]
+
+        # the "batch" tensor for each dimension maps a simplex back to the original
+        # simplicial complex; i.e., batch_edges[i] = k indicates that the i-th edge
+        # in the batch comes from the k-th simplicial complex.
+        self.batch_verts = batch_verts
+        self.batch_edges = batch_edges
+        self.batch_tris = batch_tris
+        self.batch_tets = batch_tets
 
     @property
-    def num_complexes(self):
-        return self.batch_0.max().item() + 1
+    def batch_size(self) -> int:
+        return self.batch_verts.max().item() + 1
 
 
-def collate_fn(complicies: list[SimplicialComplex]) -> SimplicialBatch:
+def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     """
     The "magic" function that creates a SimplicialBatch.
     Uses torch.block_diag() on operators and torch.cat() on features.
@@ -162,7 +175,101 @@ def collate_fn(complicies: list[SimplicialComplex]) -> SimplicialBatch:
     # 2. Block_diag all d_k
     # 3. Create batch_k pointer tensors
     # 4. Return a new SimplicialBatch
-    pass
+
+    batch_size = len(sc_batch)
+
+    # Assume that all simplices and their tensors are on the same device and
+    # all float tensors have the same dtype.
+    device = sc_batch[0].coboundary_0.device
+    dtype = sc_batch[0].coboundary_0.dtype
+
+    # Generate a cumsum n_sc list for each simplex dimension
+    n_verts_batch = [0] + [sc.n_verts for sc in sc_batch]
+    n_edges_batch = [0] + [sc.n_edges for sc in sc_batch]
+    n_tris_batch = [0] + [sc.n_tris for sc in sc_batch]
+    n_tets_batch = [0] + [sc.n_tets for sc in sc_batch]
+
+    n_simp_batch = t.hstack(
+        (n_verts_batch, n_edges_batch, n_tris_batch, n_tets_batch)
+    ).to(dtype=t.long, device=device)
+    n_simp_cumsum_batch = t.cumsum(n_simp_batch, dim=-1)
+
+    # Generate the batch tensor for each simplex dimension
+    batch_tensor_dict = {
+        f"batch_{simp_type}": t.repeat_interleave(
+            t.arange(batch_size, dtype=t.long, device=device),
+            repeats=n_simp_batch[simp_dim, 1:],
+        )
+        for simp_dim, simp_type in enumerate(["verts", "edges", "tris", "tets"])
+    }
+
+    # Collate the coboundary operators into sparse block-diagonal forms.
+    # Increment the simplex indices for each sc in the batch.
+    coboundaries_batch = [
+        t.sparse_coo_tensor(
+            indices=t.hstack(
+                [
+                    getattr(sc, f"coboundary_{k}").indices()
+                    + n_simp_cumsum_batch[idx, [k + 1, k]]
+                    for idx, sc in enumerate(sc_batch)
+                ]
+            ),
+            values=t.hstack(
+                [getattr(sc, f"coboundary_{k}").values() for sc in sc_batch]
+            ),
+            size=(n_simp_cumsum_batch[k + 1, -1], n_simp_cumsum_batch[k, -1]),
+            dtype=dtype,
+            device=device,
+        ).coalesce()
+        for k in range(3)
+    ]
+
+    # Collate the simplices; increment the vertex indices for each sc in the batch.
+    simplices_batch = [
+        t.vstack(
+            [getattr(sc, simp_type) + n_simp_cumsum_batch[0, idx]]
+            for idx, sc in enumerate(sc_batch)
+        )
+        for simp_type in ["edges", "tris", "tets"]
+    ]
+
+    # Collate the cochains
+    cochains_batch = []
+    for dim in range(4):
+        cochains = [getattr(sc, f"cochain_{dim}") for sc in sc_batch]
+
+        if None not in cochains:
+            cochains_batch.append(t.vstack(cochains))
+
+        elif all(cochain is None for cochain in cochains):
+            cochains_batch.append(None)
+
+        else:
+            raise ValueError(
+                f"All {dim}-cochains in a batch must all be either tensors or 'None's."
+            )
+
+    # Collate the vertex coordinates
+    vert_coords_list = [sc.vert_coords for sc in sc_batch]
+
+    if None not in vert_coords_list:
+        vert_coords_batch = t.vstack(vert_coords_list)
+
+    elif all(vert_coords is None for vert_coords in vert_coords_list):
+        vert_coords_batch = None
+
+    else:
+        raise ValueError(
+            "All 'vert_coords' in a batch must all be either tensors or 'None's."
+        )
+
+    return SimplicialBatch(
+        **batch_tensor_dict,
+        coboundaries=coboundaries_batch,
+        simplices=simplices_batch,
+        cochains=cochains_batch,
+        vert_coords=vert_coords_batch,
+    )
 
 
 class DataLoader(t.utils.data.DataLoader):
