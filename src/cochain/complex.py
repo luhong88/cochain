@@ -101,7 +101,11 @@ class SimplicialComplex:
             coboundary.coboundary_from_tri_mesh(vert_coords, tris)
         )
 
-        coboundary_2 = t.empty((0, tris.shape[0]), dtype=t.float32)
+        coboundary_2 = t.sparse_coo_tensor(
+            indices=t.empty((2, 0), dtype=t.long),
+            values=t.empty((0,), dtype=t.float32),
+            size=(0, tris.shape[0]),
+        )
 
         tets = t.empty((0, 4), dtype=t.long)
 
