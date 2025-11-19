@@ -166,7 +166,16 @@ class SimplicialBatch(SimplicialComplex):
 
 def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     """
-    The "magic" function that creates a SimplicialBatch.
+    This function takes in a list of `SimplicialComplex` objects and collate them
+    into a single batched complex.
+
+    Note that this function allows batching of simplicial complexes with different
+    dimensions, but it does not allow for: 1) mixing of abstract and geometric
+    simplicial complexes (i.e., either all or none of the simplicial complexes in
+    the batch have valid `vert_coords` that is not `None`), or 2) mixing of null
+    values in the cochains (i.e., if the k-cochain is not `None` in one of the
+    simplicial complexes in the batch, then it cannot be done for any of the batch
+    element).
     """
     # Assume that all simplices and their tensors are on the same device and
     # all float tensors have the same dtype.
