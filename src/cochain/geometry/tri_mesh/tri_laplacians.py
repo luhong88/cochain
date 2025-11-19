@@ -2,8 +2,8 @@ import torch as t
 from jaxtyping import Float
 
 from ...complex import SimplicialComplex
-from .hodge_stars import star_0, star_1, star_2
-from .stiffness import stiffness_matrix
+from .tri_hodge_stars import star_0, star_1, star_2
+from .tri_stiffness import stiffness_matrix
 
 # Laplacian_k = (
 #   d_{k-1} @ inv_star_{k-1} @ d_{k-1}.T @ star_k +

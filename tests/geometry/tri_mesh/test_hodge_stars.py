@@ -6,13 +6,13 @@ import pytest
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.tri_mesh import hodge_stars
+from cochain.geometry.tri_mesh import tri_hodge_stars
 
 # Test 0-, 1-, and 2-star operators on a watertight mesh and a mesh with boundaries.
 
 
 def test_star_0_on_tent(tent_mesh: SimplicialComplex):
-    s0 = hodge_stars.star_0(tent_mesh)
+    s0 = tri_hodge_stars.star_0(tent_mesh)
 
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
@@ -22,7 +22,7 @@ def test_star_0_on_tent(tent_mesh: SimplicialComplex):
 
 
 def test_star_0_on_tet(tet_mesh: SimplicialComplex):
-    s0 = hodge_stars.star_0(tet_mesh).cpu().detach().numpy()
+    s0 = tri_hodge_stars.star_0(tet_mesh).cpu().detach().numpy()
 
     true_s0 = pp3d.vertex_areas(
         tet_mesh.vert_coords.cpu().detach().numpy(),
@@ -33,7 +33,7 @@ def test_star_0_on_tet(tet_mesh: SimplicialComplex):
 
 
 def test_star_1_on_tent(tent_mesh: SimplicialComplex):
-    s1 = hodge_stars.star_1(tent_mesh)
+    s1 = tri_hodge_stars.star_1(tent_mesh)
 
     # Find the tangent of the angle between a base edge and side edge
     tan_ang = 2 * math.sqrt(1.25)
@@ -48,7 +48,7 @@ def test_star_1_on_tent(tent_mesh: SimplicialComplex):
 
 
 def test_star_1_on_tet(tet_mesh: SimplicialComplex):
-    s1 = hodge_stars.star_1(tet_mesh)
+    s1 = tri_hodge_stars.star_1(tet_mesh)
 
     # pp3d does not compute the Hodge 1-star; instead, extract this information
     # from its `cotan_laplacian()` function.
@@ -64,7 +64,7 @@ def test_star_1_on_tet(tet_mesh: SimplicialComplex):
 
 
 def test_star_2_on_tent(tent_mesh: SimplicialComplex):
-    s2 = hodge_stars.star_2(tent_mesh)
+    s2 = tri_hodge_stars.star_2(tent_mesh)
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
 
@@ -73,7 +73,7 @@ def test_star_2_on_tent(tent_mesh: SimplicialComplex):
 
 
 def test_star_2_on_tet(tet_mesh: SimplicialComplex):
-    s2 = hodge_stars.star_2(tet_mesh).cpu().detach().numpy()
+    s2 = tri_hodge_stars.star_2(tet_mesh).cpu().detach().numpy()
 
     true_s2 = 1.0 / pp3d.face_areas(
         tet_mesh.vert_coords.cpu().detach().numpy(),
@@ -90,9 +90,9 @@ def test_star_2_on_tet(tet_mesh: SimplicialComplex):
 @pytest.mark.parametrize(
     "star, d_star_d_vert_coords",
     [
-        (hodge_stars.star_0, hodge_stars.d_star_0_d_vert_coords),
-        (hodge_stars.star_1, hodge_stars.d_star_1_d_vert_coords),
-        (hodge_stars.star_2, hodge_stars.d_star_2_d_vert_coords),
+        (tri_hodge_stars.star_0, tri_hodge_stars.d_star_0_d_vert_coords),
+        (tri_hodge_stars.star_1, tri_hodge_stars.d_star_1_d_vert_coords),
+        (tri_hodge_stars.star_2, tri_hodge_stars.d_star_2_d_vert_coords),
     ],
 )
 def test_star_jacobian(star, d_star_d_vert_coords, tet_mesh: SimplicialComplex):
@@ -112,9 +112,9 @@ def test_star_jacobian(star, d_star_d_vert_coords, tet_mesh: SimplicialComplex):
 @pytest.mark.parametrize(
     "star, d_inv_star_d_vert_coords",
     [
-        (hodge_stars.star_0, hodge_stars.d_inv_star_0_d_vert_coords),
-        (hodge_stars.star_1, hodge_stars.d_inv_star_1_d_vert_coords),
-        (hodge_stars.star_2, hodge_stars.d_inv_star_2_d_vert_coords),
+        (tri_hodge_stars.star_0, tri_hodge_stars.d_inv_star_0_d_vert_coords),
+        (tri_hodge_stars.star_1, tri_hodge_stars.d_inv_star_1_d_vert_coords),
+        (tri_hodge_stars.star_2, tri_hodge_stars.d_inv_star_2_d_vert_coords),
     ],
 )
 def test_inv_star_jacobian(star, d_inv_star_d_vert_coords, tet_mesh: SimplicialComplex):
@@ -133,7 +133,7 @@ def test_inv_star_jacobian(star, d_inv_star_d_vert_coords, tet_mesh: SimplicialC
 
 
 def test_tri_area_with_pp3d(flat_annulus_mesh: SimplicialComplex):
-    tri_areas = hodge_stars._tri_area(
+    tri_areas = tri_hodge_stars._tri_area(
         flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
     )
 
@@ -150,12 +150,12 @@ def test_tri_area_with_pp3d(flat_annulus_mesh: SimplicialComplex):
 def test_d_tri_area_d_vert_coords(tet_mesh: SimplicialComplex):
     # Note that this function does not return the Jacobian; rather, for each
     # triangle, it returns the gradient of its area wrt each of its three verticies.
-    dAdV = hodge_stars._d_tri_area_d_vert_coords(
+    dAdV = tri_hodge_stars._d_tri_area_d_vert_coords(
         tet_mesh.vert_coords, tet_mesh.tris
     ).flatten(end_dim=1)
 
     jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: hodge_stars._tri_area(vert_coords, tet_mesh.tris),
+        lambda vert_coords: tri_hodge_stars._tri_area(vert_coords, tet_mesh.tris),
         tet_mesh.vert_coords,
     )
     # Extract the nonzero components of the Jacobian.

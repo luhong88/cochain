@@ -2,7 +2,7 @@ import potpourri3d as pp3d
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.tri_mesh.stiffness import (
+from cochain.geometry.tri_mesh.tri_stiffness import (
     d_stiffness_d_vert_coords,
     stiffness_matrix,
 )
