@@ -98,7 +98,7 @@ class SimplicialComplex:
         will assign a "canonical" orientation to each edge ij such that i < j.
         """
         unique_canon_edges, coboundary_0, coboundary_1 = (
-            coboundary.coboundary_from_tri_mesh(vert_coords, tris)
+            coboundary.coboundaries_from_tri_mesh(vert_coords, tris)
         )
 
         coboundary_2 = t.sparse_coo_tensor(

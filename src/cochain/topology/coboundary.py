@@ -2,7 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 
-def coboundary_from_tri_mesh(
+def coboundaries_from_tri_mesh(
     vert_coords: Float[t.Tensor, "vert 3"],
     tris: Integer[t.LongTensor, "tri 3"],
 ) -> tuple[
