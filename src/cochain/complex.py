@@ -160,7 +160,7 @@ class SimplicialBatch(SimplicialComplex):
         self.batch_tets = batch_tets
 
     @property
-    def batch_size(self) -> int:
+    def n_sc(self) -> int:
         return self.batch_verts.max().item() + 1
 
 
@@ -168,9 +168,6 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     """
     The "magic" function that creates a SimplicialBatch.
     """
-
-    batch_size = len(sc_batch)
-
     # Assume that all simplices and their tensors are on the same device and
     # all float tensors have the same dtype.
     device = sc_batch[0].coboundary_0.device
@@ -191,7 +188,7 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     # Generate the batch tensor for each simplex dimension
     batch_tensor_dict = {
         f"batch_{simp_type}": t.repeat_interleave(
-            t.arange(batch_size, dtype=t.long, device=device),
+            t.arange(len(sc_batch), dtype=t.long, device=device),
             repeats=n_simp_batch[simp_dim, 1:],
         )
         for simp_dim, simp_type in enumerate(["verts", "edges", "tris", "tets"])
@@ -274,6 +271,11 @@ class DataLoader(t.utils.data.DataLoader):
     """
 
     def __init__(self, dataset, batch_size=1, **kwargs):
+        # Prevent the user from accidentally passing a custom collate_fn() that
+        # conflicts with ours.
+        if "collate_fn" in kwargs:
+            del kwargs["collate_fn"]
+
         super().__init__(
             dataset, batch_size=batch_size, collate_fn=collate_fn, **kwargs
         )
