@@ -1,5 +1,3 @@
-from typing import Sequence
-
 import torch as t
 from jaxtyping import Float, Integer, Real
 
@@ -13,17 +11,17 @@ class SimplicialComplex:
 
     def __init__(
         self,
-        coboundaries: Sequence[
+        coboundaries: tuple[
             Float[t.Tensor, "edge vert"],
             Float[t.Tensor, "tri edge"],
             Float[t.Tensor, "tet tri"],
         ],
-        simplices: Sequence[
+        simplices: tuple[
             Integer[t.LongTensor, "edge 2"],
             Integer[t.LongTensor, "tri 3"],
             Integer[t.LongTensor, "tet 4"],
         ],
-        cochains: Sequence[
+        cochains: tuple[
             Float[t.Tensor, "vert *vert_feat"] | None,
             Float[t.Tensor, "edge *edge_feat"] | None,
             Float[t.Tensor, "tri *tri_feat"] | None,
@@ -84,7 +82,7 @@ class SimplicialComplex:
         cls,
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],
-        cochains: Sequence[
+        cochains: tuple[
             Float[t.Tensor, "vert *vert_feat"] | None,
             Float[t.Tensor, "edge *edge_feat"] | None,
             Float[t.Tensor, "tri *tri_feat"] | None,
@@ -179,7 +177,7 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     dtype = sc_batch[0].coboundary_0.dtype
 
     # Generate a cumsum n_sc list for each simplex dimension
-    n_simp_batch = t.hstack(
+    n_simp_batch = t.Tensor(
         [
             [0] + [sc.n_verts for sc in sc_batch],
             [0] + [sc.n_edges for sc in sc_batch],
@@ -188,7 +186,7 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
         ]
     ).to(dtype=t.long, device=device)
 
-    n_simp_cumsum_batch = t.cumsum(n_simp_batch, dim=-1)
+    n_simp_cumsum_batch = t.cumsum(n_simp_batch, dim=-1, dtype=t.long)
 
     # Generate the batch tensor for each simplex dimension
     batch_tensor_dict = {
@@ -205,26 +203,28 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
         t.sparse_coo_tensor(
             indices=t.hstack(
                 [
-                    getattr(sc, f"coboundary_{k}").indices()
-                    + n_simp_cumsum_batch[idx, [k + 1, k]][:, None]
+                    getattr(sc, f"coboundary_{dim}").indices()
+                    + n_simp_cumsum_batch[[dim + 1, dim], idx][:, None]
                     for idx, sc in enumerate(sc_batch)
                 ]
             ),
             values=t.hstack(
-                [getattr(sc, f"coboundary_{k}").values() for sc in sc_batch]
+                [getattr(sc, f"coboundary_{dim}").values() for sc in sc_batch]
             ),
-            size=(n_simp_cumsum_batch[k + 1, -1], n_simp_cumsum_batch[k, -1]),
+            size=(n_simp_cumsum_batch[dim + 1, -1], n_simp_cumsum_batch[dim, -1]),
             dtype=dtype,
             device=device,
         ).coalesce()
-        for k in range(3)
+        for dim in range(3)
     ]
 
     # Collate the simplices; increment the vertex indices for each sc in the batch.
     simplices_batch = [
         t.vstack(
-            [getattr(sc, simp_type) + n_simp_cumsum_batch[0, idx]]
-            for idx, sc in enumerate(sc_batch)
+            [
+                getattr(sc, simp_type) + n_simp_cumsum_batch[0, idx]
+                for idx, sc in enumerate(sc_batch)
+            ]
         )
         for simp_type in ["edges", "tris", "tets"]
     ]
@@ -261,9 +261,9 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
 
     return SimplicialBatch(
         **batch_tensor_dict,
-        coboundaries=coboundaries_batch,
-        simplices=simplices_batch,
-        cochains=cochains_batch,
+        coboundaries=tuple(coboundaries_batch),
+        simplices=tuple(simplices_batch),
+        cochains=tuple(cochains_batch),
         vert_coords=vert_coords_batch,
     )
 
