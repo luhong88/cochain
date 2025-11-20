@@ -132,8 +132,8 @@ def test_inv_star_jacobian(star, d_inv_star_d_vert_coords, tet_mesh: SimplicialC
     t.testing.assert_close(autograd_jacobian, analytical_jacobian)
 
 
-def test_tri_area_with_pp3d(flat_annulus_mesh: SimplicialComplex):
-    tri_areas = tri_hodge_stars._tri_area(
+def test_tri_areas_with_pp3d(flat_annulus_mesh: SimplicialComplex):
+    tri_areas = tri_hodge_stars._tri_areas(
         flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
     )
 
@@ -147,15 +147,15 @@ def test_tri_area_with_pp3d(flat_annulus_mesh: SimplicialComplex):
     t.testing.assert_close(tri_areas, true_tri_areas)
 
 
-def test_d_tri_area_d_vert_coords(tet_mesh: SimplicialComplex):
+def test_d_tri_areas_d_vert_coords(tet_mesh: SimplicialComplex):
     # Note that this function does not return the Jacobian; rather, for each
     # triangle, it returns the gradient of its area wrt each of its three verticies.
-    dAdV = tri_hodge_stars._d_tri_area_d_vert_coords(
+    dAdV = tri_hodge_stars._d_tri_areas_d_vert_coords(
         tet_mesh.vert_coords, tet_mesh.tris
     ).flatten(end_dim=1)
 
     jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: tri_hodge_stars._tri_area(vert_coords, tet_mesh.tris),
+        lambda vert_coords: tri_hodge_stars._tri_areas(vert_coords, tet_mesh.tris),
         tet_mesh.vert_coords,
     )
     # Extract the nonzero components of the Jacobian.

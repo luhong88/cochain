@@ -91,7 +91,7 @@ def test_laplacian_2_kernel(tet_mesh: SimplicialComplex):
     a closed mesh.
     """
     l2 = tri_laplacians.laplacian_2(tet_mesh)
-    areas = tri_hodge_stars._tri_area(tet_mesh.vert_coords, tet_mesh.tris)
+    areas = tri_hodge_stars._tri_areas(tet_mesh.vert_coords, tet_mesh.tris)
 
     zeros = (l2 @ areas).to_dense()
 

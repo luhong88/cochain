@@ -6,7 +6,7 @@ from ...utils.constants import EPS
 from .tri_stiffness import _cotan_weights, _d_cotan_weights_d_vert_coords
 
 
-def _tri_area(
+def _tri_areas(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
 ) -> Float[t.Tensor, "tri"]:
     """
@@ -22,7 +22,7 @@ def _tri_area(
     return area
 
 
-def _d_tri_area_d_vert_coords(
+def _d_tri_areas_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
 ) -> Float[t.Tensor, "tri 3 3"]:
     """
@@ -55,7 +55,7 @@ def star_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
     (which is 1 by convention) to the area of the primal triangles. The returned tensor
     forms the diagonal of the 2-star tensor.
     """
-    return 1.0 / _tri_area(tri_mesh.vert_coords, tri_mesh.tris)
+    return 1.0 / _tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
 
 def d_inv_star_2_d_vert_coords(
@@ -71,7 +71,7 @@ def d_inv_star_2_d_vert_coords(
     n_verts = tri_mesh.n_verts
     n_tris = tri_mesh.n_tris
 
-    dAdV = _d_tri_area_d_vert_coords(vert_coords, tris)
+    dAdV = _d_tri_areas_d_vert_coords(vert_coords, tris)
 
     dSdV_idx = t.vstack(
         (t.repeat_interleave(t.arange(n_tris, device=tris.device), 3), tris.flatten())
@@ -224,7 +224,7 @@ def star_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     """
     n_verts = tri_mesh.n_verts
 
-    tri_area = _tri_area(tri_mesh.vert_coords, tri_mesh.tris)
+    tri_area = _tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
     diag = t.zeros(n_verts, device=tri_mesh.vert_coords.device)
     diag.scatter_add_(
@@ -247,7 +247,7 @@ def d_star_0_d_vert_coords(
     tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
     n_verts = tri_mesh.n_verts
 
-    dAdV: Float[t.Tensor, "tri 3 3"] = _d_tri_area_d_vert_coords(vert_coords, tris)
+    dAdV: Float[t.Tensor, "tri 3 3"] = _d_tri_areas_d_vert_coords(vert_coords, tris)
 
     # For each triangle ijk and each vertex s, dAdV_ijk_s contributes to the gradient
     # star0_ll wrt s whenever l = s or js is an edge in the mesh. Therefore, each
