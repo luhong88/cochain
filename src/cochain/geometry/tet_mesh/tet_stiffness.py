@@ -28,9 +28,14 @@ li    jk   jl    ik    kl    ij
 """
 
 
-def _tet_vols(
+def _tet_signed_vols(
     vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
 ) -> Float[t.Tensor, "tet"]:
+    """
+    Compute the signed volume of each tetrahedron in a 3D mesh. A tet is assigned
+    a positive volume if it satisfies the right-hand rule (or, equivalently, its
+    vertex indices can be reordered into ascending order with an even permutation).
+    """
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
     # For each tet ijkl, compute the edge vectors ij, ik, and il. The volume of
@@ -38,17 +43,52 @@ def _tet_vols(
     # three vectors, divided by 6.
     tet_edges = tet_vert_coords[:, [1, 2, 3], :] - tet_vert_coords[:, [0, 0, 0], :]
 
-    tet_vols = (
-        t.abs(
-            t.sum(
-                t.cross(tet_edges[:, 0], tet_edges[:, 1], dim=-1) * tet_edges[:, 2],
-                dim=-1,
-            )
+    tet_signed_vols = (
+        t.sum(
+            t.cross(tet_edges[:, 0], tet_edges[:, 1], dim=-1) * tet_edges[:, 2],
+            dim=-1,
         )
         / 6.0
     )
 
-    return tet_vols
+    return tet_signed_vols
+
+
+def _d_tet_signed_vols_d_vert_coords(
+    vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
+) -> Float[t.Tensor, "tet 4 3"]:
+    """
+    Compute the gradient of the signed volume of each tetrahedron wrt the coordinates
+    of its four vertices.
+    """
+    i, j, k, l = 0, 1, 2, 3
+
+    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+
+    # For each tet ijkl and for each vertex, find the (inward) area normal of the
+    # base triangle, which is proportional to the gradient of the volume wrt the
+    # vertex position.
+    #
+    # vert   base tri   area normal
+    # ----------------------------------
+    # i      jkl        jl x jk
+    # j      ikl        ik x il
+    # k      ijl        il x ij
+    # l      ijk        ij x ik
+    #
+    # Note that, if a tet has a negative orientation, the resulting gradient will
+    # also carry a negative sign (i.e., it points in the direction that minimizes
+    # the unsigned/absolute volume of the tet).
+    base_tri_edge_1 = (
+        tet_vert_coords[:, [l, k, l, j]] - tet_vert_coords[:, [j, i, i, i]]
+    )
+    base_tri_edge_2 = (
+        tet_vert_coords[:, [k, l, j, k]] - tet_vert_coords[:, [j, i, i, i]]
+    )
+
+    dVdV = t.cross(base_tri_edge_1, base_tri_edge_2, dim=-1) / 6.0
+
+    return dVdV
 
 
 def _cotan_weights(
@@ -59,7 +99,7 @@ def _cotan_weights(
     i, j, k, l = 0, 1, 2, 3
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
-    tet_vols = _tet_vols(vert_coords, tets)
+    tet_vols = t.abs(_tet_signed_vols(vert_coords, tets))
 
     edge_o = (
         tet_vert_coords[:, [l, l, l, k, j, k]] - tet_vert_coords[:, [k, j, i, i, i, j]]
@@ -106,3 +146,30 @@ def _cotan_weights(
     sym_weights = (asym_weights + asym_weights.T).coalesce()
 
     return sym_weights
+
+
+def stiffness_matrix(
+    tet_mesh: SimplicialComplex,
+) -> Float[t.Tensor, "vert vert"]:
+    """
+    Computes the stiffness matrix for a 3D mesh, sometimes also known as the "cotan
+    Laplacian".
+    """
+    # The cotan weight matrix W gives the stiffness matrix except for the diagonal
+    # elements.
+    sym_stiffness = _cotan_weights(
+        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.n_verts
+    )
+
+    # Compute the diagonal elements of the stiffness matrix.
+    stiffness_diag = t.sparse.sum(sym_stiffness, dim=-1)
+    # laplacian_diag.indices() has shape (1, nnz_diag)
+    diag_idx = t.concatenate([stiffness_diag.indices(), stiffness_diag.indices()])
+
+    # Generate the final, complete stiffness matrix.
+    stiffness = t.sparse_coo_tensor(
+        t.hstack((sym_stiffness.indices(), diag_idx)),
+        t.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
+    ).coalesce()
+
+    return stiffness
