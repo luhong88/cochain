@@ -23,8 +23,37 @@ ik    jl   ij    kl    il    jk
 jk    il   ij    kl    jl    ik
 jl    ik   ij    kl    jk    il
 kl    ij   ik    jl    jk    il
-li    jk   jl    ik    kl    ij
+il    jk   jl    ik    kl    ij
 -------------------------------
+
+In addition, we tabulate the following jacobians. Here, the "[]" notation maps
+a vector t to a skew symmetric matrix [t], such that t x v = [t]v for all vectors v.
+
+Gradient of th x o wrt vertex coordinates:
+
+------------------------------------------------------------------------
+s    th x o               grad_i      grad_j      grad_k      grad_l
+------------------------------------------------------------------------
+ij   il x kl (= li x lk)  [kl]=[o]    [ll]=0      [li]=[-th]  [ik]=[tt]
+ik   il x jl (= li x lj)  [jl]=[o]    [li]=[-th]  [ll]=0      [ij]=[tt]
+jk   jl x il (= lj x li)  [lj]=[-th]  [il]=[o]    [ll]=0      [ji]=[-tt]
+jl   jk x ik (= kj x ki)  [kj]=[-th]  [ik]=[o]    [ji]=[-tt]  [kk]=0
+kl   jk x ij (= ji x jk)  [kj]=[-th]  [ik]=[tt]   [ji]=[-o]   [jj]=0
+il   kl x jk (= kj x kl)  [kk]=0      [lk]=[-th]  [jl]=[tt]   [kj]=[-o]
+------------------------------------------------------------------------
+
+Gradient of hh x o wrt vertex coordinates:
+
+------------------------------------------------------------------------
+s    hh x o               grad_i      grad_j      grad_k      grad_l
+------------------------------------------------------------------------
+ij   jl x kl (= lj x lk)  [ll]=0      [kl]=[o]    [lj]=[-hh]  [jk]=[ht]
+ik   kl x jl (= lk x lj)  [ll]=0      [lk]=[-hh]  [jl]=[o]    [kj]=[-ht]
+jk   kl x il (= lk x li)  [lk]=[-hh]  [ll]=0      [il]=[o]    [ki]=[-ht]
+jl   kl x ik (= ki x kl)  [lk]=[-hh]  [kk]=0      [il]=[ht]   [ki]=[-o]
+kl   jl x ij (= ji x jl)  [lj]=[-hh]  [il]=[ht]   [jj]=0      [ji]=[-o]
+il   ik x jk (= ki x kj)  [jk]=[o]    [ki]=[-hh]  [ij]=[ht]   [kk]=0
+------------------------------------------------------------------------
 """
 
 
@@ -95,7 +124,12 @@ def _cotan_weights(
     vert_coords: Float[t.Tensor, "vert 3"],
     tets: Integer[t.LongTensor, "tri 3"],
     n_verts: int,
-) -> Float[t.Tensor, "vert vert"]:
+) -> tuple[
+    Float[t.Tensor, "tet 6 3"],
+    Float[t.Tensor, "tet 6 3"],
+    Float[t.Tensor, "tet 6"],
+    Float[t.Tensor, "vert vert"],
+]:
     i, j, k, l = 0, 1, 2, 3
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
@@ -120,7 +154,8 @@ def _cotan_weights(
     # cotan Laplacian (restricted to ijkl), which is given by -|o|cot(theta_o)/6,
     # where |o| is the length of the opposite edge, and theta_o is the dihedral
     # angle formed by the two triangles with o as the shared edge. This contribution
-    # can also be written as <th x o, hh x o> / 36 * vol_ijkl.
+    # can also be written as <th x o, hh x o> / 36 * vol_ijkl; here, vol_ijkl is
+    # the unsigned/absolute volume of the tet ijkl.
     weight_o: Float[t.Tensor, "tet 6"] = (
         t.sum(norm_tri_to * norm_tri_ho, dim=-1) / (36.0 * tet_vols + EPS)[:, None]
     )
@@ -145,7 +180,137 @@ def _cotan_weights(
     asym_weights = t.sparse_coo_tensor(weights_idx, weights_val, (n_verts, n_verts))
     sym_weights = (asym_weights + asym_weights.T).coalesce()
 
-    return sym_weights
+    return norm_tri_to, norm_tri_ho, weight_o, sym_weights
+
+
+def _d_cotan_weights_d_vert_coords(
+    vert_coords: Float[t.Tensor, "vert 3"],
+    tets: Integer[t.LongTensor, "tet 4"],
+    n_verts: int,
+) -> Float[t.Tensor, "vert vert vert 3"]:
+    i, j, k, l = 0, 1, 2, 3
+    # For each tet ijkl and each edge s, find the gradient of w_o (i.e., its
+    # contribution to the cotan weights), which is (<th x o, hh x o> / 36 * vol_ijkl),
+    # wrt each vertex i, j, k, and l. For vertex p, this gradient is given by
+    #
+    # grad_p(w_o) = -(w_o*grad_p(vol_ijkl) + grad_p(<th x o, hh x o>)/36)/vol_ijkl
+    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+
+    norm_tri_to, norm_tri_ho, weight_o, _ = _cotan_weights(vert_coords, tets)
+    norm_tri_to_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_to.view(-1, 6, 1, 3)
+    norm_tri_ho_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_ho.view(-1, 6, 1, 3)
+    weight_o_shaped: Float[t.Tensor, "tet 6 1 1"] = weight_o.view(-1, 6, 1, 1)
+
+    tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
+    tet_signs = tet_signed_vols.sign()
+
+    vols_shaped: Float[t.Tensor, "tet 1 1 1"] = t.abs(tet_signed_vols).view(-1, 1, 1, 1)
+
+    # Multiply the gradient of the signed volumes with the signs of the volumes
+    # to get the gradient of the unsigned/absolute volumes.
+    vol_grad: Float[t.Tensor, "tet 1 4 3"] = (
+        _d_tet_signed_vols_d_vert_coords(vert_coords, tets) * tet_signs.view(-1, 1, 1)
+    ).view(-1, 1, 4, 3)
+
+    # Compute the "Jacobian" of the th x o normal vector wrt each vertex in the
+    # tet. Note that, technically, the Jacobian should have the shape (tet, 6, 4,
+    # 3, 3) (e.g., grad_i(il x kl) = [kl], a 3x3 skew-symmetric matrix).
+    norm_tri_to_grad: Float[t.Tensor, "tet 6 4 3"] = (
+        tet_vert_coords[
+            :,
+            [
+                [l, l, i, k],
+                [l, i, l, j],
+                [j, l, l, i],
+                [j, k, i, k],
+                [j, k, i, j],
+                [k, k, l, j],
+            ],
+        ]
+        - tet_vert_coords[
+            :,
+            [
+                [k, l, l, i],
+                [j, l, l, i],
+                [l, i, l, j],
+                [k, i, j, k],
+                [k, i, j, j],
+                [k, l, j, k],
+            ],
+        ]
+    )
+
+    # Compute the "Jacobian" of the th x o normal vector wrt each vertex in the tet.
+    norm_tri_ho_grad: Float[t.Tensor, "tet 6 4 3"] = (
+        tet_vert_coords[
+            :,
+            [
+                [l, l, j, k],
+                [l, k, l, j],
+                [k, l, l, i],
+                [k, k, l, i],
+                [j, l, j, i],
+                [k, i, j, k],
+            ],
+        ]
+        - tet_vert_coords[
+            :,
+            [
+                [l, k, l, j],
+                [l, l, j, k],
+                [l, l, i, k],
+                [l, k, i, k],
+                [l, i, j, j],
+                [j, k, i, k],
+            ],
+        ]
+    )
+
+    # Compute grad_p(<th x o, hh x o>) using the dot product chain rule. Here,
+    # we use the special property of the Jacobian to reduce this into the sum of
+    # two cross products. For example, for s = ij and p = k, the gradient is
+    #
+    # grad_k(<il x kl, jl x kl>) = [li].T@(jl x kl) + [lj]@(il x kl)
+    #                            = (jl x kl) x li + (il x kl) x lj
+    #
+    # where the second equality follows from the skew-symmetric property of [].
+    area_normal_dot_grad: Float[t.Tensor, "tet 6 4 3"] = t.cross(
+        norm_tri_ho_shaped, norm_tri_to_grad, dim=-1
+    ) + t.cross(norm_tri_to_shaped, norm_tri_ho_grad, dim=-1)
+
+    # Compute the dense gradient of w_o wrt each vertex in a tet.
+    weight_o_grad: Float[t.Tensor, "tet 6 4 3"] = (
+        -(weight_o_shaped * vol_grad + area_normal_dot_grad / 36.0) / vols_shaped
+    )
+
+    # Assemble the final, sparse Jacobian
+    # fmt:off
+    dWdV_idx= (
+        tets[
+            :, 
+            [
+                i, i, i, i, i, i, i, i, j, j, j, j, j, j, j, j, k, k, k, k, i, i, i, i,
+                j, j, j, j, k, k, k, k, k, k, k, k, l, l, l, l, l, l, l, l, l, l, l, l,
+                i, j, k, l, i, j, k, l, i, j, k, l, i, j, k, l, i, j, k, l, i, j, k, l,
+            ]
+        ]
+        .T
+        .flatten()
+        .reshape(3, -1)
+    )
+    # fmt:on
+
+    # Use permute to reshape to (edge=6, vert=4, tet, 3)
+    dWdV_val = weight_o_grad.permute(1, 2, 0, 3).flatten(end_dim=-2)
+
+    asym_dWdV = t.sparse_coo_tensor(
+        dWdV_idx, dWdV_val, (n_verts, n_verts, n_verts, 3)
+    ).coalesce()
+
+    # Symmetrize so that dW_ijk = dW_jki
+    sym_dWdV = (asym_dWdV + asym_dWdV.transpose(0, 1)).coalesce()
+
+    return sym_dWdV
 
 
 def stiffness_matrix(
@@ -157,7 +322,7 @@ def stiffness_matrix(
     """
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
-    sym_stiffness = _cotan_weights(
+    _, sym_stiffness = _cotan_weights(
         tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.n_verts
     )
 
