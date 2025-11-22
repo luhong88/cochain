@@ -12,6 +12,8 @@ def coboundaries_from_tri_mesh(
     Float[t.Tensor, "edge vert"],
     Float[t.Tensor, "tri edge"],
 ]:
+    tris = tris.long()
+
     device = tris.device
 
     # For the triangles ijk, get all the i-th face jk, all the j-th face ik,
@@ -97,6 +99,8 @@ def coboundaries_from_tet_mesh(
     Float[t.Tensor, "tri edge"],
     Float[t.Tensor, "tet tri"],
 ]:
+    tets = tets.long()
+
     device = tets.device
 
     # For the tets ijkl, get all the i-th face jkl, all the j-th face ikl, all
