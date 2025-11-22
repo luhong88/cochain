@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
+import pyvista as pv
 import torch as t
-import trimesh
 
 from cochain.complex import SimplicialComplex
 from cochain.datasets import synthetic_tet_meshes, synthetic_tri_meshes
@@ -29,13 +29,13 @@ def tet_mesh() -> SimplicialComplex:
 
 @pytest.fixture
 def icosphere_mesh() -> SimplicialComplex:
-    trimesh_sphere = trimesh.creation.icosphere(subdivisions=1)
+    pv_sphere = pv.Icosphere(nsub=1)
 
-    vert_coords_np = np.asarray(trimesh_sphere.vertices)
-    tris_np = np.asarray(trimesh_sphere.faces)
+    vert_coords_np = np.asarray(pv_sphere.points)
+    tris_np = np.asarray(pv_sphere.regular_faces)
 
     vert_coords_t = t.from_numpy(vert_coords_np).to(dtype=t.float)
-    tris_t = t.from_numpy(tris_np)
+    tris_t = t.from_numpy(tris_np).to(dtype=t.long)
 
     cochain_sphere = SimplicialComplex.from_tri_mesh(vert_coords_t, tris_t)
 
@@ -52,3 +52,8 @@ def flat_annulus_mesh() -> SimplicialComplex:
 @pytest.fixture
 def two_tets_mesh() -> SimplicialComplex:
     return synthetic_tet_meshes.load_two_tets_mesh()
+
+
+@pytest.fixture
+def small_bcc_mesh() -> SimplicialComplex:
+    return synthetic_tet_meshes.load_bcc_mesh(dim=3)

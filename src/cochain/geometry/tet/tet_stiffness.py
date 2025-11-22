@@ -147,8 +147,8 @@ def _cotan_weights(
 
     # For each tet ijkl and each edge s, computes the (outward) normal on the two
     # triangles with o as the shared edge.
-    norm_tri_to: Float[t.Tensor, "tet 6 3"] = t.cross(edge_th, edge_o)
-    norm_tri_ho: Float[t.Tensor, "tet 6 3"] = t.cross(edge_hh, edge_o)
+    norm_tri_to: Float[t.Tensor, "tet 6 3"] = t.cross(edge_th, edge_o, dim=-1)
+    norm_tri_ho: Float[t.Tensor, "tet 6 3"] = t.cross(edge_hh, edge_o, dim=-1)
 
     # For each tet ijkl and each edge s, computes the contribution of s to the
     # cotan Laplacian (restricted to ijkl), which is given by -|o|cot(theta_o)/6,
@@ -196,7 +196,7 @@ def _d_cotan_weights_d_vert_coords(
     # grad_p(w_o) = -(w_o*grad_p(vol_ijkl) + grad_p(<th x o, hh x o>)/36)/vol_ijkl
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    norm_tri_to, norm_tri_ho, weight_o, _ = _cotan_weights(vert_coords, tets)
+    norm_tri_to, norm_tri_ho, weight_o, _ = _cotan_weights(vert_coords, tets, n_verts)
     norm_tri_to_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_to.view(-1, 6, 1, 3)
     norm_tri_ho_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_ho.view(-1, 6, 1, 3)
     weight_o_shaped: Float[t.Tensor, "tet 6 1 1"] = weight_o.view(-1, 6, 1, 1)
@@ -322,34 +322,7 @@ def stiffness_matrix(
     """
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
-    _, sym_stiffness = _cotan_weights(
-        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.n_verts
-    )
-
-    # Compute the diagonal elements of the stiffness matrix.
-    stiffness_diag = t.sparse.sum(sym_stiffness, dim=-1)
-    # laplacian_diag.indices() has shape (1, nnz_diag)
-    diag_idx = t.concatenate([stiffness_diag.indices(), stiffness_diag.indices()])
-
-    # Generate the final, complete stiffness matrix.
-    stiffness = t.sparse_coo_tensor(
-        t.hstack((sym_stiffness.indices(), diag_idx)),
-        t.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
-    ).coalesce()
-
-    return stiffness
-
-
-def stiffness_matrix(
-    tet_mesh: SimplicialComplex,
-) -> Float[t.Tensor, "vert vert"]:
-    """
-    Computes the stiffness matrix for a 3D mesh, sometimes also known as the "cotan
-    Laplacian".
-    """
-    # The cotan weight matrix W gives the stiffness matrix except for the diagonal
-    # elements.
-    sym_stiffness = _cotan_weights(
+    _, _, _, sym_stiffness = _cotan_weights(
         tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.n_verts
     )
 
