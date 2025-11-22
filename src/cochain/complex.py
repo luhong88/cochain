@@ -103,11 +103,12 @@ class SimplicialComplex:
 
         coboundary_2 = t.sparse_coo_tensor(
             indices=t.empty((2, 0), dtype=t.long),
-            values=t.empty((0,), dtype=t.float32),
+            values=t.empty((0,), dtype=vert_coords.dtype),
             size=(0, tris.shape[0]),
+            device=coboundary_0.device,
         )
 
-        tets = t.empty((0, 4), dtype=t.long)
+        tets = t.empty((0, 4), dtype=t.long, device=tris.device)
 
         if cochains is None:
             cochains = (None, None, None, None)

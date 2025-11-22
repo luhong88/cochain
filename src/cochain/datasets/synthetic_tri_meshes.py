@@ -2,7 +2,7 @@ import numpy as np
 import torch as t
 from scipy.spatial import Delaunay
 
-from .complex import SimplicialComplex
+from ..complex import SimplicialComplex
 
 
 def load_two_tris_mesh() -> SimplicialComplex:
