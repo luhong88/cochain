@@ -51,7 +51,7 @@ def _d_tri_areas_d_vert_coords(
 def star_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
     """
     The Hodge 2-star operator maps the 2-simplices (triangles) in a mesh to their
-    dual 0-cells. This function computes the ratio of the "size" of the dual 0-cells
+    dual 0-cells. This function computes the ratio of the "volume" of the dual 0-cells
     (which is 1 by convention) to the area of the primal triangles. The returned tensor
     forms the diagonal of the 2-star tensor.
     """
@@ -107,8 +107,6 @@ def star_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
     circumcentric dual 1-cells. This function computes the length ratio of the dual
     1-cells to the primal edges, which is given by the cotan formula. The returned
     tensor forms the diagonal of the 1-star tensor.
-
-    The circumcentric 1-star is only well-defined for acutely triangulated meshes.
     """
     vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
