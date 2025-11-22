@@ -63,6 +63,10 @@ def test_stiffness_linear_precision(small_bcc_mesh: SimplicialComplex):
     """
     bcc_S = stiffness_matrix(small_bcc_mesh).to_dense()
     zero_tensor = bcc_S @ small_bcc_mesh.vert_coords
+
+    # Check whether a vertex is in the interior of the mesh, which is true if
+    # none of its coordinates have -1 or 1; note that this will break if the size
+    # or orientation of the BCC mesh changes.
     interior_mask = t.abs(small_bcc_mesh.vert_coords).max(dim=-1).values < 1.0
 
     t.testing.assert_close(
