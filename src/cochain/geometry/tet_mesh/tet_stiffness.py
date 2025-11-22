@@ -338,3 +338,60 @@ def stiffness_matrix(
     ).coalesce()
 
     return stiffness
+
+
+def stiffness_matrix(
+    tet_mesh: SimplicialComplex,
+) -> Float[t.Tensor, "vert vert"]:
+    """
+    Computes the stiffness matrix for a 3D mesh, sometimes also known as the "cotan
+    Laplacian".
+    """
+    # The cotan weight matrix W gives the stiffness matrix except for the diagonal
+    # elements.
+    sym_stiffness = _cotan_weights(
+        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.n_verts
+    )
+
+    # Compute the diagonal elements of the stiffness matrix.
+    stiffness_diag = t.sparse.sum(sym_stiffness, dim=-1)
+    # laplacian_diag.indices() has shape (1, nnz_diag)
+    diag_idx = t.concatenate([stiffness_diag.indices(), stiffness_diag.indices()])
+
+    # Generate the final, complete stiffness matrix.
+    stiffness = t.sparse_coo_tensor(
+        t.hstack((sym_stiffness.indices(), diag_idx)),
+        t.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
+    ).coalesce()
+
+    return stiffness
+
+
+def d_stiffness_d_vert_coords(
+    tri_mesh: SimplicialComplex,
+) -> Float[t.Tensor, "vert vert vert 3"]:
+    """
+    Compute the jacobian of the stiffness matrix/cotan Laplacian with respect to
+    the vertex coordinates.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
+    tets: Integer[t.LongTensor, "tet 4"] = tri_mesh.tets
+    n_verts = tri_mesh.n_verts
+
+    # dWdV gives dSdV except for the diagonal elements.
+    sym_dSdV = _d_cotan_weights_d_vert_coords(vert_coords, tets, n_verts)
+
+    # Compute the "diagonal" elements dS_iik
+    dSdV_diag: Float[t.Tensor, "vert vert 3"] = t.sparse.sum(sym_dSdV, dim=1)
+    # Note that the last dim is dense and does not show up in indices()
+    diag_idx_i, diag_idx_k = dSdV_diag.indices()
+    diag_idx = t.vstack((diag_idx_i, diag_idx_i, diag_idx_k))
+
+    # Generate the final, complete dSdV gradients.
+    dSdV = t.sparse_coo_tensor(
+        t.hstack((sym_dSdV.indices(), diag_idx)),
+        t.concatenate((sym_dSdV.values(), -dSdV_diag.values())),
+        (n_verts, n_verts, n_verts, 3),
+    ).coalesce()
+
+    return dSdV
