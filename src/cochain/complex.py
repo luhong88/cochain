@@ -122,6 +122,46 @@ class SimplicialComplex:
         )
 
     @classmethod
+    def from_tet_mesh(
+        cls,
+        vert_coords: Float[t.Tensor, "vert 3"],
+        tets: Integer[t.LongTensor, "tet 4"],
+        cochains: tuple[
+            Float[t.Tensor, "vert *vert_feat"] | None,
+            Float[t.Tensor, "edge *edge_feat"] | None,
+            Float[t.Tensor, "tri *tri_feat"] | None,
+            Float[t.Tensor, "tet *tet_feat"] | None,
+        ]
+        | None = None,
+    ):
+        """
+        Construct a special geometric simplicial 3-complex as a triangulated 3D
+        mesh immersed in 3D Euclidean space.
+
+        Since no orientation is assigned to the triangles and edges using this
+        constructor, we will assign a "canonical" orientation to each edge ij such
+        that i < j and a "canonical" orientation to edge triangle ijk such that
+        i < j < k.
+        """
+        (
+            unique_canon_edges,
+            unique_canon_tris,
+            coboundary_0,
+            coboundary_1,
+            coboundary_2,
+        ) = coboundaries.coboundaries_from_tet_mesh(tets)
+
+        if cochains is None:
+            cochains = (None, None, None, None)
+
+        return cls(
+            coboundaries=(coboundary_0, coboundary_1, coboundary_2),
+            simplices=(unique_canon_edges, unique_canon_tris, tets),
+            vert_coords=vert_coords,
+            cochains=cochains,
+        )
+
+    @classmethod
     def from_graph(cls, edges: t.Tensor, n_verts: int, **kwargs):
         """
         Creates a Simplicial2Complex object from a standard graph (i.e., a pure
