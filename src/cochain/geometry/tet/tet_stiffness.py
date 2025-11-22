@@ -280,8 +280,8 @@ def _d_cotan_weights_d_vert_coords(
 
     # Compute the dense gradient of w_o wrt each vertex in a tet.
     weight_o_grad: Float[t.Tensor, "tet 6 4 3"] = (
-        -(weight_o_shaped * vol_grad + area_normal_dot_grad / 36.0) / vols_shaped
-    )
+        area_normal_dot_grad / 36.0 - weight_o_shaped * vol_grad
+    ) / vols_shaped
 
     # Assemble the final, sparse Jacobian
     # fmt:off
