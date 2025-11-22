@@ -1,5 +1,5 @@
 import torch as t
-from jaxtyping import Float, Integer, Real
+from jaxtyping import Float, Integer
 
 from .topology import coboundaries
 
@@ -98,16 +98,17 @@ class SimplicialComplex:
         will assign a "canonical" orientation to each edge ij such that i < j.
         """
         unique_canon_edges, coboundary_0, coboundary_1 = (
-            coboundaries.coboundaries_from_tri_mesh(vert_coords, tris)
+            coboundaries.coboundaries_from_tri_mesh(tris)
         )
 
         coboundary_2 = t.sparse_coo_tensor(
             indices=t.empty((2, 0), dtype=t.long),
-            values=t.empty((0,), dtype=t.float32),
+            values=t.empty((0,), dtype=vert_coords.dtype),
             size=(0, tris.shape[0]),
+            device=coboundary_0.device,
         )
 
-        tets = t.empty((0, 4), dtype=t.long)
+        tets = t.empty((0, 4), dtype=t.long, device=tris.device)
 
         if cochains is None:
             cochains = (None, None, None, None)
@@ -117,6 +118,46 @@ class SimplicialComplex:
         return cls(
             coboundaries=(coboundary_0, coboundary_1, coboundary_2),
             simplices=(unique_canon_edges, tris, tets),
+            vert_coords=vert_coords,
+            cochains=cochains,
+        )
+
+    @classmethod
+    def from_tet_mesh(
+        cls,
+        vert_coords: Float[t.Tensor, "vert 3"],
+        tets: Integer[t.LongTensor, "tet 4"],
+        cochains: tuple[
+            Float[t.Tensor, "vert *vert_feat"] | None,
+            Float[t.Tensor, "edge *edge_feat"] | None,
+            Float[t.Tensor, "tri *tri_feat"] | None,
+            Float[t.Tensor, "tet *tet_feat"] | None,
+        ]
+        | None = None,
+    ):
+        """
+        Construct a special geometric simplicial 3-complex as a triangulated 3D
+        mesh immersed in 3D Euclidean space.
+
+        Since no orientation is assigned to the triangles and edges using this
+        constructor, we will assign a "canonical" orientation to each edge ij such
+        that i < j and a "canonical" orientation to edge triangle ijk such that
+        i < j < k.
+        """
+        (
+            unique_canon_edges,
+            unique_canon_tris,
+            coboundary_0,
+            coboundary_1,
+            coboundary_2,
+        ) = coboundaries.coboundaries_from_tet_mesh(tets)
+
+        if cochains is None:
+            cochains = (None, None, None, None)
+
+        return cls(
+            coboundaries=(coboundary_0, coboundary_1, coboundary_2),
+            simplices=(unique_canon_edges, unique_canon_tris, tets),
             vert_coords=vert_coords,
             cochains=cochains,
         )
@@ -183,14 +224,16 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     dtype = sc_batch[0].coboundary_0.dtype
 
     # Generate a cumsum n_sc list for each simplex dimension
-    n_simp_batch = t.Tensor(
+    n_simp_batch = t.tensor(
         [
             [0] + [sc.n_verts for sc in sc_batch],
             [0] + [sc.n_edges for sc in sc_batch],
             [0] + [sc.n_tris for sc in sc_batch],
             [0] + [sc.n_tets for sc in sc_batch],
-        ]
-    ).to(dtype=t.long, device=device)
+        ],
+        dtype=t.long,
+        device=device,
+    )
 
     n_simp_cumsum_batch = t.cumsum(n_simp_batch, dim=-1, dtype=t.long)
 

@@ -1,29 +1,28 @@
-import potpourri3d as pp3d
+import igl
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.stiffness import (
+from cochain.geometry.tri.tri_stiffness import (
     d_stiffness_d_vert_coords,
     stiffness_matrix,
 )
 
 
-def test_stiffness_with_pp3d(tet_mesh):
+def test_stiffness_with_igl(two_tris_mesh: SimplicialComplex):
     """
-    Validate the stiffness matrix calculation using the external library
-    `potpourri3d`, which performs the same calculation with the `cotan_laplacian()`
-    function.
+    Validate the stiffness matrix calculation using the external library `libigl`,
+    which performs the same calculation with the `cotmatrix()` function.
     """
-    pp3d_cotan_laplacian = t.from_numpy(
-        pp3d.cotan_laplacian(
-            tet_mesh.vert_coords.cpu().detach().numpy(),
-            tet_mesh.tris.cpu().detach().numpy(),
-        ).todense()
-    )
+    igl_cotan_laplacian = -t.from_numpy(
+        igl.cotmatrix(
+            two_tris_mesh.vert_coords.cpu().detach().numpy(),
+            two_tris_mesh.tris.cpu().detach().numpy(),
+        ).todense(),
+    ).to(dtype=t.float)
 
-    cochain_cotan_laplacian = stiffness_matrix(tet_mesh).to_dense()
+    cochain_cotan_laplacian = stiffness_matrix(two_tris_mesh).to_dense()
 
-    t.testing.assert_close(pp3d_cotan_laplacian, cochain_cotan_laplacian)
+    t.testing.assert_close(igl_cotan_laplacian, cochain_cotan_laplacian)
 
 
 def test_stiffness_kernel(icosphere_mesh: SimplicialComplex):
@@ -73,11 +72,11 @@ def test_stiffness_autograd(two_tris_mesh: SimplicialComplex):
     matrix.
     """
     two_tris_mesh.vert_coords.requires_grad = True
-    sphere_S = stiffness_matrix(two_tris_mesh).to_dense()
-    y = (sphere_S**2).sum()
+    two_tris_S = stiffness_matrix(two_tris_mesh).to_dense()
+    y = (two_tris_S**2).sum()
 
     dLdV = d_stiffness_d_vert_coords(two_tris_mesh).to_dense()
-    dydL = t.autograd.grad(y, sphere_S, retain_graph=True)[0]
+    dydL = t.autograd.grad(y, two_tris_S, retain_graph=True)[0]
     custom_grad = t.einsum("ij,ijkl->kl", dydL, dLdV)
 
     auto_grad = t.autograd.grad(y, two_tris_mesh.vert_coords)[0]

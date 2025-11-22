@@ -2,7 +2,7 @@ import numpy as np
 import torch as t
 from scipy.spatial import Delaunay
 
-from .complex import SimplicialComplex
+from ..complex import SimplicialComplex
 
 
 def load_two_tris_mesh() -> SimplicialComplex:
@@ -10,10 +10,10 @@ def load_two_tris_mesh() -> SimplicialComplex:
     A simple 2D mesh embedded in R^3 composed of two triangles sharing one edge.
     """
     return SimplicialComplex.from_tri_mesh(
-        vert_coords=t.Tensor(
+        vert_coords=t.tensor(
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         ),
-        tris=t.LongTensor([[0, 1, 2], [1, 3, 2]]),
+        tris=t.tensor([[0, 1, 2], [1, 3, 2]], dtype=t.long),
     )
 
 
@@ -22,7 +22,7 @@ def load_square_mesh() -> SimplicialComplex:
     A simple triangulated square consisting of 4 triangles in the z = 0 plane.
     """
     return SimplicialComplex.from_tri_mesh(
-        vert_coords=t.Tensor(
+        vert_coords=t.tensor(
             [
                 [0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0],
@@ -31,7 +31,7 @@ def load_square_mesh() -> SimplicialComplex:
                 [0.5, 0.5, 0.0],
             ]
         ),
-        tris=t.LongTensor([[0, 4, 1], [1, 4, 2], [2, 4, 3], [3, 4, 0]]),
+        tris=t.tensor([[0, 4, 1], [1, 4, 2], [2, 4, 3], [3, 4, 0]], dtype=t.long),
     )
 
 
@@ -41,7 +41,7 @@ def load_tent_mesh() -> SimplicialComplex:
     plane.
     """
     return SimplicialComplex.from_tri_mesh(
-        vert_coords=t.Tensor(
+        vert_coords=t.tensor(
             [
                 [0.5, 0.5, 1.0],
                 [0.0, 0.0, 0.0],
@@ -50,7 +50,7 @@ def load_tent_mesh() -> SimplicialComplex:
                 [0.0, 1.0, 0.0],
             ]
         ),
-        tris=t.LongTensor([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]]),
+        tris=t.tensor([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=t.long),
     )
 
 
@@ -59,7 +59,7 @@ def load_tet_mesh() -> SimplicialComplex:
     A simple 2D mesh for the boundary of a tetrahedron.
     """
     return SimplicialComplex.from_tri_mesh(
-        vert_coords=t.Tensor(
+        vert_coords=t.tensor(
             [
                 [0.0, 0.0, 2.0],
                 [1.0, 0.0, 0.0],
@@ -67,7 +67,7 @@ def load_tet_mesh() -> SimplicialComplex:
                 [-0.5, -1.0, 0.0],
             ]
         ),
-        tris=t.LongTensor([[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]]),
+        tris=t.tensor([[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]], dtype=t.long),
     )
 
 
