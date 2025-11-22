@@ -13,7 +13,8 @@ For example, consider the edge ij as the "self", or s. Then
   * The edge il connecting the tail of ij with head of kl is th.
   * The edge jk connecting the head of ij with tail of kl is ht.
 
-These local relations can be translated into global relations as follows:
+These local relations can be translated into global relations as follows (using
+canonical edge orientations):
 
 -------------------------------
 s     o    tt    hh    th    ht
@@ -26,34 +27,39 @@ kl    ij   ik    jl    jk    il
 il    jk   jl    ik    kl    ij
 -------------------------------
 
-In addition, we tabulate the following jacobians. Here, the "[]" notation maps
-a vector t to a skew symmetric matrix [t], such that t x v = [t]v for all vectors v.
+In addition, we tabulate the following jacobians outward facing normal vectors
+and their Jacobians. Here, the "[]" notation maps a vector t to a skew symmetric
+matrix [t], such that t x v = [t]v for all vectors v.
 
-Gradient of th x o wrt vertex coordinates:
+First, we tabulate the th x o normal vector (i.e., the double area normal that is
+outward facing if the tet is positively oriented) and its gradient wrt vertex
+coordinates. Note that, in the "th x o" column, the cross product in the parenthesis
+is rearranged to be outward facing and "corner-centered", and this is the version
+implemented in the code.
 
-------------------------------------------------------------------------
-s    th x o               grad_i      grad_j      grad_k      grad_l
-------------------------------------------------------------------------
-ij   il x kl (= li x lk)  [kl]=[o]    [ll]=0      [li]=[-th]  [ik]=[tt]
-ik   il x jl (= li x lj)  [jl]=[o]    [li]=[-th]  [ll]=0      [ij]=[tt]
-jk   jl x il (= lj x li)  [lj]=[-th]  [il]=[o]    [ll]=0      [ji]=[-tt]
-jl   jk x ik (= kj x ki)  [kj]=[-th]  [ik]=[o]    [ji]=[-tt]  [kk]=0
-kl   jk x ij (= ji x jk)  [kj]=[-th]  [ik]=[tt]   [ji]=[-o]   [jj]=0
-il   kl x jk (= kj x kl)  [kk]=0      [lk]=[-th]  [jl]=[tt]   [kj]=[-o]
-------------------------------------------------------------------------
+-------------------------------------------------------------------------
+s    th x o  (-> oriented) grad_i      grad_j      grad_k      grad_l
+-------------------------------------------------------------------------
+ij   il x kl (-> lk x li)  [lk]=[-o]   [ll]=0      [il]=[th]   [ki]=[-tt]
+ik   il x jl (-> li x lj)  [jl]=[o]    [li]=[-th]  [ll]=0      [ij]=[tt]
+jk   jl x il (-> li x lj)  [jl]=[th]   [li]=[-o]   [ll]=0      [ij]=[tt]
+jl   jk x ik (-> kj x ki)  [kj]=[-th]  [ik]=[o]    [ji]=[-tt]  [kk]=0
+kl   jk x ij (-> ji x jk)  [kj]=[-th]  [ik]=[tt]   [ji]=[-o]   [jj]=0
+il   kl x jk (-> kl x kj)  [kk]=0      [kl]=[th]   [lj]=[-tt]  [jk]=[o]
+-------------------------------------------------------------------------
 
-Gradient of hh x o wrt vertex coordinates:
+Then, we tabulate the hh x o normal vector and its gradient wrt vertex coordinates:
 
-------------------------------------------------------------------------
-s    hh x o               grad_i      grad_j      grad_k      grad_l
-------------------------------------------------------------------------
-ij   jl x kl (= lj x lk)  [ll]=0      [kl]=[o]    [lj]=[-hh]  [jk]=[ht]
-ik   kl x jl (= lk x lj)  [ll]=0      [lk]=[-hh]  [jl]=[o]    [kj]=[-ht]
-jk   kl x il (= lk x li)  [lk]=[-hh]  [ll]=0      [il]=[o]    [ki]=[-ht]
-jl   kl x ik (= ki x kl)  [lk]=[-hh]  [kk]=0      [il]=[ht]   [ki]=[-o]
-kl   jl x ij (= ji x jl)  [lj]=[-hh]  [il]=[ht]   [jj]=0      [ji]=[-o]
-il   ik x jk (= ki x kj)  [jk]=[o]    [ki]=[-hh]  [ij]=[ht]   [kk]=0
-------------------------------------------------------------------------
+-------------------------------------------------------------------------
+s    hh x o  (-> oriented) grad_i      grad_j      grad_k      grad_l
+-------------------------------------------------------------------------
+ij   jl x kl (-> lj x lk)  [ll]=0      [kl]=[o]    [lj]=[-hh]  [jk]=[ht]
+ik   kl x jl (-> lj x lk)  [ll]=0      [kl]=[hh]   [lj]=[-o]   [jk]=[ht]
+jk   kl x il (-> lk x li)  [lk]=[-hh]  [ll]=0      [il]=[o]    [ki]=[-ht]
+jl   kl x ik (-> ki x kl)  [lk]=[-hh]  [kk]=0      [il]=[ht]   [ki]=[-o]
+kl   jl x ij (-> jl x ji)  [jl]=[hh]   [li]=[-ht]  [jj]=0      [ij]=[o]
+il   ik x jk (-> kj x ki)  [kj]=[-o]   [ik]=[hh]   [ji]=[-ht]  [kk]=0
+-------------------------------------------------------------------------
 """
 
 
@@ -135,20 +141,18 @@ def _cotan_weights(
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
     tet_vols = t.abs(_tet_signed_vols(vert_coords, tets))
 
-    edge_o = (
-        tet_vert_coords[:, [l, l, l, k, j, k]] - tet_vert_coords[:, [k, j, i, i, i, j]]
-    )
-    edge_hh = (
-        tet_vert_coords[:, [l, l, l, l, l, k]] - tet_vert_coords[:, [j, k, k, k, j, i]]
-    )
-    edge_th = (
-        tet_vert_coords[:, [l, l, l, k, k, l]] - tet_vert_coords[:, [i, i, j, j, j, k]]
-    )
-
     # For each tet ijkl and each edge s, computes the (outward) normal on the two
-    # triangles with o as the shared edge.
-    norm_tri_to: Float[t.Tensor, "tet 6 3"] = t.cross(edge_th, edge_o, dim=-1)
-    norm_tri_ho: Float[t.Tensor, "tet 6 3"] = t.cross(edge_hh, edge_o, dim=-1)
+    # triangles with o as the shared edge (i.e., th x o and hh x o).
+    norm_tri_to: Float[t.Tensor, "tet 6 3"] = t.cross(
+        tet_vert_coords[:, [k, i, i, j, i, l]] - tet_vert_coords[:, [l, l, l, k, j, k]],
+        tet_vert_coords[:, [i, j, j, i, k, j]] - tet_vert_coords[:, [l, l, l, k, j, k]],
+        dim=-1,
+    )
+    norm_tri_ho: Float[t.Tensor, "tet 6 3"] = t.cross(
+        tet_vert_coords[:, [j, j, k, i, l, j]] - tet_vert_coords[:, [l, l, l, k, j, k]],
+        tet_vert_coords[:, [k, k, i, l, i, i]] - tet_vert_coords[:, [l, l, l, k, j, k]],
+        dim=-1,
+    )
 
     # For each tet ijkl and each edge s, computes the contribution of s to the
     # cotan Laplacian (restricted to ijkl), which is given by -|o|cot(theta_o)/6,
@@ -219,23 +223,23 @@ def _d_cotan_weights_d_vert_coords(
         tet_vert_coords[
             :,
             [
-                [l, l, i, k],
+                [k, l, l, i],
                 [l, i, l, j],
-                [j, l, l, i],
+                [l, i, l, j],
                 [j, k, i, k],
                 [j, k, i, j],
-                [k, k, l, j],
+                [k, l, j, k],
             ],
         ]
         - tet_vert_coords[
             :,
             [
-                [k, l, l, i],
+                [l, l, i, k],
                 [j, l, l, i],
-                [l, i, l, j],
+                [j, l, l, i],
                 [k, i, j, k],
                 [k, i, j, j],
-                [k, l, j, k],
+                [k, k, l, j],
             ],
         ]
     )
@@ -246,22 +250,22 @@ def _d_cotan_weights_d_vert_coords(
             :,
             [
                 [l, l, j, k],
-                [l, k, l, j],
+                [l, l, j, k],
                 [k, l, l, i],
                 [k, k, l, i],
-                [j, l, j, i],
-                [k, i, j, k],
+                [l, i, j, j],
+                [j, k, i, k],
             ],
         ]
         - tet_vert_coords[
             :,
             [
                 [l, k, l, j],
-                [l, l, j, k],
+                [l, k, l, j],
                 [l, l, i, k],
                 [l, k, i, k],
-                [l, i, j, j],
-                [j, k, i, k],
+                [j, l, j, i],
+                [k, i, j, k],
             ],
         ]
     )
