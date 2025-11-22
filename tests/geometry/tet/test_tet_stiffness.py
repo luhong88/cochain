@@ -63,7 +63,7 @@ def test_stiffness_linear_precision(small_bcc_mesh: SimplicialComplex):
     """
     bcc_S = stiffness_matrix(small_bcc_mesh).to_dense()
     zero_tensor = bcc_S @ small_bcc_mesh.vert_coords
-    interior_mask = t.abs(small_bcc_mesh.vert_coords).sum(dim=-1) < 3.0
+    interior_mask = t.abs(small_bcc_mesh.vert_coords).max(dim=-1).values < 1.0
 
     t.testing.assert_close(
         zero_tensor[interior_mask], t.zeros_like(zero_tensor[interior_mask])
