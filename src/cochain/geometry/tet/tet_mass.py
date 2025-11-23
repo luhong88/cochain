@@ -99,23 +99,21 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
         - bary_coords_int[:, y_idx, p_idx] * stiff_density[:, x_idx, q_idx]
         + bary_coords_int[:, y_idx, q_idx] * stiff_density[:, x_idx, p_idx]
     )
-    # Flatten the 6x6 tensor to get the inner product values for the 21 unique
-    # edge pairs.
-    unique_edge_pair_idx = t.triu_indices(6, 6, device=device)
-    whitney_flat: Float[t.Tensor, "tet 21"] = whitney_inner_prod[
-        :, *unique_edge_pair_idx
-    ]
 
     # For each tet and each unique edge pair, find the orientations of the edges
     # and their indices on the list of unique, canonical edges (tet_mesh.edges).
     whitney_edges: Float[t.Tensor, "tet*6 2"] = tet_mesh.tets[:, unique_edges].flatten(
         end_dim=-2
     )
+    # Same method as used in the construction of coboundary operators to use
+    # sort() to identify edge orientations.
     whitney_canon_edges, whitney_edge_orientations = whitney_edges.sort(dim=-1)
     whitney_edge_signs: Float[t.Tensor, "tet 6"] = t.where(
         whitney_edge_orientations[:, 1] > 0, whitney_edge_orientations[:, 1], -1
     ).view(-1, 6)
 
+    # This assumes that the edge indices in tet_mesh.edges are already in canonical
+    # orders.
     unique_canon_edges_packed = tet_mesh.edges[:, 0] * n_verts + tet_mesh.edges[:, 1]
     canon_edges_packed_sorted, canon_edges_idx = t.sort(unique_canon_edges_packed)
 
@@ -128,23 +126,27 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # Multiply the Whitney 1-form inner product by the edge orientation signs
     # to get the contribution from canonical edges.
-    whitney_flat_signed: Float[t.Tensor, "tet 21"] = whitney_flat * t.prod(
-        whitney_edge_signs[:, unique_edge_pair_idx], dim=1
-    )
+    whitney_flat_signed: Float[t.Tensor, "tet 36"] = (
+        whitney_inner_prod
+        * whitney_edge_signs.view(-1, 1, 6)
+        * whitney_edge_signs.view(-1, 6, 1)
+    ).flatten(start_dim=-2)
 
     # Get the canonical edge index pairs for the Whitney 1-form inner products of
-    # the unique 21 edge pairs per tet.
-    whitney_flat_idx: Float[t.Tensor, "tet 2 21"] = whitney_edges_idx[
-        :, unique_edge_pair_idx
-    ]
+    # all 36 edge pairs per tet.
+    whitney_flat_r_idx: Float[t.Tensor, "tet*36"] = (
+        whitney_edges_idx.view(-1, 6, 1).expand(-1, 6, 6).flatten()
+    )
+    whitney_flat_c_idx: Float[t.Tensor, "tet*36"] = (
+        whitney_edges_idx.view(-1, 1, 6).expand(-1, 6, 6).flatten()
+    )
 
-    # Assemble and symmetrize the mass matrix.
-    mass_asym = t.sparse_coo_tensor(
-        whitney_flat_idx.transpose(0, 1).flatten(start_dim=1),
+    # Assemble the mass matrix.
+    mass = t.sparse_coo_tensor(
+        t.vstack((whitney_flat_r_idx, whitney_flat_c_idx)),
         whitney_flat_signed.flatten(),
         (n_edges, n_edges),
     ).coalesce()
-    mass = (mass_asym + mass_asym.T).coalesce()
 
     return mass
 
