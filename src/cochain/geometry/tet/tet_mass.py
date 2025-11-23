@@ -3,7 +3,7 @@ from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
 from ...utils.constants import EPS
-from .tet_geometry import _tet_signed_vols
+from .tet_geometry import _d_tet_signed_vols_d_vert_coords, _tet_signed_vols
 from .tet_stiffness import _cotan_weights
 
 
@@ -28,6 +28,69 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     )
 
     return diag
+
+
+def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
+    """
+    Compute the Galerkin edge/1-form mass matrix.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
+    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
+
+    dtype = vert_coords.dtype
+    device = vert_coords.device
+
+    n_tets = tet_mesh.n_tets
+
+    tet_signed_vols = _tet_signed_vols(vert_coords, tets).view(-1, 1, 1)
+    d_signed_vols_d_vert_coords = _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+
+    # For a tet ijkl, let p be a position vector inside ijkl and let lambda_i(p)
+    # be the barycentric coordinate of p wrt vertex i. The gradient of lambda_i(p)
+    # wrt p is given by grad_i(vol_ijkl)/vol_ijkl, a constant wrt p.
+    bary_coords_grad: Float[t.Tensor, "tet 4 3"] = (
+        d_signed_vols_d_vert_coords / tet_signed_vols
+    )
+    # For each tet ijkl, compute all pairwise inner products of the barycentric
+    # coordinate gradients wrt each pair of vertices.
+    stiff_density: Float[t.Tensor, "tet 4 4"] = t.einsum(
+        "ijk,ilk->ijl", bary_coords_grad, bary_coords_grad
+    )
+
+    # For each tet ijkl, compute all pairwise integrals of the barycentric coordinates;
+    # i.e., int[lambda_i(p)lambda_j(p)dvol_ijkl]. Using the "magic formula", this
+    # integral is vol_ijkl*(1 + delta_ij)/20, where delta is the Kronecker delta
+    # function.
+    bary_coords_int: Float[t.Tensor, "tet 4 4"] = t.abs(tet_signed_vols / 20.0) * (
+        t.ones((n_tets, 4, 4), dtype=dtype, device=device)
+        + t.eye(4, dtype=dtype, device=device).view(1, 4, 4)
+    )
+
+    # For each tet ijkl, each pair of its edges e1=xy and e2=pq contributes the
+    # following term to the mass matrix element M[e1,e2]:
+    #     W_xy,pq = I_xp*D_yq - I_xq*D_yp - I_yp*D_xq + I_yq*D_xp
+    # Here, I is the barycentric integral (bary_coords_int) and D is the barycentric
+    # gradient inner product (bary_coords_grad). Note that, since this expression
+    # is "skew-symmetric" wrt the edge orientations (W_yx,pq = -W_xy,pq and
+    # W_xy,qp = -W_xy,pq), each non-canonical edge orientation also contributes
+    # an overall negative sign.
+
+    i, j, k, l = 0, 1, 2, 3
+    edges = t.tensor(
+        [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]], dtype=t.long, device=device
+    )
+
+    x_idx = edges[:, 0][:, None]
+    y_idx = edges[:, 1][:, None]
+    p_idx = edges[:, 0][None, :]
+    q_idx = edges[:, 1][None, :]
+
+    whitney_inner_prod: Float[t.Tensor, "tet 6 6"] = (
+        bary_coords_int[:, x_idx, p_idx] * stiff_density[:, y_idx, q_idx]
+        - bary_coords_int[:, x_idx, q_idx] * stiff_density[:, y_idx, p_idx]
+        - bary_coords_int[:, y_idx, p_idx] * stiff_density[:, x_idx, q_idx]
+        + bary_coords_int[:, y_idx, q_idx] * stiff_density[:, x_idx, p_idx]
+    )
 
 
 def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
@@ -67,7 +130,8 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     # Find the indices of the triangles by radix encoding and searchsorted().
     # Because each triangle ijk is encoded as i*n_verts^2 + j*n_verts + k and
     # the max value of t.int64 is ~ 2^63, the max number of vertices this method
-    # can accommodate is ~ n_verts < 2^21.
+    # can accommodate is ~ n_verts < 2^21. Note that this method assumes that
+    # the triangle indices in tet_mesh.tris are already in canonical orders.
     unique_canon_tris_packed = (
         tet_mesh.tris[:, 0] * n_verts**2
         + tet_mesh.tris[:, 1] * n_verts
