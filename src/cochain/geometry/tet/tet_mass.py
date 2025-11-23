@@ -30,7 +30,6 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     return diag
 
 
-# TODO: further optimize memory usage for this function.
 def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
