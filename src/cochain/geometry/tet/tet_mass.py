@@ -33,6 +33,15 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
 def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
+
+    For each tet, each (canonical) edge pair xy and pq and their associated
+    Whitney 1-form basis functions W_xy and W_pq contribute the inner product
+    term int[W_xy*W_pq*dV] to the mass matrix element M[xy, pq], where
+
+    W_xy(p) = lambda_x(p)*grad_p(lambda_y(p)) - lambda_y(p)*grad_p(lambda_x(p))
+
+    Here, p is a position vector inside the tet and lambda_x(p) is the barycentric
+    coordinate function for p wrt the vertex x.
     """
     vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
     tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
