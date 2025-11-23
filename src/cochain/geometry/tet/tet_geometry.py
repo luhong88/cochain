@@ -2,7 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 
-def tet_signed_vols(
+def _tet_signed_vols(
     vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
 ) -> Float[t.Tensor, "tet"]:
     """
@@ -28,7 +28,7 @@ def tet_signed_vols(
     return tet_signed_vols
 
 
-def d_tet_signed_vols_d_vert_coords(
+def _d_tet_signed_vols_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
 ) -> Float[t.Tensor, "tet 4 3"]:
     """

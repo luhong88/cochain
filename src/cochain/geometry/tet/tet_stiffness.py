@@ -3,7 +3,7 @@ from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
 from ...utils.constants import EPS
-from .tet_geometry import d_tet_signed_vols_d_vert_coords, tet_signed_vols
+from .tet_geometry import _d_tet_signed_vols_d_vert_coords, _tet_signed_vols
 
 
 def _cotan_weights(
@@ -19,7 +19,7 @@ def _cotan_weights(
     i, j, k, l = 0, 1, 2, 3
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
-    tet_vols = t.abs(tet_signed_vols(vert_coords, tets))
+    tet_vols = t.abs(_tet_signed_vols(vert_coords, tets))
 
     # For each tet ijkl and each edge s, computes the (outward) normal on the two
     # triangles with o as the shared edge (i.e., th x o and hh x o).
@@ -85,7 +85,7 @@ def _d_cotan_weights_d_vert_coords(
     norm_tri_ho_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_ho.view(-1, 6, 1, 3)
     weight_o_shaped: Float[t.Tensor, "tet 6 1 1"] = weight_o.view(-1, 6, 1, 1)
 
-    tet_signed_vols: Float[t.Tensor, "tet"] = tet_signed_vols(vert_coords, tets)
+    tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
     tet_signs = tet_signed_vols.sign()
 
     vols_shaped: Float[t.Tensor, "tet 1 1 1"] = t.abs(tet_signed_vols).view(-1, 1, 1, 1)
@@ -93,7 +93,7 @@ def _d_cotan_weights_d_vert_coords(
     # Multiply the gradient of the signed volumes with the signs of the volumes
     # to get the gradient of the unsigned/absolute volumes.
     vol_grad: Float[t.Tensor, "tet 1 4 3"] = (
-        d_tet_signed_vols_d_vert_coords(vert_coords, tets) * tet_signs.view(-1, 1, 1)
+        _d_tet_signed_vols_d_vert_coords(vert_coords, tets) * tet_signs.view(-1, 1, 1)
     ).view(-1, 1, 4, 3)
 
     # Compute the "Jacobian" of the th x o normal vector wrt each vertex in the

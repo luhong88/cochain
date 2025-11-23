@@ -3,7 +3,7 @@ from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
 from ...utils.constants import EPS
-from .tet_geometry import tet_signed_vols
+from .tet_geometry import _tet_signed_vols
 from .tet_stiffness import _cotan_weights
 
 
@@ -18,7 +18,7 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     """
     n_verts = tet_mesh.n_verts
 
-    tet_vol = t.abs(tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    tet_vol = t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
     diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
     diag.scatter_add_(
@@ -115,7 +115,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     # Compute the diagonal mass matrix elements as <th x o, th x o> / 9 * vol_ijkl
     norm_unique_tri_to_dot = t.sum(norm_unique_tri_to * norm_unique_tri_to, dim=-1)
     tet_vols_expanded = t.repeat_interleave(
-        t.abs(tet_signed_vols(vert_coords, tets)), 4
+        t.abs(_tet_signed_vols(vert_coords, tets)), 4
     )
 
     mass_diag_val = norm_unique_tri_to_dot / (9.0 * tet_vols_expanded)
@@ -135,4 +135,4 @@ def mass_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tet"]:
     Compute the diagonal of the tet/3-form mass matrix, which is equivalent to
     the inverse of 3-star.
     """
-    return t.abs(tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    return t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
