@@ -30,6 +30,7 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     return diag
 
 
+# TODO: further optimize memory usage for this function.
 def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
@@ -41,6 +42,8 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     device = vert_coords.device
 
     n_tets = tet_mesh.n_tets
+    n_edges = tet_mesh.n_edges
+    n_verts = tet_mesh.n_verts
 
     tet_signed_vols = _tet_signed_vols(vert_coords, tets).view(-1, 1, 1)
     d_signed_vols_d_vert_coords = _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
@@ -68,29 +71,82 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # For each tet ijkl, each pair of its edges e1=xy and e2=pq contributes the
     # following term to the mass matrix element M[e1,e2]:
-    #     W_xy,pq = I_xp*D_yq - I_xq*D_yp - I_yp*D_xq + I_yq*D_xp
+    #
+    #         W_xy,pq = I_xp*D_yq - I_xq*D_yp - I_yp*D_xq + I_yq*D_xp
+    #
     # Here, I is the barycentric integral (bary_coords_int) and D is the barycentric
     # gradient inner product (bary_coords_grad). Note that, since this expression
     # is "skew-symmetric" wrt the edge orientations (W_yx,pq = -W_xy,pq and
     # W_xy,qp = -W_xy,pq), each non-canonical edge orientation also contributes
     # an overall negative sign.
 
+    # Enumerate all unique edges via their vertex position in the etet.
     i, j, k, l = 0, 1, 2, 3
-    edges = t.tensor(
+    unique_edges = t.tensor(
         [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]], dtype=t.long, device=device
     )
 
-    x_idx = edges[:, 0][:, None]
-    y_idx = edges[:, 1][:, None]
-    p_idx = edges[:, 0][None, :]
-    q_idx = edges[:, 1][None, :]
+    x_idx = unique_edges[:, 0][:, None]
+    y_idx = unique_edges[:, 1][:, None]
+    p_idx = unique_edges[:, 0][None, :]
+    q_idx = unique_edges[:, 1][None, :]
 
+    # For each tet, find all pairs of Whitney 1-form basis function inner products,
+    # i.e., the W_xy,pq.
     whitney_inner_prod: Float[t.Tensor, "tet 6 6"] = (
         bary_coords_int[:, x_idx, p_idx] * stiff_density[:, y_idx, q_idx]
         - bary_coords_int[:, x_idx, q_idx] * stiff_density[:, y_idx, p_idx]
         - bary_coords_int[:, y_idx, p_idx] * stiff_density[:, x_idx, q_idx]
         + bary_coords_int[:, y_idx, q_idx] * stiff_density[:, x_idx, p_idx]
     )
+    # Flatten the 6x6 tensor to get the inner product values for the 21 unique
+    # edge pairs.
+    unique_edge_pair_idx = t.triu_indices(6, 6, device=device)
+    whitney_flat: Float[t.Tensor, "tet 21"] = whitney_inner_prod[
+        :, *unique_edge_pair_idx
+    ]
+
+    # For each tet and each unique edge pair, find the orientations of the edges
+    # and their indices on the list of unique, canonical edges (tet_mesh.edges).
+    whitney_edges: Float[t.Tensor, "tet*6 2"] = tet_mesh.tets[:, unique_edges].flatten(
+        end_dim=-2
+    )
+    whitney_canon_edges, whitney_edge_orientations = whitney_edges.sort(dim=-1)
+    whitney_edge_signs: Float[t.Tensor, "tet 6"] = t.where(
+        whitney_edge_orientations[:, 1] > 0, whitney_edge_orientations[:, 1], -1
+    ).view(-1, 6)
+
+    unique_canon_edges_packed = tet_mesh.edges[:, 0] * n_verts + tet_mesh.edges[:, 1]
+    canon_edges_packed_sorted, canon_edges_idx = t.sort(unique_canon_edges_packed)
+
+    whitney_edges_packed = (
+        whitney_canon_edges[:, 0] * n_verts + whitney_canon_edges[:, 1]
+    )
+    whitney_edges_idx: Float[t.Tensor, "tet 6"] = canon_edges_idx[
+        t.searchsorted(canon_edges_packed_sorted, whitney_edges_packed)
+    ].view(-1, 6)
+
+    # Multiply the Whitney 1-form inner product by the edge orientation signs
+    # to get the contribution from canonical edges.
+    whitney_flat_signed: Float[t.Tensor, "tet 21"] = whitney_flat * t.prod(
+        whitney_edge_signs[:, unique_edge_pair_idx], dim=1
+    )
+
+    # Get the canonical edge index pairs for the Whitney 1-form inner products of
+    # the unique 21 edge pairs per tet.
+    whitney_flat_idx: Float[t.Tensor, "tet 2 21"] = whitney_edges_idx[
+        :, unique_edge_pair_idx
+    ]
+
+    # Assemble and symmetrize the mass matrix.
+    mass_asym = t.sparse_coo_tensor(
+        whitney_flat_idx.transpose(0, 1).flatten(start_dim=1),
+        whitney_flat_signed.flatten(),
+        (n_edges, n_edges),
+    ).coalesce()
+    mass = (mass_asym + mass_asym.T).coalesce()
+
+    return mass
 
 
 def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
@@ -127,35 +183,32 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     ]
     weight_o_tri_ho_canon, _ = weight_o_tri_ho.flatten(end_dim=-2).sort(dim=-1)
 
-    # Find the indices of the triangles by radix encoding and searchsorted().
-    # Because each triangle ijk is encoded as i*n_verts^2 + j*n_verts + k and
-    # the max value of t.int64 is ~ 2^63, the max number of vertices this method
-    # can accommodate is ~ n_verts < 2^21. Note that this method assumes that
-    # the triangle indices in tet_mesh.tris are already in canonical orders.
+    # Find the indices of the triangles on the list of uniuque, canonical triangles
+    # (tet_mesh.tris) by radix encoding and searchsorted(). Because each triangle
+    # ijk is encoded as i*n_verts^2 + j*n_verts + k and the max value of t.int64
+    # is ~ 2^63, the max number of vertices this method can accommodate is
+    # ~ n_verts < 2^21. Note that this method assumes that the triangle indices
+    # in tet_mesh.tris are already in canonical orders.
     unique_canon_tris_packed = (
         tet_mesh.tris[:, 0] * n_verts**2
         + tet_mesh.tris[:, 1] * n_verts
         + tet_mesh.tris[:, 2]
     )
-    canon_tris_packed_sorted, cannon_tris_idx = t.sort(unique_canon_tris_packed)
+    canon_tris_packed_sorted, canon_tris_idx = t.sort(unique_canon_tris_packed)
 
     tri_to_packed = (
         weight_o_tri_to_canon[:, 0] * n_verts**2
         + weight_o_tri_to_canon[:, 1] * n_verts
         + weight_o_tri_to_canon[:, 2]
     )
-    tri_to_idx = cannon_tris_idx[
-        t.searchsorted(canon_tris_packed_sorted, tri_to_packed)
-    ]
+    tri_to_idx = canon_tris_idx[t.searchsorted(canon_tris_packed_sorted, tri_to_packed)]
 
     tri_ho_packed = (
         weight_o_tri_ho_canon[:, 0] * n_verts**2
         + weight_o_tri_ho_canon[:, 1] * n_verts
         + weight_o_tri_ho_canon[:, 2]
     )
-    tri_ho_idx = cannon_tris_idx[
-        t.searchsorted(canon_tris_packed_sorted, tri_ho_packed)
-    ]
+    tri_ho_idx = canon_tris_idx[t.searchsorted(canon_tris_packed_sorted, tri_ho_packed)]
 
     # First build the symmetric, off-diagonal version of the mass matrix.
     mass_asym_idx = t.vstack((tri_to_idx, tri_ho_idx))
