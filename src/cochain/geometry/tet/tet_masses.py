@@ -2,9 +2,11 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
-from ...utils.constants import EPS
-from .tet_geometry import _d_tet_signed_vols_d_vert_coords, _tet_signed_vols
-from .tet_stiffness import _cotan_weights
+from .tet_geometry import (
+    _d_tet_signed_vols_d_vert_coords,
+    _tet_face_vector_areas,
+    _tet_signed_vols,
+)
 
 
 def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
@@ -179,7 +181,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     # For each tet ijkl and each edge s, get the cotan weight
     # <th x o, hh x o> / 36 * vol_ijkl
     # Note that these weights only give the off-diagonal elements of the mass matrix.
-    norm_tri_to, _, weight_o, _ = _cotan_weights(vert_coords, tets, n_verts)
+    norm_tri_to, _, weight_o = _tet_face_vector_areas(vert_coords, tets)
 
     # For each tet and each cotan weight associated with edge s, find the two
     # canonical triangles in the tet sharing the edge s.

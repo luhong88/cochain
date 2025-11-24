@@ -55,5 +55,5 @@ def two_tets_mesh() -> SimplicialComplex:
 
 
 @pytest.fixture
-def small_bcc_mesh() -> SimplicialComplex:
+def two_tets_mesh() -> SimplicialComplex:
     return synthetic_tet_meshes.load_bcc_mesh(dim=3)

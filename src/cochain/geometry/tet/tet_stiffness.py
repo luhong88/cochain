@@ -2,47 +2,21 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
-from ...utils.constants import EPS
-from .tet_geometry import _d_tet_signed_vols_d_vert_coords, _tet_signed_vols
+from .tet_geometry import (
+    _d_tet_signed_vols_d_vert_coords,
+    _tet_face_vector_areas,
+    _tet_signed_vols,
+)
 
 
 def _cotan_weights(
     vert_coords: Float[t.Tensor, "vert 3"],
     tets: Integer[t.LongTensor, "tri 3"],
     n_verts: int,
-) -> tuple[
-    Float[t.Tensor, "tet 6 3"],
-    Float[t.Tensor, "tet 6 3"],
-    Float[t.Tensor, "tet 6"],
-    Float[t.Tensor, "vert vert"],
-]:
+) -> Float[t.Tensor, "vert vert"]:
     i, j, k, l = 0, 1, 2, 3
 
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
-    tet_vols = t.abs(_tet_signed_vols(vert_coords, tets))
-
-    # For each tet ijkl and each edge s, computes the (outward) normal on the two
-    # triangles with o as the shared edge (i.e., th x o and hh x o).
-    norm_tri_to: Float[t.Tensor, "tet 6 3"] = t.cross(
-        tet_vert_coords[:, [k, i, i, j, i, l]] - tet_vert_coords[:, [l, l, l, k, j, k]],
-        tet_vert_coords[:, [i, j, j, i, k, j]] - tet_vert_coords[:, [l, l, l, k, j, k]],
-        dim=-1,
-    )
-    norm_tri_ho: Float[t.Tensor, "tet 6 3"] = t.cross(
-        tet_vert_coords[:, [j, j, k, i, l, j]] - tet_vert_coords[:, [l, l, l, k, j, k]],
-        tet_vert_coords[:, [k, k, i, l, i, i]] - tet_vert_coords[:, [l, l, l, k, j, k]],
-        dim=-1,
-    )
-
-    # For each tet ijkl and each edge s, computes the contribution of s to the
-    # cotan Laplacian (restricted to ijkl), which is given by -|o|cot(theta_o)/6,
-    # where |o| is the length of the opposite edge, and theta_o is the dihedral
-    # angle formed by the two triangles with o as the shared edge. This contribution
-    # can also be written as <th x o, hh x o> / 36 * vol_ijkl; here, vol_ijkl is
-    # the unsigned/absolute volume of the tet ijkl.
-    weight_o: Float[t.Tensor, "tet 6"] = (
-        t.sum(norm_tri_to * norm_tri_ho, dim=-1) / (36.0 * tet_vols + EPS)[:, None]
-    )
+    _, _, weight_o = _tet_face_vector_areas(vert_coords, tets)
 
     # For each tet ijkl, each edge s contributes one term w_o to the weight matrix,
     # thus each tet contributes six terms (in COO format):
@@ -64,7 +38,7 @@ def _cotan_weights(
     asym_weights = t.sparse_coo_tensor(weights_idx, weights_val, (n_verts, n_verts))
     sym_weights = (asym_weights + asym_weights.T).coalesce()
 
-    return norm_tri_to, norm_tri_ho, weight_o, sym_weights
+    return sym_weights
 
 
 def _d_cotan_weights_d_vert_coords(
@@ -80,7 +54,8 @@ def _d_cotan_weights_d_vert_coords(
     # grad_p(w_o) = -(w_o*grad_p(vol_ijkl) + grad_p(<th x o, hh x o>)/36)/vol_ijkl
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    norm_tri_to, norm_tri_ho, weight_o, _ = _cotan_weights(vert_coords, tets, n_verts)
+    norm_tri_to, norm_tri_ho, weight_o = _tet_face_vector_areas(vert_coords, tets)
+
     norm_tri_to_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_to.view(-1, 6, 1, 3)
     norm_tri_ho_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_ho.view(-1, 6, 1, 3)
     weight_o_shaped: Float[t.Tensor, "tet 6 1 1"] = weight_o.view(-1, 6, 1, 1)
@@ -206,7 +181,7 @@ def stiffness_matrix(
     """
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
-    _, _, _, sym_stiffness = _cotan_weights(
+    sym_stiffness = _cotan_weights(
         tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.n_verts
     )
 
