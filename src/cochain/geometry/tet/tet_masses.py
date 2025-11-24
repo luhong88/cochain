@@ -66,7 +66,7 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     )
     # For each tet ijkl, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
-    stiff_density: Float[t.Tensor, "tet 4 4"] = t.einsum(
+    barry_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = t.einsum(
         "ijk,ilk->ijl", bary_coords_grad, bary_coords_grad
     )
 
@@ -104,10 +104,10 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     # For each tet, find all pairs of Whitney 1-form basis function inner products,
     # i.e., the W_xy,pq.
     whitney_inner_prod: Float[t.Tensor, "tet 6 6"] = (
-        bary_coords_int[:, x_idx, p_idx] * stiff_density[:, y_idx, q_idx]
-        - bary_coords_int[:, x_idx, q_idx] * stiff_density[:, y_idx, p_idx]
-        - bary_coords_int[:, y_idx, p_idx] * stiff_density[:, x_idx, q_idx]
-        + bary_coords_int[:, y_idx, q_idx] * stiff_density[:, x_idx, p_idx]
+        bary_coords_int[:, x_idx, p_idx] * barry_coords_grad_dot[:, y_idx, q_idx]
+        - bary_coords_int[:, x_idx, q_idx] * barry_coords_grad_dot[:, y_idx, p_idx]
+        - bary_coords_int[:, y_idx, p_idx] * barry_coords_grad_dot[:, x_idx, q_idx]
+        + bary_coords_int[:, y_idx, q_idx] * barry_coords_grad_dot[:, x_idx, p_idx]
     )
 
     # For each tet and each unique edge pair, find the orientations of the edges
@@ -165,9 +165,11 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     """
     Compute the Galerkin triangle/2-form mass matrix.
 
-    The 2-form mass matrix element M2[t1,t2] is nonzero iff the triangles t1 and
-    t2 are found in the same tet ijkl and sharing the same edge s, in which case
-    the element is given by <th x o, hh x o> / 9 * vol_ijkl.
+    For each tet, each (canonical) triangle pairs xyz and rst and their associated
+    Whitney 2-form basis functions W_xyz and W_rst contribute the inner product
+    term int[W_t1*W_t2*dV] to the mass matrix element M[xyz, rst], where W_xyz =
+    e_o[yz]/3V. Here, e_o[yz] is the length of the edge opposite to the edge yz
+    (e.g., for the triangle ijk, this edge is il).
     """
     i, j, k, l = 0, 1, 2, 3
 
@@ -184,18 +186,40 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     norm_tri_to, _, weight_o = _tet_face_vector_areas(vert_coords, tets)
 
     # For each tet and each cotan weight associated with edge s, find the two
-    # canonical triangles in the tet sharing the edge s.
+    # triangles in the tet sharing the edge s, find their orientations, and
+    # convert them to the canonical orientations.
+    canon_pos_orientation = t.tensor([0, 1, 2], dtype=t.long, device=tets.device)
+
     weight_o_tri_to: Integer[t.LongTensor, "tet edge=6 vert=3"] = tets[
         :, [[i, k, l], [i, j, l], [i, j, l], [i, j, k], [i, j, k], [j, k, l]]
     ]
-    weight_o_tri_to_canon, _ = weight_o_tri_to.flatten(end_dim=-2).sort(dim=-1)
+    weight_o_tri_to_canon, weight_o_tri_to_orientations = weight_o_tri_to.sort(dim=-1)
+    # Same method as used in the construction of coboundary operators to use
+    # sort() to identify triangle orientations.
+    weight_o_tri_to_signs: Float[t.Tensor, "tet 6"] = t.where(
+        condition=t.sum(weight_o_tri_to_orientations == canon_pos_orientation, dim=-1)
+        == 1,
+        self=-1.0,
+        other=1.0,
+    ).to(dtype=vert_coords.dtype)
 
     weight_o_tri_ho: Integer[t.LongTensor, "tet edge=6 vert=3"] = tets[
         :, [[j, k, l], [j, k, l], [i, k, l], [i, k, l], [i, j, l], [i, j, k]]
     ]
-    weight_o_tri_ho_canon, _ = weight_o_tri_ho.flatten(end_dim=-2).sort(dim=-1)
+    weight_o_tri_ho_canon, weight_o_tri_ho_orientations = weight_o_tri_ho.sort(dim=-1)
+    weight_o_tri_ho_signs: Float[t.Tensor, "tet 6"] = t.where(
+        condition=t.sum(weight_o_tri_ho_orientations == canon_pos_orientation, dim=-1)
+        == 1,
+        self=-1.0,
+        other=1.0,
+    ).to(dtype=vert_coords.dtype)
 
-    # Find the indices of the triangles on the list of uniuque, canonical triangles
+    # Use the triangle orientation signs to correct weight_o to get the contribution
+    # from canonical triangles. In addition, multiply the weight by 4 since the
+    # contribution from each triangle pair is <th x o, hh x o> / 9 * vol_ijkl.
+    weight_o_signed = 4.0 * weight_o * weight_o_tri_to_signs * weight_o_tri_ho_signs
+
+    # Find the indices of the triangles on the list of unique, canonical triangles
     # (tet_mesh.tris) by radix encoding and searchsorted(). Because each triangle
     # ijk is encoded as i*n_verts^2 + j*n_verts + k and the max value of t.int64
     # is ~ 2^63, the max number of vertices this method can accommodate is
@@ -208,24 +232,30 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     )
     canon_tris_packed_sorted, canon_tris_idx = t.sort(unique_canon_tris_packed)
 
+    weight_o_tri_to_canon_flat: Integer[t.LongTensor, "tet*6 3"] = (
+        weight_o_tri_to_canon.flatten(end_dim=-2)
+    )
     tri_to_packed = (
-        weight_o_tri_to_canon[:, 0] * n_verts**2
-        + weight_o_tri_to_canon[:, 1] * n_verts
-        + weight_o_tri_to_canon[:, 2]
+        weight_o_tri_to_canon_flat[:, 0] * n_verts**2
+        + weight_o_tri_to_canon_flat[:, 1] * n_verts
+        + weight_o_tri_to_canon_flat[:, 2]
     )
     tri_to_idx = canon_tris_idx[t.searchsorted(canon_tris_packed_sorted, tri_to_packed)]
 
+    weight_o_tri_ho_canon_flat: Integer[t.LongTensor, "tet*6 3"] = (
+        weight_o_tri_ho_canon.flatten(end_dim=-2)
+    )
     tri_ho_packed = (
-        weight_o_tri_ho_canon[:, 0] * n_verts**2
-        + weight_o_tri_ho_canon[:, 1] * n_verts
-        + weight_o_tri_ho_canon[:, 2]
+        weight_o_tri_ho_canon_flat[:, 0] * n_verts**2
+        + weight_o_tri_ho_canon_flat[:, 1] * n_verts
+        + weight_o_tri_ho_canon_flat[:, 2]
     )
     tri_ho_idx = canon_tris_idx[t.searchsorted(canon_tris_packed_sorted, tri_ho_packed)]
 
     # First build the symmetric, off-diagonal version of the mass matrix.
-    mass_asym_idx = t.vstack((tri_to_idx, tri_ho_idx))
-    mass_asym_val = 4.0 * weight_o.flatten()
-    mass_asym = t.sparse_coo_tensor(mass_asym_idx, mass_asym_val, (n_tris, n_tris))
+    mass_asym = t.sparse_coo_tensor(
+        t.vstack((tri_to_idx, tri_ho_idx)), weight_o_signed.flatten(), (n_tris, n_tris)
+    )
     mass_off_diag = (mass_asym + mass_asym.T).coalesce()
 
     # Then, compute the diagonal elements.
@@ -242,6 +272,8 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     norm_unique_tri_to = norm_tri_to[:, unique_tri_to_idx, :].flatten(end_dim=-2)
 
     # Compute the diagonal mass matrix elements as <th x o, th x o> / 9 * vol_ijkl
+    # Note that the orientation of the area vectors here is irrelevant, since the
+    # orientation sign cancels in the dot product.
     norm_unique_tri_to_dot = t.sum(norm_unique_tri_to * norm_unique_tri_to, dim=-1)
     tet_vols_expanded = t.repeat_interleave(
         t.abs(_tet_signed_vols(vert_coords, tets)), 4
