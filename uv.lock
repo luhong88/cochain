@@ -337,6 +337,7 @@ dev = [
     { name = "matplotlib" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "scikit-fem" },
 ]
 
 [package.metadata]
@@ -357,6 +358,7 @@ dev = [
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "ruff", specifier = ">=0.14.3" },
+    { name = "scikit-fem", specifier = ">=11.0.0" },
 ]
 
 [[package]]
@@ -2136,6 +2138,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/a4/35f1ef68c4e7b236d4a5204e3669efdeefaef21f0ff6a456792b3d8be438/ruff-0.14.3-py3-none-win32.whl", hash = "sha256:f3d91857d023ba93e14ed2d462ab62c3428f9bbf2b4fbac50a03ca66d31991f7", size = 12500045, upload-time = "2025-10-31T00:26:20.503Z" },
     { url = "https://files.pythonhosted.org/packages/03/15/51960ae340823c9859fb60c63301d977308735403e2134e17d1d2858c7fb/ruff-0.14.3-py3-none-win_amd64.whl", hash = "sha256:d7b7006ac0756306db212fd37116cce2bd307e1e109375e1c6c106002df0ae5f", size = 13594005, upload-time = "2025-10-31T00:26:22.533Z" },
     { url = "https://files.pythonhosted.org/packages/b7/73/4de6579bac8e979fca0a77e54dec1f1e011a0d268165eb8a9bc0982a6564/ruff-0.14.3-py3-none-win_arm64.whl", hash = "sha256:26eb477ede6d399d898791d01961e16b86f02bc2486d0d1a7a9bb2379d055dc1", size = 12590017, upload-time = "2025-10-31T00:26:24.52Z" },
+]
+
+[[package]]
+name = "scikit-fem"
+version = "11.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/48/48/272ff8ee0f929ce069686c95de0752328f7c1fe0748d59360733b255a843/scikit_fem-11.0.0.tar.gz", hash = "sha256:8973a2efd5237083999c8f94ae1bd8fbcb63479283e4797521e93c4f284d91db", size = 162611, upload-time = "2025-04-24T20:01:10.227Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/9b/02df8a83287b0764f94b8336924d09da598a848a7d771f7906d3b2111a1b/scikit_fem-11.0.0-py3-none-any.whl", hash = "sha256:cc9f2f2ab0f608f228a72f1eb53e0efb93c900991aad0ca355d9355b5034fe5f", size = 165109, upload-time = "2025-04-24T20:01:08.463Z" },
 ]
 
 [[package]]

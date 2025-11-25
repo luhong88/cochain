@@ -2,11 +2,71 @@ import math
 
 import numpy as np
 import pytest
+import skfem as skfem
 import torch as t
+from skfem.helpers import dot
 
 from cochain.complex import SimplicialComplex
 from cochain.geometry.tet import tet_masses
 from cochain.geometry.tet.tet_geometry import _tet_signed_vols
+
+
+def test_mass_1_with_skfem(two_tets_mesh: SimplicialComplex):
+    skfem_mesh = skfem.MeshTet(
+        two_tets_mesh.vert_coords.T.cpu().detach().numpy(),
+        two_tets_mesh.tets.T.cpu().detach().numpy(),
+    )
+
+    elem = skfem.ElementTetN0()
+    basis = skfem.InteriorBasis(skfem_mesh, elem)
+
+    @skfem.BilinearForm
+    def mass_form(u, v, w):
+        return dot(u, v)
+
+    skfem_mass_1 = mass_form.assemble(basis).todense()
+    # Here, we compare the eigenvalues of the mass matrices rather than the mass
+    # matrices themselves to avoid differences in index/orientation conventions.
+    skfem_mass_1_eigs = np.linalg.eigvalsh(skfem_mass_1)
+    skfem_mass_1_eigs.sort()
+    skfem_mass_1_eigs_torch = t.from_numpy(skfem_mass_1_eigs).to(
+        dtype=two_tets_mesh.vert_coords.dtype
+    )
+
+    cochain_mass_1 = tet_masses.mass_1(two_tets_mesh).to_dense()
+    cochain_mass_1_eigs = t.linalg.eigvalsh(cochain_mass_1).sort().values
+
+    t.testing.assert_close(cochain_mass_1_eigs, skfem_mass_1_eigs_torch)
+
+
+def test_mass_2_with_skfem(two_tets_mesh: SimplicialComplex):
+    skfem_mesh = skfem.MeshTet(
+        two_tets_mesh.vert_coords.T.cpu().detach().numpy(),
+        two_tets_mesh.tets.T.cpu().detach().numpy(),
+    )
+
+    elem = skfem.ElementTetRT0()
+    basis = skfem.InteriorBasis(skfem_mesh, elem)
+
+    @skfem.BilinearForm
+    def mass_form(u, v, w):
+        return dot(u, v)
+
+    skfem_mass_2 = mass_form.assemble(basis).todense()
+    # Here, we compare the eigenvalues of the mass matrices rather than the mass
+    # matrices themselves to avoid differences in index/orientation conventions.
+    # In addition, the scikit-fem results need to be multiplied with 4 due to
+    # difference in 2-form basis function definitions.
+    skfem_mass_2_eigs = np.linalg.eigvalsh(skfem_mass_2) * 4
+    skfem_mass_2_eigs.sort()
+    skfem_mass_2_eigs_torch = t.from_numpy(skfem_mass_2_eigs).to(
+        dtype=two_tets_mesh.vert_coords.dtype
+    )
+
+    cochain_mass_2 = tet_masses.mass_2(two_tets_mesh).to_dense()
+    cochain_mass_2_eigs = t.linalg.eigvalsh(cochain_mass_2).sort().values
+
+    t.testing.assert_close(cochain_mass_2_eigs, skfem_mass_2_eigs_torch)
 
 
 @pytest.mark.parametrize(
