@@ -167,11 +167,13 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
 
     For each tet, each (canonical) triangle pairs xyz and rst and their associated
     Whitney 2-form basis functions W_xyz and W_rst contribute the inner product
-    term int[W_t1*W_t2*dV] to the mass matrix element M[xyz, rst], where
+    term int[W_xyz*W_rst*dV] to the mass matrix element M[xyz, rst], where
 
-    W_xyz(p) = (p - v[-xyz])/3V
+    W_xyz(p) = sign[xyz]*(p - v[-xyz])/3V
 
-    Here, v[-xyz] is the coordinate vector of the vertex opposite to xyz.
+    Here, v[-xyz] is the coordinate vector of the vertex opposite to xyz. sign[xyz]
+    is +1 whenever the triangle xyz satisfies the right-hand rule (i.e., the normal
+    vector formed by the right hand points out of the tet), and -1 if not.
     """
     i, j, k, l = 0, 1, 2, 3
 
@@ -185,10 +187,19 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     n_verts = tet_mesh.n_verts
     n_tris = tet_mesh.n_tris
 
-    tet_vols: Float[t.Tensor, "tet"] = t.abs(_tet_signed_vols(vert_coords, tets))
+    tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
+    tet_vols = t.abs(tet_signed_vols)
+    tet_signs = t.sign(tet_signed_vols)
 
-    # For each tet and each vertex, find all the edge vectors in the tet emanating
-    # from the vertex.
+    # For each tet, associate the 1-form basis function with the opposite vertex.
+    # Then, the inner product between the basis functions is given by
+    #
+    #               int[W_i*W_j*dV] = sum_k,l[C_kl*ik*lj]/(180V)
+    #
+    # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
+    # the summation represents the inner products between all edge vectors emanating
+    # from vertices i and j.
+
     all_edges: Float[t.Tensor, "tet 4 4 3"] = tet_vert_coords.view(
         -1, 1, 4, 3
     ) - tet_vert_coords.view(-1, 4, 1, 3)
@@ -201,6 +212,9 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
         "bijc,bklc,jl->bik", all_edges, all_edges, int_weights
     ) / (180.0 * tet_vols.view(-1, 1, 1))
 
+    # For each tet and each vertex, find the outward-facing triangle opposite
+    # to the vertex (note that the way the triangles are indexed here satisfies
+    # the right-hand rule for positively oriented tets).
     all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[
         :, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
     ]
@@ -216,10 +230,16 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
         other=1.0,
     ).to(dtype=vert_coords.dtype)
 
+    # Mapping the local basis function to the global basis function requires
+    # correction of both the triangle face orientation as well as the tet orientations
+    # (to account for negatively oriented tets, for which all_tris no longer satisfies
+    # the right-hand rule).
+    sign_corrections = all_tris_signs * tet_signs.view(-1, 1)
+
     whitney_inner_prod_signed: Float[t.Tensor, "tet 4 4"] = (
         whitney_inner_prod
-        * all_tris_signs.view(-1, 1, 4)
-        * all_tris_signs.view(-1, 4, 1)
+        * sign_corrections.view(-1, 1, 4)
+        * sign_corrections.view(-1, 4, 1)
     )
 
     # Find the indices of the triangles on the list of unique, canonical triangles
@@ -249,6 +269,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
         t.searchsorted(unique_canon_tris_packed_sorted, all_canon_tris_packed)
     ].view(-1, 4)
 
+    # Assemble the mass matrix
     mass_idx = t.vstack(
         (
             all_canon_tris_idx.view(-1, 4, 1).expand(-1, 4, 4).flatten(),
