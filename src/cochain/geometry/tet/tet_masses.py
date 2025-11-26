@@ -4,7 +4,6 @@ from jaxtyping import Float, Integer
 from ...complex import SimplicialComplex
 from .tet_geometry import (
     _d_tet_signed_vols_d_vert_coords,
-    _tet_face_vector_areas,
     _tet_signed_vols,
 )
 
@@ -161,19 +160,13 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     return mass
 
 
-def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
+def _whitney_2_form_inner_prods(
+    tet_mesh: SimplicialComplex,
+) -> tuple[Float[t.Tensor, "tet 1"], Float[t.Tensor, "tet 4 4"]]:
     """
-    Compute the Galerkin triangle/2-form mass matrix.
-
-    For each tet, each (canonical) triangle pairs xyz and rst and their associated
-    Whitney 2-form basis functions W_xyz and W_rst contribute the inner product
-    term int[W_xyz*W_rst*dV] to the mass matrix element M[xyz, rst], where
-
-    W_xyz(p) = sign[xyz]*(p - v[-xyz])/3V
-
-    Here, v[-xyz] is the coordinate vector of the vertex opposite to xyz. sign[xyz]
-    is +1 whenever the triangle xyz satisfies the right-hand rule (i.e., the normal
-    vector formed by the right hand points out of the tet), and -1 if not.
+    For each tet, compute the pairwise inner product of the Whitney 2-form basis
+    functions associated with the faces of the tet, and correct for the face and
+    tet orientation.
     """
     i, j, k, l = 0, 1, 2, 3
 
@@ -184,9 +177,6 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     dtype = vert_coords.dtype
     device = vert_coords.device
 
-    n_verts = tet_mesh.n_verts
-    n_tris = tet_mesh.n_tris
-
     tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
     tet_vols = t.abs(tet_signed_vols)
     tet_signs = t.sign(tet_signed_vols)
@@ -194,7 +184,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     # For each tet, associate the 1-form basis function with the opposite vertex.
     # Then, the inner product between the basis functions is given by
     #
-    #               int[W_i*W_j*dV] = sum_k,l[C_kl*ik*lj]/(180V)
+    #               int[W_i*W_j*dV] = sum_k,l[C_kl*<ik,jl>]/(180V)
     #
     # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
     # the summation represents the inner products between all edge vectors emanating
@@ -221,7 +211,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
 
     canon_pos_orientation = t.tensor([0, 1, 2], dtype=t.long, device=tets.device)
 
-    all_canon_tris, all_tris_orientations = all_tris.sort(dim=-1)
+    all_tris_orientations = all_tris.sort(dim=-1).indices
     # Same method as used in the construction of coboundary operators to use
     # sort() to identify triangle orientations.
     all_tris_signs: Float[t.Tensor, "tet 4"] = t.where(
@@ -241,6 +231,29 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
         * sign_corrections.view(-1, 1, 4)
         * sign_corrections.view(-1, 4, 1)
     )
+
+    return sign_corrections, whitney_inner_prod_signed
+
+
+def _tet_face_idx(
+    tet_mesh: SimplicialComplex,
+) -> Integer[t.LongTensor, "tet 4"]:
+    """
+    For each tet and each of its vertices, find the triangle face opposite to the
+    vertex and its index in the tet_mesh.tris list.
+    """
+    i, j, k, l = 0, 1, 2, 3
+
+    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
+
+    n_verts = tet_mesh.n_verts
+
+    # For each tet and each vertex, triangle opposite to the vertex.
+    all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[
+        :, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
+    ]
+
+    all_canon_tris = all_tris.sort(dim=-1).values
 
     # Find the indices of the triangles on the list of unique, canonical triangles
     # (tet_mesh.tris) by radix encoding and searchsorted(). Because each triangle
@@ -265,11 +278,39 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
         + all_canon_tris_flat[:, 1] * n_verts
         + all_canon_tris_flat[:, 2]
     )
+
     all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = unique_canon_tris_idx[
         t.searchsorted(unique_canon_tris_packed_sorted, all_canon_tris_packed)
     ].view(-1, 4)
 
-    # Assemble the mass matrix
+    return all_canon_tris_idx
+
+
+def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
+    """
+    Compute the Galerkin triangle/2-form mass matrix.
+
+    For each tet, each (canonical) triangle pairs xyz and rst and their associated
+    Whitney 2-form basis functions W_xyz and W_rst contribute the inner product
+    term int[W_xyz*W_rst*dV] to the mass matrix element M[xyz, rst], where
+
+    W_xyz(p) = sign[xyz]*(p - v[-xyz])/3V
+
+    Here, v[-xyz] is the coordinate vector of the vertex opposite to xyz. sign[xyz]
+    is +1 whenever the triangle xyz satisfies the right-hand rule (i.e., the normal
+    vector formed by the right hand points out of the tet), and -1 if not.
+    """
+    n_tris = tet_mesh.n_tris
+
+    # First, compute the inner products of the Whitney 2-form basis functions.
+    _, whitney_inner_prod_signed = _whitney_2_form_inner_prods(tet_mesh)
+
+    # Then, find the indices of the tet triangle faces associated with the basis
+    # functions.
+    all_canon_tris_idx = _tet_face_idx(tet_mesh)
+
+    # Assemble the mass matrix by scattering the inner products according to the
+    # triangle indices.
     mass_idx = t.vstack(
         (
             all_canon_tris_idx.view(-1, 4, 1).expand(-1, 4, 4).flatten(),
@@ -280,6 +321,110 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     mass = t.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
 
     return mass
+
+
+def d_mass_2_d_vert_coords(
+    tet_mesh: SimplicialComplex,
+) -> Float[t.Tensor, "tri tri vert 3"]:
+    """
+    Compute the Jacobian of the 2-form mass matrix wrt the vertex coordinates.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
+    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
+    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+
+    n_verts = tet_mesh.n_verts
+    n_tris = tet_mesh.n_tris
+
+    dtype = vert_coords.dtype
+    device = vert_coords.device
+
+    # For each tet, denote the inner product between the 2-form basis functions
+    # associated with triangle faces i and j as int_ij; recall that
+    #
+    #               int_ij = sum_k,l[C_kl*<ik,jl>]/(180V)
+    #
+    # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
+    # the summation represents the inner products between all edge vectors emanating
+    # from vertices i and j. Then, one can show that the Jacobian of int_ij wrt
+    # the coordinates of vertex p, grad_p[int_ij], is given by
+    #
+    #     grad_p[int_ij] = (
+    #         sum_k,l[C_kl*(delta_pk - delta_pi)*jl]/(180*V) +
+    #         sum_k,l[C_kl*(delta_pl - delta_pj)*ik]/(180*V) -
+    #         int_ij*grad_p[V]/V
+    #     )
+
+    # First, collect all the constituent terms required to compute the Jacobian.
+    tet_signed_vols: Float[t.Tensor, "tet 1 1 1 1"] = _tet_signed_vols(
+        vert_coords, tets
+    ).view(-1, 1, 1, 1, 1)
+
+    tet_vols = t.abs(tet_signed_vols)
+
+    d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 1 1 4 3"] = (
+        _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+    ).view(-1, 1, 1, 4, 3)
+
+    all_edges: Float[t.Tensor, "tet 4 4 3"] = tet_vert_coords.view(
+        -1, 1, 4, 3
+    ) - tet_vert_coords.view(-1, 4, 1, 3)
+
+    identity = t.eye(4, dtype=dtype, device=device)
+
+    int_weights: Float[t.Tensor, "4 4"] = (
+        t.ones((4, 4), dtype=dtype, device=device) + identity
+    )
+
+    sign_corrections, whitney_inner_prods = _whitney_2_form_inner_prods(tet_mesh)
+    sign_corrections_shaped: Float[t.Tensor, "tet 4 4"] = sign_corrections.view(
+        -1, 1, 4
+    ) * sign_corrections.view(-1, 4, 1)
+    whitney_inner_prods_shaped = whitney_inner_prods.view(-1, 4, 4, 1, 1)
+
+    # Compute the delta_pk - delta_pi term of shape (i, p, k); this is equivalent
+    # to the delta_pl - delta_pj term of shape (j, p, l).
+    delta = identity.view(4, 4, 1) - identity.view(4, 1, 4)
+
+    # Prepare all three terms in the sum into the form (tet, i, j, p, coords).
+    # Note that the first two terms require a correction for the triangle and
+    # tet orientations. The third term does not require this correction since
+    # the function _whitney_2_form_inner_prods() already applies this correction
+    # to the inner products.
+    sum_1 = t.einsum("kl,pki,tjlc->tijpc", int_weights, delta, all_edges) / (
+        180 * tet_vols
+    )
+    sum_2 = t.einsum("kl,plj,tikc->tijpc", int_weights, delta, all_edges) / (
+        180 * tet_vols
+    )
+    sum_3 = whitney_inner_prods_shaped * d_signed_vols_d_vert_coords / tet_signed_vols
+
+    whitney_inner_prod_grad: Float[t.Tensor, "tet i=4 j=4 p=4 3"] = (
+        t.einsum("tij,tijpc->tijpc", sign_corrections_shaped, sum_1 + sum_2) - sum_3
+    )
+
+    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = _tet_face_idx(tet_mesh)
+
+    # Assemble the mass matrix Jacobian.
+    dMdV_idx_i = all_canon_tris_idx.view(-1, 4, 1, 1).expand(-1, 4, 4, 4).flatten()
+    dMdV_idx_j = all_canon_tris_idx.view(-1, 1, 4, 1).expand(-1, 4, 4, 4).flatten()
+    dMdV_idx_p = tet_mesh.tets.view(-1, 1, 1, 4).expand(-1, 4, 4, 4).flatten()
+
+    dMdV_idx = t.vstack(
+        (
+            dMdV_idx_i,
+            dMdV_idx_j,
+            dMdV_idx_p,
+        )
+    )
+
+    dMdV_val = whitney_inner_prod_grad.flatten(end_dim=-2)
+
+    dMdV = t.sparse_coo_tensor(
+        dMdV_idx, dMdV_val, (n_tris, n_tris, n_verts, 3)
+    ).coalesce()
+
+    return dMdV
 
 
 def mass_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tet"]:

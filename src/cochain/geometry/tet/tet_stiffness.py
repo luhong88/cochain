@@ -51,7 +51,7 @@ def _d_cotan_weights_d_vert_coords(
     # contribution to the cotan weights), which is (<th x o, hh x o> / 36 * vol_ijkl),
     # wrt each vertex i, j, k, and l. For vertex p, this gradient is given by
     #
-    # grad_p(w_o) = -(w_o*grad_p(vol_ijkl) + grad_p(<th x o, hh x o>)/36)/vol_ijkl
+    # grad_p(w_o) = (grad_p(<th x o, hh x o>)/36 - w_o*grad_p(vol_ijkl))/vol_ijkl
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
     norm_tri_to, norm_tri_ho, weight_o = _tet_face_vector_areas(vert_coords, tets)
