@@ -67,6 +67,54 @@ def _d_tet_signed_vols_d_vert_coords(
     return dVdV
 
 
+def _d2_tet_signed_vols_d2_vert_coords(
+    vert_coords: Float[t.Tensor, "vert 3"],
+    tets: Integer[t.LongTensor, "tet 4"],
+    vec: Float[t.Tensor, "tet 4 3"],
+) -> Float[t.Tensor, "tet vert vert vert 3"]:
+    """
+    For each tet, given the gradient of the signed volumes grad_x[V]
+    (shape: (tet, x=4, 3)) and a vector field v_y associated with each vertex
+    (shape: (tet, y=4, 3)), compute the pairwise "vector-Hessian product" (VHP)
+    as VHP_xyp = hess_xp[V]@v_y. This is useful for computing the gradient vectors
+    for inner products of the form I_xy = <grad_x[V], v_y>.
+    """
+    i, j, k, l = 0, 1, 2, 3
+
+    # Since the gradient of signed tet volumes is given by a triangle face
+    # area vector, the Hessian of the signed tet volumes can be represented by
+    # skew-symmetric matrices of tet edges associated with cross product with
+    # the edges:
+    #
+    # vert  base tri  area normal  grad_i  grad_j  grad_k  grad_l
+    # -----------------------------------------------------------
+    # i     jkl       jl x jk      [ii]    [lk]    [jl]    [kj]
+    # j     ikl       ik x il      [kl]    [jj]    [li]    [ik]
+    # k     ijl       il x ij      [lj]    [il]    [kk]    [ji]
+    # l     ijk       ij x ik      [jk]    [ik]    [ji]    [ll]
+
+    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+
+    area_vec_grad: Float[t.Tensor, "tet 4 4 3"] = (
+        tet_vert_coords[
+            :,
+            [[i, k, l, j], [l, j, i, k], [j, l, k, i], [k, k, i, l]],
+        ]
+        - tet_vert_coords[
+            :,
+            [[i, l, j, k], [k, j, l, i], [l, i, k, j], [j, i, j, l]],
+        ]
+    )
+
+    # (t,x,p,3) x (t,y,3) -> (t,x,y,p,3)
+    signed_vols_grad_grad = (
+        t.cross(area_vec_grad.view(-1, 4, 1, 4, 3), vec.view(-1, 1, 4, 1, 3), dim=-1)
+        / 6.0
+    )
+
+    return signed_vols_grad_grad
+
+
 def _tet_face_vector_areas(
     vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
 ) -> tuple[
