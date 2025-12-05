@@ -627,9 +627,21 @@ class _Mass2(t.autograd.Function):
 
 
         """
+
+        # Compute the vector-Jacobian product between the "vector" dLdM of shape
+        # (tri, tri) and the Jacobian dMdV of shape (tri, tri, vert, 3) as
+        # t.einsum("ij,ijpc->pc", dLdM, dMdV). Note that, since tet_mesh.vert_coords
+        # is always a dense tensor, the VJP also outputs a dense tensor.
+
         if dLdM.layout == t.strided:
+            # If dLdM is a dense tensor, simply extract the elements from dLdM
+            # that correspond to the nonzero elements of dMdV (along its first
+            # two tri dimensions).
             dLdM_flat = dLdM[dMdV_idx_i, dMdV_idx_j].view(-1, 1)
 
+            # Perform the einsum as a simple product between the nonzero elements
+            # of triangle pairs, and scatter according to the vert dimension index
+            # to generate the final VJP.
             dLdV = t.zeros_like(vert_coords)
             dLdV.scatter_add_(
                 dim=0,
@@ -639,22 +651,45 @@ class _Mass2(t.autograd.Function):
 
         else:
             # TODO: the indexing logic can be cached for repeated backward passes
-            dLdM_coo = dLdM.to_sparse_coo().coalesce()
 
+            # If dLdM is a sparse tensor, we need to find the "common nonzeros"
+            # (cnz) of triangle pairs in both dLdM and dMdV, then performs the
+            # product/scatter as before.
+
+            # The dLdM needs to be a coalesced COO sparse tensor.
+            dLdM_coo = dLdM.to_sparse_coo().coalesce()
             dLdM_idx = dLdM_coo.indices()
+
+            # Perform radix packing to index the nonzero triangle pair elements
+            # in both dLdM and dMdV.
             dLdM_idx_flat = dLdM_idx[0] * ctx.n_tris + dLdM_idx[1]
             dLdM_nnz = dLdM_idx_flat.size(0)
 
             dMdV_idx_flat = dMdV_idx_i * ctx.n_tris + dMdV_idx_j
 
+            # For each nonzero triangle pair element in dMdV, determine if it is
+            # a "common nonzero", and, if it is, how to map the dMdV element to
+            # the corresponding dLdM element.
+
+            # First, use searchsorted to find the "insertion locaiton" of each
+            # dMdV nonzero element into dLdM nonzeros.
             dMdV_idx_insert_loc = t.searchsorted(dLdM_idx_flat, dMdV_idx_flat)
             dMdV_insert_loc_clipped = t.clip(dMdV_idx_insert_loc, 0, dLdM_nnz - 1)
-            dMdV_idx_mask = dLdM_idx_flat[dMdV_insert_loc_clipped] == dMdV_idx_flat
 
-            dLdM_cnz_val = dLdM.values()[dMdV_idx_insert_loc[dMdV_idx_mask]].view(-1, 1)
+            # If a dMdV nonzero element has a corresponding dLdM nonzero element,
+            # then its packed index matches the packed index of the dLdM nonzero
+            # element at its insertion location. Checking this gives a dMdV "common
+            # nonzero" index mask.
+            dMdV_cnz_idx_mask = dLdM_idx_flat[dMdV_insert_loc_clipped] == dMdV_idx_flat
+            # The "insertion location" for the dMdV "common nonzero" elements give
+            # the "common nonzero" indices of dLdM
+            dLdM_cnz_idx = dMdV_idx_insert_loc[dMdV_cnz_idx_mask]
 
-            dMdV_cnz_val = dMdV_val[dMdV_idx_mask]
-            dMdV_cnz_idx_p = dMdV_idx_p[dMdV_idx_mask].view(-1, 1).expand(-1, 3)
+            # Multiply and scatter the "common nonzeros" to dLdV.
+            dLdM_cnz_val = dLdM.values()[dLdM_cnz_idx].view(-1, 1)
+
+            dMdV_cnz_val = dMdV_val[dMdV_cnz_idx_mask]
+            dMdV_cnz_idx_p = dMdV_idx_p[dMdV_cnz_idx_mask].view(-1, 1).expand(-1, 3)
 
             dLdV = t.zeros_like(vert_coords)
             dLdV.scatter_add_(
