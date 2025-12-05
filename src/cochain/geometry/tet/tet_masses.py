@@ -602,6 +602,7 @@ class _Mass2(t.autograd.Function):
         vert_coords, tets, tris, n_tris, n_verts = inputs
 
         ctx.save_for_backward(vert_coords, tets, tris)
+        ctx.n_tris = n_tris
         ctx.n_verts = n_verts
 
     @staticmethod
@@ -626,17 +627,41 @@ class _Mass2(t.autograd.Function):
 
 
         """
-        if dLdM.layout != t.strided:
-            dLdM_dense = dLdM.to_dense()
+        if dLdM.layout == t.strided:
+            dLdM_flat = dLdM[dMdV_idx_i, dMdV_idx_j].view(-1, 1)
+
+            dLdV = t.zeros_like(vert_coords)
+            dLdV.scatter_add_(
+                dim=0,
+                index=dMdV_idx_p.view(-1, 1).expand(-1, 3),
+                src=dLdM_flat * dMdV_val,
+            )
+
         else:
-            dLdM_dense = dLdM
+            # TODO: the indexing logic can be cached for repeated backward passes
+            dLdM_coo = dLdM.to_sparse_coo().coalesce()
 
-        dLdM_flat = dLdM_dense[dMdV_idx_i, dMdV_idx_j][:, None]
+            dLdM_idx = dLdM_coo.indices()
+            dLdM_idx_flat = dLdM_idx[0] * ctx.n_tris + dLdM_idx[1]
+            dLdM_nnz = dLdM_idx_flat.size(0)
 
-        dLdV = t.zeros_like(vert_coords)
-        dLdV.scatter_add_(
-            dim=0, index=dMdV_idx_p.view(-1, 1).expand(-1, 3), src=dLdM_flat * dMdV_val
-        )
+            dMdV_idx_flat = dMdV_idx_i * ctx.n_tris + dMdV_idx_j
+
+            dMdV_idx_insert_loc = t.searchsorted(dLdM_idx_flat, dMdV_idx_flat)
+            dMdV_insert_loc_clipped = t.clip(dMdV_idx_insert_loc, 0, dLdM_nnz - 1)
+            dMdV_idx_mask = dLdM_idx_flat[dMdV_insert_loc_clipped] == dMdV_idx_flat
+
+            dLdM_cnz_val = dLdM.values()[dMdV_idx_insert_loc[dMdV_idx_mask]].view(-1, 1)
+
+            dMdV_cnz_val = dMdV_val[dMdV_idx_mask]
+            dMdV_cnz_idx_p = dMdV_idx_p[dMdV_idx_mask].view(-1, 1).expand(-1, 3)
+
+            dLdV = t.zeros_like(vert_coords)
+            dLdV.scatter_add_(
+                dim=0,
+                index=dMdV_cnz_idx_p,
+                src=dLdM_cnz_val * dMdV_cnz_val,
+            )
 
         return dLdV, None, None, None, None
 
