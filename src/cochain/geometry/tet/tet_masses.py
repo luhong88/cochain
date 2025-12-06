@@ -608,25 +608,15 @@ class _Mass2(t.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdM: Float[t.Tensor, "tri tri"]
-    ) -> tuple[Float[t.Tensor, "vert 3"], None, None, None, None]:
-        """
-        Compute the Jacobian of the 2-form mass matrix wrt the vertex coordinates.
-        """
+    ) -> tuple[Float[t.Tensor, "vert 3"] | None, None, None, None, None]:
+        if ctx.needs_input_grad[0] is None:
+            return (None, None, None, None, None)
+
         vert_coords, tets, tris = ctx.saved_tensors
 
         dMdV_val, dMdV_idx_i, dMdV_idx_j, dMdV_idx_p = _d_mass_2_d_vert_coords(
             vert_coords, tets, tris, ctx.n_verts
         )
-
-        """
-        let dLdM = grad_output (shape: (tri, tri)) and dMdV be the jacobian
-        of shape (tri, tri, vert, 3). Need to compute the vector-jacobian product
-        dLdV_p = sum_ij[dLdM_ij*dMdV_ijp] of shape (vert, 3) using the chain rule.
-
-        here, vert_coords is dense, so the output here is also going to be dense.
-
-
-        """
 
         # Compute the vector-Jacobian product between the "vector" dLdM of shape
         # (tri, tri) and the Jacobian dMdV of shape (tri, tri, vert, 3) as
@@ -699,6 +689,44 @@ class _Mass2(t.autograd.Function):
             )
 
         return dLdV, None, None, None, None
+
+    def jvp(
+        ctx,
+        tangent_vert_coords: Float[t.Tensor, "vert 3"] | None,
+        tangent_tets: None,
+        tangent_tris: None,
+        tangent_n_tris: None,
+        tangent_n_verts: None,
+    ) -> Float[t.Tensor, "tri tri"]:
+        vert_coords, tets, tris = ctx.saved_tensors
+
+        if tangent_vert_coords is None:
+            dMdt = t.sparse_coo_tensor(
+                indices=t.empty((2, 0), dtype=t.long, device=vert_coords.device),
+                values=t.empty(
+                    (0,), dtype=vert_coords.dtype, device=vert_coords.device
+                ),
+                size=(ctx.n_tris, ctx.n_tris),
+            )
+
+        else:
+            # Compute the Jacobian-vector product between the "Jacobian" dMdV
+            # of shape (tri, tri, vert, 3) and the tangent vector dVdt of shape
+            # (vert, 3) as t.einsum("ijpc,pc->ij", dMdV, dVdt). Note that, since
+            # the 2-form mass matrix is always a sparse tensor, the JVP also
+            # outputs a sparse tensor.
+            dMdV_val, dMdV_idx_i, dMdV_idx_j, dMdV_idx_p = _d_mass_2_d_vert_coords(
+                vert_coords, tets, tris, ctx.n_verts
+            )
+            dVdt_flat = tangent_vert_coords[dMdV_idx_p]
+
+            dMdt_val = (dMdV_val * dVdt_flat).sum(dim=-1)
+            dMdt_idx = t.vstack((dMdV_idx_i, dMdV_idx_j))
+            dMdt = t.sparse_coo_tensor(
+                dMdt_idx, dMdt_val, (ctx.n_tris, ctx.n_tris)
+            ).coalesce()
+
+        return dMdt
 
 
 def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
