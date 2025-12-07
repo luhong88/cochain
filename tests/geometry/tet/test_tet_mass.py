@@ -1,5 +1,3 @@
-import math
-
 import numpy as np
 import pytest
 import skfem as skfem
@@ -9,6 +7,7 @@ from skfem.helpers import dot
 from cochain.complex import SimplicialComplex
 from cochain.geometry.tet import tet_masses
 from cochain.geometry.tet.tet_geometry import _tet_signed_vols
+from cochain.geometry.tet.tet_mass_2 import _Mass2
 
 
 def test_mass_1_with_skfem(two_tets_mesh: SimplicialComplex):
@@ -221,7 +220,7 @@ def tet_mass_1_aurograd(two_tets_mesh: SimplicialComplex):
     assert t.allclose(custom_grad, auto_grad, atol=1e-4)
 
 
-def tet_mass_2_aurograd(two_tets_mesh: SimplicialComplex):
+def tet_d_mass_2_d_vert_coords(two_tets_mesh: SimplicialComplex):
     two_tets_mesh.vert_coords.requires_grad = True
     mass_2 = tet_masses.mass_2(two_tets_mesh).to_dense()
     y = (mass_2**2).sum()
@@ -233,3 +232,100 @@ def tet_mass_2_aurograd(two_tets_mesh: SimplicialComplex):
     auto_grad = t.autograd.grad(y, two_tets_mesh.vert_coords)[0]
 
     assert t.allclose(custom_grad, auto_grad, atol=1e-4)
+
+
+def test_mass_2_gradcheck(two_tets_mesh: SimplicialComplex):
+    vert_coords = two_tets_mesh.vert_coords.to(dtype=t.float64)
+    vert_coords.requires_grad_()
+
+    def test_fxn(vert_coords):
+        return _Mass2.apply(
+            vert_coords,
+            two_tets_mesh.tets,
+            two_tets_mesh.tris,
+            two_tets_mesh.n_tris,
+            two_tets_mesh.n_verts,
+        ).to_dense()
+
+    assert t.autograd.gradcheck(test_fxn, (vert_coords,), eps=1e-6, atol=1e-4)
+
+
+def test_mass_2_vjp_layout(two_tets_mesh: SimplicialComplex):
+    """
+    Check that the VJP implementation gives the same result when the cotangent
+    vector is sparse or dense.
+    """
+    vert_coords = two_tets_mesh.vert_coords.clone().detach()
+    vert_coords.requires_grad_()
+
+    w = t.randn(
+        (two_tets_mesh.n_tris, two_tets_mesh.n_tris),
+        dtype=vert_coords.dtype,
+        device=vert_coords.device,
+    )
+
+    mass_2 = _Mass2.apply(
+        vert_coords,
+        two_tets_mesh.tets,
+        two_tets_mesh.tris,
+        two_tets_mesh.n_tris,
+        two_tets_mesh.n_verts,
+    )
+
+    vjp_dense = t.autograd.grad(mass_2, vert_coords, grad_outputs=w)[0]
+
+    mass_2 = _Mass2.apply(
+        vert_coords,
+        two_tets_mesh.tets,
+        two_tets_mesh.tris,
+        two_tets_mesh.n_tris,
+        two_tets_mesh.n_verts,
+    )
+
+    vjp_sparse = t.autograd.grad(mass_2, vert_coords, grad_outputs=w.to_sparse_coo())[
+        0
+    ].to_dense()
+
+    t.testing.assert_close(vjp_sparse, vjp_dense)
+
+
+def test_mass_2_adjoint(two_tets_mesh: SimplicialComplex):
+    """
+    Check that the VJP and JVP are adjoint operations, i.e., <v, J.T@w> = <J@v, w>,
+    where v is the tangent vector (dVdt) and w is the cotangent vector (dLdM); here,
+    J@v is the JVP and J.T@w is the VJP.
+    """
+    vert_coords = two_tets_mesh.vert_coords.clone().detach().to(dtype=t.float64)
+    vert_coords.requires_grad_()
+
+    v = t.randn_like(vert_coords)
+    w = t.randn(
+        (two_tets_mesh.n_tris, two_tets_mesh.n_tris),
+        dtype=vert_coords.dtype,
+        device=vert_coords.device,
+    )
+
+    # Compute VJP.
+    mass_2 = _Mass2.apply(
+        vert_coords,
+        two_tets_mesh.tets,
+        two_tets_mesh.tris,
+        two_tets_mesh.n_tris,
+        two_tets_mesh.n_verts,
+    )
+
+    vjp = t.autograd.grad(mass_2, vert_coords, grad_outputs=w)[0]
+
+    # Compute JVP.
+    class MockCtx:
+        def __init__(self):
+            self.vert_coords = vert_coords.detach()
+            self.tets = two_tets_mesh.tets
+            self.tris = two_tets_mesh.tris
+            self.n_tris = two_tets_mesh.n_tris
+            self.n_verts = two_tets_mesh.n_verts
+
+    jvp = _Mass2.jvp(MockCtx(), v, None, None, None, None).to_dense()
+
+    # Check adjoint consistency.
+    t.testing.assert_close((jvp * w).sum(), (v * vjp).sum())

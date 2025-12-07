@@ -260,6 +260,11 @@ class _Mass2(t.autograd.Function):
         ctx.n_tris = n_tris
         ctx.n_verts = n_verts
 
+        # Save tensors for JVP.
+        ctx.vert_coords = vert_coords
+        ctx.tets = tets
+        ctx.tris = tris
+
     @staticmethod
     def backward(
         ctx, dLdM: Float[t.Tensor, "tri tri"]
@@ -279,6 +284,7 @@ class _Mass2(t.autograd.Function):
         # is always a dense tensor, the VJP also outputs a dense tensor.
 
         if dLdM.layout == t.strided:
+            print("dense")
             # If dLdM is a dense tensor, simply extract the elements from dLdM
             # that correspond to the nonzero elements of dMdV (along its first
             # two tri dimensions).
@@ -295,6 +301,7 @@ class _Mass2(t.autograd.Function):
             )
 
         else:
+            print("sparse")
             # TODO: the indexing logic can be cached for repeated backward passes
 
             # If dLdM is a sparse tensor, we need to find the "common nonzeros"
@@ -309,6 +316,10 @@ class _Mass2(t.autograd.Function):
             # in both dLdM and dMdV.
             dLdM_idx_flat = dLdM_idx[0] * ctx.n_tris + dLdM_idx[1]
             dLdM_nnz = dLdM_idx_flat.size(0)
+
+            # If dLdM has no non-zero elements, the gradient is zero.
+            if dLdM_nnz == 0:
+                return t.zeros_like(vert_coords), None, None, None, None
 
             dMdV_idx_flat = dMdV_idx_i * ctx.n_tris + dMdV_idx_j
 
@@ -345,6 +356,7 @@ class _Mass2(t.autograd.Function):
 
         return dLdV, None, None, None, None
 
+    @staticmethod
     def jvp(
         ctx,
         tangent_vert_coords: Float[t.Tensor, "vert 3"] | None,
@@ -353,13 +365,11 @@ class _Mass2(t.autograd.Function):
         tangent_n_tris: None,
         tangent_n_verts: None,
     ) -> Float[t.Tensor, "tri tri"]:
-        vert_coords, tets, tris = ctx.saved_tensors
-
         if tangent_vert_coords is None:
             dMdt = t.sparse_coo_tensor(
-                indices=t.empty((2, 0), dtype=t.long, device=vert_coords.device),
+                indices=t.empty((2, 0), dtype=t.long, device=ctx.vert_coords.device),
                 values=t.empty(
-                    (0,), dtype=vert_coords.dtype, device=vert_coords.device
+                    (0,), dtype=ctx.vert_coords.dtype, device=ctx.vert_coords.device
                 ),
                 size=(ctx.n_tris, ctx.n_tris),
             )
@@ -371,7 +381,7 @@ class _Mass2(t.autograd.Function):
             # the 2-form mass matrix is always a sparse tensor, the JVP also
             # outputs a sparse tensor.
             dMdV_val, dMdV_idx_i, dMdV_idx_j, dMdV_idx_p = _d_mass_2_d_vert_coords(
-                vert_coords, tets, tris, ctx.n_verts
+                ctx.vert_coords, ctx.tets, ctx.tris, ctx.n_verts
             )
             dVdt_flat = tangent_vert_coords[dMdV_idx_p]
 
