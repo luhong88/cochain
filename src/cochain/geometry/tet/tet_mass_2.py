@@ -128,6 +128,34 @@ def _tet_tri_face_idx(
     return all_canon_tris_idx
 
 
+def _mass_2(
+    vert_coords: Float[t.Tensor, "vert 3"],
+    tets: Integer[t.LongTensor, "tet 4"],
+    tris: Integer[t.LongTensor, "tri 3"],
+    n_tris: int,
+    n_verts: int,
+) -> Float[t.Tensor, "tri tri"]:
+    # First, compute the inner products of the Whitney 2-form basis functions.
+    _, whitney_inner_prod_signed = _whitney_2_form_inner_prods(vert_coords, tets)
+
+    # Then, find the indices of the tet triangle faces associated with the basis
+    # functions.
+    all_canon_tris_idx = _tet_tri_face_idx(tets, tris, n_verts)
+
+    # Assemble the mass matrix by scattering the inner products according to the
+    # triangle indices.
+    mass_idx = t.vstack(
+        (
+            all_canon_tris_idx.view(-1, 4, 1).expand(-1, 4, 4).flatten(),
+            all_canon_tris_idx.view(-1, 1, 4).expand(-1, 4, 4).flatten(),
+        )
+    )
+    mass_val = whitney_inner_prod_signed.flatten()
+    mass = t.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
+
+    return mass
+
+
 def _d_mass_2_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert 3"],
     tets: Integer[t.LongTensor, "tet 4"],
@@ -223,6 +251,95 @@ def _d_mass_2_d_vert_coords(
     return dMdV_val, dMdV_idx_i, dMdV_idx_j, dMdV_idx_p
 
 
+def _mass_2_vjp(
+    dLdM_local: Float[t.Tensor, "tet 4 4"],
+    vert_coords: Float[t.Tensor, "vert 3"],
+    tets: Integer[t.LongTensor, "tet 4"],
+) -> Float[t.Tensor, "tet 4 3"]:
+    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+
+    dtype = vert_coords.dtype
+    device = vert_coords.device
+
+    # For each tet, denote the inner product between the 2-form basis functions
+    # associated with triangle faces i and j as int_ij; recall that
+    #
+    #               int_ij = sum_k,l[C_kl*<ik,jl>]/(180V)
+    #
+    # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
+    # the summation represents the inner products between all edge vectors emanating
+    # from vertices i and j. Then, one can show that the Jacobian of int_ij wrt
+    # the coordinates of vertex p, grad_p[int_ij], is given by
+    #
+    #     grad_p[int_ij] = (
+    #         sum_k,l[C_kl*(delta_pk - delta_pi)*jl]/(180*V) +
+    #         sum_k,l[C_kl*(delta_pl - delta_pj)*ik]/(180*V) -
+    #         int_ij*grad_p[V]/V
+    #     )
+
+    # First, collect all the constituent terms required to compute the Jacobian.
+    tet_signed_vols: Float[t.Tensor, "tet 1 1"] = _tet_signed_vols(
+        vert_coords, tets
+    ).view(-1, 1, 1)
+
+    tet_vols = t.abs(tet_signed_vols)
+
+    d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"] = (
+        _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+    )
+
+    all_edges: Float[t.Tensor, "tet 4 4 3"] = tet_vert_coords.view(
+        -1, 1, 4, 3
+    ) - tet_vert_coords.view(-1, 4, 1, 3)
+
+    identity = t.eye(4, dtype=dtype, device=device)
+
+    int_weights: Float[t.Tensor, "4 4"] = (
+        t.ones((4, 4), dtype=dtype, device=device) + identity
+    )
+
+    sign_corrections, whitney_inner_prods = _whitney_2_form_inner_prods(
+        vert_coords, tets
+    )
+    sign_corrections_shaped: Float[t.Tensor, "tet 4 4"] = sign_corrections.view(
+        -1, 1, 4
+    ) * sign_corrections.view(-1, 4, 1)
+
+    # Compute the delta_pk - delta_pi term of shape (i, p, k); this is equivalent
+    # to the delta_pl - delta_pj term of shape (j, p, l).
+    delta = identity.view(4, 4, 1) - identity.view(4, 1, 4)
+
+    # Prepare all three terms in the sum into the form (tet, i, j, p, coords).
+    # Note that the first two terms require a correction for the triangle and
+    # tet orientations. The third term does not require this correction since
+    # the function _whitney_2_form_inner_prods() already applies this correction
+    # to the inner products.
+    sum_1 = t.einsum(
+        "tij,tij,kl,pki,tjlc->tpc",
+        sign_corrections_shaped,
+        dLdM_local,
+        int_weights,
+        delta,
+        all_edges,
+    ) / (180 * tet_vols)
+    sum_2 = t.einsum(
+        "tij,tij,kl,plj,tikc->tpc",
+        sign_corrections_shaped,
+        dLdM_local,
+        int_weights,
+        delta,
+        all_edges,
+    ) / (180 * tet_vols)
+    sum_3 = t.einsum(
+        "tij,tij,tpc->tpc",
+        dLdM_local,
+        whitney_inner_prods,
+        d_signed_vols_d_vert_coords / tet_signed_vols,
+    )
+
+    return sum_1 + sum_2 - sum_3
+
+
 class _Mass2(t.autograd.Function):
     @staticmethod
     def forward(
@@ -232,25 +349,7 @@ class _Mass2(t.autograd.Function):
         n_tris: int,
         n_verts: int,
     ) -> Float[t.Tensor, "tri tri"]:
-        # First, compute the inner products of the Whitney 2-form basis functions.
-        _, whitney_inner_prod_signed = _whitney_2_form_inner_prods(vert_coords, tets)
-
-        # Then, find the indices of the tet triangle faces associated with the basis
-        # functions.
-        all_canon_tris_idx = _tet_tri_face_idx(tets, tris, n_verts)
-
-        # Assemble the mass matrix by scattering the inner products according to the
-        # triangle indices.
-        mass_idx = t.vstack(
-            (
-                all_canon_tris_idx.view(-1, 4, 1).expand(-1, 4, 4).flatten(),
-                all_canon_tris_idx.view(-1, 1, 4).expand(-1, 4, 4).flatten(),
-            )
-        )
-        mass_val = whitney_inner_prod_signed.flatten()
-        mass = t.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
-
-        return mass
+        return _mass_2(vert_coords, tets, tris, n_tris, n_verts)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -274,9 +373,13 @@ class _Mass2(t.autograd.Function):
 
         vert_coords, tets, tris = ctx.saved_tensors
 
-        dMdV_val, dMdV_idx_i, dMdV_idx_j, dMdV_idx_p = _d_mass_2_d_vert_coords(
-            vert_coords, tets, tris, ctx.n_verts
+        all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = _tet_tri_face_idx(
+            tets, tris, ctx.n_verts
         )
+
+        dMdV_idx_i = all_canon_tris_idx.view(-1, 4, 1).expand(-1, 4, 4)
+        dMdV_idx_j = all_canon_tris_idx.view(-1, 1, 4).expand(-1, 4, 4)
+        dMdV_idx_p = tets.view(-1, 4, 1).expand(-1, 4, 3)
 
         # Compute the vector-Jacobian product between the "vector" dLdM of shape
         # (tri, tri) and the Jacobian dMdV of shape (tri, tri, vert, 3) as
@@ -284,24 +387,12 @@ class _Mass2(t.autograd.Function):
         # is always a dense tensor, the VJP also outputs a dense tensor.
 
         if dLdM.layout == t.strided:
-            print("dense")
             # If dLdM is a dense tensor, simply extract the elements from dLdM
             # that correspond to the nonzero elements of dMdV (along its first
             # two tri dimensions).
-            dLdM_flat = dLdM[dMdV_idx_i, dMdV_idx_j].view(-1, 1)
-
-            # Perform the einsum as a simple product between the nonzero elements
-            # of triangle pairs, and scatter according to the vert dimension index
-            # to generate the final VJP.
-            dLdV = t.zeros_like(vert_coords)
-            dLdV.scatter_add_(
-                dim=0,
-                index=dMdV_idx_p.view(-1, 1).expand(-1, 3),
-                src=dLdM_flat * dMdV_val,
-            )
+            dLdM_local = dLdM[dMdV_idx_i, dMdV_idx_j]
 
         else:
-            print("sparse")
             # TODO: the indexing logic can be cached for repeated backward passes
 
             # If dLdM is a sparse tensor, we need to find the "common nonzeros"
@@ -321,7 +412,7 @@ class _Mass2(t.autograd.Function):
             if dLdM_nnz == 0:
                 return t.zeros_like(vert_coords), None, None, None, None
 
-            dMdV_idx_flat = dMdV_idx_i * ctx.n_tris + dMdV_idx_j
+            dMdV_idx_flat = dMdV_idx_i.flatten() * ctx.n_tris + dMdV_idx_j.flatten()
 
             # For each nonzero triangle pair element in dMdV, determine if it is
             # a "common nonzero", and, if it is, how to map the dMdV element to
@@ -337,22 +428,26 @@ class _Mass2(t.autograd.Function):
             # element at its insertion location. Checking this gives a dMdV "common
             # nonzero" index mask.
             dMdV_cnz_idx_mask = dLdM_idx_flat[dMdV_insert_loc_clipped] == dMdV_idx_flat
-            # The "insertion location" for the dMdV "common nonzero" elements give
-            # the "common nonzero" indices of dLdM
-            dLdM_cnz_idx = dMdV_idx_insert_loc[dMdV_cnz_idx_mask]
 
-            # Multiply and scatter the "common nonzeros" to dLdV.
-            dLdM_cnz_val = dLdM.values()[dLdM_cnz_idx].view(-1, 1)
-
-            dMdV_cnz_val = dMdV_val[dMdV_cnz_idx_mask]
-            dMdV_cnz_idx_p = dMdV_idx_p[dMdV_cnz_idx_mask].view(-1, 1).expand(-1, 3)
-
-            dLdV = t.zeros_like(vert_coords)
-            dLdV.scatter_add_(
-                dim=0,
-                index=dMdV_cnz_idx_p,
-                src=dLdM_cnz_val * dMdV_cnz_val,
+            dLdM_local_flat = t.zeros(
+                dMdV_idx_flat.shape, dtype=vert_coords.dtype, device=vert_coords.device
             )
+            dLdM_local_flat[dMdV_cnz_idx_mask] = dLdM.values()[
+                dMdV_insert_loc_clipped[dMdV_cnz_idx_mask]
+            ]
+
+            dLdM_local = dLdM_local_flat.view(-1, 4, 4)
+
+        dLdV_local = _mass_2_vjp(dLdM_local, vert_coords, tets)
+        # Perform the einsum as a simple product between the nonzero elements
+        # of triangle pairs, and scatter according to the vert dimension index
+        # to generate the final VJP.
+        dLdV = t.zeros_like(vert_coords)
+        dLdV.scatter_add_(
+            dim=0,
+            index=dMdV_idx_p.flatten(end_dim=1),
+            src=dLdV_local.flatten(end_dim=1),
+        )
 
         return dLdV, None, None, None, None
 
@@ -394,7 +489,9 @@ class _Mass2(t.autograd.Function):
         return dMdt
 
 
-def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
+def mass_2(
+    tet_mesh: SimplicialComplex, custom_grad: bool = True
+) -> Float[t.Tensor, "tri tri"]:
     """
     Compute the Galerkin triangle/2-form mass matrix.
 
@@ -408,13 +505,23 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     is +1 whenever the triangle xyz satisfies the right-hand rule (i.e., the normal
     vector formed by the right hand points out of the tet), and -1 if not.
     """
-    return _Mass2.apply(
-        tet_mesh.vert_coords,
-        tet_mesh.tets,
-        tet_mesh.tris,
-        tet_mesh.n_tris,
-        tet_mesh.n_verts,
-    )
+    if custom_grad:
+        return _Mass2.apply(
+            tet_mesh.vert_coords,
+            tet_mesh.tets,
+            tet_mesh.tris,
+            tet_mesh.n_tris,
+            tet_mesh.n_verts,
+        )
+
+    else:
+        return _mass_2(
+            tet_mesh.vert_coords,
+            tet_mesh.tets,
+            tet_mesh.tris,
+            tet_mesh.n_tris,
+            tet_mesh.n_verts,
+        )
 
 
 def d_mass_2_d_vert_coords(
