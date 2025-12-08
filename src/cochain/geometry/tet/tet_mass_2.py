@@ -104,6 +104,7 @@ def _mass_2(
     return mass
 
 
+# TODO: update to reflect further algebraic simplifications
 def _d_mass_2_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert 3"],
     tets: Integer[t.LongTensor, "tet 4"],
@@ -201,9 +202,6 @@ def _mass_2_vjp(
 ) -> Float[t.Tensor, "tet 4 3"]:
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    dtype = vert_coords.dtype
-    device = vert_coords.device
-
     # For each tet, denote the inner product between the 2-form basis functions
     # associated with triangle faces i and j as int_ij; recall that
     #
@@ -219,6 +217,17 @@ def _mass_2_vjp(
     #         sum_k,l[C_kl*(delta_pl - delta_pj)*ik]/(180*V) -
     #         int_ij*grad_p[V]/V
     #     )
+    #
+    # The first two terms here can be further simplified to give
+    #
+    #     grad_p[int_ij] = (
+    #         (p + 4*c)/(90*V) -
+    #         (i + j)/(36*V) -
+    #         (delta_pi*(c - j) + delta_pj*(c - i))/(9*V) -
+    #         int_ij*grad_p[V]/V
+    #     )
+    #
+    # where "c" is the centroid of the tet.
 
     # First, collect all the constituent terms required to compute the Jacobian.
     tet_signed_vols: Float[t.Tensor, "tet 1 1"] = _tet_signed_vols(
@@ -231,16 +240,6 @@ def _mass_2_vjp(
         _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
     )
 
-    all_edges: Float[t.Tensor, "tet 4 4 3"] = tet_vert_coords.view(
-        -1, 1, 4, 3
-    ) - tet_vert_coords.view(-1, 4, 1, 3)
-
-    identity = t.eye(4, dtype=dtype, device=device)
-
-    int_weights: Float[t.Tensor, "4 4"] = (
-        t.ones((4, 4), dtype=dtype, device=device) + identity
-    )
-
     sign_corrections, whitney_inner_prods = _whitney_2_form_inner_prods(
         vert_coords, tets
     )
@@ -248,39 +247,44 @@ def _mass_2_vjp(
         -1, 1, 4
     ) * sign_corrections.view(-1, 4, 1)
 
-    # Compute the delta_pk - delta_pi term of shape (i, p, k); this is equivalent
-    # to the delta_pl - delta_pj term of shape (j, p, l).
-    delta = identity.view(4, 4, 1) - identity.view(4, 1, 4)
+    centroids: Float[t.Tensor, "tet 1 3"] = t.mean(tet_vert_coords, dim=1, keepdim=True)
 
-    # Prepare all three terms in the sum into the form (tet, i, j, p, coords).
-    # Note that the first two terms require a correction for the triangle and
-    # tet orientations. The third term does not require this correction since
-    # the function _whitney_2_form_inner_prods() already applies this correction
-    # to the inner products.
-    sum_1 = t.einsum(
-        "tij,tij,kl,pki,tjlc->tpc",
-        sign_corrections_shaped,
-        dLdM_local,
-        int_weights,
-        delta,
-        all_edges,
-    ) / (180 * tet_vols)
-    sum_2 = t.einsum(
-        "tij,tij,kl,plj,tikc->tpc",
-        sign_corrections_shaped,
-        dLdM_local,
-        int_weights,
-        delta,
-        all_edges,
-    ) / (180 * tet_vols)
-    sum_3 = t.einsum(
-        "tij,tij,tpc->tpc",
-        dLdM_local,
-        whitney_inner_prods,
+    # Symmetrize dLdM to satisfy gradcheck; in practice, since the mass matrix
+    # is symmetric, dLdM will be symmetric and this step has no effect.
+    dLdM_sym = 0.5 * (dLdM_local + dLdM_local.transpose(-1, -2))
+
+    dLdM_signed: Float[t.Tensor, "tet 4 4"] = dLdM_sym * sign_corrections_shaped
+
+    # First term: sum_ij[dLdM_ij * (p + 4*c)/(90*V)]
+    sum_1: Float[t.Tensor, "tet 4 3"] = (
+        t.sum(dLdM_signed, dim=(1, 2), keepdim=True)
+        * (tet_vert_coords + 4.0 * centroids)
+    ) / (90.0 * tet_vols)
+
+    dLdM_dot_V: Float[t.Tensor, "tet 4 3"] = 2.0 * t.einsum(
+        "tij,tic->tjc", dLdM_signed, tet_vert_coords
+    )
+
+    # Second term: sum_ij[dLdM_ij*(i + j)/(36*V)]
+    sum_2: Float[t.Tensor, "tet 4 3"] = t.sum(dLdM_dot_V, dim=1, keepdim=True) / (
+        36.0 * tet_vols
+    )
+
+    # Third term: sum_ij[dLdM_ij*(delta_pi*(c - j) + delta_pj*(c - i))/(9*V)]
+    sum_3: Float[t.Tensor, "tet 4 3"] = (
+        2 * t.einsum("tip,tic->tpc", dLdM_signed, centroids) - dLdM_dot_V
+    ) / (9.0 * tet_vols)
+
+    # Last term: sum_ij[dLdM_ij*int_ij*grad_p[V]/V]
+    # Note that we use dLdM_sym instead of dLdM_signed since the whitney_inner_prods
+    # already contain the required sign corrections.
+    sum_4: Float[t.Tensor, "tet 4 3"] = t.einsum(
+        "tij,tpc->tpc",
+        dLdM_sym * whitney_inner_prods,
         d_signed_vols_d_vert_coords / tet_signed_vols,
     )
 
-    return sum_1 + sum_2 - sum_3
+    return sum_1 - sum_2 - sum_3 - sum_4
 
 
 class _Mass2(t.autograd.Function):
