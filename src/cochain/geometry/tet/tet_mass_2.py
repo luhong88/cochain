@@ -81,66 +81,14 @@ def _whitney_2_form_inner_prods(
     return sign_corrections, whitney_inner_prod_signed
 
 
-def _tet_tri_face_idx(
-    tets: Integer[t.LongTensor, "tet 4"],
-    tris: Integer[t.LongTensor, "tri 3"],
-    n_verts: int,
-) -> Integer[t.LongTensor, "tet 4"]:
-    """
-    For each tet and each of its vertices, find the triangle face opposite to the
-    vertex and its index in the tet_mesh.tris list.
-    """
-    i, j, k, l = 0, 1, 2, 3
-
-    # For each tet and each vertex, triangle opposite to the vertex.
-    all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[
-        :, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
-    ]
-
-    all_canon_tris = all_tris.sort(dim=-1).values
-
-    # Find the indices of the triangles on the list of unique, canonical triangles
-    # (tet_mesh.tris) by radix encoding and searchsorted(). Because each triangle
-    # ijk is encoded as i*n_verts^2 + j*n_verts + k and the max value of t.int64
-    # is ~ 2^63, the max number of vertices this method can accommodate is
-    # ~ n_verts < 2^21. Note that this method assumes that the triangle indices
-    # in tet_mesh.tris are already in canonical orders.
-    unique_canon_tris_packed = (
-        tris[:, 0] * n_verts**2 + tris[:, 1] * n_verts + tris[:, 2]
-    )
-    unique_canon_tris_packed_sorted, unique_canon_tris_idx = t.sort(
-        unique_canon_tris_packed
-    )
-
-    all_canon_tris_flat: Integer[t.LongTensor, "tet*4 3"] = all_canon_tris.flatten(
-        end_dim=-2
-    )
-    all_canon_tris_packed = (
-        all_canon_tris_flat[:, 0] * n_verts**2
-        + all_canon_tris_flat[:, 1] * n_verts
-        + all_canon_tris_flat[:, 2]
-    )
-
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = unique_canon_tris_idx[
-        t.searchsorted(unique_canon_tris_packed_sorted, all_canon_tris_packed)
-    ].view(-1, 4)
-
-    return all_canon_tris_idx
-
-
 def _mass_2(
     vert_coords: Float[t.Tensor, "vert 3"],
     tets: Integer[t.LongTensor, "tet 4"],
-    tris: Integer[t.LongTensor, "tri 3"],
+    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"],
     n_tris: int,
-    n_verts: int,
 ) -> Float[t.Tensor, "tri tri"]:
     # First, compute the inner products of the Whitney 2-form basis functions.
     _, whitney_inner_prod_signed = _whitney_2_form_inner_prods(vert_coords, tets)
-
-    # Then, find the indices of the tet triangle faces associated with the basis
-    # functions.
-    all_canon_tris_idx = _tet_tri_face_idx(tets, tris, n_verts)
 
     # Assemble the mass matrix by scattering the inner products according to the
     # triangle indices.
@@ -159,8 +107,7 @@ def _mass_2(
 def _d_mass_2_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert 3"],
     tets: Integer[t.LongTensor, "tet 4"],
-    tris: Integer[t.LongTensor, "tri 3"],
-    n_verts: int,
+    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"],
 ) -> tuple[
     Float[t.Tensor, "tet*64 3"],
     Integer[t.Tensor, "tet*64"],
@@ -236,10 +183,6 @@ def _d_mass_2_d_vert_coords(
 
     whitney_inner_prod_grad: Float[t.Tensor, "tet i=4 j=4 p=4 3"] = (
         t.einsum("tij,tijpc->tijpc", sign_corrections_shaped, sum_1 + sum_2) - sum_3
-    )
-
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = _tet_tri_face_idx(
-        tets, tris, n_verts
     )
 
     dMdV_idx_i = all_canon_tris_idx.view(-1, 4, 1, 1).expand(-1, 4, 4, 4).flatten()
@@ -345,37 +288,31 @@ class _Mass2(t.autograd.Function):
     def forward(
         vert_coords: Float[t.Tensor, "vert 3"],
         tets: Integer[t.LongTensor, "tet 4"],
-        tris: Integer[t.LongTensor, "tri 3"],
+        all_canon_tris_idx: Integer[t.LongTensor, "tet 4"],
         n_tris: int,
-        n_verts: int,
     ) -> Float[t.Tensor, "tri tri"]:
-        return _mass_2(vert_coords, tets, tris, n_tris, n_verts)
+        return _mass_2(vert_coords, tets, all_canon_tris_idx, n_tris)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        vert_coords, tets, tris, n_tris, n_verts = inputs
+        vert_coords, tets, all_canon_tris_idx, n_tris = inputs
 
-        ctx.save_for_backward(vert_coords, tets, tris)
+        ctx.save_for_backward(vert_coords, tets, all_canon_tris_idx)
         ctx.n_tris = n_tris
-        ctx.n_verts = n_verts
 
         # Save tensors for JVP.
         ctx.vert_coords = vert_coords
         ctx.tets = tets
-        ctx.tris = tris
+        ctx.all_canon_tris_idx = all_canon_tris_idx
 
     @staticmethod
     def backward(
         ctx, dLdM: Float[t.Tensor, "tri tri"]
-    ) -> tuple[Float[t.Tensor, "vert 3"] | None, None, None, None, None]:
+    ) -> tuple[Float[t.Tensor, "vert 3"] | None, None, None, None]:
         if ctx.needs_input_grad[0] is None:
-            return (None, None, None, None, None)
+            return (None, None, None, None)
 
-        vert_coords, tets, tris = ctx.saved_tensors
-
-        all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = _tet_tri_face_idx(
-            tets, tris, ctx.n_verts
-        )
+        vert_coords, tets, all_canon_tris_idx = ctx.saved_tensors
 
         dMdV_idx_i = all_canon_tris_idx.view(-1, 4, 1).expand(-1, 4, 4)
         dMdV_idx_j = all_canon_tris_idx.view(-1, 1, 4).expand(-1, 4, 4)
@@ -449,16 +386,16 @@ class _Mass2(t.autograd.Function):
             src=dLdV_local.flatten(end_dim=1),
         )
 
-        return dLdV, None, None, None, None
+        return dLdV, None, None, None
 
+    # TODO: avoid computing the full jacobian
     @staticmethod
     def jvp(
         ctx,
         tangent_vert_coords: Float[t.Tensor, "vert 3"] | None,
         tangent_tets: None,
-        tangent_tris: None,
+        tangent_all_canon_tris_idx: None,
         tangent_n_tris: None,
-        tangent_n_verts: None,
     ) -> Float[t.Tensor, "tri tri"]:
         if tangent_vert_coords is None:
             dMdt = t.sparse_coo_tensor(
@@ -476,7 +413,7 @@ class _Mass2(t.autograd.Function):
             # the 2-form mass matrix is always a sparse tensor, the JVP also
             # outputs a sparse tensor.
             dMdV_val, dMdV_idx_i, dMdV_idx_j, dMdV_idx_p = _d_mass_2_d_vert_coords(
-                ctx.vert_coords, ctx.tets, ctx.tris, ctx.n_verts
+                ctx.vert_coords, ctx.tets, ctx.all_canon_tris_idx
             )
             dVdt_flat = tangent_vert_coords[dMdV_idx_p]
 
@@ -509,18 +446,16 @@ def mass_2(
         return _Mass2.apply(
             tet_mesh.vert_coords,
             tet_mesh.tets,
-            tet_mesh.tris,
+            tet_mesh.all_canon_tris_idx,
             tet_mesh.n_tris,
-            tet_mesh.n_verts,
         )
 
     else:
         return _mass_2(
             tet_mesh.vert_coords,
             tet_mesh.tets,
-            tet_mesh.tris,
+            tet_mesh.all_canon_tris_idx,
             tet_mesh.n_tris,
-            tet_mesh.n_verts,
         )
 
 
@@ -531,7 +466,7 @@ def d_mass_2_d_vert_coords(
     Compute the Jacobian of the 2-form mass matrix wrt the vertex coordinates.
     """
     dMdV_val, dMdV_idx_i, dMdV_idx_j, dMdV_idx_p = _d_mass_2_d_vert_coords(
-        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.tris, tet_mesh.n_verts
+        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.all_canon_tris_idx
     )
 
     dMdV_idx = t.vstack(

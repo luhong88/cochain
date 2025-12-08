@@ -242,9 +242,8 @@ def test_mass_2_gradcheck(two_tets_mesh: SimplicialComplex):
         return _Mass2.apply(
             vert_coords,
             two_tets_mesh.tets,
-            two_tets_mesh.tris,
+            two_tets_mesh.all_canon_tris_idx,
             two_tets_mesh.n_tris,
-            two_tets_mesh.n_verts,
         ).to_dense()
 
     assert t.autograd.gradcheck(test_fxn, (vert_coords,), eps=1e-6, atol=1e-4)
@@ -267,9 +266,8 @@ def test_mass_2_vjp_layout(two_tets_mesh: SimplicialComplex):
     mass_2 = _Mass2.apply(
         vert_coords,
         two_tets_mesh.tets,
-        two_tets_mesh.tris,
+        two_tets_mesh.all_canon_tris_idx,
         two_tets_mesh.n_tris,
-        two_tets_mesh.n_verts,
     )
 
     vjp_dense = t.autograd.grad(mass_2, vert_coords, grad_outputs=w)[0]
@@ -277,9 +275,8 @@ def test_mass_2_vjp_layout(two_tets_mesh: SimplicialComplex):
     mass_2 = _Mass2.apply(
         vert_coords,
         two_tets_mesh.tets,
-        two_tets_mesh.tris,
+        two_tets_mesh.all_canon_tris_idx,
         two_tets_mesh.n_tris,
-        two_tets_mesh.n_verts,
     )
 
     vjp_sparse = t.autograd.grad(mass_2, vert_coords, grad_outputs=w.to_sparse_coo())[
@@ -309,9 +306,8 @@ def test_mass_2_adjoint(two_tets_mesh: SimplicialComplex):
     mass_2 = _Mass2.apply(
         vert_coords,
         two_tets_mesh.tets,
-        two_tets_mesh.tris,
+        two_tets_mesh.all_canon_tris_idx,
         two_tets_mesh.n_tris,
-        two_tets_mesh.n_verts,
     )
 
     vjp = t.autograd.grad(mass_2, vert_coords, grad_outputs=w)[0]
@@ -321,11 +317,10 @@ def test_mass_2_adjoint(two_tets_mesh: SimplicialComplex):
         def __init__(self):
             self.vert_coords = vert_coords.detach()
             self.tets = two_tets_mesh.tets
-            self.tris = two_tets_mesh.tris
+            self.all_canon_tris_idx = two_tets_mesh.all_canon_tris_idx
             self.n_tris = two_tets_mesh.n_tris
-            self.n_verts = two_tets_mesh.n_verts
 
-    jvp = _Mass2.jvp(MockCtx(), v, None, None, None, None).to_dense()
+    jvp = _Mass2.jvp(MockCtx(), v, None, None, None).to_dense()
 
     # Check adjoint consistency.
     t.testing.assert_close((jvp * w).sum(), (v * vjp).sum())

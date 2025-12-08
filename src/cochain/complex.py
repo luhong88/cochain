@@ -1,7 +1,9 @@
+from functools import cached_property
+
 import torch as t
 from jaxtyping import Float, Integer
 
-from .topology import coboundaries
+from .topology import coboundaries, tet_topology
 
 
 class SimplicialComplex:
@@ -75,6 +77,11 @@ class SimplicialComplex:
         return max(
             1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
         )
+
+    # TODO: check if this works as expected for tri meshes
+    @cached_property
+    def all_canon_tris_idx(self) -> Integer[t.LongTensor, "tet 4"]:
+        return tet_topology.tet_tri_face_idx(self.tets, self.tris, self.n_verts)
 
     # TODO: check for immersion
     @classmethod
