@@ -66,7 +66,7 @@ def _tet_edge_faces(
 
     n_verts = tet_mesh.n_verts
 
-    # Enumerate all unique edges via their vertex position in the etet.
+    # Enumerate all unique edges via their vertex position in the tet.
     i, j, k, l = 0, 1, 2, 3
     unique_edges = t.tensor(
         [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]], dtype=t.long, device=device

@@ -210,6 +210,49 @@ def d_inv_star_1_d_vert_coords(
     return d_inv_S_dV
 
 
+def _tri_edge_faces(
+    tri_mesh: SimplicialComplex,
+) -> tuple[Float[t.Tensor, "tri 3"], Integer[t.LongTensor, "tri 3"]]:
+    """
+    Enumerate all edges for each tri and find their orientations and indices on
+    the tri_mesh.edges list.
+    """
+    device = tri_mesh.vert_coords.device
+
+    n_verts = tri_mesh.n_verts
+
+    # Enumerate all unique edges via their vertex position in the tris.
+    i, j, k = 0, 1, 2
+    unique_edges = t.tensor([[i, j], [i, k], [j, k]], dtype=t.long, device=device)
+
+    # For each tri and each unique edge pair, find the orientations of the edges
+    # and their indices on the list of unique, canonical edges (tri_mesh.edges).
+    whitney_edges: Float[t.Tensor, "tri*3 2"] = tri_mesh.tris[:, unique_edges].flatten(
+        end_dim=-2
+    )
+
+    # Same method as used in the construction of coboundary operators to use
+    # sort() to identify edge orientations.
+    whitney_canon_edges, whitney_edge_orientations = whitney_edges.sort(dim=-1)
+    whitney_edge_signs: Float[t.Tensor, "tri 3"] = t.where(
+        whitney_edge_orientations[:, 1] > 0, whitney_edge_orientations[:, 1], -1
+    ).view(-1, 3)
+
+    # This assumes that the edge indices in tri_mesh.edges are already in canonical
+    # orders.
+    unique_canon_edges_packed = tri_mesh.edges[:, 0] * n_verts + tri_mesh.edges[:, 1]
+    canon_edges_packed_sorted, canon_edges_idx = t.sort(unique_canon_edges_packed)
+
+    whitney_edges_packed = (
+        whitney_canon_edges[:, 0] * n_verts + whitney_canon_edges[:, 1]
+    )
+    whitney_edges_idx: Float[t.Tensor, "tri 3"] = canon_edges_idx[
+        t.searchsorted(canon_edges_packed_sorted, whitney_edges_packed)
+    ].view(-1, 3)
+
+    return whitney_edge_signs, whitney_edges_idx
+
+
 def star_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     """
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
