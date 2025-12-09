@@ -342,32 +342,43 @@ def _whitney_2_form_inner_prods(
     tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    dtype = vert_coords.dtype
-    device = vert_coords.device
-
     tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
     tet_vols = t.abs(tet_signed_vols)
     tet_signs = t.sign(tet_signed_vols)
 
-    # For each tet, associate the 1-form basis function with the opposite vertex.
+    # For each tet, associate the 2-form basis function with the opposite vertex.
     # Then, the inner product between the basis functions is given by
     #
-    #               int[W_i*W_j*dV] = sum_k,l[C_kl*<ik,jl>]/(180V)
+    #               int[W_i*W_j*dV] = sum_k,l[C_kl*<ik,jl>]/(180*V)
     #
     # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
     # the summation represents the inner products between all edge vectors emanating
     # from vertices i and j.
+    #
+    # Let G_ij = <i,j> be the symmetric, local "Gram" matrix of vertex coordinates.
+    # Since <ik,jl> can be written as G_kl - G_kj - G_il + G_ij, the inner product
+    # can be further simplified as
+    #
+    # int_ij = (20*G_ij - 5*(R_i + R_j) + (S + Tr[G]))/(180*V)
+    #
+    # here, R_i = sum_j[G_ij], S = sum_ij[G_ij], and Tr[G] is the trace of G.
 
-    all_edges: Float[t.Tensor, "tet 4 4 3"] = tet_vert_coords.view(
-        -1, 1, 4, 3
-    ) - tet_vert_coords.view(-1, 4, 1, 3)
+    gram: Float[t.Tensor, "tet 4 4"] = t.sum(
+        tet_vert_coords.view(-1, 4, 1, 3) * tet_vert_coords.view(-1, 1, 4, 3), dim=-1
+    )
 
-    int_weights: Float[t.Tensor, "4 4"] = t.ones(
-        (4, 4), dtype=dtype, device=device
-    ) + t.eye(4, dtype=dtype, device=device)
+    # Compute R_i + R_j
+    gram_partial_sum: Float[t.Tensor, "tet 4 4"] = t.sum(
+        gram, dim=-1, keepdim=True
+    ) + t.sum(gram, dim=-2, keepdim=True)
 
-    whitney_inner_prod: Float[t.Tensor, "tet 4 4"] = t.einsum(
-        "bijc,bklc,jl->bik", all_edges, all_edges, int_weights
+    # Compute S + Tr[G]
+    gram_sum: Float[t.Tensor, "tet 1 1"] = (
+        t.sum(gram, dim=(-1, -2)) + t.einsum("tii->t", gram)
+    ).view(-1, 1, 1)
+
+    whitney_inner_prod: Float[t.Tensor, "tet 4 4"] = (
+        20.0 * gram - 5.0 * gram_partial_sum + gram_sum
     ) / (180.0 * tet_vols.view(-1, 1, 1))
 
     # For each tet and each vertex, find the outward-facing triangle opposite
@@ -522,6 +533,17 @@ def d_mass_2_d_vert_coords(
     #         sum_k,l[C_kl*(delta_pl - delta_pj)*ik]/(180*V) -
     #         int_ij*grad_p[V]/V
     #     )
+    #
+    # The first two terms here can be further simplified to give
+    #
+    #     grad_p[int_ij] = (
+    #         (p + 4*c)/(90*V) -
+    #         (i + j)/(36*V) -
+    #         (delta_pi*(c - j) + delta_pj*(c - i))/(9*V) -
+    #         int_ij*grad_p[V]/V
+    #     )
+    #
+    # where "c" is the centroid of the tet.
 
     # First, collect all the constituent terms required to compute the Jacobian.
     tet_signed_vols: Float[t.Tensor, "tet 1 1 1 1"] = _tet_signed_vols(
@@ -534,41 +556,40 @@ def d_mass_2_d_vert_coords(
         _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
     ).view(-1, 1, 1, 4, 3)
 
-    all_edges: Float[t.Tensor, "tet 4 4 3"] = tet_vert_coords.view(
-        -1, 1, 4, 3
-    ) - tet_vert_coords.view(-1, 4, 1, 3)
-
     identity = t.eye(4, dtype=dtype, device=device)
 
-    int_weights: Float[t.Tensor, "4 4"] = (
-        t.ones((4, 4), dtype=dtype, device=device) + identity
-    )
-
     sign_corrections, whitney_inner_prods = _whitney_2_form_inner_prods(tet_mesh)
-    sign_corrections_shaped: Float[t.Tensor, "tet 4 4"] = sign_corrections.view(
-        -1, 1, 4
-    ) * sign_corrections.view(-1, 4, 1)
+    sign_corrections_shaped: Float[t.Tensor, "tet 4 4 1 1"] = (
+        sign_corrections.view(-1, 1, 4) * sign_corrections.view(-1, 4, 1)
+    ).view(-1, 4, 4, 1, 1)
     whitney_inner_prods_shaped = whitney_inner_prods.view(-1, 4, 4, 1, 1)
 
-    # Compute the delta_pk - delta_pi term of shape (i, p, k); this is equivalent
-    # to the delta_pl - delta_pj term of shape (j, p, l).
-    delta = identity.view(4, 4, 1) - identity.view(4, 1, 4)
+    centroids: Float[t.Tensor, "tet 1 3"] = t.mean(tet_vert_coords, dim=1, keepdim=True)
 
-    # Prepare all three terms in the sum into the form (tet, i, j, p, coords).
-    # Note that the first two terms require a correction for the triangle and
-    # tet orientations. The third term does not require this correction since
+    # Prepare all terms in the sum into the form (tet, i, j, p, coords).
+    # Note that all but the last term require a correction for the triangle and
+    # tet orientations. The last term does not require this correction since
     # the function _whitney_2_form_inner_prods() already applies this correction
     # to the inner products.
-    sum_1 = t.einsum("kl,pki,tjlc->tijpc", int_weights, delta, all_edges) / (
-        180 * tet_vols
-    )
-    sum_2 = t.einsum("kl,plj,tikc->tijpc", int_weights, delta, all_edges) / (
-        180 * tet_vols
-    )
-    sum_3 = whitney_inner_prods_shaped * d_signed_vols_d_vert_coords / tet_signed_vols
 
     whitney_inner_prod_grad: Float[t.Tensor, "tet i=4 j=4 p=4 3"] = (
-        t.einsum("tij,tijpc->tijpc", sign_corrections_shaped, sum_1 + sum_2) - sum_3
+        tet_vert_coords + 4.0 * centroids
+    ).view(-1, 1, 1, 4, 3) / (90.0 * tet_vols)
+
+    whitney_inner_prod_grad.subtract_(
+        (tet_vert_coords.view(-1, 4, 1, 1, 3) + tet_vert_coords.view(-1, 1, 4, 1, 3))
+        / (36.0 * tet_vols)
+    )
+
+    sum_delta = t.einsum("pi,tjc->tijpc", identity, centroids - tet_vert_coords) / (
+        9.0 * tet_vols
+    )
+    whitney_inner_prod_grad.subtract_(sum_delta + sum_delta.transpose(1, 2))
+
+    whitney_inner_prod_grad.multiply_(sign_corrections_shaped)
+
+    whitney_inner_prod_grad.subtract_(
+        whitney_inner_prods_shaped * d_signed_vols_d_vert_coords / tet_signed_vols
     )
 
     all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = _tet_tri_face_idx(tet_mesh)
