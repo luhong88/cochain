@@ -20,9 +20,6 @@ def _whitney_2_form_inner_prods(
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    dtype = vert_coords.dtype
-    device = vert_coords.device
-
     tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
     tet_vols = t.abs(tet_signed_vols)
     tet_signs = t.sign(tet_signed_vols)
@@ -30,22 +27,36 @@ def _whitney_2_form_inner_prods(
     # For each tet, associate the 2-form basis function with the opposite vertex.
     # Then, the inner product between the basis functions is given by
     #
-    #               int[W_i*W_j*dV] = sum_k,l[C_kl*<ik,jl>]/(180V)
+    #               int[W_i*W_j*dV] = sum_k,l[C_kl*<ik,jl>]/(180*V)
     #
     # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
     # the summation represents the inner products between all edge vectors emanating
     # from vertices i and j.
+    #
+    # Let G_ij = <i,j> be the symmetric, local "Gram" matrix of vertex coordinates.
+    # Since <ik,jl> can be written as G_kl - G_kj - G_il + G_ij, the inner product
+    # can be further simplified as
+    #
+    # int_ij = (20*G_ij - 5*(R_i + R_j) + (S + Tr[G]))/(180*V)
+    #
+    # here, R_i = sum_j[G_ij], S = sum_ij[G_ij], and Tr[G] is the trace of G.
 
-    all_edges: Float[t.Tensor, "tet 4 4 3"] = tet_vert_coords.view(
-        -1, 1, 4, 3
-    ) - tet_vert_coords.view(-1, 4, 1, 3)
+    gram: Float[t.Tensor, "tet 4 4"] = t.sum(
+        tet_vert_coords.view(-1, 4, 1, 3) * tet_vert_coords.view(-1, 1, 4, 3), dim=-1
+    )
 
-    int_weights: Float[t.Tensor, "4 4"] = t.ones(
-        (4, 4), dtype=dtype, device=device
-    ) + t.eye(4, dtype=dtype, device=device)
+    # Compute R_i + R_j
+    gram_partial_sum: Float[t.Tensor, "tet 4 4"] = t.sum(
+        gram, dim=-1, keepdim=True
+    ) + t.sum(gram, dim=-2, keepdim=True)
 
-    whitney_inner_prod: Float[t.Tensor, "tet 4 4"] = t.einsum(
-        "bijc,bklc,jl->bik", all_edges, all_edges, int_weights
+    # Compute S + Tr[G]
+    gram_sum: Float[t.Tensor, "tet 1 1"] = (
+        t.sum(gram, dim=(-1, -2)) + t.einsum("tii->t", gram)
+    ).view(-1, 1, 1)
+
+    whitney_inner_prod: Float[t.Tensor, "tet 4 4"] = (
+        20.0 * gram - 5.0 * gram_partial_sum + gram_sum
     ) / (180.0 * tet_vols.view(-1, 1, 1))
 
     # For each tet and each vertex, find the outward-facing triangle opposite
