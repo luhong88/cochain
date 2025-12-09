@@ -209,3 +209,22 @@ def test_mass_matrix_positive_definite(two_tris_mesh: SimplicialComplex):
     mass = tri_hodge_stars.mass_1(two_tris_mesh).to_dense()
     eigs = t.linalg.eigvalsh(mass)
     assert eigs.min() >= 1e-6
+
+
+def test_mass_1_matrix_connectivity(two_tris_mesh: SimplicialComplex):
+    mass_1 = tri_hodge_stars.mass_1(two_tris_mesh)
+    mass_1_mask = t.zeros_like(mass_1.to_dense(), dtype=t.long)
+    mass_1_mask[*mass_1.indices()] = 1
+
+    true_mass_1_mask = t.tensor(
+        [
+            [1, 1, 1, 0, 0],
+            [1, 1, 1, 0, 0],
+            [1, 1, 1, 1, 1],
+            [0, 0, 1, 1, 1],
+            [0, 0, 1, 1, 1],
+        ],
+        dtype=t.long,
+    )
+
+    t.testing.assert_close(mass_1_mask, true_mass_1_mask)
