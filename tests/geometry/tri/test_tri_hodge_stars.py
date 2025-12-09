@@ -3,7 +3,9 @@ import math
 import igl
 import numpy as np
 import pytest
+import skfem as skfem
 import torch as t
+from skfem.helpers import dot
 
 from cochain.complex import SimplicialComplex
 from cochain.geometry.tri import tri_hodge_stars
@@ -165,3 +167,45 @@ def test_d_tri_areas_d_vert_coords(tet_mesh: SimplicialComplex):
     ]
 
     t.testing.assert_close(dAdV, dAdV_true)
+
+
+# Test the mass-1 matrix, mirroring the testing strategy for tet meshes
+
+
+def test_mass_1_with_skfem(flat_annulus_mesh: SimplicialComplex):
+    skfem_mesh = skfem.MeshTri(
+        flat_annulus_mesh.vert_coords[:, [0, 1]].T.cpu().detach().numpy(),
+        flat_annulus_mesh.tris.T.cpu().detach().numpy(),
+    )
+
+    elem = skfem.ElementTriN1()
+    basis = skfem.InteriorBasis(skfem_mesh, elem)
+
+    @skfem.BilinearForm
+    def mass_form(u, v, w):
+        return dot(u, v)
+
+    skfem_mass_1 = mass_form.assemble(basis).todense()
+    # Here, we compare the eigenvalues of the mass matrices rather than the mass
+    # matrices themselves to avoid differences in index/orientation conventions.
+    skfem_mass_1_eigs = np.linalg.eigvalsh(skfem_mass_1)
+    skfem_mass_1_eigs.sort()
+    skfem_mass_1_eigs_torch = t.from_numpy(skfem_mass_1_eigs).to(
+        dtype=flat_annulus_mesh.vert_coords.dtype
+    )
+
+    cochain_mass_1 = tri_hodge_stars.mass_1(flat_annulus_mesh).to_dense()
+    cochain_mass_1_eigs = t.linalg.eigvalsh(cochain_mass_1).sort().values
+
+    t.testing.assert_close(cochain_mass_1_eigs, skfem_mass_1_eigs_torch)
+
+
+def test_mass_1_symmetry(two_tris_mesh: SimplicialComplex):
+    mass = tri_hodge_stars.mass_1(two_tris_mesh).to_dense()
+    t.testing.assert_close(mass, mass.T)
+
+
+def test_mass_matrix_positive_definite(two_tris_mesh: SimplicialComplex):
+    mass = tri_hodge_stars.mass_1(two_tris_mesh).to_dense()
+    eigs = t.linalg.eigvalsh(mass)
+    assert eigs.min() >= 1e-6
