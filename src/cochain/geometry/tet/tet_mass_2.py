@@ -266,36 +266,29 @@ def _mass_2_vjp(
 
     dLdM_signed: Float[t.Tensor, "tet 4 4"] = dLdM_sym * sign_corrections_shaped
 
-    # First term: sum_ij[dLdM_ij * (p + 4*c)/(90*V)]
-    sum_1: Float[t.Tensor, "tet 4 3"] = (
-        t.sum(dLdM_signed, dim=(1, 2), keepdim=True)
-        * (tet_vert_coords + 4.0 * centroids)
-    ) / (90.0 * tet_vols)
+    dLdM_partial_sum: Float[t.Tensor, "tet 4 1"] = t.sum(
+        dLdM_signed, dim=-1, keepdim=True
+    )
+    dLdM_sum: Float[t.Tensor, "tet 1 1"] = t.sum(dLdM_partial_sum, dim=-2, keepdim=True)
 
-    dLdM_dot_V: Float[t.Tensor, "tet 4 3"] = 2.0 * t.einsum(
-        "tij,tic->tjc", dLdM_signed, tet_vert_coords
+    vjp: Float[t.Tensor, "tet 4 3"] = (
+        dLdM_sum * (tet_vert_coords + 4.0 * centroids) / 90.0
+    )
+    vjp.subtract_(
+        t.sum(dLdM_partial_sum * tet_vert_coords, dim=-2, keepdim=True) / 18.0
+    )
+    vjp.subtract_(2.0 * centroids * dLdM_partial_sum / 9.0)
+    vjp.add_(2.0 * t.einsum("tpj,tjc->tpc", dLdM_signed, tet_vert_coords) / 9.0)
+    vjp.divide_(tet_vols)
+    vjp.subtract_(
+        t.einsum(
+            "tij,tpc->tpc",
+            dLdM_sym * whitney_inner_prods,
+            d_signed_vols_d_vert_coords / tet_signed_vols,
+        )
     )
 
-    # Second term: sum_ij[dLdM_ij*(i + j)/(36*V)]
-    sum_2: Float[t.Tensor, "tet 4 3"] = t.sum(dLdM_dot_V, dim=1, keepdim=True) / (
-        36.0 * tet_vols
-    )
-
-    # Third term: sum_ij[dLdM_ij*(delta_pi*(c - j) + delta_pj*(c - i))/(9*V)]
-    sum_3: Float[t.Tensor, "tet 4 3"] = (
-        2 * t.einsum("tip,tic->tpc", dLdM_signed, centroids) - dLdM_dot_V
-    ) / (9.0 * tet_vols)
-
-    # Last term: sum_ij[dLdM_ij*int_ij*grad_p[V]/V]
-    # Note that we use dLdM_sym instead of dLdM_signed since the whitney_inner_prods
-    # already contain the required sign corrections.
-    sum_4: Float[t.Tensor, "tet 4 3"] = t.einsum(
-        "tij,tpc->tpc",
-        dLdM_sym * whitney_inner_prods,
-        d_signed_vols_d_vert_coords / tet_signed_vols,
-    )
-
-    return sum_1 - sum_2 - sum_3 - sum_4
+    return vjp
 
 
 class _Mass2(t.autograd.Function):
