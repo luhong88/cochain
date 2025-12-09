@@ -35,7 +35,7 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
 def _bary_coord_grad_inner_prods(
     tet_signed_vols: Float[t.Tensor, "tet"],
     d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"],
-) -> tuple[Float[t.Tensor, "tet 1"], Float[t.Tensor, "tet 4 4"]]:
+) -> Float[t.Tensor, "tet 4 4"]:
     """
     For a tet, let lambda_x(p) be the barycentric coordinate function for p wrt
     a vertex x of the tet. This function computes all pairwise inner products
@@ -151,7 +151,7 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     # W_xy,qp = -W_xy,pq), each non-canonical edge orientation also contributes
     # an overall negative sign.
 
-    # Enumerate all unique edges via their vertex position in the etet.
+    # Enumerate all unique edges via their vertex position in the tet.
     i, j, k, l = 0, 1, 2, 3
     unique_edges = t.tensor(
         [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]], dtype=t.long, device=device
