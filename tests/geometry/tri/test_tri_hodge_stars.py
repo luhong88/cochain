@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import skfem as skfem
 import torch as t
+from jaxtyping import Float
 from skfem.helpers import dot
 
 from cochain.complex import SimplicialComplex
@@ -228,3 +229,40 @@ def test_mass_1_matrix_connectivity(two_tris_mesh: SimplicialComplex):
     )
 
     t.testing.assert_close(mass_1_mask, true_mass_1_mask)
+
+
+def test_mass_1_linear_potential(two_tris_mesh: SimplicialComplex):
+    mass_1 = tri_hodge_stars.mass_1(two_tris_mesh)
+
+    const_vec = t.tensor([[1.0, 3.0, 2.0]], dtype=two_tris_mesh.vert_coords.dtype)
+    phi_verts: Float[t.Tensor, "tri"] = t.sum(
+        two_tris_mesh.vert_coords * const_vec, dim=-1
+    )
+
+    cochain = (
+        phi_verts[two_tris_mesh.edges[:, 1]] - phi_verts[two_tris_mesh.edges[:, 0]]
+    )
+
+    energy = cochain @ mass_1 @ cochain
+
+    vert_s_coord: Float[t.Tensor, "tri 3 3"] = two_tris_mesh.vert_coords[
+        two_tris_mesh.tris
+    ]
+
+    edge_ij = vert_s_coord[:, 1] - vert_s_coord[:, 0]
+    edge_ik = vert_s_coord[:, 2] - vert_s_coord[:, 0]
+
+    area_vec = t.cross(edge_ij, edge_ik, dim=-1)
+    two_area = t.linalg.norm(area_vec, dim=-1)
+
+    area_vec_norm = area_vec / two_area.view(-1, 1)
+    area = two_area / 2.0
+
+    phi_tangent = (
+        const_vec
+        - t.sum(area_vec_norm * const_vec, dim=-1, keepdim=True) * area_vec_norm
+    )
+
+    true_energy = t.sum(area * t.sum(phi_tangent**2, dim=-1))
+
+    t.testing.assert_close(energy, true_energy)
