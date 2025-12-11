@@ -266,3 +266,17 @@ def test_mass_1_linear_potential(two_tris_mesh: SimplicialComplex):
     true_energy = t.sum(area * t.sum(phi_tangent**2, dim=-1))
 
     t.testing.assert_close(energy, true_energy)
+
+
+def tet_mass_1_aurograd(two_tris_mesh: SimplicialComplex):
+    two_tris_mesh.vert_coords.requires_grad = True
+    mass_1 = tri_hodge_stars.mass_1(two_tris_mesh).to_dense()
+    y = (mass_1**2).sum()
+
+    dMdV = tri_hodge_stars.d_mass_1_d_vert_coords(two_tris_mesh).to_dense()
+    dydM = t.autograd.grad(y, mass_1, retain_graph=True)[0]
+    custom_grad = t.einsum("ij,ijkl->kl", dydM, dMdV)
+
+    auto_grad = t.autograd.grad(y, two_tris_mesh.vert_coords)[0]
+
+    assert t.allclose(custom_grad, auto_grad, atol=1e-4)

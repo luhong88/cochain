@@ -48,6 +48,78 @@ def _d_tri_areas_d_vert_coords(
     return dAdV
 
 
+def _d2_tri_areas_d2_vert_coords(
+    vert_coords: Float[t.Tensor, "vert 3"],
+    tris: Integer[t.LongTensor, "tri 3"],
+    vec: Float[t.Tensor, "tri 3 3"],
+) -> Float[t.Tensor, "tri vert vert vert 3"]:
+    """
+    For each tri, given the gradient of the area grad_x[A] (shape: (tri, x=3, 3))
+    and a vector field v_y associated with each vertex (shape: (tri, y=3, 3)),
+    compute the pairwise "vector-Hessian product" (VHP) as VHP_xyp = hess_xp[A]@v_y.
+    This is useful for computing the gradient vectors for inner products of the
+    form I_xy = <grad_x[A], v_y>.
+    """
+    i, j, k = 0, 1, 2
+
+    # vert  triple cross    grad_i                           grad_j                           grad_k
+    # ---------------------------------------------------------------------------------------------------------
+    # i     (ji x ki) x jk  <jk, jk>I - jk@jk.T              <ki, jk>I + jk@ki.T - 2ki@jk.T   -<ji, jk> - jk@ji.T + 2ji@jk.T
+    # j     (kj x ij) x ki  -<kj, ki>I - ki@kj.T + 2kj@ki.T  <ki, ki>I - ki@ki.T              <kj, ki>I + ki@ij.T - 2ij@ki.T
+    # k     (ik x jk) x ij  <ik, ij>I + ij@jk.T - 2jk@ij.T   -<ik, ij>I - ij@ik.T + 2ik@ij.T  <ij, ij>I - ij@ij.T
+
+    tri_vert_coords: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
+
+    vec1: Float[t.Tensor, "tri 3 3 3"] = (
+        tri_vert_coords[:, [[k, i, i], [j, i, j], [k, k, j]]]
+        - tri_vert_coords[:, [[j, k, j], [k, k, k], [i, i, i]]]
+    )
+
+    vec2: Float[t.Tensor, "tri 3 3 3"] = (
+        tri_vert_coords[:, [[k, k, k], [i, i, i], [j, j, j]]]
+        - tri_vert_coords[:, [[j, j, j], [k, k, k], [i, i, i]]]
+    )
+
+    sign_mask = t.Tensor(
+        [[1, 1, -1], [-1, 1, 1], [1, -1, 1]],
+        dtype=vert_coords.dtype,
+        device=vert_coords.device,
+    ).view(1, 1, 1, 3, 3)
+    inner_prod: Float[t.Tensor, "tri 3 3 1 1"] = t.sum(vec1 * vec2, dim=-1).view(
+        -1, 3, 3, 1, 1
+    ) * t.eye(
+        3,
+        dtype=vert_coords.dtype,
+        device=vert_coords.device,
+    ).view(1, 1, 1, 3, 3)
+    outer_prod: Float[t.Tensor, "tri 3 3 3 3"] = vec1.view(-1, 3, 3, 3, 1) * vec2.view(
+        -1, 3, 3, 1, 3
+    )
+    outer_diff = -2.0 * outer_prod + outer_prod.transpose(-1, -2)
+
+    triple_cross_grad: Float[t.Tensor, "tri 3 3 3 3"] = (
+        inner_prod + outer_diff
+    ) * sign_mask
+
+    tri_area_grad: Float[t.Tensor, "tri 3 3"] = _d_tri_areas_d_vert_coords(
+        vert_coords, tris
+    )
+
+    tri_areas: Float[t.Tensor, "tri 1 1 1 1"] = _tri_areas(vert_coords, tris).view(
+        -1, 1, 1, 1, 1
+    )
+
+    hess: Float[t.Tensor, "tri 3 3 3 3"] = -tri_area_grad.view(
+        -1, 3, 1, 1, 3
+    ) * tri_area_grad.view(-1, 1, 3, 1, 3) / tri_areas + triple_cross_grad / (
+        4.0 * tri_areas
+    )
+
+    hvp = t.einsum("txpcd,tyd->txypc", hess, vec)
+
+    return hvp
+
+
 def star_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
     """
     The Hodge 2-star operator maps the 2-simplices (triangles) in a mesh to their
@@ -284,7 +356,7 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     W_xy(p) = lambda_x(p)*grad_p(lambda_y(p)) - lambda_y(p)*grad_p(lambda_x(p))
 
-    Here, p is a position vector inside the tet and lambda_x(p) is the barycentric
+    Here, p is a position vector inside the tri and lambda_x(p) is the barycentric
     coordinate function for p wrt the vertex x.
     """
     vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
@@ -301,7 +373,7 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # For each tri ijk, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
-    bary_coords_grad_dot: Float[t.Tensor, "tet 3 3"] = _bary_coord_grad_inner_prods(
+    bary_coords_grad_dot: Float[t.Tensor, "tri 3 3"] = _bary_coord_grad_inner_prods(
         tri_areas, d_tri_areas_d_vert_coords
     )
 
@@ -309,7 +381,7 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     # i.e., int[lambda_i(p)lambda_j(p)dA_ijk]. Using the "magic formula", this
     # integral is A_ijk*(1 + delta_ij)/12, where delta is the Kronecker delta
     # function.
-    bary_coords_int: Float[t.Tensor, "tet 3 3"] = t.abs(tri_areas / 12.0) * (
+    bary_coords_int: Float[t.Tensor, "tri 3 3"] = t.abs(tri_areas / 12.0) * (
         t.ones((n_tris, 3, 3), dtype=dtype, device=device)
         + t.eye(3, dtype=dtype, device=device).view(1, 3, 3)
     )
@@ -372,6 +444,124 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     ).coalesce()
 
     return mass
+
+
+def d_mass_1_d_vert_coords(
+    tri_mesh: SimplicialComplex,
+) -> Float[t.Tensor, "edge edge vert 3"]:
+    """
+    Compute the Jacobian of the 1-form mass matrix wrt the vertex coordinates.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
+    tris: Integer[t.LongTensor, "tet 4"] = tri_mesh.tris
+
+    dtype = vert_coords.dtype
+    device = vert_coords.device
+
+    n_tris = tri_mesh.n_tris
+    n_edges = tri_mesh.n_edges
+    n_verts = tri_mesh.n_verts
+
+    # For D_xy, the inner products of the gradients of the barycentric coordinates,
+    # its Jacobian wrt vertex p is given by
+    #     grad_p[D_xy] = (hess_xp[V]*grad_y[V] + hess_yp[V]*grad_x[V])/V**2
+    #                    - 2*D_xy*grad_p[V])/V
+    tri_areas: Float[t.Tensor, "tri"] = _tri_areas(vert_coords, tris)
+    d_tri_areas_d_vert_coords: Float[t.Tensor, "tri 3 3"] = _d_tri_areas_d_vert_coords(
+        vert_coords, tris
+    )
+
+    tri_area_vhp: Float[t.Tensor, "tri x=3 y=3 p=3 3"] = _d2_tri_areas_d2_vert_coords(
+        vert_coords, tris, d_tri_areas_d_vert_coords
+    )
+
+    bary_coords_grad_dot: Float[t.Tensor, "tri 3 3"] = _bary_coord_grad_inner_prods(
+        tri_areas, d_tri_areas_d_vert_coords
+    )
+
+    bary_coords_grad_dot_grad: Float[t.Tensor, "tri x=3 y=3 p=3 3"] = (
+        tri_area_vhp + tri_area_vhp.transpose(1, 2)
+    ) / tri_areas.pow(2).view(
+        -1, 1, 1, 1, 1
+    ) - 2 * bary_coords_grad_dot * d_tri_areas_d_vert_coords.view(
+        -1, 1, 1, 3, 3
+    ) / tri_areas.view(-1, 1, 1, 1, 1)
+
+    # For I_xy, the pairwise integrals of the barycentric coordinates, its gradient
+    # wrt vertex p is given by grad_p[I_xy] =  grad_p[V]*(1 + delta_xy)/12
+    bary_coords_int: Float[t.Tensor, "tri x=3 y=3 1 1"] = t.abs(tri_areas / 12.0) * (
+        t.ones((n_tris, 3, 3), dtype=dtype, device=device)
+        + t.eye(3, dtype=dtype, device=device).view(1, 3, 3)
+    ).view(-1, 3, 3, 1, 1)
+
+    bary_coords_int_grad: Float[t.Tensor, "tri x=3 y=3 p=3 3"] = (
+        d_tri_areas_d_vert_coords.view(-1, 1, 1, 3, 3)
+        * (
+            t.ones((n_tris, 3, 3), dtype=dtype, device=device)
+            + t.eye(3, dtype=dtype, device=device).view(1, 3, 3)
+        ).view(-1, 3, 3, 1, 1)
+        / 12.0
+    )
+
+    i, j, k = 0, 1, 2
+    unique_edges = t.tensor([[i, j], [i, k], [j, k]], dtype=t.long, device=device)
+
+    x_idx = unique_edges[:, 0][:, None]
+    y_idx = unique_edges[:, 1][:, None]
+    r_idx = unique_edges[:, 0][None, :]
+    s_idx = unique_edges[:, 1][None, :]
+
+    # Find the gradient of the mass matrix element W_xy,rs using the product rule
+    whitney_inner_prods_grad: Float[t.Tensor, "tri xy=3 rs=3 p=3 3"] = t.zeros(
+        (n_tris, 3, 3, 3, 3), dtype=dtype, device=device
+    )
+
+    # Use inplace operations for better peak memory usage.
+    whitney_inner_prods_grad.add_(
+        bary_coords_int_grad[:, x_idx, r_idx] * bary_coords_grad_dot[:, y_idx, s_idx]
+    )
+    whitney_inner_prods_grad.add_(
+        bary_coords_int[:, x_idx, r_idx] * bary_coords_grad_dot_grad[:, y_idx, s_idx]
+    )
+    whitney_inner_prods_grad.subtract_(
+        bary_coords_int_grad[:, x_idx, s_idx] * bary_coords_grad_dot[:, y_idx, r_idx]
+    )
+    whitney_inner_prods_grad.subtract_(
+        bary_coords_int[:, x_idx, s_idx] * bary_coords_grad_dot_grad[:, y_idx, r_idx]
+    )
+    whitney_inner_prods_grad.subtract_(
+        bary_coords_int_grad[:, y_idx, r_idx] * bary_coords_grad_dot[:, x_idx, s_idx]
+    )
+    whitney_inner_prods_grad.subtract_(
+        bary_coords_int[:, y_idx, r_idx] * bary_coords_grad_dot_grad[:, x_idx, s_idx]
+    )
+    whitney_inner_prods_grad.add_(
+        bary_coords_int_grad[:, y_idx, s_idx] * bary_coords_grad_dot[:, x_idx, r_idx]
+    )
+    whitney_inner_prods_grad.add_(
+        bary_coords_int[:, y_idx, s_idx] * bary_coords_grad_dot_grad[:, x_idx, r_idx]
+    )
+
+    # Scatter the gradients to a sparse tensor.
+    whitney_edge_signs, whitney_edges_idx = _tri_edge_faces(tri_mesh)
+
+    whitney_inner_prods_grad_flat_signed: Float[t.Tensor, "tri 27"] = (
+        whitney_inner_prods_grad
+        * whitney_edge_signs.view(-1, 1, 3, 1, 1)
+        * whitney_edge_signs.view(-1, 3, 1, 1, 1)
+    ).flatten(start_dim=-2)
+
+    dMdV_idx_xy = whitney_edges_idx.view(-1, 3, 1, 1).expand(-1, 3, 3, 3).flatten()
+    dMdV_idx_rs = whitney_edges_idx.view(-1, 1, 3, 1).expand(-1, 3, 3, 3).flatten()
+    dMdV_idx_p = tri_mesh.tris.view(-1, 1, 1, 3).expand(-1, 3, 3, 3).flatten()
+
+    dMdV = t.sparse_coo_tensor(
+        t.vstack((dMdV_idx_xy, dMdV_idx_rs, dMdV_idx_p)),
+        whitney_inner_prods_grad_flat_signed.flatten(end_dim=-2),
+        (n_edges, n_edges, n_verts, 3),
+    ).coalesce()
+
+    return dMdV
 
 
 def star_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
