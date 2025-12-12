@@ -26,3 +26,24 @@ def sp_diag_mm(
     cols = sp.indices()[1]
     scaled_vals = sp.values() * diag[cols]
     return t.sparse_coo_tensor(sp.indices(), scaled_vals, sp.size()).coalesce()
+
+
+def sp_diag(sp_m: Float[t.Tensor, "dim1 dim2"]) -> Float[t.Tensor, "min_dim"]:
+    """
+    Extract the diagonal elements of a 2D sparse tensor.
+    """
+    sp_m = sp_m.coalesce()
+
+    idx = sp_m.indices()
+    val = sp_m.values()
+
+    mask = idx[0] == idx[1]
+
+    diag_vals = val[mask]
+    diag_indices = idx[0][mask]
+
+    diag = t.zeros(min(sp_m.shape), dtype=sp_m.dtype, device=sp_m.device)
+
+    diag[diag_indices] = diag_vals
+
+    return diag
