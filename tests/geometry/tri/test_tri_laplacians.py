@@ -15,7 +15,7 @@ def test_l0_stiffness_relation(two_tris_mesh: SimplicialComplex):
 
     s0 = tri_hodge_stars.star_0(two_tris_mesh)
     l0 = tri_laplacians.laplacian_0(two_tris_mesh)
-    stiffness_indirect = tri_laplacians._diag_sp_mm(s0, l0).to_dense()
+    stiffness_indirect = tri_laplacians.diag_sp_mm(s0, l0).to_dense()
 
     t.testing.assert_close(stiffness_indirect, stiffness_direct)
 
@@ -113,7 +113,7 @@ def test_laplacian_symmetry(laplacian, star, tet_mesh: SimplicialComplex):
     """
     star_i = star(tet_mesh)
     laplacian_i = laplacian(tet_mesh)
-    stiffness_i = tri_laplacians._diag_sp_mm(star_i, laplacian_i)
+    stiffness_i = tri_laplacians.diag_sp_mm(star_i, laplacian_i)
 
     laplacian_i_dense = laplacian_i.to_dense()
     stiffness_i_dense = stiffness_i.to_dense()
@@ -136,7 +136,7 @@ def test_laplacian_PSD(laplacian, star, tet_mesh: SimplicialComplex):
     """
     star_i = star(tet_mesh)
     laplacian_i = laplacian(tet_mesh)
-    stiffness_i = tri_laplacians._diag_sp_mm(star_i, laplacian_i).to_dense()
+    stiffness_i = tri_laplacians.diag_sp_mm(star_i, laplacian_i).to_dense()
 
     eigs = t.linalg.eigvalsh(stiffness_i)
     assert eigs.min() >= -1e-6
