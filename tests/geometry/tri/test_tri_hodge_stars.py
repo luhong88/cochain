@@ -22,20 +22,20 @@ def test_star_0_on_tent(tent_mesh: SimplicialComplex):
     t.testing.assert_close(s0, true_s0)
 
 
-def test_star_0_on_tet(tet_mesh: SimplicialComplex):
-    s0 = tri_hodge_stars.star_0(tet_mesh).cpu().detach().numpy()
+def test_star_0_on_tet(hollow_tet_mesh: SimplicialComplex):
+    s0 = tri_hodge_stars.star_0(hollow_tet_mesh).cpu().detach().numpy()
 
     true_s0 = igl.massmatrix(
-        tet_mesh.vert_coords.cpu().detach().numpy(),
-        tet_mesh.tris.cpu().detach().numpy(),
+        hollow_tet_mesh.vert_coords.cpu().detach().numpy(),
+        hollow_tet_mesh.tris.cpu().detach().numpy(),
         igl.MASSMATRIX_TYPE_BARYCENTRIC,
     ).diagonal()
 
     np.testing.assert_allclose(s0, true_s0)
 
 
-def test_star_1_on_tent(tent_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1_circumcentric(tent_mesh)
+def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialComplex):
+    s1 = tri_hodge_stars.star_1(tent_mesh, method="circumcentric")
 
     # Find the tangent of the angle between a base edge and side edge
     tan_ang = 2 * math.sqrt(1.25)
@@ -49,17 +49,19 @@ def test_star_1_on_tent(tent_mesh: SimplicialComplex):
     t.testing.assert_close(s1, true_s1)
 
 
-def test_star_1_on_tet(tet_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1_circumcentric(tet_mesh)
+def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialComplex):
+    s1 = tri_hodge_stars.star_1(hollow_tet_mesh, method="circumcentric")
 
     # extract the Hodge 1-star from `igl.cotmatrix()`.
     igl_cotan_laplacian = t.from_numpy(
         igl.cotmatrix(
-            tet_mesh.vert_coords.cpu().detach().numpy(),
-            tet_mesh.tris.cpu().detach().numpy(),
+            hollow_tet_mesh.vert_coords.cpu().detach().numpy(),
+            hollow_tet_mesh.tris.cpu().detach().numpy(),
         ).todense()
     ).to(dtype=t.float)
-    true_s1 = igl_cotan_laplacian[tet_mesh.edges[:, 0], tet_mesh.edges[:, 1]]
+    true_s1 = igl_cotan_laplacian[
+        hollow_tet_mesh.edges[:, 0], hollow_tet_mesh.edges[:, 1]
+    ]
 
     t.testing.assert_close(s1, true_s1)
 
@@ -73,12 +75,12 @@ def test_star_2_on_tent(tent_mesh: SimplicialComplex):
     t.testing.assert_close(s2, true_s2)
 
 
-def test_star_2_on_tet(tet_mesh: SimplicialComplex):
-    s2 = tri_hodge_stars.star_2(tet_mesh).cpu().detach().numpy()
+def test_star_2_on_tet(hollow_tet_mesh: SimplicialComplex):
+    s2 = tri_hodge_stars.star_2(hollow_tet_mesh).cpu().detach().numpy()
 
     true_s2 = 2.0 / igl.doublearea(
-        tet_mesh.vert_coords.cpu().detach().numpy(),
-        tet_mesh.tris.cpu().detach().numpy(),
+        hollow_tet_mesh.vert_coords.cpu().detach().numpy(),
+        hollow_tet_mesh.tris.cpu().detach().numpy(),
     )
 
     np.testing.assert_allclose(s2, true_s2)
@@ -99,16 +101,16 @@ def test_star_2_on_tet(tet_mesh: SimplicialComplex):
         (tri_hodge_stars.star_2, tri_hodge_stars.d_star_2_d_vert_coords),
     ],
 )
-def test_star_jacobian(star, d_star_d_vert_coords, tet_mesh: SimplicialComplex):
-    vert_coords = tet_mesh.vert_coords.clone()
-    tris = tet_mesh.tris.clone()
+def test_star_jacobian(star, d_star_d_vert_coords, hollow_tet_mesh: SimplicialComplex):
+    vert_coords = hollow_tet_mesh.vert_coords.clone()
+    tris = hollow_tet_mesh.tris.clone()
 
     autograd_jacobian = t.autograd.functional.jacobian(
         lambda vert_coords: star(SimplicialComplex.from_tri_mesh(vert_coords, tris)),
         vert_coords,
     )
 
-    analytical_jacobian = d_star_d_vert_coords(tet_mesh).to_dense()
+    analytical_jacobian = d_star_d_vert_coords(hollow_tet_mesh).to_dense()
 
     t.testing.assert_close(autograd_jacobian, analytical_jacobian)
 
@@ -124,9 +126,11 @@ def test_star_jacobian(star, d_star_d_vert_coords, tet_mesh: SimplicialComplex):
         (tri_hodge_stars.star_2, tri_hodge_stars.d_inv_star_2_d_vert_coords),
     ],
 )
-def test_inv_star_jacobian(star, d_inv_star_d_vert_coords, tet_mesh: SimplicialComplex):
-    vert_coords = tet_mesh.vert_coords.clone()
-    tris = tet_mesh.tris.clone()
+def test_inv_star_jacobian(
+    star, d_inv_star_d_vert_coords, hollow_tet_mesh: SimplicialComplex
+):
+    vert_coords = hollow_tet_mesh.vert_coords.clone()
+    tris = hollow_tet_mesh.tris.clone()
 
     autograd_jacobian = t.autograd.functional.jacobian(
         lambda vert_coords: 1.0
@@ -134,7 +138,7 @@ def test_inv_star_jacobian(star, d_inv_star_d_vert_coords, tet_mesh: SimplicialC
         vert_coords,
     )
 
-    analytical_jacobian = d_inv_star_d_vert_coords(tet_mesh).to_dense()
+    analytical_jacobian = d_inv_star_d_vert_coords(hollow_tet_mesh).to_dense()
 
     t.testing.assert_close(autograd_jacobian, analytical_jacobian)
 
@@ -155,20 +159,23 @@ def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialComplex):
     t.testing.assert_close(tri_areas, true_tri_areas)
 
 
-def test_d_tri_areas_d_vert_coords(tet_mesh: SimplicialComplex):
+def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialComplex):
     # Note that this function does not return the Jacobian; rather, for each
     # triangle, it returns the gradient of its area wrt each of its three verticies.
     dAdV = tri_hodge_stars._d_tri_areas_d_vert_coords(
-        tet_mesh.vert_coords, tet_mesh.tris
+        hollow_tet_mesh.vert_coords, hollow_tet_mesh.tris
     ).flatten(end_dim=1)
 
     jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: tri_hodge_stars._tri_areas(vert_coords, tet_mesh.tris),
-        tet_mesh.vert_coords,
+        lambda vert_coords: tri_hodge_stars._tri_areas(
+            vert_coords, hollow_tet_mesh.tris
+        ),
+        hollow_tet_mesh.vert_coords,
     )
     # Extract the nonzero components of the Jacobian.
     dAdV_true = jacobian[
-        t.repeat_interleave(t.arange(tet_mesh.n_tris), 3), tet_mesh.tris.flatten()
+        t.repeat_interleave(t.arange(hollow_tet_mesh.n_tris), 3),
+        hollow_tet_mesh.tris.flatten(),
     ]
 
     t.testing.assert_close(dAdV, dAdV_true)

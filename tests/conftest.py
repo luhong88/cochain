@@ -23,8 +23,8 @@ def tent_mesh() -> SimplicialComplex:
 
 
 @pytest.fixture
-def tet_mesh() -> SimplicialComplex:
-    return synthetic_tri_meshes.load_tet_mesh()
+def hollow_tet_mesh() -> SimplicialComplex:
+    return synthetic_tri_meshes.load_hollow_tet_mesh()
 
 
 @pytest.fixture
