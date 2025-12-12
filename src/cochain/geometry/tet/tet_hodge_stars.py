@@ -8,7 +8,7 @@ from .tet_masses import mass_0, mass_3
 
 def star_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tet"]:
     """
-    Compute the Hodge 3-star, which is the inverse of the mass-2 matrix.
+    Compute the Hodge 3-star, which is the inverse of the mass-3 matrix.
     """
     return 1.0 / mass_3(tet_mesh)
 

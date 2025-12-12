@@ -1,3 +1,5 @@
+from typing import Literal
+
 import torch as t
 from jaxtyping import Float, Integer
 
@@ -63,7 +65,7 @@ def d_star_2_d_vert_coords(
     return dSdV
 
 
-def star_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
+def star_1_circumcentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
     """
     The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the
     circumcentric dual 1-cells. This function computes the length ratio of the dual
@@ -99,7 +101,7 @@ def star_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
     return -subset_vals  # note the negative sign to get dual edge lengths
 
 
-def d_star_1_d_vert_coords(
+def d_star_1_circumcentric_d_vert_coords(
     tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "edge vert 3"]:
     """
@@ -153,16 +155,16 @@ def d_star_1_d_vert_coords(
     return dSdV
 
 
-def d_inv_star_1_d_vert_coords(
+def d_inv_star_1_circumcentric_d_vert_coords(
     tri_mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "edge vert 3"]:
     """
     Compute the Jacobian of the inverse Hodge 1-star matrix (diagonal elements)
     with respect to vertex coordinates.
     """
-    dSdV = d_star_1_d_vert_coords(tri_mesh)
+    dSdV = d_star_1_circumcentric_d_vert_coords(tri_mesh)
 
-    s1 = star_1(tri_mesh)[dSdV.indices()[0]]
+    s1 = star_1_circumcentric(tri_mesh)[dSdV.indices()[0]]
     inv_scale = -1.0 / (s1.square()[:, None] + EPS)
 
     d_inv_S_dV = t.sparse_coo_tensor(
@@ -170,6 +172,67 @@ def d_inv_star_1_d_vert_coords(
     ).coalesce()
 
     return d_inv_S_dV
+
+
+def star_1_barycentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
+    """
+    Compute the barycentric Hodge 1-star operator.
+    """
+    vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
+    tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
+    edges: Integer[t.LongTensor, "edge 2"] = tri_mesh.edges
+    tri_vert_coords: Float[t.Tensor, "tet 3 3"] = vert_coords[tris]
+
+    i, j, k = 0, 1, 2
+
+    # For each tri, find its barycenter and the barycenters of its edge faces,
+    # as well as the dual edges that connect the barycenters
+    tri_barycenters: Float[t.Tensor, "tri 1 3"] = t.mean(
+        tri_vert_coords, dim=-2, keepdim=True
+    )
+    tri_edge_face_barycenters: Float[t.Tensor, "tet 3 3"] = t.mean(
+        tri_vert_coords[:, [[i, j], [i, k], [j, k]]],
+        dim=-2,
+    )
+
+    dual_edges = tri_barycenters - tri_edge_face_barycenters
+    dual_edge_lens: Float[t.Tensor, "tet 4"] = t.linalg.norm(dual_edges, dim=-1)
+
+    # For each edge, find all tri containing the edge as a face, and sum together
+    # the tri-edge pair dual edge lengths.
+    all_canon_edges_idx = tri_mesh.tri_edge_idx
+
+    diag = t.zeros(
+        tri_mesh.n_edges,
+        dtype=vert_coords.dtype,
+        device=vert_coords.device,
+    )
+    diag.scatter_add_(
+        dim=0,
+        index=all_canon_edges_idx.flatten(),
+        src=dual_edge_lens.flatten(),
+    )
+
+    # Divide the dual edge length sum by the primal edge length to get the Hodge 1-star.
+    edge_lens = t.linalg.norm(
+        vert_coords[edges[:, 1]] - vert_coords[edges[:, 0]],
+        dim=-1,
+    )
+    diag.divide_(edge_lens)
+
+    return diag
+
+
+def star_1(
+    tri_mesh: SimplicialComplex, method: Literal["circumcentric", "barycentric"]
+):
+    match method:
+        case "circumcentric":
+            return star_1_circumcentric(tri_mesh)
+        case "barycentric":
+            return star_1_barycentric(tri_mesh)
+        case _:
+            raise ValueError()
 
 
 def star_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:

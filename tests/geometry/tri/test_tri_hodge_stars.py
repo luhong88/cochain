@@ -35,7 +35,7 @@ def test_star_0_on_tet(tet_mesh: SimplicialComplex):
 
 
 def test_star_1_on_tent(tent_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1(tent_mesh)
+    s1 = tri_hodge_stars.star_1_circumcentric(tent_mesh)
 
     # Find the tangent of the angle between a base edge and side edge
     tan_ang = 2 * math.sqrt(1.25)
@@ -50,7 +50,7 @@ def test_star_1_on_tent(tent_mesh: SimplicialComplex):
 
 
 def test_star_1_on_tet(tet_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1(tet_mesh)
+    s1 = tri_hodge_stars.star_1_circumcentric(tet_mesh)
 
     # extract the Hodge 1-star from `igl.cotmatrix()`.
     igl_cotan_laplacian = t.from_numpy(
@@ -92,7 +92,10 @@ def test_star_2_on_tet(tet_mesh: SimplicialComplex):
     "star, d_star_d_vert_coords",
     [
         (tri_hodge_stars.star_0, tri_hodge_stars.d_star_0_d_vert_coords),
-        (tri_hodge_stars.star_1, tri_hodge_stars.d_star_1_d_vert_coords),
+        (
+            tri_hodge_stars.star_1_circumcentric,
+            tri_hodge_stars.d_star_1_circumcentric_d_vert_coords,
+        ),
         (tri_hodge_stars.star_2, tri_hodge_stars.d_star_2_d_vert_coords),
     ],
 )
@@ -114,7 +117,10 @@ def test_star_jacobian(star, d_star_d_vert_coords, tet_mesh: SimplicialComplex):
     "star, d_inv_star_d_vert_coords",
     [
         (tri_hodge_stars.star_0, tri_hodge_stars.d_inv_star_0_d_vert_coords),
-        (tri_hodge_stars.star_1, tri_hodge_stars.d_inv_star_1_d_vert_coords),
+        (
+            tri_hodge_stars.star_1_circumcentric,
+            tri_hodge_stars.d_inv_star_1_circumcentric_d_vert_coords,
+        ),
         (tri_hodge_stars.star_2, tri_hodge_stars.d_inv_star_2_d_vert_coords),
     ],
 )

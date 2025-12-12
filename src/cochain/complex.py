@@ -3,7 +3,7 @@ from functools import cached_property
 import torch as t
 from jaxtyping import Float, Integer
 
-from .topology import coboundaries, tet_topology
+from .topology import coboundaries, tet_topology, tri_topology
 
 
 class SimplicialComplex:
@@ -90,6 +90,14 @@ class SimplicialComplex:
     @cached_property
     def tet_tri_idx(self) -> Integer[t.LongTensor, "tet 4"]:
         return tet_topology.get_tri_face_idx(self.tets, self.tris, self.n_verts)
+
+    @cached_property
+    def tri_edge_idx(self) -> Integer[t.LongTensor, "tri 3"]:
+        return tri_topology.get_edge_face_idx(self.tris, self.edges, self.n_verts)
+
+    @cached_property
+    def tri_edge_orientations(self) -> Float[t.Tensor, "tri 3"]:
+        return tri_topology.get_edge_face_orientations(self.tris)
 
     # TODO: check for immersion
     @classmethod

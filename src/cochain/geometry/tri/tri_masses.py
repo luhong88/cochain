@@ -9,49 +9,6 @@ from .tri_geometry import (
 )
 
 
-def _tri_edge_faces(
-    tri_mesh: SimplicialComplex,
-) -> tuple[Float[t.Tensor, "tri 3"], Integer[t.LongTensor, "tri 3"]]:
-    """
-    Enumerate all edges for each tri and find their orientations and indices on
-    the tri_mesh.edges list.
-    """
-    device = tri_mesh.vert_coords.device
-
-    n_verts = tri_mesh.n_verts
-
-    # Enumerate all unique edges via their vertex position in the tris.
-    i, j, k = 0, 1, 2
-    unique_edges = t.tensor([[i, j], [i, k], [j, k]], dtype=t.long, device=device)
-
-    # For each tri and each unique edge pair, find the orientations of the edges
-    # and their indices on the list of unique, canonical edges (tri_mesh.edges).
-    whitney_edges: Float[t.Tensor, "tri*3 2"] = tri_mesh.tris[:, unique_edges].flatten(
-        end_dim=-2
-    )
-
-    # Same method as used in the construction of coboundary operators to use
-    # sort() to identify edge orientations.
-    whitney_canon_edges, whitney_edge_orientations = whitney_edges.sort(dim=-1)
-    whitney_edge_signs: Float[t.Tensor, "tri 3"] = t.where(
-        whitney_edge_orientations[:, 1] > 0, whitney_edge_orientations[:, 1], -1
-    ).view(-1, 3)
-
-    # This assumes that the edge indices in tri_mesh.edges are already in canonical
-    # orders.
-    unique_canon_edges_packed = tri_mesh.edges[:, 0] * n_verts + tri_mesh.edges[:, 1]
-    canon_edges_packed_sorted, canon_edges_idx = t.sort(unique_canon_edges_packed)
-
-    whitney_edges_packed = (
-        whitney_canon_edges[:, 0] * n_verts + whitney_canon_edges[:, 1]
-    )
-    whitney_edges_idx: Float[t.Tensor, "tri 3"] = canon_edges_idx[
-        t.searchsorted(canon_edges_packed_sorted, whitney_edges_packed)
-    ].view(-1, 3)
-
-    return whitney_edge_signs, whitney_edges_idx
-
-
 def _bary_coord_grad_inner_prods(
     tri_areas: Float[t.Tensor, "tri"],
     d_tri_areas_d_vert_coords: Float[t.Tensor, "tri 3 3"],
@@ -144,7 +101,8 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # For each tri and each unique edge pair, find the orientations of the edges
     # and their indices on the list of unique, canonical edges (tri_mesh.edges).
-    whitney_edge_signs, whitney_edges_idx = _tri_edge_faces(tri_mesh)
+    whitney_edge_signs = tri_mesh.tri_edge_orientations
+    whitney_edges_idx = tri_mesh.tri_edge_idx
 
     # Multiply the Whitney 1-form inner product by the edge orientation signs
     # to get the contribution from canonical edges.
@@ -270,7 +228,8 @@ def d_mass_1_d_vert_coords(
     )
 
     # Scatter the gradients to a sparse tensor.
-    whitney_edge_signs, whitney_edges_idx = _tri_edge_faces(tri_mesh)
+    whitney_edge_signs = tri_mesh.tri_edge_orientations
+    whitney_edges_idx = tri_mesh.tri_edge_idx
 
     whitney_inner_prods_grad_flat_signed: Float[t.Tensor, "tri 27"] = (
         whitney_inner_prods_grad
