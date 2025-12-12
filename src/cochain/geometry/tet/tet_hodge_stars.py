@@ -3,7 +3,14 @@ from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
 from ..tri.tri_geometry import _tri_areas
-from .tet_geometry import _tet_signed_vols
+from .tet_masses import mass_0, mass_3
+
+
+def star_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tet"]:
+    """
+    Compute the Hodge 3-star, which is the inverse of the mass-2 matrix.
+    """
+    return 1.0 / mass_3(tet_mesh)
 
 
 def star_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
@@ -111,22 +118,4 @@ def star_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
     return diag
 
 
-def star_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
-    """
-    Compute the barycentric 0-star.
-
-    The barycentric dual volume for each vertex is the sum of 1/4 of the volumes
-    of all tetrahedra that share the vertex as a face.
-    """
-    n_verts = tet_mesh.n_verts
-
-    tet_vol = t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
-
-    diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
-    diag.scatter_add_(
-        dim=0,
-        index=tet_mesh.tets.flatten(),
-        src=t.repeat_interleave(tet_vol / 4.0, 4),
-    )
-
-    return diag
+star_0 = mass_0
