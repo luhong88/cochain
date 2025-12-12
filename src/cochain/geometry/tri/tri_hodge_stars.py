@@ -465,11 +465,13 @@ def star_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     The barycentric dual area for each vertex is the sum of 1/3 of the areas of
     all triangles that share the vertex as a face.
     """
-    n_verts = tri_mesh.n_verts
-
     tri_area = _tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
-    diag = t.zeros(n_verts, device=tri_mesh.vert_coords.device)
+    diag = t.zeros(
+        tri_mesh.n_verts,
+        dtype=tri_mesh.vert_coords.dtype,
+        device=tri_mesh.vert_coords.device,
+    )
     diag.scatter_add_(
         dim=0,
         index=tri_mesh.tris.flatten(),
