@@ -5,6 +5,7 @@ from jaxtyping import Float
 
 from ...complex import SimplicialComplex
 from ...utils.linalg import diag_sp_mm, sp_diag
+from .tet_hodge_stars import star_1, star_2
 from .tet_masses import mass_0, mass_1, mass_2, mass_3
 from .tet_stiffness import stiffness_matrix
 
@@ -124,7 +125,11 @@ def weak_laplacian_2_div_grad(
             return m_2 @ d1 @ inv_m_1 @ d1_T @ m_2
 
         case "inv_star":
-            raise NotImplementedError()
+            m_1 = mass_1(tet_mesh)
+            inv_m_1 = 1.0 / star_1(tet_mesh)
+            m_2 = mass_2(tet_mesh)
+
+            return m_2 @ d1 @ diag_sp_mm(inv_m_1, d1_T @ m_2)
 
         case "diagonal":
             m_1 = mass_1(tet_mesh)
@@ -223,7 +228,11 @@ def weak_laplacian_3(
             raise NotImplementedError()
 
         case "inv_star":
-            raise NotImplementedError()
+            m_2 = mass_2(tet_mesh)
+            inv_m_2 = 1.0 / star_2(tet_mesh)
+            m_3 = mass_3(tet_mesh)
+
+            return m_3 @ d2 @ diag_sp_mm(inv_m_2, d2_T @ m_3)
 
         case "diagonal":
             m_2 = mass_2(tet_mesh)
