@@ -3,7 +3,7 @@ from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
 from ..tri.tri_geometry import _tri_areas
-from .tet_masses import _tet_edge_faces, _tet_tri_face_idx
+from .tet_geometry import _tet_signed_vols
 
 
 def star_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
@@ -31,7 +31,7 @@ def star_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
 
     # For each tri, find all tet containing the tri as a face, and sum together
     # the tet-tri pair dual edge lengths.
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = _tet_tri_face_idx(tet_mesh)
+    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tet_tri_idx
 
     diag = t.zeros(
         tet_mesh.n_tris,
@@ -88,7 +88,7 @@ def star_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
 
     # For each edge, find all tet containing the edge as a face, and sum together
     # the subareas of the two barycentric triangles.
-    _, all_canon_edges_idx = _tet_edge_faces(tet_mesh)
+    all_canon_edges_idx = tet_mesh.tet_edge_idx
 
     diag = t.zeros(
         tet_mesh.n_edges,
@@ -107,5 +107,26 @@ def star_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
         dim=-1,
     )
     diag.divide_(edge_lens)
+
+    return diag
+
+
+def star_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
+    """
+    Compute the barycentric 0-star.
+
+    The barycentric dual volume for each vertex is the sum of 1/4 of the volumes
+    of all tetrahedra that share the vertex as a face.
+    """
+    n_verts = tet_mesh.n_verts
+
+    tet_vol = t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+
+    diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
+    diag.scatter_add_(
+        dim=0,
+        index=tet_mesh.tets.flatten(),
+        src=t.repeat_interleave(tet_vol / 4.0, 4),
+    )
 
     return diag

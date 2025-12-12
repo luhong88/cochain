@@ -55,51 +55,6 @@ def _bary_coord_grad_inner_prods(
     return bary_coords_grad_dot
 
 
-def _tet_edge_faces(
-    tet_mesh: SimplicialComplex,
-) -> tuple[Float[t.Tensor, "tet 6"], Integer[t.LongTensor, "tet 6"]]:
-    """
-    Enumerate all edges for each tet and find their orientations and indices on
-    the tet_mesh.edges list.
-    """
-    device = tet_mesh.vert_coords.device
-
-    n_verts = tet_mesh.n_verts
-
-    # Enumerate all unique edges via their vertex position in the tet.
-    i, j, k, l = 0, 1, 2, 3
-    unique_edges = t.tensor(
-        [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]], dtype=t.long, device=device
-    )
-
-    # For each tet and each unique edge pair, find the orientations of the edges
-    # and their indices on the list of unique, canonical edges (tet_mesh.edges).
-    whitney_edges: Float[t.Tensor, "tet*6 2"] = tet_mesh.tets[:, unique_edges].flatten(
-        end_dim=-2
-    )
-
-    # Same method as used in the construction of coboundary operators to use
-    # sort() to identify edge orientations.
-    whitney_canon_edges, whitney_edge_orientations = whitney_edges.sort(dim=-1)
-    whitney_edge_signs: Float[t.Tensor, "tet 6"] = t.where(
-        whitney_edge_orientations[:, 1] > 0, whitney_edge_orientations[:, 1], -1
-    ).view(-1, 6)
-
-    # This assumes that the edge indices in tet_mesh.edges are already in canonical
-    # orders.
-    unique_canon_edges_packed = tet_mesh.edges[:, 0] * n_verts + tet_mesh.edges[:, 1]
-    canon_edges_packed_sorted, canon_edges_idx = t.sort(unique_canon_edges_packed)
-
-    whitney_edges_packed = (
-        whitney_canon_edges[:, 0] * n_verts + whitney_canon_edges[:, 1]
-    )
-    whitney_edges_idx: Float[t.Tensor, "tet 6"] = canon_edges_idx[
-        t.searchsorted(canon_edges_packed_sorted, whitney_edges_packed)
-    ].view(-1, 6)
-
-    return whitney_edge_signs, whitney_edges_idx
-
-
 def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
@@ -173,7 +128,8 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # For each tet and each unique edge pair, find the orientations of the edges
     # and their indices on the list of unique, canonical edges (tet_mesh.edges).
-    whitney_edge_signs, whitney_edges_idx = _tet_edge_faces(tet_mesh)
+    whitney_edge_signs = tet_mesh.tet_edge_orientations
+    whitney_edges_idx = tet_mesh.tet_edge_idx
 
     # Multiply the Whitney 1-form inner product by the edge orientation signs
     # to get the contribution from canonical edges.
@@ -307,7 +263,8 @@ def d_mass_1_d_vert_coords(
     )
 
     # Scatter the gradients to a sparse tensor.
-    whitney_edge_signs, whitney_edges_idx = _tet_edge_faces(tet_mesh)
+    whitney_edge_signs = tet_mesh.tet_edge_orientations
+    whitney_edges_idx = tet_mesh.tet_edge_idx
 
     whitney_inner_prods_grad_flat_signed: Float[t.Tensor, "tet 144"] = (
         whitney_inner_prods_grad
@@ -414,57 +371,6 @@ def _whitney_2_form_inner_prods(
     return sign_corrections, whitney_inner_prod_signed
 
 
-def _tet_tri_face_idx(
-    tet_mesh: SimplicialComplex,
-) -> Integer[t.LongTensor, "tet 4"]:
-    """
-    For each tet and each of its vertices, find the triangle face opposite to the
-    vertex and its index in the tet_mesh.tris list.
-    """
-    i, j, k, l = 0, 1, 2, 3
-
-    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
-
-    n_verts = tet_mesh.n_verts
-
-    # For each tet and each vertex, triangle opposite to the vertex.
-    all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[
-        :, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
-    ]
-
-    all_canon_tris = all_tris.sort(dim=-1).values
-
-    # Find the indices of the triangles on the list of unique, canonical triangles
-    # (tet_mesh.tris) by radix encoding and searchsorted(). Because each triangle
-    # ijk is encoded as i*n_verts^2 + j*n_verts + k and the max value of t.int64
-    # is ~ 2^63, the max number of vertices this method can accommodate is
-    # ~ n_verts < 2^21. Note that this method assumes that the triangle indices
-    # in tet_mesh.tris are already in canonical orders.
-    unique_canon_tris_packed = (
-        tet_mesh.tris[:, 0] * n_verts**2
-        + tet_mesh.tris[:, 1] * n_verts
-        + tet_mesh.tris[:, 2]
-    )
-    unique_canon_tris_packed_sorted, unique_canon_tris_idx = t.sort(
-        unique_canon_tris_packed
-    )
-
-    all_canon_tris_flat: Integer[t.LongTensor, "tet*4 3"] = all_canon_tris.flatten(
-        end_dim=-2
-    )
-    all_canon_tris_packed = (
-        all_canon_tris_flat[:, 0] * n_verts**2
-        + all_canon_tris_flat[:, 1] * n_verts
-        + all_canon_tris_flat[:, 2]
-    )
-
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = unique_canon_tris_idx[
-        t.searchsorted(unique_canon_tris_packed_sorted, all_canon_tris_packed)
-    ].view(-1, 4)
-
-    return all_canon_tris_idx
-
-
 def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     """
     Compute the Galerkin triangle/2-form mass matrix.
@@ -486,7 +392,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
 
     # Then, find the indices of the tet triangle faces associated with the basis
     # functions.
-    all_canon_tris_idx = _tet_tri_face_idx(tet_mesh)
+    all_canon_tris_idx = tet_mesh.tet_tri_idx
 
     # Assemble the mass matrix by scattering the inner products according to the
     # triangle indices.
@@ -592,7 +498,7 @@ def d_mass_2_d_vert_coords(
         whitney_inner_prods_shaped * d_signed_vols_d_vert_coords / tet_signed_vols
     )
 
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = _tet_tri_face_idx(tet_mesh)
+    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tet_tri_idx
 
     # Assemble the mass matrix Jacobian.
     dMdV_idx_i = all_canon_tris_idx.view(-1, 4, 1, 1).expand(-1, 4, 4, 4).flatten()
