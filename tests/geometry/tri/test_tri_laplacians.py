@@ -104,7 +104,7 @@ def test_laplacian_2_kernel(hollow_tet_mesh: SimplicialComplex):
     "laplacian, star",
     [
         (tri_laplacians.laplacian_0, tri_hodge_stars.star_0),
-        (tri_laplacians.laplacian_1, tri_hodge_stars.star_1_circumcentric),
+        (tri_laplacians.laplacian_1, tri_hodge_stars._star_1_circumcentric),
         (tri_laplacians.laplacian_2, tri_hodge_stars.star_2),
     ],
 )
@@ -128,7 +128,7 @@ def test_laplacian_symmetry(laplacian, star, hollow_tet_mesh: SimplicialComplex)
     "laplacian, star",
     [
         (tri_laplacians.laplacian_0, tri_hodge_stars.star_0),
-        (tri_laplacians.laplacian_1, tri_hodge_stars.star_1_circumcentric),
+        (tri_laplacians.laplacian_1, tri_hodge_stars._star_1_circumcentric),
         (tri_laplacians.laplacian_2, tri_hodge_stars.star_2),
     ],
 )
@@ -194,7 +194,7 @@ def test_codiff_1_adjoint_relation(hollow_tet_mesh: SimplicialComplex):
     with respect to the Hodge star-weighted inner product.
     """
     s0 = t.diagflat(tri_hodge_stars.star_0(hollow_tet_mesh).to_dense())
-    s1 = t.diagflat(tri_hodge_stars.star_1_circumcentric(hollow_tet_mesh).to_dense())
+    s1 = t.diagflat(tri_hodge_stars._star_1_circumcentric(hollow_tet_mesh).to_dense())
 
     d0 = hollow_tet_mesh.coboundary_0
     codiff_1 = tri_laplacians.codifferential_1(hollow_tet_mesh)
@@ -217,7 +217,7 @@ def test_codiff_2_adjoint_relation(hollow_tet_mesh: SimplicialComplex):
     Check that the 2-codifferential and the coboundary-1 operators are adjoints
     with respect to the Hodge star-weighted inner products.
     """
-    s1 = t.diagflat(tri_hodge_stars.star_1_circumcentric(hollow_tet_mesh).to_dense())
+    s1 = t.diagflat(tri_hodge_stars._star_1_circumcentric(hollow_tet_mesh).to_dense())
     s2 = t.diagflat(tri_hodge_stars.star_2(hollow_tet_mesh).to_dense())
 
     d1 = hollow_tet_mesh.coboundary_1

@@ -18,7 +18,7 @@ def star_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " tri"]:
     return 1.0 / _tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
 
-def star_1_circumcentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
+def _star_1_circumcentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
     """
     The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the
     circumcentric dual 1-cells. This function computes the length ratio of the dual
@@ -54,7 +54,7 @@ def star_1_circumcentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"
     return -subset_vals  # note the negative sign to get dual edge lengths
 
 
-def star_1_barycentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
+def _star_1_barycentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
     """
     Compute the barycentric Hodge 1-star operator.
     """
@@ -104,13 +104,13 @@ def star_1_barycentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
 
 
 def star_1(
-    tri_mesh: SimplicialComplex, method: Literal["circumcentric", "barycentric"]
+    tri_mesh: SimplicialComplex, dual_complex: Literal["circumcentric", "barycentric"]
 ):
-    match method:
+    match dual_complex:
         case "circumcentric":
-            return star_1_circumcentric(tri_mesh)
+            return _star_1_circumcentric(tri_mesh)
         case "barycentric":
-            return star_1_barycentric(tri_mesh)
+            return _star_1_barycentric(tri_mesh)
         case _:
             raise ValueError()
 

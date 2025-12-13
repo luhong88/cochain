@@ -34,7 +34,7 @@ def test_star_0_on_tet(hollow_tet_mesh: SimplicialComplex):
 
 
 def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1(tent_mesh, method="circumcentric")
+    s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="circumcentric")
 
     # Find the tangent of the angle between a base edge and side edge
     tan_ang = 2 * math.sqrt(1.25)
@@ -48,8 +48,25 @@ def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialComplex):
     t.testing.assert_close(s1, true_s1)
 
 
+def test_star_1_barycentric_on_tent(tent_mesh: SimplicialComplex):
+    s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="barycentric")
+
+    face_barycenter = t.tensor([1.5, 0.5, 1.0]) / 3.0
+    side_edge_barycenter = t.tensor([0.5, 0.5, 1.0]) / 2.0
+    dual_side_edge_len = 2.0 * t.linalg.norm(face_barycenter - side_edge_barycenter)
+    side_edge_len = t.linalg.norm(2.0 * side_edge_barycenter)
+    dual_side_edge_ratio = dual_side_edge_len / side_edge_len
+
+    base_edge_barycenter = t.tensor([1.0, 0.0, 0.0]) / 2.0
+    dual_base_edge_ratio = t.linalg.norm(face_barycenter - base_edge_barycenter)
+
+    true_s1 = t.Tensor([dual_side_edge_ratio] * 4 + [dual_base_edge_ratio] * 4)
+
+    t.testing.assert_close(s1, true_s1)
+
+
 def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1(hollow_tet_mesh, method="circumcentric")
+    s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex="circumcentric")
 
     # extract the Hodge 1-star from `igl.cotmatrix()`.
     igl_cotan_laplacian = t.from_numpy(
@@ -109,9 +126,7 @@ def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialComplex):
     ).flatten(end_dim=1)
 
     jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: tri_hodge_stars._tri_areas(
-            vert_coords, hollow_tet_mesh.tris
-        ),
+        lambda vert_coords: tri_geometry._tri_areas(vert_coords, hollow_tet_mesh.tris),
         hollow_tet_mesh.vert_coords,
     )
     # Extract the nonzero components of the Jacobian.

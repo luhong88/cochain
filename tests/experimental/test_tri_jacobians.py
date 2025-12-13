@@ -12,7 +12,7 @@ from cochain.geometry.tri.tri_stiffness import stiffness_matrix
     [
         (tri_hodge_stars.star_0, tri_jacobians.d_star_0_d_vert_coords),
         (
-            tri_hodge_stars.star_1_circumcentric,
+            tri_hodge_stars._star_1_circumcentric,
             tri_jacobians.d_star_1_circumcentric_d_vert_coords,
         ),
         (tri_hodge_stars.star_2, tri_jacobians.d_star_2_d_vert_coords),
@@ -37,7 +37,7 @@ def test_star_jacobian(star, d_star_d_vert_coords, hollow_tet_mesh: SimplicialCo
     [
         (tri_hodge_stars.star_0, tri_jacobians.d_inv_star_0_d_vert_coords),
         (
-            tri_hodge_stars.star_1_circumcentric,
+            tri_hodge_stars._star_1_circumcentric,
             tri_jacobians.d_inv_star_1_circumcentric_d_vert_coords,
         ),
         (tri_hodge_stars.star_2, tri_jacobians.d_inv_star_2_d_vert_coords),

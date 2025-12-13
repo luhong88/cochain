@@ -3,7 +3,7 @@ from jaxtyping import Float
 
 from ...complex import SimplicialComplex
 from ...utils.linalg import diag_sp_mm, sp_diag_mm
-from .tri_hodge_stars import star_0, star_1_circumcentric, star_2
+from .tri_hodge_stars import _star_1_circumcentric, star_0, star_2
 from .tri_stiffness import stiffness_matrix
 
 # Laplacian_k = (
@@ -30,7 +30,7 @@ def codifferential_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert edge"
     d0_T = tri_mesh.coboundary_0.transpose(0, 1).coalesce()
 
     s0 = star_0(tri_mesh)
-    s1 = star_1_circumcentric(tri_mesh)
+    s1 = _star_1_circumcentric(tri_mesh)
 
     codiff_1 = diag_sp_mm(1.0 / s0, sp_diag_mm(d0_T, s1))
 
@@ -43,7 +43,7 @@ def codifferential_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge tri"]
     """
     d1_T = tri_mesh.coboundary_1.transpose(0, 1).coalesce()
 
-    s1 = star_1_circumcentric(tri_mesh)
+    s1 = _star_1_circumcentric(tri_mesh)
     s2 = star_2(tri_mesh)
 
     codiff_2 = diag_sp_mm(1.0 / s1, sp_diag_mm(d1_T, s2))

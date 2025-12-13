@@ -7,7 +7,7 @@ from ..geometry.tri.tri_geometry import (
     _d_tri_areas_d_vert_coords,
     _tri_areas,
 )
-from ..geometry.tri.tri_hodge_stars import star_0, star_1_circumcentric, star_2
+from ..geometry.tri.tri_hodge_stars import _star_1_circumcentric, star_0, star_2
 from ..utils.constants import EPS
 
 
@@ -189,7 +189,7 @@ def d_inv_star_1_circumcentric_d_vert_coords(
     """
     dSdV = d_star_1_circumcentric_d_vert_coords(tri_mesh)
 
-    s1 = star_1_circumcentric(tri_mesh)[dSdV.indices()[0]]
+    s1 = _star_1_circumcentric(tri_mesh)[dSdV.indices()[0]]
     inv_scale = -1.0 / (s1.square()[:, None] + EPS)
 
     d_inv_S_dV = t.sparse_coo_tensor(
