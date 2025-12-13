@@ -92,7 +92,7 @@ def weak_laplacian_2_div_grad(
         "dense",
         "solver",
         "inv_star",
-        "diagonal",
+        "row_sum",
     ],
 ) -> Float[t.Tensor, "tri tri"]:
     """
@@ -109,8 +109,8 @@ def weak_laplacian_2_div_grad(
     If method is `inv_star`, use the inverse of the barycentric 1-star in place
     of inv_M_1.
 
-    If method is `diagonal`, ignore the off-diagonal elements of the mass-1 matrix
-    and approximate its inverse as the inverse of the diagonal matrix.
+    If method is `row_sum`, coerce the mass-1 matrix into a diagonal matrix through
+    row sum, and then take its inverse.
     """
     d1 = tet_mesh.coboundary_1
     d1_T = d1.transpose(0, 1).coalesce()
@@ -131,15 +131,18 @@ def weak_laplacian_2_div_grad(
 
             return m_2 @ d1 @ diag_sp_mm(inv_m_1, d1_T @ m_2)
 
-        case "diagonal":
+        case "row_sum":
             m_1 = mass_1(tet_mesh)
-            inv_m_1 = 1.0 / sp_diag(m_1)
+            inv_m_1 = 1.0 / t.sum(m_1, dim=-1).to_dense()
             m_2 = mass_2(tet_mesh)
 
             return m_2 @ d1 @ diag_sp_mm(inv_m_1, d1_T @ m_2)
 
-        case _:
+        case "solver":
             raise NotImplementedError()
+
+        case _:
+            raise ValueError()
 
 
 def weak_laplacian_2_curl_curl(
@@ -163,7 +166,7 @@ def weak_laplacian_2(
         "dense",
         "solver",
         "inv_star",
-        "diagonal",
+        "row_sum",
     ],
 ) -> Float[t.Tensor, "tri tri"]:
     """
@@ -175,7 +178,7 @@ def weak_laplacian_2(
     if method == "solver":
         raise NotImplementedError()
 
-    elif method in ["dense", "inv_star", "diagonal"]:
+    elif method in ["dense", "inv_star", "row_sum"]:
         curl_curl = weak_laplacian_2_curl_curl(tet_mesh)
         div_grad = weak_laplacian_2_div_grad(tet_mesh, method)
 
@@ -191,7 +194,7 @@ def weak_laplacian_3(
         "dense",
         "solver",
         "inv_star",
-        "diagonal",
+        "row_sum",
     ],
 ) -> Float[t.Tensor, "tri tri"]:
     """
@@ -210,8 +213,8 @@ def weak_laplacian_3(
     If method is `inv_star`, use the inverse of the barycentric 2-star in place
     of inv_M_2.
 
-    If method is `diagonal`, ignore the off-diagonal elements of the mass-2 matrix
-    and approximate its inverse as the inverse of the diagonal matrix.
+    If method is `row_sum`, coerce the mass-2 matrix into a diagonal matrix through
+    row sum, and then take its inverse.
     """
     d2 = tet_mesh.coboundary_2
     d2_T = d2.transpose(0, 1).coalesce()
@@ -234,9 +237,12 @@ def weak_laplacian_3(
 
             return m_3 @ d2 @ diag_sp_mm(inv_m_2, d2_T @ m_3)
 
-        case "diagonal":
+        case "row_sum":
             m_2 = mass_2(tet_mesh)
-            inv_m_2 = 1.0 / sp_diag(m_2)
+            inv_m_2 = 1.0 / t.sum(m_2, dim=-1).to_dense()
             m_3 = mass_3(tet_mesh)
 
             return m_3 @ d2 @ diag_sp_mm(inv_m_2, d2_T @ m_3)
+
+        case _:
+            raise ValueError()

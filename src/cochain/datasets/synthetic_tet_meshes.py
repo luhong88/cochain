@@ -7,7 +7,7 @@ from ..complex import SimplicialComplex
 
 def load_two_tets_mesh() -> SimplicialComplex:
     """
-    A simple 3D mesh embedded composed of two tetrahedra dharing one triangle.
+    A simple 3D mesh embedded composed of two tetrahedra sharing one triangle.
     """
     return SimplicialComplex.from_tet_mesh(
         vert_coords=t.tensor(

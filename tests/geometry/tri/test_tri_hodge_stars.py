@@ -103,7 +103,7 @@ def test_star_2_on_tet(hollow_tet_mesh: SimplicialComplex):
 
 
 def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialComplex):
-    tri_areas = tri_hodge_stars._tri_areas(
+    tri_areas = tri_geometry._tri_areas(
         flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
     )
 
