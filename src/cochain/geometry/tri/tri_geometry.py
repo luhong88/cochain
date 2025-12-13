@@ -46,73 +46,61 @@ def _d_tri_areas_d_vert_coords(
     return dAdV
 
 
-def _d2_tri_areas_d2_vert_coords(
+def _bary_coord_grad_inner_prods(
+    tri_areas: Float[t.Tensor, "tri"],
+    d_tri_areas_d_vert_coords: Float[t.Tensor, "tri 3 3"],
+) -> Float[t.Tensor, "tri 3 3"]:
+    """
+    For a tri, let lambda_x(p) be the barycentric coordinate function for p wrt
+    a vertex x of the tri. This function computes all pairwise inner products
+    of the barycentric coordinate gradients wrt each pair of vertices; i.e., it
+    computes <grad_p[lambda_x(p)], grad_p[lambda_y(p)]> for all vertices x and y.
+    """
+    # The gradient of lambda_i(p) wrt p is given by grad_i(area_ijk)/area_ijk, a
+    # constant wrt p.
+    bary_coords_grad: Float[t.Tensor, "tri 3 3"] = d_tri_areas_d_vert_coords / tri_areas
+
+    bary_coords_grad_dot: Float[t.Tensor, "tri 3 3"] = t.einsum(
+        "tic,tjc->tij", bary_coords_grad, bary_coords_grad
+    )
+
+    return bary_coords_grad_dot
+
+
+def _cotan_weights(
     vert_coords: Float[t.Tensor, "vert 3"],
     tris: Integer[t.LongTensor, "tri 3"],
-    vec: Float[t.Tensor, "tri 3 3"],
-) -> Float[t.Tensor, "tri vert vert vert 3"]:
-    """
-    For each tri, given the gradient of the area grad_x[A] (shape: (tri, x=3, 3))
-    and a vector field v_y associated with each vertex (shape: (tri, y=3, 3)),
-    compute the pairwise "vector-Hessian product" (VHP) as VHP_xyp = hess_xp[A]@v_y.
-    This is useful for computing the gradient vectors for inner products of the
-    form I_xy = <grad_x[A], v_y>.
-    """
+    n_verts: int,
+) -> Float[t.Tensor, "vert vert"]:
+    # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
+    # and use them to compute the cotan of the angle at s.
+    vert_s_coord: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
+
+    edge_ns = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
+    edge_ps = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
+
+    edge_ns_ps_dot = t.sum(edge_ns * edge_ps, dim=-1)
+    edge_ns_ps_cross = t.linalg.norm(t.cross(edge_ns, edge_ps, dim=-1), dim=-1)
+    cot_s: Float[t.Tensor, "tri 3"] = edge_ns_ps_dot / (EPS + edge_ns_ps_cross)
+
+    # For each triangle snp, and each vertex s, scatter cot_s to edge np in the
+    # weight matrix (W_np); i.e., each triangle ijk contributes the following
+    # values to the asym_laplacian (in COO format):
+    #
+    # [
+    #   (j, k, -0.5*cot_i),
+    #   (i, k, -0.5*cot_j),
+    #   (i, j, -0.5*cot_k),
+    # ]
+
+    # Translate the ijk notation to actual indices to access tensor elements.
     i, j, k = 0, 1, 2
 
-    # vert  triple cross    grad_i                           grad_j                           grad_k
-    # ---------------------------------------------------------------------------------------------------------
-    # i     (ji x ki) x jk  <jk, jk>I - jk@jk.T              <ki, jk>I + jk@ki.T - 2ki@jk.T   -<ji, jk> - jk@ji.T + 2ji@jk.T
-    # j     (kj x ij) x ki  -<kj, ki>I - ki@kj.T + 2kj@ki.T  <ki, ki>I - ki@ki.T              <kj, ki>I + ki@ij.T - 2ij@ki.T
-    # k     (ik x jk) x ij  <ik, ij>I + ij@jk.T - 2jk@ij.T   -<ik, ij>I - ij@ik.T + 2ik@ij.T  <ij, ij>I - ij@ij.T
+    weights_idx = tris[:, [j, i, i, k, k, j]].T.flatten().reshape(2, -1)
+    weights_val = -0.5 * cot_s[:, [i, j, k]].T.flatten()
+    asym_weights = t.sparse_coo_tensor(weights_idx, weights_val, (n_verts, n_verts))
 
-    tri_vert_coords: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
+    # Symmetrize so that the cotan at i is scattered to both jk and kj.
+    sym_weights = (asym_weights + asym_weights.T).coalesce()
 
-    vec1: Float[t.Tensor, "tri 3 3 3"] = (
-        tri_vert_coords[:, [[k, i, i], [j, i, j], [k, k, j]]]
-        - tri_vert_coords[:, [[j, k, j], [k, k, k], [i, i, i]]]
-    )
-
-    vec2: Float[t.Tensor, "tri 3 3 3"] = (
-        tri_vert_coords[:, [[k, k, k], [i, i, i], [j, j, j]]]
-        - tri_vert_coords[:, [[j, j, j], [k, k, k], [i, i, i]]]
-    )
-
-    sign_mask = t.Tensor(
-        [[1, 1, -1], [-1, 1, 1], [1, -1, 1]],
-        dtype=vert_coords.dtype,
-        device=vert_coords.device,
-    ).view(1, 1, 1, 3, 3)
-    inner_prod: Float[t.Tensor, "tri 3 3 1 1"] = t.sum(vec1 * vec2, dim=-1).view(
-        -1, 3, 3, 1, 1
-    ) * t.eye(
-        3,
-        dtype=vert_coords.dtype,
-        device=vert_coords.device,
-    ).view(1, 1, 1, 3, 3)
-    outer_prod: Float[t.Tensor, "tri 3 3 3 3"] = vec1.view(-1, 3, 3, 3, 1) * vec2.view(
-        -1, 3, 3, 1, 3
-    )
-    outer_diff = -2.0 * outer_prod + outer_prod.transpose(-1, -2)
-
-    triple_cross_grad: Float[t.Tensor, "tri 3 3 3 3"] = (
-        inner_prod + outer_diff
-    ) * sign_mask
-
-    tri_area_grad: Float[t.Tensor, "tri 3 3"] = _d_tri_areas_d_vert_coords(
-        vert_coords, tris
-    )
-
-    tri_areas: Float[t.Tensor, "tri 1 1 1 1"] = _tri_areas(vert_coords, tris).view(
-        -1, 1, 1, 1, 1
-    )
-
-    hess: Float[t.Tensor, "tri 3 3 3 3"] = -tri_area_grad.view(
-        -1, 3, 1, 1, 3
-    ) * tri_area_grad.view(-1, 1, 3, 1, 3) / tri_areas + triple_cross_grad / (
-        4.0 * tri_areas
-    )
-
-    hvp = t.einsum("txpcd,tyd->txypc", hess, vec)
-
-    return hvp
+    return sym_weights

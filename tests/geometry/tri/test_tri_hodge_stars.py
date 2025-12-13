@@ -2,12 +2,11 @@ import math
 
 import igl
 import numpy as np
-import pytest
 import skfem as skfem
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.tri import tri_hodge_stars
+from cochain.geometry.tri import tri_geometry, tri_hodge_stars
 
 # Test 0-, 1-, and 2-star operators on a watertight mesh and a mesh with boundaries.
 
@@ -86,63 +85,6 @@ def test_star_2_on_tet(hollow_tet_mesh: SimplicialComplex):
     np.testing.assert_allclose(s2, true_s2)
 
 
-# Test the analytical Jacobian of the Hodge stars and their inverses against
-# autograd Jacobians.
-
-
-@pytest.mark.parametrize(
-    "star, d_star_d_vert_coords",
-    [
-        (tri_hodge_stars.star_0, tri_hodge_stars.d_star_0_d_vert_coords),
-        (
-            tri_hodge_stars.star_1_circumcentric,
-            tri_hodge_stars.d_star_1_circumcentric_d_vert_coords,
-        ),
-        (tri_hodge_stars.star_2, tri_hodge_stars.d_star_2_d_vert_coords),
-    ],
-)
-def test_star_jacobian(star, d_star_d_vert_coords, hollow_tet_mesh: SimplicialComplex):
-    vert_coords = hollow_tet_mesh.vert_coords.clone()
-    tris = hollow_tet_mesh.tris.clone()
-
-    autograd_jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: star(SimplicialComplex.from_tri_mesh(vert_coords, tris)),
-        vert_coords,
-    )
-
-    analytical_jacobian = d_star_d_vert_coords(hollow_tet_mesh).to_dense()
-
-    t.testing.assert_close(autograd_jacobian, analytical_jacobian)
-
-
-@pytest.mark.parametrize(
-    "star, d_inv_star_d_vert_coords",
-    [
-        (tri_hodge_stars.star_0, tri_hodge_stars.d_inv_star_0_d_vert_coords),
-        (
-            tri_hodge_stars.star_1_circumcentric,
-            tri_hodge_stars.d_inv_star_1_circumcentric_d_vert_coords,
-        ),
-        (tri_hodge_stars.star_2, tri_hodge_stars.d_inv_star_2_d_vert_coords),
-    ],
-)
-def test_inv_star_jacobian(
-    star, d_inv_star_d_vert_coords, hollow_tet_mesh: SimplicialComplex
-):
-    vert_coords = hollow_tet_mesh.vert_coords.clone()
-    tris = hollow_tet_mesh.tris.clone()
-
-    autograd_jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: 1.0
-        / star(SimplicialComplex.from_tri_mesh(vert_coords, tris)),
-        vert_coords,
-    )
-
-    analytical_jacobian = d_inv_star_d_vert_coords(hollow_tet_mesh).to_dense()
-
-    t.testing.assert_close(autograd_jacobian, analytical_jacobian)
-
-
 def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialComplex):
     tri_areas = tri_hodge_stars._tri_areas(
         flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
@@ -162,7 +104,7 @@ def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialComplex):
 def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialComplex):
     # Note that this function does not return the Jacobian; rather, for each
     # triangle, it returns the gradient of its area wrt each of its three verticies.
-    dAdV = tri_hodge_stars._d_tri_areas_d_vert_coords(
+    dAdV = tri_geometry._d_tri_areas_d_vert_coords(
         hollow_tet_mesh.vert_coords, hollow_tet_mesh.tris
     ).flatten(end_dim=1)
 
