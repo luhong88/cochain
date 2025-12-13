@@ -1,9 +1,11 @@
+from typing import Literal
+
 import torch as t
 from jaxtyping import Float
 
 from ...complex import SimplicialComplex
 from ...utils.linalg import diag_sp_mm, sp_diag_mm
-from .tri_hodge_stars import _star_1_circumcentric, star_0, star_2
+from .tri_hodge_stars import star_0, star_1, star_2
 from .tri_stiffness import stiffness_matrix
 
 # Laplacian_k = (
@@ -23,27 +25,33 @@ from .tri_stiffness import stiffness_matrix
 # while d_k.T stands for the k-boundary operator.
 
 
-def codifferential_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert edge"]:
+def codifferential_1(
+    tri_mesh: SimplicialComplex,
+    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+) -> Float[t.Tensor, "vert edge"]:
     """
     Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
     """
     d0_T = tri_mesh.coboundary_0.transpose(0, 1).coalesce()
 
     s0 = star_0(tri_mesh)
-    s1 = _star_1_circumcentric(tri_mesh)
+    s1 = star_1(tri_mesh, dual_complex)
 
     codiff_1 = diag_sp_mm(1.0 / s0, sp_diag_mm(d0_T, s1))
 
     return codiff_1
 
 
-def codifferential_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge tri"]:
+def codifferential_2(
+    tri_mesh: SimplicialComplex,
+    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+) -> Float[t.Tensor, "edge tri"]:
     """
     Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
     """
     d1_T = tri_mesh.coboundary_1.transpose(0, 1).coalesce()
 
-    s1 = _star_1_circumcentric(tri_mesh)
+    s1 = star_1(tri_mesh, dual_complex)
     s2 = star_2(tri_mesh)
 
     codiff_2 = diag_sp_mm(1.0 / s1, sp_diag_mm(d1_T, s2))
@@ -68,6 +76,8 @@ def laplacian_1_div_grad(
 ) -> Float[t.Tensor, "edge edge"]:
     """
     Compute the div grad component of the 1-Laplacian, `d0 @ codiff_1`.
+
+    If codiff_1 is not provided, construct it using the circumcentric 1-star.
     """
     d0 = tri_mesh.coboundary_0
 
@@ -83,6 +93,8 @@ def laplacian_1_curl_curl(
 ) -> Float[t.Tensor, "edge edge"]:
     """
     Computes the curl curl component of the 1-Laplacian, `codiff_2 @ d1`.
+
+    If codiff_2 is not provided, construct it using the circumcentric 1-star.
     """
     d1 = tri_mesh.coboundary_1
 
@@ -100,6 +112,9 @@ def laplacian_1(
     """
     Compute the 1-Laplacian (edge/vector Laplacian).
     L1 = (codiff_2 @ d1) + (d0 @ codiff_1)
+
+    If the codifferentials are not provided, construct them using the circumcentric
+    1-star.
     """
     laplacian_1 = (
         laplacian_1_div_grad(tri_mesh, codiff_1)

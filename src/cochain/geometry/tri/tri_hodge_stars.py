@@ -104,7 +104,8 @@ def _star_1_barycentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]
 
 
 def star_1(
-    tri_mesh: SimplicialComplex, dual_complex: Literal["circumcentric", "barycentric"]
+    tri_mesh: SimplicialComplex,
+    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
 ):
     match dual_complex:
         case "circumcentric":
