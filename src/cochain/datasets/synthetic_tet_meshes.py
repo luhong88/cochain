@@ -5,6 +5,15 @@ import torch as t
 from ..complex import SimplicialComplex
 
 
+def load_regular_tet_mesh() -> SimplicialComplex:
+    return SimplicialComplex.from_tet_mesh(
+        vert_coords=t.tensor(
+            [[1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0]]
+        ),
+        tets=t.tensor([[0, 1, 2, 3]], dtype=t.long),
+    )
+
+
 def load_two_tets_mesh() -> SimplicialComplex:
     """
     A simple 3D mesh embedded composed of two tetrahedra sharing one triangle.

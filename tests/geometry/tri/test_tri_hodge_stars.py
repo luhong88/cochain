@@ -51,14 +51,14 @@ def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialComplex):
 def test_star_1_barycentric_on_tent(tent_mesh: SimplicialComplex):
     s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="barycentric")
 
-    face_barycenter = t.tensor([1.5, 0.5, 1.0]) / 3.0
-    side_edge_barycenter = t.tensor([0.5, 0.5, 1.0]) / 2.0
-    dual_side_edge_len = 2.0 * t.linalg.norm(face_barycenter - side_edge_barycenter)
-    side_edge_len = t.linalg.norm(2.0 * side_edge_barycenter)
+    face_bary = t.tensor([1.5, 0.5, 1.0]) / 3.0
+    side_edge_bary = t.tensor([0.5, 0.5, 1.0]) / 2.0
+    dual_side_edge_len = 2.0 * t.linalg.norm(face_bary - side_edge_bary)
+    side_edge_len = t.linalg.norm(2.0 * side_edge_bary)
     dual_side_edge_ratio = dual_side_edge_len / side_edge_len
 
     base_edge_barycenter = t.tensor([1.0, 0.0, 0.0]) / 2.0
-    dual_base_edge_ratio = t.linalg.norm(face_barycenter - base_edge_barycenter)
+    dual_base_edge_ratio = t.linalg.norm(face_bary - base_edge_barycenter)
 
     true_s1 = t.Tensor([dual_side_edge_ratio] * 4 + [dual_base_edge_ratio] * 4)
 

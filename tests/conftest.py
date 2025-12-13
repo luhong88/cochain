@@ -50,6 +50,11 @@ def flat_annulus_mesh() -> SimplicialComplex:
 
 
 @pytest.fixture
+def reg_tet_mesh() -> SimplicialComplex:
+    return synthetic_tet_meshes.load_regular_tet_mesh()
+
+
+@pytest.fixture
 def two_tets_mesh() -> SimplicialComplex:
     return synthetic_tet_meshes.load_two_tets_mesh()
 

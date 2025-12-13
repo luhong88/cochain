@@ -67,15 +67,15 @@ def _star_1_barycentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]
 
     # For each tri, find its barycenter and the barycenters of its edge faces,
     # as well as the dual edges that connect the barycenters
-    tri_barycenters: Float[t.Tensor, "tri 1 3"] = t.mean(
+    tri_barys: Float[t.Tensor, "tri 1 3"] = t.mean(
         tri_vert_coords, dim=-2, keepdim=True
     )
-    tri_edge_face_barycenters: Float[t.Tensor, "tet 3 3"] = t.mean(
+    tri_edge_face_barys: Float[t.Tensor, "tet 3 3"] = t.mean(
         tri_vert_coords[:, [[i, j], [i, k], [j, k]]],
         dim=-2,
     )
 
-    dual_edges = tri_barycenters - tri_edge_face_barycenters
+    dual_edges = tri_barys - tri_edge_face_barys
     dual_edge_lens: Float[t.Tensor, "tet 4"] = t.linalg.norm(dual_edges, dim=-1)
 
     # For each edge, find all tri containing the edge as a face, and sum together
