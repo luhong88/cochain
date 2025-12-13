@@ -2,9 +2,7 @@ import igl
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.tet.tet_stiffness import (
-    stiffness_matrix,
-)
+from cochain.geometry.tet.tet_stiffness import stiffness_matrix
 
 
 def test_stiffness_with_igl(two_tets_mesh: SimplicialComplex):
