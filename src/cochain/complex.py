@@ -24,10 +24,10 @@ class SimplicialComplex:
             Integer[t.LongTensor, "tet 4"],
         ],
         cochains: tuple[
-            Float[t.Tensor, "vert *vert_feat"] | None,
-            Float[t.Tensor, "edge *edge_feat"] | None,
-            Float[t.Tensor, "tri *tri_feat"] | None,
-            Float[t.Tensor, "tet *tet_feat"] | None,
+            Float[t.Tensor, " vert *vert_feat"] | None,
+            Float[t.Tensor, " edge *edge_feat"] | None,
+            Float[t.Tensor, " tri *tri_feat"] | None,
+            Float[t.Tensor, " tet *tet_feat"] | None,
         ],
         vert_coords: Float[t.Tensor, "vert 3"] | None,
     ):
@@ -106,9 +106,9 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],
         cochains: tuple[
-            Float[t.Tensor, "vert *vert_feat"] | None,
-            Float[t.Tensor, "edge *edge_feat"] | None,
-            Float[t.Tensor, "tri *tri_feat"] | None,
+            Float[t.Tensor, " vert *vert_feat"] | None,
+            Float[t.Tensor, " edge *edge_feat"] | None,
+            Float[t.Tensor, " tri *tri_feat"] | None,
         ]
         | None = None,
     ):
@@ -151,10 +151,10 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tets: Integer[t.LongTensor, "tet 4"],
         cochains: tuple[
-            Float[t.Tensor, "vert *vert_feat"] | None,
-            Float[t.Tensor, "edge *edge_feat"] | None,
-            Float[t.Tensor, "tri *tri_feat"] | None,
-            Float[t.Tensor, "tet *tet_feat"] | None,
+            Float[t.Tensor, " vert *vert_feat"] | None,
+            Float[t.Tensor, " edge *edge_feat"] | None,
+            Float[t.Tensor, " tri *tri_feat"] | None,
+            Float[t.Tensor, " tet *tet_feat"] | None,
         ]
         | None = None,
     ):
@@ -206,10 +206,10 @@ class SimplicialBatch(SimplicialComplex):
 
     def __init__(
         self,
-        batch_verts: Integer[t.LongTensor, "vert"],
-        batch_edges: Integer[t.LongTensor, "edge"],
-        batch_tris: Integer[t.LongTensor, "tri"],
-        batch_tets: Integer[t.LongTensor, "tet"],
+        batch_verts: Integer[t.LongTensor, " vert"],
+        batch_edges: Integer[t.LongTensor, " edge"],
+        batch_tris: Integer[t.LongTensor, " tri"],
+        batch_tets: Integer[t.LongTensor, " tet"],
         *args,
         **kwargs,
     ):

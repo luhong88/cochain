@@ -10,7 +10,7 @@ from .tet_geometry import (
 )
 
 
-def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
+def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " vert"]:
     """
     Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
     barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
@@ -119,10 +119,10 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # Get the canonical edge index pairs for the Whitney 1-form inner products of
     # all 36 edge pairs per tet.
-    whitney_flat_r_idx: Float[t.Tensor, "tet*36"] = (
+    whitney_flat_r_idx: Float[t.Tensor, " tet*36"] = (
         whitney_edges_idx.view(-1, 6, 1).expand(-1, 6, 6).flatten()
     )
-    whitney_flat_c_idx: Float[t.Tensor, "tet*36"] = (
+    whitney_flat_c_idx: Float[t.Tensor, " tet*36"] = (
         whitney_edges_idx.view(-1, 1, 6).expand(-1, 6, 6).flatten()
     )
 
@@ -175,7 +175,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     return mass
 
 
-def mass_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tet"]:
+def mass_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " tet"]:
     """
     Compute the diagonal of the tet/3-form mass matrix, which is equivalent to
     the inverse of 3-star.

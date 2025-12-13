@@ -93,10 +93,10 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # Get the canonical edge index pairs for the Whitney 1-form inner products of
     # all 9 edge pairs per tri.
-    whitney_flat_r_idx: Float[t.Tensor, "tri*9"] = (
+    whitney_flat_r_idx: Float[t.Tensor, " tri*9"] = (
         whitney_edges_idx.view(-1, 3, 1).expand(-1, 3, 3).flatten()
     )
-    whitney_flat_c_idx: Float[t.Tensor, "tri*9"] = (
+    whitney_flat_c_idx: Float[t.Tensor, " tri*9"] = (
         whitney_edges_idx.view(-1, 1, 3).expand(-1, 3, 3).flatten()
     )
 

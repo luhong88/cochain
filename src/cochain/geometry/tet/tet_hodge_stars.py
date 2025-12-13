@@ -6,14 +6,14 @@ from ..tri.tri_geometry import _tri_areas
 from .tet_masses import mass_0, mass_3
 
 
-def star_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tet"]:
+def star_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " tet"]:
     """
     Compute the Hodge 3-star, which is the inverse of the mass-3 matrix.
     """
     return 1.0 / mass_3(tet_mesh)
 
 
-def star_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
+def star_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " tri"]:
     """
     Compute the barycentric Hodge 2-star operator.
     """
@@ -58,7 +58,7 @@ def star_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri"]:
     return diag
 
 
-def star_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge"]:
+def star_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
     """
     Compute the barycentric Hodge 1-star operator.
     """

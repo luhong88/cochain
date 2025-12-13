@@ -70,7 +70,7 @@ def test_mass_1_linear_potential(two_tris_mesh: SimplicialComplex):
     mass_1 = tri_masses.mass_1(two_tris_mesh)
 
     const_vec = t.tensor([[1.0, 3.0, 2.0]], dtype=two_tris_mesh.vert_coords.dtype)
-    phi_verts: Float[t.Tensor, "tri"] = t.sum(
+    phi_verts: Float[t.Tensor, " tri"] = t.sum(
         two_tris_mesh.vert_coords * const_vec, dim=-1
     )
 

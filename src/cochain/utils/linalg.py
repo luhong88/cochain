@@ -3,7 +3,7 @@ from jaxtyping import Float
 
 
 def diag_sp_mm(
-    diag: Float[t.Tensor, "r"], sp: Float[t.Tensor, "r c"]
+    diag: Float[t.Tensor, " r"], sp: Float[t.Tensor, "r c"]
 ) -> Float[t.Tensor, "r c"]:
     """
     Performs the matrix multiplication `D@A` where `D` is diagonal and `A` is a
@@ -16,7 +16,7 @@ def diag_sp_mm(
 
 
 def sp_diag_mm(
-    sp: Float[t.Tensor, "r c"], diag: Float[t.Tensor, "c"]
+    sp: Float[t.Tensor, "r c"], diag: Float[t.Tensor, " c"]
 ) -> Float[t.Tensor, "r c"]:
     """
     Performs the matrix multiplication `A@D` where `D` is diagonal and `A` is a
@@ -28,7 +28,7 @@ def sp_diag_mm(
     return t.sparse_coo_tensor(sp.indices(), scaled_vals, sp.size()).coalesce()
 
 
-def sp_diag(sp_m: Float[t.Tensor, "dim1 dim2"]) -> Float[t.Tensor, "min_dim"]:
+def sp_diag(sp_m: Float[t.Tensor, "dim1 dim2"]) -> Float[t.Tensor, " min_dim"]:
     """
     Extract the diagonal elements of a 2D sparse tensor.
     """

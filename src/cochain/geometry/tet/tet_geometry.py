@@ -6,7 +6,7 @@ from ...utils.constants import EPS
 
 def _tet_signed_vols(
     vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
-) -> Float[t.Tensor, "tet"]:
+) -> Float[t.Tensor, " tet"]:
     """
     Compute the signed volume of each tetrahedron in a 3D mesh. A tet is assigned
     a positive volume if it satisfies the right-hand rule (or, equivalently, its
@@ -114,7 +114,7 @@ def _tet_face_vector_areas(
 
 
 def _bary_coord_grad_inner_prods(
-    tet_signed_vols: Float[t.Tensor, "tet"],
+    tet_signed_vols: Float[t.Tensor, " tet"],
     d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"],
 ) -> Float[t.Tensor, "tet 4 4"]:
     """
@@ -148,7 +148,7 @@ def _whitney_2_form_inner_prods(
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
+    tet_signed_vols: Float[t.Tensor, " tet"] = _tet_signed_vols(vert_coords, tets)
     tet_vols = t.abs(tet_signed_vols)
     tet_signs = t.sign(tet_signed_vols)
 

@@ -6,7 +6,7 @@ from ...utils.constants import EPS
 
 def _tri_areas(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
-) -> Float[t.Tensor, "tri"]:
+) -> Float[t.Tensor, " tri"]:
     """
     Compute the area of all triangles in a 2D mesh.
     """
@@ -47,7 +47,7 @@ def _d_tri_areas_d_vert_coords(
 
 
 def _bary_coord_grad_inner_prods(
-    tri_areas: Float[t.Tensor, "tri"],
+    tri_areas: Float[t.Tensor, " tri"],
     d_tri_areas_d_vert_coords: Float[t.Tensor, "tri 3 3"],
 ) -> Float[t.Tensor, "tri 3 3"]:
     """
