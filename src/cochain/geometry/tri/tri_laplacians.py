@@ -27,7 +27,7 @@ from .tri_stiffness import stiffness_matrix
 
 def codifferential_1(
     tri_mesh: SimplicialComplex,
-    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[t.Tensor, "vert edge"]:
     """
     Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
@@ -44,7 +44,7 @@ def codifferential_1(
 
 def codifferential_2(
     tri_mesh: SimplicialComplex,
-    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[t.Tensor, "edge tri"]:
     """
     Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
@@ -61,7 +61,7 @@ def codifferential_2(
 
 def laplacian_0(
     tri_mesh: SimplicialComplex,
-    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
 ) -> Float[t.Tensor, "vert vert"]:
     """
@@ -90,7 +90,7 @@ def laplacian_0(
 
 def laplacian_1_div_grad(
     tri_mesh: SimplicialComplex,
-    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
     """
@@ -108,7 +108,7 @@ def laplacian_1_div_grad(
 
 def laplacian_1_curl_curl(
     tri_mesh: SimplicialComplex,
-    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
     """
@@ -126,7 +126,7 @@ def laplacian_1_curl_curl(
 
 def laplacian_1(
     tri_mesh: SimplicialComplex,
-    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
@@ -147,7 +147,7 @@ def laplacian_1(
 
 def laplacian_2(
     tri_mesh: SimplicialComplex,
-    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "tri tri"]:
     """
