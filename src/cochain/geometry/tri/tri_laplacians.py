@@ -59,53 +59,74 @@ def codifferential_2(
     return codiff_2
 
 
-def laplacian_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "vert vert"]:
+def laplacian_0(
+    tri_mesh: SimplicialComplex,
+    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
+    codiff_1: Float[t.Tensor, "vert edge"] | None = None,
+) -> Float[t.Tensor, "vert vert"]:
     """
     Compute the 0-Laplacian (vertex Laplacian).
     L0 = codiff_1 @ d0 = inv_star_0 @ d0.T @ star_1 @ d0
 
-    This function uses the cotan weights to compute `d0.T @ star_1 @ d0`,
-    i.e., the stiffness matrix.
+    If 'codiff_1' is provided, construct L0 via codiff_1 @ d0; otherwise,
+    construct L0 using the cotan Laplacian/stiffness matrix if 'dual_complex' is
+    circumcentric, or the barycentric 1-star if 'dual_complex' is barycentric.
     """
-    return diag_sp_mm(1.0 / star_0(tri_mesh), stiffness_matrix(tri_mesh))
+    if codiff_1 is not None:
+        return (codiff_1 @ tri_mesh.coboundary_0).coalesce()
+
+    match dual_complex:
+        case "circumcentric":
+            return diag_sp_mm(1.0 / star_0(tri_mesh), stiffness_matrix(tri_mesh))
+
+        case "barycentric":
+            return (
+                codifferential_1(tri_mesh, dual_complex) @ tri_mesh.coboundary_0
+            ).coalesce()
+
+        case _:
+            raise ValueError()
 
 
 def laplacian_1_div_grad(
     tri_mesh: SimplicialComplex,
+    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
     """
     Compute the div grad component of the 1-Laplacian, `d0 @ codiff_1`.
 
-    If codiff_1 is not provided, construct it using the circumcentric 1-star.
+    If 'codiff_1' is not provided, construct it using 1-star specified by 'dual_complex'.
     """
     d0 = tri_mesh.coboundary_0
 
     if codiff_1 is None:
-        codiff_1 = codifferential_1(tri_mesh)
+        codiff_1 = codifferential_1(tri_mesh, dual_complex)
 
     return (d0 @ codiff_1).coalesce()
 
 
 def laplacian_1_curl_curl(
     tri_mesh: SimplicialComplex,
+    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
     """
     Computes the curl curl component of the 1-Laplacian, `codiff_2 @ d1`.
 
-    If codiff_2 is not provided, construct it using the circumcentric 1-star.
+    If codiff_2 is not provided, construct it using 1-star specified by 'dual_complex'.
     """
     d1 = tri_mesh.coboundary_1
 
     if codiff_2 is None:
-        codiff_2 = codifferential_2(tri_mesh)
+        codiff_2 = codifferential_2(tri_mesh, dual_complex)
 
     return (codiff_2 @ d1).coalesce()
 
 
 def laplacian_1(
     tri_mesh: SimplicialComplex,
+    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
     codiff_1: Float[t.Tensor, "vert edge"] | None = None,
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "edge edge"]:
@@ -113,12 +134,12 @@ def laplacian_1(
     Compute the 1-Laplacian (edge/vector Laplacian).
     L1 = (codiff_2 @ d1) + (d0 @ codiff_1)
 
-    If the codifferentials are not provided, construct them using the circumcentric
-    1-star.
+    If the codifferentials are not provided, construct them using 1-star specified
+    by 'dual_complex'.
     """
     laplacian_1 = (
-        laplacian_1_div_grad(tri_mesh, codiff_1)
-        + laplacian_1_curl_curl(tri_mesh, codiff_2)
+        laplacian_1_div_grad(tri_mesh, dual_complex, codiff_1)
+        + laplacian_1_curl_curl(tri_mesh, dual_complex, codiff_2)
     ).coalesce()
 
     return laplacian_1
@@ -126,15 +147,18 @@ def laplacian_1(
 
 def laplacian_2(
     tri_mesh: SimplicialComplex,
+    dual_complex: Literal["circumcentric", "barycentric"] = "circumcentric",
     codiff_2: Float[t.Tensor, "edge tri"] | None = None,
 ) -> Float[t.Tensor, "tri tri"]:
     """
     Compute the 2-Laplacian (face Laplacian).
     L2 = d1 @ codiff_2
+
+    If codiff_2 is not provided, construct it using 1-star specified by 'dual_complex'.
     """
     d1 = tri_mesh.coboundary_1
 
     if codiff_2 is None:
-        codiff_2 = codifferential_2(tri_mesh)
+        codiff_2 = codifferential_2(tri_mesh, dual_complex)
 
     return (d1 @ codiff_2).coalesce()
