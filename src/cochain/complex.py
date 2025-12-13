@@ -1,7 +1,9 @@
+from functools import cached_property
+
 import torch as t
 from jaxtyping import Float, Integer
 
-from .topology import coboundaries
+from .topology import coboundaries, tet_topology, tri_topology
 
 
 class SimplicialComplex:
@@ -22,10 +24,10 @@ class SimplicialComplex:
             Integer[t.LongTensor, "tet 4"],
         ],
         cochains: tuple[
-            Float[t.Tensor, "vert *vert_feat"] | None,
-            Float[t.Tensor, "edge *edge_feat"] | None,
-            Float[t.Tensor, "tri *tri_feat"] | None,
-            Float[t.Tensor, "tet *tet_feat"] | None,
+            Float[t.Tensor, " vert *vert_feat"] | None,
+            Float[t.Tensor, " edge *edge_feat"] | None,
+            Float[t.Tensor, " tri *tri_feat"] | None,
+            Float[t.Tensor, " tet *tet_feat"] | None,
         ],
         vert_coords: Float[t.Tensor, "vert 3"] | None,
     ):
@@ -76,6 +78,27 @@ class SimplicialComplex:
             1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
         )
 
+    # TODO: check that the tet topo properties work for non-tet meshes
+    @cached_property
+    def tet_edge_idx(self) -> Integer[t.LongTensor, "tet 6"]:
+        return tet_topology.get_edge_face_idx(self.tets, self.edges, self.n_verts)
+
+    @cached_property
+    def tet_edge_orientations(self) -> Float[t.Tensor, "tet 6"]:
+        return tet_topology.get_edge_face_orientations(self.tets)
+
+    @cached_property
+    def tet_tri_idx(self) -> Integer[t.LongTensor, "tet 4"]:
+        return tet_topology.get_tri_face_idx(self.tets, self.tris, self.n_verts)
+
+    @cached_property
+    def tri_edge_idx(self) -> Integer[t.LongTensor, "tri 3"]:
+        return tri_topology.get_edge_face_idx(self.tris, self.edges, self.n_verts)
+
+    @cached_property
+    def tri_edge_orientations(self) -> Float[t.Tensor, "tri 3"]:
+        return tri_topology.get_edge_face_orientations(self.tris)
+
     # TODO: check for immersion
     @classmethod
     def from_tri_mesh(
@@ -83,9 +106,9 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],
         cochains: tuple[
-            Float[t.Tensor, "vert *vert_feat"] | None,
-            Float[t.Tensor, "edge *edge_feat"] | None,
-            Float[t.Tensor, "tri *tri_feat"] | None,
+            Float[t.Tensor, " vert *vert_feat"] | None,
+            Float[t.Tensor, " edge *edge_feat"] | None,
+            Float[t.Tensor, " tri *tri_feat"] | None,
         ]
         | None = None,
     ):
@@ -128,10 +151,10 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tets: Integer[t.LongTensor, "tet 4"],
         cochains: tuple[
-            Float[t.Tensor, "vert *vert_feat"] | None,
-            Float[t.Tensor, "edge *edge_feat"] | None,
-            Float[t.Tensor, "tri *tri_feat"] | None,
-            Float[t.Tensor, "tet *tet_feat"] | None,
+            Float[t.Tensor, " vert *vert_feat"] | None,
+            Float[t.Tensor, " edge *edge_feat"] | None,
+            Float[t.Tensor, " tri *tri_feat"] | None,
+            Float[t.Tensor, " tet *tet_feat"] | None,
         ]
         | None = None,
     ):
@@ -183,10 +206,10 @@ class SimplicialBatch(SimplicialComplex):
 
     def __init__(
         self,
-        batch_verts: Integer[t.LongTensor, "vert"],
-        batch_edges: Integer[t.LongTensor, "edge"],
-        batch_tris: Integer[t.LongTensor, "tri"],
-        batch_tets: Integer[t.LongTensor, "tet"],
+        batch_verts: Integer[t.LongTensor, " vert"],
+        batch_edges: Integer[t.LongTensor, " edge"],
+        batch_tris: Integer[t.LongTensor, " tri"],
+        batch_tets: Integer[t.LongTensor, " tet"],
         *args,
         **kwargs,
     ):

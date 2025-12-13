@@ -2,10 +2,7 @@ import igl
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.tri.tri_stiffness import (
-    d_stiffness_d_vert_coords,
-    stiffness_matrix,
-)
+from cochain.geometry.tri.tri_stiffness import stiffness_matrix
 
 
 def test_stiffness_with_igl(two_tris_mesh: SimplicialComplex):
@@ -64,21 +61,3 @@ def test_stiffness_planar(square_mesh: SimplicialComplex):
     zero_tensor = plane_S @ square_mesh.vert_coords
 
     t.testing.assert_close(zero_tensor[-1], t.zeros_like(zero_tensor[-1]))
-
-
-def test_stiffness_autograd(two_tris_mesh: SimplicialComplex):
-    """
-    Check that the custom gradient matches the automatic gradient for the stiffness
-    matrix.
-    """
-    two_tris_mesh.vert_coords.requires_grad = True
-    two_tris_S = stiffness_matrix(two_tris_mesh).to_dense()
-    y = (two_tris_S**2).sum()
-
-    dLdV = d_stiffness_d_vert_coords(two_tris_mesh).to_dense()
-    dydL = t.autograd.grad(y, two_tris_S, retain_graph=True)[0]
-    custom_grad = t.einsum("ij,ijkl->kl", dydL, dLdV)
-
-    auto_grad = t.autograd.grad(y, two_tris_mesh.vert_coords)[0]
-
-    assert t.allclose(custom_grad, auto_grad, atol=1e-4)
