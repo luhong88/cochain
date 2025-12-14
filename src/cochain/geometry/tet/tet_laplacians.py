@@ -4,7 +4,7 @@ import torch as t
 from jaxtyping import Float
 
 from ...complex import SimplicialComplex
-from ...utils.linalg import diag_sp_mm, sp_diag
+from ...utils.linalg import diag_sp_mm, sp_diag_mm
 from .tet_hodge_stars import star_1, star_2
 from .tet_masses import mass_0, mass_1, mass_2, mass_3
 from .tet_stiffness import stiffness_matrix
@@ -34,7 +34,7 @@ def weak_laplacian_0(
     is `consistent`, use the FEM mass-1 matrix instead.
     """
     match method:
-        case "lumped":
+        case "cotan":
             return stiffness_matrix(tet_mesh)
         case "consistent":
             d0 = tet_mesh.coboundary_0
@@ -42,7 +42,7 @@ def weak_laplacian_0(
 
             m_1 = mass_1(tet_mesh)
 
-            return d0_T @ m_1 @ d0
+            return (d0_T @ m_1 @ d0).coalesce()
         case _:
             raise ValueError()
 
@@ -60,7 +60,7 @@ def weak_laplacian_1_div_grad(
     m_1 = mass_1(tet_mesh)
     inv_m_0 = 1.0 / mass_0(tet_mesh)
 
-    return m_1 @ d0 @ diag_sp_mm(inv_m_0, d0_T @ m_1)
+    return (m_1 @ d0 @ diag_sp_mm(inv_m_0, d0_T @ m_1)).coalesce()
 
 
 def weak_laplacian_1_curl_curl(
@@ -75,7 +75,7 @@ def weak_laplacian_1_curl_curl(
 
     m_2 = mass_2(tet_mesh)
 
-    return d1_T @ m_2 @ d1
+    return (d1_T @ m_2 @ d1).coalesce()
 
 
 def weak_laplacian_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
@@ -83,7 +83,9 @@ def weak_laplacian_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"
     Compute the weak 1-Laplacian (edge/vector Laplacian)
     S1 = d_1.T @ M_2 @ d_1 + M_1 @ d_0 @ inv_M_0 @ d_0.T @ M_1
     """
-    return weak_laplacian_1_div_grad(tet_mesh) + weak_laplacian_1_curl_curl(tet_mesh)
+    return (
+        weak_laplacian_1_div_grad(tet_mesh) + weak_laplacian_1_curl_curl(tet_mesh)
+    ).coalesce()
 
 
 def weak_laplacian_2_div_grad(
@@ -129,14 +131,14 @@ def weak_laplacian_2_div_grad(
             inv_m_1 = 1.0 / star_1(tet_mesh)
             m_2 = mass_2(tet_mesh)
 
-            return m_2 @ d1 @ diag_sp_mm(inv_m_1, d1_T @ m_2)
+            return (m_2 @ d1 @ diag_sp_mm(inv_m_1, d1_T @ m_2)).coalesce()
 
         case "row_sum":
             m_1 = mass_1(tet_mesh)
             inv_m_1 = 1.0 / t.sum(m_1, dim=-1).to_dense()
             m_2 = mass_2(tet_mesh)
 
-            return m_2 @ d1 @ diag_sp_mm(inv_m_1, d1_T @ m_2)
+            return (m_2 @ d1 @ diag_sp_mm(inv_m_1, d1_T @ m_2)).coalesce()
 
         case "solver":
             raise NotImplementedError()
@@ -157,7 +159,7 @@ def weak_laplacian_2_curl_curl(
 
     m_3 = mass_3(tet_mesh)
 
-    return d2_T @ diag_sp_mm(m_3, d2)
+    return (d2_T @ diag_sp_mm(m_3, d2)).coalesce()
 
 
 def weak_laplacian_2(
@@ -182,7 +184,7 @@ def weak_laplacian_2(
         curl_curl = weak_laplacian_2_curl_curl(tet_mesh)
         div_grad = weak_laplacian_2_div_grad(tet_mesh, method)
 
-        return curl_curl + div_grad
+        return div_grad + curl_curl
 
     else:
         raise ValueError()
@@ -225,7 +227,7 @@ def weak_laplacian_3(
             inv_m_2 = t.cholesky_inverse(m_2)
             m_3 = mass_3(tet_mesh)
 
-            return m_3 @ d2 @ inv_m_2 @ d2_T @ m_3
+            return diag_sp_mm(m_3, d2) @ inv_m_2 @ sp_diag_mm(d2_T, m_3)
 
         case "solver":
             raise NotImplementedError()
@@ -235,14 +237,18 @@ def weak_laplacian_3(
             inv_m_2 = 1.0 / star_2(tet_mesh)
             m_3 = mass_3(tet_mesh)
 
-            return m_3 @ d2 @ diag_sp_mm(inv_m_2, d2_T @ m_3)
+            return (
+                diag_sp_mm(m_3, d2) @ diag_sp_mm(inv_m_2, sp_diag_mm(d2_T, m_3))
+            ).coalesce()
 
         case "row_sum":
             m_2 = mass_2(tet_mesh)
             inv_m_2 = 1.0 / t.sum(m_2, dim=-1).to_dense()
             m_3 = mass_3(tet_mesh)
 
-            return m_3 @ d2 @ diag_sp_mm(inv_m_2, d2_T @ m_3)
+            return (
+                diag_sp_mm(m_3, d2) @ diag_sp_mm(inv_m_2, sp_diag_mm(d2_T, m_3))
+            ).coalesce()
 
         case _:
             raise ValueError()
