@@ -262,8 +262,8 @@ def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComp
     Check that the 1-codifferential and the coboundary-0 operators are adjoints
     with respect to the Hodge star-weighted inner product.
     """
-    s0 = t.diagflat(tri_hodge_stars.star_0(hollow_tet_mesh).to_dense())
-    s1 = t.diagflat(tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex).to_dense())
+    s0 = t.diagflat(tri_hodge_stars.star_0(hollow_tet_mesh))
+    s1 = t.diagflat(tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex))
 
     d0 = hollow_tet_mesh.coboundary_0
     codiff_1 = tri_laplacians.codifferential_1(hollow_tet_mesh, dual_complex)
@@ -290,8 +290,8 @@ def test_codiff_2_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComp
     Check that the 2-codifferential and the coboundary-1 operators are adjoints
     with respect to the Hodge star-weighted inner products.
     """
-    s1 = t.diagflat(tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex).to_dense())
-    s2 = t.diagflat(tri_hodge_stars.star_2(hollow_tet_mesh).to_dense())
+    s1 = t.diagflat(tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex))
+    s2 = t.diagflat(tri_hodge_stars.star_2(hollow_tet_mesh))
 
     d1 = hollow_tet_mesh.coboundary_1
     codiff_2 = tri_laplacians.codifferential_2(hollow_tet_mesh, dual_complex)
