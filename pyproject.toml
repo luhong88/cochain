@@ -11,6 +11,7 @@ requires-python = ">=3.13"
 dependencies = [
     "jaxtyping>=0.3.3",
     "numpy>=2.3.4",
+    "pytetwild>=0.1.1",
     "pyvista[jupyter]>=0.46.4",
     "scipy>=1.16.3",
     "torch>=2.9.0",

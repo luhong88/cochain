@@ -8,6 +8,46 @@ from cochain.complex import SimplicialComplex
 from cochain.geometry.tet import tet_hodge_stars, tet_laplacians, tet_masses
 
 
+@pytest.mark.parametrize(
+    "weak_laplacian, betti",
+    [
+        (partial(tet_laplacians.weak_laplacian_0, method="cotan"), 1),
+        (partial(tet_laplacians.weak_laplacian_0, method="consistent"), 1),
+        (tet_laplacians.weak_laplacian_1, 0),
+        (partial(tet_laplacians.weak_laplacian_2, method="dense"), 0),
+        (partial(tet_laplacians.weak_laplacian_2, method="inv_star"), 0),
+        (partial(tet_laplacians.weak_laplacian_3, method="dense"), 0),
+        (partial(tet_laplacians.weak_laplacian_3, method="inv_star"), 0),
+    ],
+)
+def test_sphere_homology_group_dims(
+    weak_laplacian, betti, two_tets_mesh: SimplicialComplex
+):
+    operator = weak_laplacian(two_tets_mesh).to_dense()
+    dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
+    t.testing.assert_close(dim_ker, t.tensor(betti))
+
+
+@pytest.mark.parametrize(
+    "weak_laplacian, betti",
+    [
+        (partial(tet_laplacians.weak_laplacian_0, method="cotan"), 1),
+        (partial(tet_laplacians.weak_laplacian_0, method="consistent"), 1),
+        (tet_laplacians.weak_laplacian_1, 1),
+        (partial(tet_laplacians.weak_laplacian_2, method="dense"), 0),
+        (partial(tet_laplacians.weak_laplacian_2, method="inv_star"), 0),
+        (partial(tet_laplacians.weak_laplacian_3, method="dense"), 0),
+        (partial(tet_laplacians.weak_laplacian_3, method="inv_star"), 0),
+    ],
+)
+def test_torus_homology_group_dims(
+    weak_laplacian, betti, solid_torus_mesh: SimplicialComplex
+):
+    operator = weak_laplacian(solid_torus_mesh).to_dense()
+    dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
+    t.testing.assert_close(dim_ker, t.tensor(betti))
+
+
 def test_laplacian_0_equivalence(two_tets_mesh: SimplicialComplex):
     """
     Check that the weak 0-Laplacians constructed using the cotan formula and
@@ -29,10 +69,8 @@ def test_laplacian_0_equivalence(two_tets_mesh: SimplicialComplex):
         tet_laplacians.weak_laplacian_1,
         partial(tet_laplacians.weak_laplacian_2, method="dense"),
         partial(tet_laplacians.weak_laplacian_2, method="inv_star"),
-        partial(tet_laplacians.weak_laplacian_2, method="row_sum"),
         partial(tet_laplacians.weak_laplacian_3, method="dense"),
         partial(tet_laplacians.weak_laplacian_3, method="inv_star"),
-        partial(tet_laplacians.weak_laplacian_3, method="row_sum"),
     ],
 )
 def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialComplex):
@@ -51,10 +89,8 @@ def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialComplex):
         tet_laplacians.weak_laplacian_1,
         partial(tet_laplacians.weak_laplacian_2, method="dense"),
         partial(tet_laplacians.weak_laplacian_2, method="inv_star"),
-        partial(tet_laplacians.weak_laplacian_2, method="row_sum"),
         partial(tet_laplacians.weak_laplacian_3, method="dense"),
         partial(tet_laplacians.weak_laplacian_3, method="inv_star"),
-        partial(tet_laplacians.weak_laplacian_3, method="row_sum"),
     ],
 )
 def test_laplacian_PSD(weak_laplacian, two_tets_mesh: SimplicialComplex):

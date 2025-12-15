@@ -62,3 +62,10 @@ def two_tets_mesh() -> SimplicialComplex:
 @pytest.fixture
 def simple_bcc_mesh() -> SimplicialComplex:
     return synthetic_tet_meshes.load_bcc_mesh(dim=3)
+
+
+@pytest.fixture
+def solid_torus_mesh() -> SimplicialComplex:
+    return synthetic_tet_meshes.load_solid_torus(
+        major_r=1.0, minor_r=0.5, u_res=5, v_res=5, edge_length_frac=1.0
+    )
