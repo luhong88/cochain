@@ -13,19 +13,6 @@ class SparseSolverWrapper(t.autograd.Function):
         solver: Callable,
         transpose_solver: Callable,
     ) -> Float[t.Tensor, " c"]:
-        """
-        This wrapper provides a differentiable wrapper for a sparse linear solver.
-
-        Here, A is a sparse tensor/matrix and b is a dense, 1D tensor. The sparse
-        matrix A should already be in the format/layout expected by the solver.
-        The A_coo_idx is required for the backward pass to enforce the sparsity
-        pattern of A.
-
-        The solver should be a function that takes in A and b as its arguments
-        and returns a dense, 1D tensor x that is the solution to A@x = b. The
-        transpose_solver is similar to the solver function, but solves the
-        A.T@x = b system.
-        """
         x = solver(A, b)
         return x
 
@@ -73,3 +60,26 @@ class SparseSolverWrapper(t.autograd.Function):
 
         if needs_grad_A and needs_grad_b:
             return (dLdA, None, lambda_, None, None)
+
+
+def sparse_solver_wrapper(
+    A: Float[t.Tensor, "r c"],
+    A_coo_idx: Integer[t.LongTensor, "2 nnz"],
+    b: Float[t.Tensor, " r"],
+    solver: Callable,
+    transpose_solver: Callable,
+) -> Float[t.Tensor, " c"]:
+    """
+    This wrapper provides a differentiable wrapper for a sparse linear solver.
+
+    Here, A is a sparse tensor/matrix and b is a dense, 1D tensor. The sparse
+    matrix A should already be in the format/layout expected by the solver.
+    The A_coo_idx is required for the backward pass to enforce the sparsity
+    pattern of A.
+
+    The solver should be a function that takes in A and b as its arguments
+    and returns a dense, 1D tensor x that is the solution to A@x = b. The
+    transpose_solver is similar to the solver function, but solves the
+    A.T@x = b system.
+    """
+    return SparseSolverWrapper.apply(A, A_coo_idx, b, solver, transpose_solver)
