@@ -317,3 +317,6 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialComplex):
     dot_2 = t.dot(x2, m2 @ (codiff_3 @ x3))
 
     t.testing.assert_close(dot_1, dot_2)
+
+
+# TODO: add rotation/translation/scaling invariance tests
