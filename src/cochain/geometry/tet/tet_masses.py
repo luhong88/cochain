@@ -3,13 +3,14 @@ from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
 from .tet_geometry import (
-    _d2_tet_signed_vols_d2_vert_coords,
+    _bary_coord_grad_inner_prods,
     _d_tet_signed_vols_d_vert_coords,
     _tet_signed_vols,
+    _whitney_2_form_inner_prods,
 )
 
 
-def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
+def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " vert"]:
     """
     Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
     barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
@@ -30,74 +31,6 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "vert"]:
     )
 
     return diag
-
-
-def _bary_coord_grad_inner_prods(
-    tet_signed_vols: Float[t.Tensor, "tet"],
-    d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"],
-) -> Float[t.Tensor, "tet 4 4"]:
-    """
-    For a tet, let lambda_x(p) be the barycentric coordinate function for p wrt
-    a vertex x of the tet. This function computes all pairwise inner products
-    of the barycentric coordinate gradients wrt each pair of vertices; i.e., it
-    computes <grad_p[lambda_x(p)], grad_p[lambda_y(p)]> for all vertices x and y.
-    """
-    # The gradient of lambda_i(p) wrt p is given by grad_i(vol_ijkl)/vol_ijkl, a
-    # constant wrt p.
-    bary_coords_grad: Float[t.Tensor, "tet 4 3"] = (
-        d_signed_vols_d_vert_coords / tet_signed_vols
-    )
-
-    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = t.einsum(
-        "tic,tjc->tij", bary_coords_grad, bary_coords_grad
-    )
-
-    return bary_coords_grad_dot
-
-
-def _tet_edge_faces(
-    tet_mesh: SimplicialComplex,
-) -> tuple[Float[t.Tensor, "tet 6"], Integer[t.LongTensor, "tet 6"]]:
-    """
-    Enumerate all edges for each tet and find their orientations and indices on
-    the tet_mesh.edges list.
-    """
-    device = tet_mesh.vert_coords.device
-
-    n_verts = tet_mesh.n_verts
-
-    # Enumerate all unique edges via their vertex position in the tet.
-    i, j, k, l = 0, 1, 2, 3
-    unique_edges = t.tensor(
-        [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]], dtype=t.long, device=device
-    )
-
-    # For each tet and each unique edge pair, find the orientations of the edges
-    # and their indices on the list of unique, canonical edges (tet_mesh.edges).
-    whitney_edges: Float[t.Tensor, "tet*6 2"] = tet_mesh.tets[:, unique_edges].flatten(
-        end_dim=-2
-    )
-
-    # Same method as used in the construction of coboundary operators to use
-    # sort() to identify edge orientations.
-    whitney_canon_edges, whitney_edge_orientations = whitney_edges.sort(dim=-1)
-    whitney_edge_signs: Float[t.Tensor, "tet 6"] = t.where(
-        whitney_edge_orientations[:, 1] > 0, whitney_edge_orientations[:, 1], -1
-    ).view(-1, 6)
-
-    # This assumes that the edge indices in tet_mesh.edges are already in canonical
-    # orders.
-    unique_canon_edges_packed = tet_mesh.edges[:, 0] * n_verts + tet_mesh.edges[:, 1]
-    canon_edges_packed_sorted, canon_edges_idx = t.sort(unique_canon_edges_packed)
-
-    whitney_edges_packed = (
-        whitney_canon_edges[:, 0] * n_verts + whitney_canon_edges[:, 1]
-    )
-    whitney_edges_idx: Float[t.Tensor, "tet 6"] = canon_edges_idx[
-        t.searchsorted(canon_edges_packed_sorted, whitney_edges_packed)
-    ].view(-1, 6)
-
-    return whitney_edge_signs, whitney_edges_idx
 
 
 def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
@@ -173,7 +106,8 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # For each tet and each unique edge pair, find the orientations of the edges
     # and their indices on the list of unique, canonical edges (tet_mesh.edges).
-    whitney_edge_signs, whitney_edges_idx = _tet_edge_faces(tet_mesh)
+    whitney_edge_signs = tet_mesh.tet_edge_orientations
+    whitney_edges_idx = tet_mesh.tet_edge_idx
 
     # Multiply the Whitney 1-form inner product by the edge orientation signs
     # to get the contribution from canonical edges.
@@ -185,10 +119,10 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
 
     # Get the canonical edge index pairs for the Whitney 1-form inner products of
     # all 36 edge pairs per tet.
-    whitney_flat_r_idx: Float[t.Tensor, "tet*36"] = (
+    whitney_flat_r_idx: Float[t.Tensor, " tet*36"] = (
         whitney_edges_idx.view(-1, 6, 1).expand(-1, 6, 6).flatten()
     )
-    whitney_flat_c_idx: Float[t.Tensor, "tet*36"] = (
+    whitney_flat_c_idx: Float[t.Tensor, " tet*36"] = (
         whitney_edges_idx.view(-1, 1, 6).expand(-1, 6, 6).flatten()
     )
 
@@ -200,269 +134,6 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
     ).coalesce()
 
     return mass
-
-
-def d_mass_1_d_vert_coords(
-    tet_mesh: SimplicialComplex,
-) -> Float[t.Tensor, "edge edge vert 3"]:
-    """
-    Compute the Jacobian of the 1-form mass matrix wrt the vertex coordinates.
-    """
-    vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
-    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
-
-    dtype = vert_coords.dtype
-    device = vert_coords.device
-
-    n_tets = tet_mesh.n_tets
-    n_edges = tet_mesh.n_edges
-    n_verts = tet_mesh.n_verts
-
-    # For D_xy, the inner products of the gradients of the barycentric coordinates,
-    # its Jacobian wrt vertex p is given by
-    #     grad_p[D_xy] = (hess_xp[V]*grad_y[V] + hess_yp[V]*grad_x[V])/V**2
-    #                    - 2*D_xy*grad_p[V])/V
-    tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
-    tet_signs = tet_signed_vols.sign()
-    d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"] = (
-        _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
-    )
-
-    tet_vol_vhp: Float[t.Tensor, "tet x=4 y=4 p=4 3"] = (
-        _d2_tet_signed_vols_d2_vert_coords(
-            vert_coords, tets, d_signed_vols_d_vert_coords
-        )
-    )
-
-    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = _bary_coord_grad_inner_prods(
-        tet_signed_vols, d_signed_vols_d_vert_coords
-    )
-
-    bary_coords_grad_dot_grad: Float[t.Tensor, "tet x=4 y=4 p=4 3"] = (
-        tet_vol_vhp + tet_vol_vhp.transpose(1, 2)
-    ) / tet_signed_vols.pow(2).view(
-        -1, 1, 1, 1, 1
-    ) - 2 * bary_coords_grad_dot * d_signed_vols_d_vert_coords.view(
-        -1, 1, 1, 4, 3
-    ) / tet_signed_vols.view(-1, 1, 1, 1, 1)
-
-    # For I_xy, the pairwise integrals of the barycentric coordinates, its gradient
-    # wrt vertex p is given by grad_p[I_xy] =  grad_p[V]*(1 + delta_xy)/20
-    bary_coords_int: Float[t.Tensor, "tet x=4 y=4 1 1"] = t.abs(
-        tet_signed_vols / 20.0
-    ) * (
-        t.ones((n_tets, 4, 4), dtype=dtype, device=device)
-        + t.eye(4, dtype=dtype, device=device).view(1, 4, 4)
-    ).view(-1, 4, 4, 1, 1)
-
-    bary_coords_int_grad: Float[t.Tensor, "tet x=4 y=4 p=4 3"] = (
-        d_signed_vols_d_vert_coords.view(-1, 1, 1, 4, 3)
-        * tet_signs.view(-1, 1, 1, 1, 1)
-        * (
-            t.ones((n_tets, 4, 4), dtype=dtype, device=device)
-            + t.eye(4, dtype=dtype, device=device).view(1, 4, 4)
-        ).view(-1, 4, 4, 1, 1)
-        / 20.0
-    )
-
-    i, j, k, l = 0, 1, 2, 3
-    unique_edges = t.tensor(
-        [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]], dtype=t.long, device=device
-    )
-
-    x_idx = unique_edges[:, 0][:, None]
-    y_idx = unique_edges[:, 1][:, None]
-    r_idx = unique_edges[:, 0][None, :]
-    s_idx = unique_edges[:, 1][None, :]
-
-    # Find the gradient of the mass matrix element W_xy,rs using the product rule
-    whitney_inner_prods_grad: Float[t.Tensor, "tet xy=6 rs=6 p=4 3"] = t.zeros(
-        (n_tets, 6, 6, 4, 3), dtype=dtype, device=device
-    )
-
-    # Use inplace operations for better peak memory usage.
-    whitney_inner_prods_grad.add_(
-        bary_coords_int_grad[:, x_idx, r_idx] * bary_coords_grad_dot[:, y_idx, s_idx]
-    )
-    whitney_inner_prods_grad.add_(
-        bary_coords_int[:, x_idx, r_idx] * bary_coords_grad_dot_grad[:, y_idx, s_idx]
-    )
-    whitney_inner_prods_grad.subtract_(
-        bary_coords_int_grad[:, x_idx, s_idx] * bary_coords_grad_dot[:, y_idx, r_idx]
-    )
-    whitney_inner_prods_grad.subtract_(
-        bary_coords_int[:, x_idx, s_idx] * bary_coords_grad_dot_grad[:, y_idx, r_idx]
-    )
-    whitney_inner_prods_grad.subtract_(
-        bary_coords_int_grad[:, y_idx, r_idx] * bary_coords_grad_dot[:, x_idx, s_idx]
-    )
-    whitney_inner_prods_grad.subtract_(
-        bary_coords_int[:, y_idx, r_idx] * bary_coords_grad_dot_grad[:, x_idx, s_idx]
-    )
-    whitney_inner_prods_grad.add_(
-        bary_coords_int_grad[:, y_idx, s_idx] * bary_coords_grad_dot[:, x_idx, r_idx]
-    )
-    whitney_inner_prods_grad.add_(
-        bary_coords_int[:, y_idx, s_idx] * bary_coords_grad_dot_grad[:, x_idx, r_idx]
-    )
-
-    # Scatter the gradients to a sparse tensor.
-    whitney_edge_signs, whitney_edges_idx = _tet_edge_faces(tet_mesh)
-
-    whitney_inner_prods_grad_flat_signed: Float[t.Tensor, "tet 144"] = (
-        whitney_inner_prods_grad
-        * whitney_edge_signs.view(-1, 1, 6, 1, 1)
-        * whitney_edge_signs.view(-1, 6, 1, 1, 1)
-    ).flatten(start_dim=-2)
-
-    dMdV_idx_xy = whitney_edges_idx.view(-1, 6, 1, 1).expand(-1, 6, 6, 4).flatten()
-    dMdV_idx_rs = whitney_edges_idx.view(-1, 1, 6, 1).expand(-1, 6, 6, 4).flatten()
-    dMdV_idx_p = tet_mesh.tets.view(-1, 1, 1, 4).expand(-1, 6, 6, 4).flatten()
-
-    dMdV = t.sparse_coo_tensor(
-        t.vstack((dMdV_idx_xy, dMdV_idx_rs, dMdV_idx_p)),
-        whitney_inner_prods_grad_flat_signed.flatten(end_dim=-2),
-        (n_edges, n_edges, n_verts, 3),
-    ).coalesce()
-
-    return dMdV
-
-
-def _whitney_2_form_inner_prods(
-    tet_mesh: SimplicialComplex,
-) -> tuple[Float[t.Tensor, "tet 1"], Float[t.Tensor, "tet 4 4"]]:
-    """
-    For each tet, compute the pairwise inner product of the Whitney 2-form basis
-    functions associated with the faces of the tet, and correct for the face and
-    tet orientation.
-    """
-    i, j, k, l = 0, 1, 2, 3
-
-    vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
-    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
-
-    tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
-    tet_vols = t.abs(tet_signed_vols)
-    tet_signs = t.sign(tet_signed_vols)
-
-    # For each tet, associate the 2-form basis function with the opposite vertex.
-    # Then, the inner product between the basis functions is given by
-    #
-    #               int[W_i*W_j*dV] = sum_k,l[C_kl*<ik,jl>]/(180*V)
-    #
-    # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
-    # the summation represents the inner products between all edge vectors emanating
-    # from vertices i and j.
-    #
-    # Let G_ij = <i,j> be the symmetric, local "Gram" matrix of vertex coordinates.
-    # Since <ik,jl> can be written as G_kl - G_kj - G_il + G_ij, the inner product
-    # can be further simplified as
-    #
-    # int_ij = (20*G_ij - 5*(R_i + R_j) + (S + Tr[G]))/(180*V)
-    #
-    # here, R_i = sum_j[G_ij], S = sum_ij[G_ij], and Tr[G] is the trace of G.
-
-    gram: Float[t.Tensor, "tet 4 4"] = t.sum(
-        tet_vert_coords.view(-1, 4, 1, 3) * tet_vert_coords.view(-1, 1, 4, 3), dim=-1
-    )
-
-    # Compute R_i + R_j
-    gram_partial_sum: Float[t.Tensor, "tet 4 4"] = t.sum(
-        gram, dim=-1, keepdim=True
-    ) + t.sum(gram, dim=-2, keepdim=True)
-
-    # Compute S + Tr[G]
-    gram_sum: Float[t.Tensor, "tet 1 1"] = (
-        t.sum(gram, dim=(-1, -2)) + t.einsum("tii->t", gram)
-    ).view(-1, 1, 1)
-
-    whitney_inner_prod: Float[t.Tensor, "tet 4 4"] = (
-        20.0 * gram - 5.0 * gram_partial_sum + gram_sum
-    ) / (180.0 * tet_vols.view(-1, 1, 1))
-
-    # For each tet and each vertex, find the outward-facing triangle opposite
-    # to the vertex (note that the way the triangles are indexed here satisfies
-    # the right-hand rule for positively oriented tets).
-    all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[
-        :, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
-    ]
-
-    canon_pos_orientation = t.tensor([0, 1, 2], dtype=t.long, device=tets.device)
-
-    all_tris_orientations = all_tris.sort(dim=-1).indices
-    # Same method as used in the construction of coboundary operators to use
-    # sort() to identify triangle orientations.
-    all_tris_signs: Float[t.Tensor, "tet 4"] = t.where(
-        condition=t.sum(all_tris_orientations == canon_pos_orientation, dim=-1) == 1,
-        self=-1.0,
-        other=1.0,
-    ).to(dtype=vert_coords.dtype)
-
-    # Mapping the local basis function to the global basis function requires
-    # correction of both the triangle face orientation as well as the tet orientations
-    # (to account for negatively oriented tets, for which all_tris no longer satisfies
-    # the right-hand rule).
-    sign_corrections = all_tris_signs * tet_signs.view(-1, 1)
-
-    whitney_inner_prod_signed: Float[t.Tensor, "tet 4 4"] = (
-        whitney_inner_prod
-        * sign_corrections.view(-1, 1, 4)
-        * sign_corrections.view(-1, 4, 1)
-    )
-
-    return sign_corrections, whitney_inner_prod_signed
-
-
-def _tet_tri_face_idx(
-    tet_mesh: SimplicialComplex,
-) -> Integer[t.LongTensor, "tet 4"]:
-    """
-    For each tet and each of its vertices, find the triangle face opposite to the
-    vertex and its index in the tet_mesh.tris list.
-    """
-    i, j, k, l = 0, 1, 2, 3
-
-    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
-
-    n_verts = tet_mesh.n_verts
-
-    # For each tet and each vertex, triangle opposite to the vertex.
-    all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[
-        :, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
-    ]
-
-    all_canon_tris = all_tris.sort(dim=-1).values
-
-    # Find the indices of the triangles on the list of unique, canonical triangles
-    # (tet_mesh.tris) by radix encoding and searchsorted(). Because each triangle
-    # ijk is encoded as i*n_verts^2 + j*n_verts + k and the max value of t.int64
-    # is ~ 2^63, the max number of vertices this method can accommodate is
-    # ~ n_verts < 2^21. Note that this method assumes that the triangle indices
-    # in tet_mesh.tris are already in canonical orders.
-    unique_canon_tris_packed = (
-        tet_mesh.tris[:, 0] * n_verts**2
-        + tet_mesh.tris[:, 1] * n_verts
-        + tet_mesh.tris[:, 2]
-    )
-    unique_canon_tris_packed_sorted, unique_canon_tris_idx = t.sort(
-        unique_canon_tris_packed
-    )
-
-    all_canon_tris_flat: Integer[t.LongTensor, "tet*4 3"] = all_canon_tris.flatten(
-        end_dim=-2
-    )
-    all_canon_tris_packed = (
-        all_canon_tris_flat[:, 0] * n_verts**2
-        + all_canon_tris_flat[:, 1] * n_verts
-        + all_canon_tris_flat[:, 2]
-    )
-
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = unique_canon_tris_idx[
-        t.searchsorted(unique_canon_tris_packed_sorted, all_canon_tris_packed)
-    ].view(-1, 4)
-
-    return all_canon_tris_idx
 
 
 def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
@@ -482,11 +153,13 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     n_tris = tet_mesh.n_tris
 
     # First, compute the inner products of the Whitney 2-form basis functions.
-    _, whitney_inner_prod_signed = _whitney_2_form_inner_prods(tet_mesh)
+    _, whitney_inner_prod_signed = _whitney_2_form_inner_prods(
+        tet_mesh.vert_coords, tet_mesh.tets
+    )
 
     # Then, find the indices of the tet triangle faces associated with the basis
     # functions.
-    all_canon_tris_idx = _tet_tri_face_idx(tet_mesh)
+    all_canon_tris_idx = tet_mesh.tet_tri_idx
 
     # Assemble the mass matrix by scattering the inner products according to the
     # triangle indices.
@@ -502,121 +175,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     return mass
 
 
-def d_mass_2_d_vert_coords(
-    tet_mesh: SimplicialComplex,
-) -> Float[t.Tensor, "tri tri vert 3"]:
-    """
-    Compute the Jacobian of the 2-form mass matrix wrt the vertex coordinates.
-    """
-    vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
-    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
-
-    n_verts = tet_mesh.n_verts
-    n_tris = tet_mesh.n_tris
-
-    dtype = vert_coords.dtype
-    device = vert_coords.device
-
-    # For each tet, denote the inner product between the 2-form basis functions
-    # associated with triangle faces i and j as int_ij; recall that
-    #
-    #               int_ij = sum_k,l[C_kl*<ik,jl>]/(180V)
-    #
-    # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
-    # the summation represents the inner products between all edge vectors emanating
-    # from vertices i and j. Then, one can show that the Jacobian of int_ij wrt
-    # the coordinates of vertex p, grad_p[int_ij], is given by
-    #
-    #     grad_p[int_ij] = (
-    #         sum_k,l[C_kl*(delta_pk - delta_pi)*jl]/(180*V) +
-    #         sum_k,l[C_kl*(delta_pl - delta_pj)*ik]/(180*V) -
-    #         int_ij*grad_p[V]/V
-    #     )
-    #
-    # The first two terms here can be further simplified to give
-    #
-    #     grad_p[int_ij] = (
-    #         (p + 4*c)/(90*V) -
-    #         (i + j)/(36*V) -
-    #         (delta_pi*(c - j) + delta_pj*(c - i))/(9*V) -
-    #         int_ij*grad_p[V]/V
-    #     )
-    #
-    # where "c" is the centroid of the tet.
-
-    # First, collect all the constituent terms required to compute the Jacobian.
-    tet_signed_vols: Float[t.Tensor, "tet 1 1 1 1"] = _tet_signed_vols(
-        vert_coords, tets
-    ).view(-1, 1, 1, 1, 1)
-
-    tet_vols = t.abs(tet_signed_vols)
-
-    d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 1 1 4 3"] = (
-        _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
-    ).view(-1, 1, 1, 4, 3)
-
-    identity = t.eye(4, dtype=dtype, device=device)
-
-    sign_corrections, whitney_inner_prods = _whitney_2_form_inner_prods(tet_mesh)
-    sign_corrections_shaped: Float[t.Tensor, "tet 4 4 1 1"] = (
-        sign_corrections.view(-1, 1, 4) * sign_corrections.view(-1, 4, 1)
-    ).view(-1, 4, 4, 1, 1)
-    whitney_inner_prods_shaped = whitney_inner_prods.view(-1, 4, 4, 1, 1)
-
-    centroids: Float[t.Tensor, "tet 1 3"] = t.mean(tet_vert_coords, dim=1, keepdim=True)
-
-    # Prepare all terms in the sum into the form (tet, i, j, p, coords).
-    # Note that all but the last term require a correction for the triangle and
-    # tet orientations. The last term does not require this correction since
-    # the function _whitney_2_form_inner_prods() already applies this correction
-    # to the inner products.
-
-    whitney_inner_prod_grad: Float[t.Tensor, "tet i=4 j=4 p=4 3"] = (
-        tet_vert_coords + 4.0 * centroids
-    ).view(-1, 1, 1, 4, 3) / (90.0 * tet_vols)
-
-    whitney_inner_prod_grad.subtract_(
-        (tet_vert_coords.view(-1, 4, 1, 1, 3) + tet_vert_coords.view(-1, 1, 4, 1, 3))
-        / (36.0 * tet_vols)
-    )
-
-    sum_delta = t.einsum("pi,tjc->tijpc", identity, centroids - tet_vert_coords) / (
-        9.0 * tet_vols
-    )
-    whitney_inner_prod_grad.subtract_(sum_delta + sum_delta.transpose(1, 2))
-
-    whitney_inner_prod_grad.multiply_(sign_corrections_shaped)
-
-    whitney_inner_prod_grad.subtract_(
-        whitney_inner_prods_shaped * d_signed_vols_d_vert_coords / tet_signed_vols
-    )
-
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = _tet_tri_face_idx(tet_mesh)
-
-    # Assemble the mass matrix Jacobian.
-    dMdV_idx_i = all_canon_tris_idx.view(-1, 4, 1, 1).expand(-1, 4, 4, 4).flatten()
-    dMdV_idx_j = all_canon_tris_idx.view(-1, 1, 4, 1).expand(-1, 4, 4, 4).flatten()
-    dMdV_idx_p = tet_mesh.tets.view(-1, 1, 1, 4).expand(-1, 4, 4, 4).flatten()
-
-    dMdV_idx = t.vstack(
-        (
-            dMdV_idx_i,
-            dMdV_idx_j,
-            dMdV_idx_p,
-        )
-    )
-
-    dMdV_val = whitney_inner_prod_grad.flatten(end_dim=-2)
-
-    dMdV = t.sparse_coo_tensor(
-        dMdV_idx, dMdV_val, (n_tris, n_tris, n_verts, 3)
-    ).coalesce()
-
-    return dMdV
-
-
-def mass_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tet"]:
+def mass_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " tet"]:
     """
     Compute the diagonal of the tet/3-form mass matrix, which is equivalent to
     the inverse of 3-star.

@@ -54,7 +54,7 @@ def load_tent_mesh() -> SimplicialComplex:
     )
 
 
-def load_tet_mesh() -> SimplicialComplex:
+def load_hollow_tet_mesh() -> SimplicialComplex:
     """
     A simple 2D mesh for the boundary of a tetrahedron.
     """
