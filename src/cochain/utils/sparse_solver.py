@@ -1,10 +1,23 @@
-from typing import Any, Callable
+from __future__ import annotations
 
-import cupy as cp
-import cupyx.scipy.sparse as cp_sp
-import cupyx.scipy.sparse.linalg as cp_sp_linalg
+from typing import TYPE_CHECKING, Any, Callable, Literal
+
 import torch as t
 from jaxtyping import Float, Integer
+
+try:
+    import cupy as cp
+    import cupyx.scipy.sparse as cp_sp
+    import cupyx.scipy.sparse.linalg as cp_sp_linalg
+
+    _HAS_CUPY = True
+
+except ImportError:
+    _HAS_CUPY = False
+
+if TYPE_CHECKING:
+    import cupyx.scipy.sparse as cp_sp
+    import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
 
 def _csc_torch_to_cupy(torch_sp_csc: t.Tensor) -> cp_sp.csc_matrix:
@@ -146,24 +159,32 @@ class SparseSolverWrapper(t.autograd.Function):
             return (dLdA, None, lambda_, None, None)
 
 
-def sparse_solver_wrapper(
+def solve(
     A: Float[t.Tensor, "r c"],
     A_coo_idx: Integer[t.LongTensor, "2 nnz"],
     b: Float[t.Tensor, " r"],
-    solver: Callable,
-    transpose_solver: Callable,
+    method: Literal["splu_cupy", "cholesky_nvmath", "cg", "minres"],
+    **kwargs,
 ) -> Float[t.Tensor, " c"]:
     """
-    This wrapper provides a differentiable wrapper for a sparse linear solver.
+    This function provides a differentiable wrapper for sparse linear solvers.
 
-    Here, A is a sparse tensor/matrix and b is a dense, 1D tensor. The sparse
-    matrix A should already be in the format/layout expected by the solver.
-    The A_coo_idx is required for the backward pass to enforce the sparsity
-    pattern of A.
+    Here, A is a sparse tensor/matrix and b is a dense, 1D tensor. The A_coo_idx
+    is required for the backward pass to enforce the sparsity pattern of A.
 
-    The solver should be a function that takes in A and b as its arguments
-    and returns a dense, 1D tensor x that is the solution to A@x = b. The
-    transpose_solver is similar to the solver function, but solves the
-    A.T@x = b system.
+    If method is 'splu_cupy', solve the linear system using the LU factorization
+    wrapper from CuPy. This requires that `A` and `b` must be on the CUDA device
+    and that `A` is already in sparse CSC format. Note that the factorization
+    step itself is not accelerated on GPU, which necessitates data transfer with
+    the host.
     """
-    return SparseSolverWrapper.apply(A, A_coo_idx, b, solver, transpose_solver)
+    match method:
+        case "splu_cupy":
+            if not _HAS_CUPY:
+                raise ImportError("CuPy backend required for method 'splu_cupy'.")
+
+            x, solver = SparseSolverWrapper.apply(A, A_coo_idx, b, kwargs)
+            return x
+
+        case _:
+            raise NotImplementedError()
