@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
 import torch as t
@@ -13,7 +14,6 @@ try:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
     _HAS_CUPY = True
-
 except ImportError:
     _HAS_CUPY = False
 
@@ -31,19 +31,25 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         b: Float[t.Tensor, " r"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[t.Tensor, " c"], cp_sp_linalg.SuperLU]:
-        # A must be 1) in sparse csc format and 2) moved to the cuda device
-        A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.coo_matrix(
-            (
-                cp.from_dlpack(A_val.detach()),
+        val = A_val.detach()
+        idx = A_coo_idx.detach().to(dtype=t.int32)
+
+        # Force CuPy to use the current Pytorch stream.
+        stream = t.cuda.current_stream()
+        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device):
+            A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.coo_matrix(
                 (
-                    cp.from_dlpack(A_coo_idx.detach()[0]),
-                    cp.from_dlpack(A_coo_idx.detach()[1]),
+                    cp.from_dlpack(val),
+                    (
+                        cp.from_dlpack(idx[0]),
+                        cp.from_dlpack(idx[1]),
+                    ),
                 ),
-            ),
-            shape=A_shape,
-        ).tocsc()
-        solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
-        x = t.from_dlpack(solver.solve(cp.from_dlpack(b.detach()), trans="N"))
+                shape=A_shape,
+            ).tocsc()
+            solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
+            x = t.from_dlpack(solver.solve(cp.from_dlpack(b.detach()), trans="N"))
+
         return x, solver
 
     @staticmethod
@@ -79,10 +85,23 @@ class _CuPySuperLUWrapper(t.autograd.Function):
 
         A_coo_idx, x = ctx.saved_tensors
 
-        lambda_cp: Float[t.Tensor, " r"] = ctx.solver.solve(
-            cp.from_dlpack(dLdx.detach()), trans="T"
-        )
-        lambda_ = t.from_dlpack(lambda_cp)
+        if ctx.solver is None:
+            raise RuntimeError(
+                "Solver was released. Calling backward() twice with retain_graph=True "
+                + "is currently not supported."
+            )
+        else:
+            solver: cp_sp_linalg.SuperLU = ctx.solver
+
+        stream = t.cuda.current_stream()
+        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device):
+            lambda_cp: Float[t.Tensor, " r"] = solver.solve(
+                cp.from_dlpack(dLdx.detach()), trans="T"
+            )
+            lambda_ = t.from_dlpack(lambda_cp)
+
+        # Free up solver memory usage.
+        ctx.solver = None
 
         if needs_grad_b and not needs_grad_A_val:
             return (None, None, None, lambda_, None)
@@ -109,7 +128,7 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.coo_array(
             (
                 A_val.detach().cpu().numpy(),
-                A_coo_idx.detach().cpu().numpy(),
+                A_coo_idx.detach().cpu().numpy().astype(np.int32),
             ),
             shape=A_shape,
         ).tocsc()
@@ -148,10 +167,21 @@ class _SciPySuperLUWrapper(t.autograd.Function):
 
         A_coo_idx, x = ctx.saved_tensors
 
-        lambda_scipy: Float[t.Tensor, " r"] = ctx.solver.solve(
+        if ctx.solver is None:
+            raise RuntimeError(
+                "Solver was released. Calling backward() twice with retain_graph=True "
+                + "is currently not supported."
+            )
+        else:
+            solver: scipy.sparse.linalg.SuperLU = ctx.solver
+
+        lambda_scipy: Float[t.Tensor, " r"] = solver.solve(
             dLdx.detach().cpu().numpy(), trans="T"
         )
         lambda_ = t.from_numpy(lambda_scipy).to(dtype=dLdx.dtype, device=dLdx.device)
+
+        # Free up solver memory usage.
+        ctx.solver = None
 
         if needs_grad_b and not needs_grad_A_val:
             return (None, None, None, lambda_, None)
@@ -166,37 +196,39 @@ class _SciPySuperLUWrapper(t.autograd.Function):
             return (dLdA_val, None, None, lambda_, None)
 
 
-def solve(
+def splu(
     A: Float[t.Tensor, "r c"],
     b: Float[t.Tensor, " r"],
-    method: Literal["splu_cupy", "splu_scipy", "nvmath", "cg", "minres"],
+    *,
+    backend: Literal["cupy", "scipy"],
     **kwargs,
 ) -> Float[t.Tensor, " c"]:
     """
-    This function provides a differentiable wrapper for sparse linear solvers.
+    This function provides a differentiable wrapper for SuperLU.
 
     Here, A is a sparse coo tensor and b is a dense, 1D tensor.
 
-    If method is 'splu_cupy', solve the linear system using CuPy's SuperLU wrapper
-    This requires that `A` and `b` must be on the CUDA device. Note that the
+    If backend is 'cupy', `A` and `b` must be on the CUDA device. Note that the
     factorization step itself is not accelerated on GPU, which necessitates data
     transfer with the host.
 
-    If method is 'splu_scipy', solve the linear system using SciPy's SuperLU
-    wrapper. This requires that `A` is in the sparse COO format (which is converted
-    to sparse CSC format in SciPy for the solver); `A` and `b` will be copied to CPU.
+    If backend is 'scipy', `A` and `b` will be copied to CPU.
+
+    In both cases, the sparse indices of `A` will be downcasted to int32.
+
+    Currently, double backward through this function is not supported.
     """
-    match method:
-        case "splu_cupy":
+    match backend:
+        case "cupy":
             if not _HAS_CUPY:
-                raise ImportError("CuPy backend required for method 'splu_cupy'.")
+                raise ImportError("CuPy backend required.")
 
             x, solver = _CuPySuperLUWrapper.apply(A.values(), A.indices(), b, kwargs)
             return x
 
-        case "splu_scipy":
+        case "scipy":
             x, solver = _SciPySuperLUWrapper.apply(A.values(), A.indices(), b, kwargs)
             return x
 
         case _:
-            raise NotImplementedError()
+            raise ValueError()
