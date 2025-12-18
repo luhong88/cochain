@@ -208,15 +208,26 @@ def splu(
 
     Here, A is a sparse coo tensor and b is a dense, 1D tensor.
 
-    If backend is 'cupy', `A` and `b` must be on the CUDA device. Note that the
-    factorization step itself is not accelerated on GPU, which necessitates data
-    transfer with the host.
+    If backend is 'cupy', `A` and `b` must be on the CUDA device. If backend is
+    'scipy', `A` and `b` will be copied to CPU.
 
-    If backend is 'scipy', `A` and `b` will be copied to CPU.
+    If either `A` or `b` requires gradient, then a `SuperLU` solver object will be
+    cached in memory; this memory will not be cleaned up until one of the following
+    conditions is met:
 
-    In both cases, the sparse indices of `A` will be downcasted to int32.
+    1) a backward() call with `retain_graph=False` has been made through the
+    computation graph containing `A` or `b`, or
+    2) all references to the output tensor (and its `grad_fn` and `ctx` attributes)
+    from this function (and any derived tensors thereof) has gone out of scope/been
+    detached from the computation graph.
 
-    Currently, double backward through this function is not supported.
+    This function currently has the following limitations:
+
+    * Double backward through this function is not supported.
+    * The sparse indices of `A` will be downcasted to `int32` for compatibility with
+    the backend.
+    * SuperLU handles the factorization step on the host CPU, regardless of the
+    location of `A` and `b`.
     """
     match backend:
         case "cupy":

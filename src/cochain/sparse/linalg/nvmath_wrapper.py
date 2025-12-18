@@ -40,6 +40,9 @@ def _coalesced_coo_to_int32_csr(
     val: Float[t.Tensor, " nnz"],
     shape: t.Size,
 ):
+    """
+    The input tensor must be coalesced.
+    """
     rows, cols = shape
 
     row_idx = idx[0].to(t.int32)
@@ -90,8 +93,11 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
     ) -> tuple[Float[t.Tensor, " c"], AutogradDirectSolver]:
         A_csr = _coalesced_coo_to_int32_csr(A_val, A_coo_idx, A_shape)
 
-        # Do not give DirectSolver the current stream to prevent possible stream
-        # mismatch in backward().
+        stream = t.cuda.current_stream()
+
+        # Do not give DirectSolver constructor the current stream to prevent
+        # possible stream mismatch in backward(); instead, pass the stream to
+        # individual methods to ensure sync between pytorch and nvmath.
         solver = AutogradDirectSolver(
             A_csr,
             b,
@@ -101,17 +107,15 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
 
         for k, v in plan_config.items():
             setattr(solver.plan_config, k, v)
-        solver.plan()
+        solver.plan(stream=stream)
 
         for k, v in fac_config.items():
             setattr(solver.factorization_config, k, v)
-        solver.factorize()
+        solver.factorize(stream=stream)
 
         for k, v in sol_config.items():
             setattr(solver.solution_config, k, v)
-        x = solver.solve()
-
-        t.cuda.default_stream().synchronize()
+        x = solver.solve(stream=stream)
 
         return x, solver
 
@@ -140,13 +144,21 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
     def backward(
         ctx, dLdx: Float[t.Tensor, " c"], _
     ) -> tuple[
-        Float[t.Tensor, " nnz"] | None, None, None, Float[t.Tensor, " r"] | None, None
+        Float[t.Tensor, " nnz"] | None,
+        None,
+        None,
+        Float[t.Tensor, " r"] | None,
+        None,
+        None,
+        None,
+        None,
+        None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
-        needs_grad_b = ctx.needs_input_grad[-2]
+        needs_grad_b = ctx.needs_input_grad[3]
 
         if not (needs_grad_A_val or needs_grad_b):
-            return (None,) * 5
+            return (None,) * 9
 
         A_coo_idx, x = ctx.saved_tensors
 
@@ -158,37 +170,42 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         else:
             solver: AutogradDirectSolver = ctx.solver
 
+        stream = t.cuda.current_stream()
+
         if (
             ctx.solver.options.sparse_system_type
             == nvmath_sp.DirectSolverMatrixType.GENERAL
         ):
             # If A is a generic matrix, explicitly compute its transpose and
             # update both the LHS and RHS of the solver for the adjoint method.
+            # Since the LHS is updated, we need to redo the plan() and factorize()
+            # steps.
             A_t = _transpose_sp_csr(solver.a)
-            solver.reset_operands(a=A_t, b=dLdx)
+            solver.reset_operands(a=A_t, b=dLdx, stream=stream)
+            solver.plan(stream=stream)
+            solver.factorize(stream=stream)
+
         else:
             # If A is symmetric, only update the RHS of the solver.
-            solver.reset_operands(b=dLdx)
+            solver.reset_operands(b=dLdx, stream=stream)
 
-        lambda_: Float[t.Tensor, " r"] = solver.solve()
-
-        t.cuda.default_stream().synchronize()
+        lambda_: Float[t.Tensor, " r"] = solver.solve(stream=stream)
 
         # Free up solver memory usage.
         solver.free()
         ctx.solver = None
 
         if needs_grad_b and not needs_grad_A_val:
-            return (None, None, None, lambda_, None)
+            return (None, None, None, lambda_, None, None, None, None, None)
 
         # dLdA will have the same sparsity pattern as A
         dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
 
         if needs_grad_A_val and not needs_grad_b:
-            return (dLdA_val, None, None, None, None)
+            return (dLdA_val, None, None, None, None, None, None, None, None)
 
         if needs_grad_A_val and needs_grad_b:
-            return (dLdA_val, None, None, lambda_, None)
+            return (dLdA_val, None, None, lambda_, None, None, None, None, None)
 
 
 def nvmath(
@@ -206,9 +223,7 @@ def nvmath(
     This function provides a differentiable wrapper for the `nvmath.sparse.advanced.DirectSolver`
     class in nvmath-python.
 
-    Here, A is a sparse coo tensor and b is a dense, 1D tensor. Note that while
-    batching is supported by `DirectSolver`, it is not supported in this function.
-    The sparse indices of `A` will be downcasted to int32.
+    Here, A is a coalesced sparse coo tensor and b is a dense, 1D tensor.
 
     The `options` and `execution` arguments are directly passed to the arguments
     of the same names to the `DirectSolver` constructor. Note that direct control
@@ -227,13 +242,27 @@ def nvmath(
 
     If either `A` or `b` requires gradient, then a `DirectSolver` object will be
     cached in memory; this memory will not be cleaned up until one of the following
-    conditions is met: 1) a backward() call with `retain_graph=False` has been made
-    through the computation graph containing `A` or `b`, or 2) all references to
-    the output tensor from this function (and any derived tensors thereof) has
-    gone out of scope/been detached from the computation graph, and there is no
-    other manual reference to the `grad_fn` or `ctx` of the output tensor.
+    conditions is met:
 
-    Currently, double backward through this function is not supported.
+    1) a backward() call with `retain_graph=False` has been made through the
+    computation graph containing `A` or `b`, or
+    2) all references to the output tensor (and its `grad_fn` and `ctx` attributes)
+    from this function (and any derived tensors thereof) has gone out of scope/been
+    detached from the computation graph.
+
+    This function currently has the following limitations:
+
+    * Double backward through this function is not supported.
+    * While batching of `A` and/or `b` is supported by `DirectSolver`, it is not
+    supported in this function.
+    * The sparse indices of `A` will be downcasted to `int32` for compatibility with
+    the cuDSS backend.
+    * If `A` is a general, non-symmetric property, the solver will need to redo
+    the factorization step in backward() for the transposed tensor.
+    * Unlike the SuperLU wrapper, the input `A` tensor must be coalesced. This is
+    because a manual conversion is performed from the coo to the csr format with
+    `int32` index tensors; this step assumes that `A` is coalesced to avoid expensive
+    index sorting steps.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backend required.")
@@ -255,7 +284,7 @@ def nvmath(
     x, solver = _NvmathDirectSolverWrapper.apply(
         A.values(),
         A.indices(),
-        A.size,
+        A.shape,
         b,
         options,
         execution,
