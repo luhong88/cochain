@@ -28,11 +28,11 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         A_val: Float[t.Tensor, " nnz"],
         A_coo_idx: Integer[t.LongTensor, "2 nnz"],
         A_shape: tuple[int, int],
-        b: Float[t.Tensor, " r"],
+        b: Float[t.Tensor, " r *b"],
         splu_kwargs: dict[str, Any],
-    ) -> tuple[Float[t.Tensor, " c"], cp_sp_linalg.SuperLU]:
-        val = A_val.detach()
-        idx = A_coo_idx.detach().to(dtype=t.int32)
+    ) -> tuple[Float[t.Tensor, " c *b"], cp_sp_linalg.SuperLU]:
+        val = A_val.detach().contiguous()
+        idx = A_coo_idx.detach().to(dtype=t.int32).contiguous()
 
         # Force CuPy to use the current Pytorch stream.
         stream = t.cuda.current_stream()
@@ -47,8 +47,10 @@ class _CuPySuperLUWrapper(t.autograd.Function):
                 ),
                 shape=A_shape,
             ).tocsc()
+            x_cp = cp.from_dlpack(b.detach().contiguous())
+
             solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
-            x = t.from_dlpack(solver.solve(cp.from_dlpack(b.detach()), trans="N"))
+            x = t.from_dlpack(solver.solve(x_cp, trans="N"))
 
         return x, solver
 
@@ -65,9 +67,13 @@ class _CuPySuperLUWrapper(t.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx, dLdx: Float[t.Tensor, " c"], _
+        ctx, dLdx: Float[t.Tensor, " c *b"], _
     ) -> tuple[
-        Float[t.Tensor, " nnz"] | None, None, None, Float[t.Tensor, " r"] | None, None
+        Float[t.Tensor, " nnz"] | None,
+        None,
+        None,
+        Float[t.Tensor, " r *b"] | None,
+        None,
     ]:
         """
         Let x be the solution to the linear system A@x = b. To find the gradient
@@ -96,7 +102,7 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         stream = t.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device):
             lambda_cp: Float[t.Tensor, " r"] = solver.solve(
-                cp.from_dlpack(dLdx.detach()), trans="T"
+                cp.from_dlpack(dLdx.detach().contiguous()), trans="T"
             )
             lambda_ = t.from_dlpack(lambda_cp)
 
@@ -106,8 +112,12 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         if needs_grad_b and not needs_grad_A_val:
             return (None, None, None, lambda_, None)
 
-        # dLdA will have the same sparsity pattern as A
-        dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
+        # dLdA will have the same sparsity pattern as A.
+        if lambda_.dim() > 1:
+            # If there is a batch dimension, sum over it.
+            dLdA_val = t.sum(-lambda_[A_coo_idx[0]] * x[A_coo_idx[1]], dim=-1)
+        else:
+            dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None, None)
@@ -122,20 +132,23 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         A_val: Float[t.Tensor, " nnz"],
         A_coo_idx: Integer[t.LongTensor, "2 nnz"],
         A_shape: tuple[int, int],
-        b: Float[t.Tensor, " r"],
+        b: Float[t.Tensor, " r *b"],
         splu_kwargs: dict[str, Any],
-    ) -> tuple[Float[t.Tensor, " c"], scipy.sparse.linalg.SuperLU]:
+    ) -> tuple[Float[t.Tensor, " c *b"], scipy.sparse.linalg.SuperLU]:
         A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.coo_array(
             (
-                A_val.detach().cpu().numpy(),
-                A_coo_idx.detach().cpu().numpy().astype(np.int32),
+                A_val.detach().contiguous().cpu().numpy(),
+                A_coo_idx.detach().contiguous().cpu().numpy().astype(np.int32),
             ),
             shape=A_shape,
         ).tocsc()
+        x_np = b.detach().contiguous().cpu().numpy()
+
         solver = scipy.sparse.linalg.splu(A_scipy, **splu_kwargs)
-        x = t.from_numpy(solver.solve(b.detach().cpu().numpy(), trans="N")).to(
+        x = t.from_numpy(solver.solve(x_np, trans="N")).to(
             dtype=A_val.dtype, device=A_val.device
         )
+
         return x, solver
 
     @staticmethod
@@ -151,12 +164,12 @@ class _SciPySuperLUWrapper(t.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx, dLdx: Float[t.Tensor, " c"], _
+        ctx, dLdx: Float[t.Tensor, " c *b"], _
     ) -> tuple[
         Float[t.Tensor, " nnz"] | None,
         None,
         None,
-        Float[t.Tensor, " r"] | None,
+        Float[t.Tensor, " r *b"] | None,
         None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
@@ -175,10 +188,10 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         else:
             solver: scipy.sparse.linalg.SuperLU = ctx.solver
 
-        lambda_scipy: Float[t.Tensor, " r"] = solver.solve(
-            dLdx.detach().cpu().numpy(), trans="T"
+        lambda_np = solver.solve(dLdx.detach().contiguous().cpu().numpy(), trans="T")
+        lambda_: Float[t.Tensor, " r *b"] = t.from_numpy(lambda_np).to(
+            dtype=dLdx.dtype, device=dLdx.device
         )
-        lambda_ = t.from_numpy(lambda_scipy).to(dtype=dLdx.dtype, device=dLdx.device)
 
         # Free up solver memory usage.
         ctx.solver = None
@@ -186,8 +199,12 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         if needs_grad_b and not needs_grad_A_val:
             return (None, None, None, lambda_, None)
 
-        # dLdA will have the same sparsity pattern as A
-        dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
+        # dLdA will have the same sparsity pattern as A.
+        if lambda_.ndim > 1:
+            # If there is a batch dimension, sum over it.
+            dLdA_val = t.sum(-lambda_[A_coo_idx[0]] * x[A_coo_idx[1]], dim=-1)
+        else:
+            dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None, None)
@@ -198,22 +215,26 @@ class _SciPySuperLUWrapper(t.autograd.Function):
 
 def splu(
     A: Float[t.Tensor, "r c"],
-    b: Float[t.Tensor, " r"],
+    b: Float[t.Tensor, "*b r"],
     *,
     backend: Literal["cupy", "scipy"],
-    **kwargs,
-) -> Float[t.Tensor, " c"]:
+    batch_first: bool = True,
+    **splu_kwargs,
+) -> Float[t.Tensor, "*b c"]:
     """
     This function provides a differentiable wrapper for SuperLU.
 
-    Here, A is a sparse coo tensor and b is a dense, 1D tensor.
+    Here, A is a sparse coo tensor and b is a dense tensor with optional batch
+    dimensions. If `batch_first` is `True`, all but the last dimension of `b`
+    is treated as batch dimensions; if `batch_first` is `True`, all but the first
+    dimension of `b` is treated as batch dimensions.
 
     If backend is 'cupy', `A` and `b` must be on the CUDA device. If backend is
     'scipy', `A` and `b` will be copied to CPU.
 
     If either `A` or `b` requires gradient, then a `SuperLU` solver object will be
-    cached in memory; this memory will not be cleaned up until one of the following
-    conditions is met:
+    cached in memory to accelerate the backward pass; this memory will not be
+    cleaned up until one of the following conditions is met:
 
     1) a backward() call with `retain_graph=False` has been made through the
     computation graph containing `A` or `b`, or
@@ -223,23 +244,47 @@ def splu(
 
     This function currently has the following limitations:
 
-    * Double backward through this function is not supported.
+    * Double backward through this function is currently not supported.
     * The sparse indices of `A` will be downcasted to `int32` for compatibility with
-    the backend.
+    the solver; this necessitates copying of the index tensor.
     * SuperLU handles the factorization step on the host CPU, regardless of the
     location of `A` and `b`.
+    * The SuperLU solver supports batching of the `b` tensor, but there can only
+    be one batch dimension, and the batch dimension must be the last dimension (
+    i.e., `b` is either of shape `(r,)` or `(r, b)`). Therefore, if the input
+    `b` tensor does not conform to this layout, the function will have to create
+    a reshaped and memory-contiguous copy of `b`. Batching of the `A` tensor is not
+    supported by the solver.
     """
+    requires_reshape = batch_first and b.ndim > 1
+
+    if requires_reshape:
+        # (*b, r) -> (r, *b_flat)
+        b_ready = t.movedim(b, -1, 0).reshape(b.shape[-1], -1).contiguous()
+    else:
+        b_ready = b
+
     match backend:
         case "cupy":
             if not _HAS_CUPY:
                 raise ImportError("CuPy backend required.")
 
-            x, solver = _CuPySuperLUWrapper.apply(A.values(), A.indices(), b, kwargs)
-            return x
+            x, solver = _CuPySuperLUWrapper.apply(
+                A.values(), A.indices(), A.shape, b_ready, splu_kwargs
+            )
 
         case "scipy":
-            x, solver = _SciPySuperLUWrapper.apply(A.values(), A.indices(), b, kwargs)
-            return x
+            x, solver = _SciPySuperLUWrapper.apply(
+                A.values(), A.indices(), A.shape, b_ready, splu_kwargs
+            )
 
         case _:
             raise ValueError()
+
+    if requires_reshape:
+        # (c, *b_flat) -> (*b, c)
+        x_reshaped = x.transpose(0, 1).reshape(*b.shape[:-1], -1)
+    else:
+        x_reshaped = x
+
+    return x_reshaped

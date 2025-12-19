@@ -208,6 +208,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             return (dLdA_val, None, None, lambda_, None, None, None, None, None)
 
 
+# TODO: support RHS implicit batching
 def nvmath(
     A: Float[t.Tensor, "r c"],
     b: Float[t.Tensor, " r"],
