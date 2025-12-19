@@ -59,7 +59,6 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         A_val, A_coo_idx, A_shape, b, splu_kwargs = inputs
 
         x, solver = output
-        ctx.mark_non_differentiable(solver)
 
         ctx.save_for_backward(A_coo_idx, x)
         ctx.solver = solver
