@@ -106,16 +106,17 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
-        A_coo_idx: Integer[t.LongTensor, "2 nnz"],
+        A_coo_idx: Integer[t.LongTensor, "sp nnz"],
         A_shape: t.Size,
-        b: Float[t.Tensor, " r"],
+        b: Float[t.Tensor, " r"] | Float[t.Tensor, "*b *ch r"],
         solver_options: nvmath_sp.DirectSolverOptions | None,
         exec_space_options: nvmath_sp.ExecutionCUDA | nvmath_sp.ExecutionHybrid | None,
         plan_config: dict[str, Any],
         fac_config: dict[str, Any],
         sol_config: dict[str, Any],
-    ) -> tuple[Float[t.Tensor, " c"], AutogradDirectSolver]:
+    ) -> tuple[Float[t.Tensor, "*b c *ch"], AutogradDirectSolver]:
         A_csr = _coalesced_coo_to_int32_csr(A_val, A_coo_idx, A_shape)
+        b_col_major = b.contiguous().transpose(-1, -2)
 
         stream = t.cuda.current_stream()
 
@@ -124,7 +125,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         # individual methods to ensure sync between pytorch and nvmath.
         solver = AutogradDirectSolver(
             A_csr,
-            b,
+            b_col_major,
             options=solver_options,
             execution=exec_space_options,
         )
@@ -166,12 +167,12 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx, dLdx: Float[t.Tensor, " c"], _
+        ctx, dLdx: Float[t.Tensor, "*b c *ch"], _
     ) -> tuple[
         Float[t.Tensor, " nnz"] | None,
         None,
         None,
-        Float[t.Tensor, " r"] | None,
+        Float[t.Tensor, "*b *ch r"] | None,
         None,
         None,
         None,
@@ -196,6 +197,14 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
 
         stream = t.cuda.current_stream()
 
+        # force blocking operation to make it memory-safe to call free() immediately
+        # after solve().
+        solver.options.blocking = True
+
+        dLdx_col_major: Float[t.Tensor, "*b c *ch"] = (
+            dLdx.transpose(-1, -2).contiguous().transpose(-1, -2)
+        )
+
         if (
             ctx.solver.options.sparse_system_type
             == nvmath_sp.DirectSolverMatrixType.GENERAL
@@ -203,17 +212,18 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             # If A is a generic matrix, explicitly compute its transpose and
             # update both the LHS and RHS of the solver for the adjoint method.
             # Since the LHS is updated, we need to redo the plan() and factorize()
-            # steps.
+            # steps. Note that, currently, the DirectSolver class does not expose
+            # a transpose mode option.
             A_t = _transpose_sp_csr(solver.a)
-            solver.reset_operands(a=A_t, b=dLdx, stream=stream)
+            solver.reset_operands(a=A_t, b=dLdx_col_major, stream=stream)
             solver.plan(stream=stream)
             solver.factorize(stream=stream)
 
         else:
             # If A is symmetric, only update the RHS of the solver.
-            solver.reset_operands(b=dLdx, stream=stream)
+            solver.reset_operands(b=dLdx_col_major, stream=stream)
 
-        lambda_: Float[t.Tensor, " r"] = solver.solve(stream=stream)
+        lambda_: Float[t.Tensor, "*b r *ch"] = solver.solve(stream=stream)
 
         # Free up solver memory usage.
         solver.free()
@@ -222,8 +232,31 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         if needs_grad_b and not needs_grad_A_val:
             return (None, None, None, lambda_, None, None, None, None, None)
 
-        # dLdA will have the same sparsity pattern as A
-        dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
+        # dLdA will have the same sparsity pattern as A.
+        if lambda_.ndim > 1:
+            # Sum over the channel dimension while accounting for zero or more
+            # batch dimensions.
+
+            # Recall that A_coo_idx has shape (sp, nnz), where sp has size equal
+            # to the number of batch dims plus 2 (i.e., sp = len(*b) + 2).
+            n_batch = A_coo_idx.size(0) - 2
+
+            # Extract the nonzero dLdA element row and col indices, accounting for
+            # batch dimensions, and use them to extract the corresponding elements
+            # from lambda_ and x to construct the nonzero outer product elements.
+            r_idx: Integer[t.LongTensor, "n_batch+1 nnz"] = A_coo_idx[
+                list(range(n_batch)) + [n_batch]
+            ]
+            c_idx: Integer[t.LongTensor, "n_batch+1 nnz"] = A_coo_idx[
+                list(range(n_batch)) + [n_batch + 1]
+            ]
+            # Note that r_idx.unbind(0) is equivalent to *r_idx for indexing.
+            dLdA_val = t.sum(-lambda_[r_idx.unbind(0)] * x[c_idx.unbind(0)], dim=-1)
+
+        else:
+            # if there are no batch dimensions, then the A_coo_idx is of shape
+            # (sp=2, nnz).
+            dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None, None, None, None, None, None)
@@ -232,10 +265,9 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             return (dLdA_val, None, None, lambda_, None, None, None, None, None)
 
 
-# TODO: support RHS implicit batching
-def nvmath(
-    A: Float[t.Tensor, "r c"],
-    b: Float[t.Tensor, " r"],
+def nvmath_direct_solver(
+    A: Float[t.Tensor, "*b r c"],
+    b: Float[t.Tensor, "*b *ch r"],
     *,
     sparse_system_type: Literal["general", "symmetric", "SPD"] = "general",
     options: nvmath_sp.DirectSolverOptions | None = None,
@@ -243,12 +275,38 @@ def nvmath(
     plan_config: dict[str, Any] | None = None,
     factorization_config: dict[str, Any] | None = None,
     solution_config: dict[str, Any] | None = None,
-) -> Float[t.Tensor, " c"]:
+) -> Float[t.Tensor, "*b c *ch"]:
     """
     This function provides a differentiable wrapper for the `nvmath.sparse.advanced.DirectSolver`
-    class in nvmath-python.
+    class in `nvmath-python` for solving sparse linear systems of the form `A@x=b`.
 
-    Here, A is a coalesced sparse coo tensor and b is a dense, 1D tensor.
+    Here, `A` is a coalesced sparse coo tensor and `b` is a dense tensor. The `DirectSolver`
+    class supports batching in `A` and/or `b` tensors. In particular, there are
+    four supported batching configurations:
+
+    * No batching in either `A` or `b`; in this case `A` has shape `(r, c)`,
+    `b` has shape `(r,)` and the output `x` has shape `(c,)`.
+
+    * No batching in `A`, but `b` has a channel dimension `ch`; in this case, `A`
+    has shape `(r, c)`, `b` has shape `(ch, r)`, and `x` has shape `(c, ch)`.
+
+    * `A` and `b` has one or more matching batch dimensions `*b`; in this case,
+    `A` has shape `(*b, r, c)`, `b` has shape `(*b, 1, r)`, and `x` has shape
+    `(*b, c, 1)`.
+
+    * `A` and `b` has one or more matching batch dimensions `*b`, and the `b`
+    tensor has a channel dimension `ch`; in this case, `A` has shape `(*b, r, c)`,
+    `b` has shape `(*b, ch, r)`, and `x` has shape `(*b, c, ch)`. When both `b`
+    and `ch` batch dimensions are "active", the solver effectively solves `b*ch`
+    linear systems of the form `A_i@x_ij = b_ij` for matrices `A_i` and vectors
+    `x_ij` and `b_ij`, where `i` iterates over `b` and `j` iterates over `ch`.
+
+    Note that, if `b` has more than one dimension, the `DirectSolver` object requires
+    that `b` is "column-major" (i.e., the stride of the `r` dimension must be 1).
+    Therefore, this function expects that `b` is contiguous in memory in the
+    `(*b, *ch, r)` shape, so that it can pass a view `(*b, r, *ch)` to the solver
+    with no copying. Similarly, the solver always returns a "column-major" tensor
+    of shape `(*b, c, *ch)`, where the stride of the `c` dimension is 1.
 
     The `options` and `execution` arguments are directly passed to the arguments
     of the same names to the `DirectSolver` constructor. Note that direct control
@@ -278,8 +336,9 @@ def nvmath(
     This function currently has the following limitations:
 
     * Double backward through this function is currently not supported.
-    * While batching of `A` and/or `b` is supported by `DirectSolver`, it is not
-    supported in this function.
+    * `DirectSolver` also supports explicit batching, where a tensor with a batch
+    dimension is represented as a list of tensors; this "explicit batching" method
+    is not supported in this function.
     * The sparse indices of `A` will be downcasted to `int32` for compatibility with
     the cuDSS backend.
     * If `A` is a general, non-symmetric property, the solver will need to redo

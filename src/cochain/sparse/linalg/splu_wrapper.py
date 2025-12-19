@@ -28,9 +28,9 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         A_val: Float[t.Tensor, " nnz"],
         A_coo_idx: Integer[t.LongTensor, "2 nnz"],
         A_shape: tuple[int, int],
-        b: Float[t.Tensor, " r *b"],
+        b: Float[t.Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
-    ) -> tuple[Float[t.Tensor, " c *b"], cp_sp_linalg.SuperLU]:
+    ) -> tuple[Float[t.Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
         val = A_val.detach().contiguous()
         idx = A_coo_idx.detach().to(dtype=t.int32).contiguous()
 
@@ -67,12 +67,12 @@ class _CuPySuperLUWrapper(t.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx, dLdx: Float[t.Tensor, " c *b"], _
+        ctx, dLdx: Float[t.Tensor, " c *ch"], _
     ) -> tuple[
         Float[t.Tensor, " nnz"] | None,
         None,
         None,
-        Float[t.Tensor, " r *b"] | None,
+        Float[t.Tensor, " r *ch"] | None,
         None,
     ]:
         """
@@ -114,7 +114,7 @@ class _CuPySuperLUWrapper(t.autograd.Function):
 
         # dLdA will have the same sparsity pattern as A.
         if lambda_.dim() > 1:
-            # If there is a batch dimension, sum over it.
+            # If there is a channel dimension, sum over it.
             dLdA_val = t.sum(-lambda_[A_coo_idx[0]] * x[A_coo_idx[1]], dim=-1)
         else:
             dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
@@ -132,9 +132,9 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         A_val: Float[t.Tensor, " nnz"],
         A_coo_idx: Integer[t.LongTensor, "2 nnz"],
         A_shape: tuple[int, int],
-        b: Float[t.Tensor, " r *b"],
+        b: Float[t.Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
-    ) -> tuple[Float[t.Tensor, " c *b"], scipy.sparse.linalg.SuperLU]:
+    ) -> tuple[Float[t.Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
         A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.coo_array(
             (
                 A_val.detach().contiguous().cpu().numpy(),
@@ -164,12 +164,12 @@ class _SciPySuperLUWrapper(t.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx, dLdx: Float[t.Tensor, " c *b"], _
+        ctx, dLdx: Float[t.Tensor, " c *ch"], _
     ) -> tuple[
         Float[t.Tensor, " nnz"] | None,
         None,
         None,
-        Float[t.Tensor, " r *b"] | None,
+        Float[t.Tensor, " r *ch"] | None,
         None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
@@ -189,7 +189,7 @@ class _SciPySuperLUWrapper(t.autograd.Function):
             solver: scipy.sparse.linalg.SuperLU = ctx.solver
 
         lambda_np = solver.solve(dLdx.detach().contiguous().cpu().numpy(), trans="T")
-        lambda_: Float[t.Tensor, " r *b"] = t.from_numpy(lambda_np).to(
+        lambda_: Float[t.Tensor, " r *ch"] = t.from_numpy(lambda_np).to(
             dtype=dLdx.dtype, device=dLdx.device
         )
 
@@ -201,7 +201,7 @@ class _SciPySuperLUWrapper(t.autograd.Function):
 
         # dLdA will have the same sparsity pattern as A.
         if lambda_.ndim > 1:
-            # If there is a batch dimension, sum over it.
+            # If there is a channel dimension, sum over it.
             dLdA_val = t.sum(-lambda_[A_coo_idx[0]] * x[A_coo_idx[1]], dim=-1)
         else:
             dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
@@ -215,19 +215,19 @@ class _SciPySuperLUWrapper(t.autograd.Function):
 
 def splu(
     A: Float[t.Tensor, "r c"],
-    b: Float[t.Tensor, "*b r"],
+    b: Float[t.Tensor, "*ch r"],
     *,
     backend: Literal["cupy", "scipy"],
-    batch_first: bool = True,
+    channel_first: bool = True,
     **splu_kwargs,
-) -> Float[t.Tensor, "*b c"]:
+) -> Float[t.Tensor, "*ch c"]:
     """
     This function provides a differentiable wrapper for SuperLU.
 
-    Here, A is a sparse coo tensor and b is a dense tensor with optional batch
-    dimensions. If `batch_first` is `True`, all but the last dimension of `b`
-    is treated as batch dimensions; if `batch_first` is `True`, all but the first
-    dimension of `b` is treated as batch dimensions.
+    Here, A is a sparse coo tensor and b is a dense tensor with optional channel
+    dimensions. If `channel_first` is `True`, all but the last dimension of `b`
+    is treated as channel dimensions; if `channel_first` is `True`, all but the first
+    dimension of `b` is treated as channel dimensions.
 
     If backend is 'cupy', `A` and `b` must be on the CUDA device. If backend is
     'scipy', `A` and `b` will be copied to CPU.
@@ -249,17 +249,17 @@ def splu(
     the solver; this necessitates copying of the index tensor.
     * SuperLU handles the factorization step on the host CPU, regardless of the
     location of `A` and `b`.
-    * The SuperLU solver supports batching of the `b` tensor, but there can only
-    be one batch dimension, and the batch dimension must be the last dimension (
-    i.e., `b` is either of shape `(r,)` or `(r, b)`). Therefore, if the input
-    `b` tensor does not conform to this layout, the function will have to create
-    a reshaped and memory-contiguous copy of `b`. Batching of the `A` tensor is not
-    supported by the solver.
+    * The SuperLU solver supports batching/channel dimensions of the `b` tensor,
+    but there can only be one channel dimension, and the channel dimension must
+    be the last dimension (i.e., `b` is either of shape `(r,)` or `(r, ch)`).
+    Therefore, if the input `b` tensor does not conform to this layout, the function
+    will have to create a reshaped and memory-contiguous copy of `b`. Batching of
+    the `A` tensor is not supported by the solver.
     """
-    requires_reshape = batch_first and b.ndim > 1
+    requires_reshape = channel_first and b.ndim > 1
 
     if requires_reshape:
-        # (*b, r) -> (r, *b_flat)
+        # (*ch, r) -> (r, *ch_flat)
         b_ready = t.movedim(b, -1, 0).reshape(b.shape[-1], -1).contiguous()
     else:
         b_ready = b
@@ -282,7 +282,7 @@ def splu(
             raise ValueError()
 
     if requires_reshape:
-        # (c, *b_flat) -> (*b, c)
+        # (c, *ch_flat) -> (*ch, c)
         x_reshaped = x.transpose(0, 1).reshape(*b.shape[:-1], -1)
     else:
         x_reshaped = x
