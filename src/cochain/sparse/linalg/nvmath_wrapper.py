@@ -287,9 +287,9 @@ def nvmath_direct_solver(
     This function provides a differentiable wrapper for the `nvmath.sparse.advanced.DirectSolver`
     class in `nvmath-python` for solving sparse linear systems of the form `A@x=b`.
 
-    Here, `A` is a coalesced sparse coo tensor and `b` is a dense tensor. The `DirectSolver`
-    class supports batching in `A` and/or `b` tensors. In particular, there are
-    four supported batching configurations:
+    Here, `A` is a coalesced sparse coo tensor and `b` is a dense tensor. The
+    `DirectSolver` class supports batching in `A` and/or `b` tensors. In particular,
+    there are four supported batching configurations:
 
     * No batching in either `A` or `b`; in this case `A` has shape `(r, c)`,
     `b` has shape `(r,)` and the output `x` has shape `(c,)`.
@@ -308,12 +308,17 @@ def nvmath_direct_solver(
     linear systems of the form `A_i@x_ij = b_ij` for matrices `A_i` and vectors
     `x_ij` and `b_ij`, where `i` iterates over `b` and `j` iterates over `ch`.
 
-    Note that, if `b` has more than one dimension, the `DirectSolver` object requires
-    that `b` is "column-major" (i.e., the stride of the `r` dimension must be 1).
-    Therefore, this function expects that `b` is contiguous in memory in the
-    `(*b, *ch, r)` shape, so that it can pass a view `(*b, r, *ch)` to the solver
-    with no copying. Similarly, the solver always returns a "column-major" tensor
-    of shape `(*b, c, *ch)`, where the stride of the `c` dimension is 1.
+    Note that this function does not provide checks on whether the input tensors
+    have the correct batching configurations.
+
+    Note that, if `b` has more than one dimension, the `DirectSolver` object expects
+    the `b` tensor to have the shape `(*b, r, ch)` where the stride of the `r`
+    dimension is 1 (i.e., `b` is "column-major"). Because PyTorch, by default,
+    construct tensors in row-major ordering, we achieve this by ensuring that `b`
+    is contiguous in memory in the `(*b, ch, r)` shape, so that it can pass a view
+    `(*b, r, ch)` to the solver with no copying. Similarly, the solver always returns
+    a "column-major" tensor of shape `(*b, c, ch)`, where the stride of the `c`
+    dimension is 1.
 
     The `options` and `execution` arguments are directly passed to the arguments
     of the same names to the `DirectSolver` constructor. Note that direct control
