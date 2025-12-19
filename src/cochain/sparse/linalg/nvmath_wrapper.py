@@ -36,43 +36,67 @@ if _HAS_NVMATH:
 
 
 def _coalesced_coo_to_int32_csr(
-    idx: Integer[t.LongTensor, "2 nnz"],
+    idx: Integer[t.LongTensor, "sp nnz"],
     val: Float[t.Tensor, " nnz"],
     shape: t.Size,
 ):
     """
+    Convert a sparse coo tensor to a sparse csr tensor with `int32` indices.
     The input tensor must be coalesced.
     """
-    rows, cols = shape
+    if len(shape) == 2:
+        rows, cols = shape
 
-    row_idx = idx[0].to(t.int32)
-    col_idx = idx[1].to(t.int32)
+        row_idx = idx[0].to(t.int32)
+        col_idx = idx[1].to(t.int32)
 
-    # Compress row idx using bincount; minlength=rows accounts for empty rows
-    counts = t.bincount(row_idx, minlength=rows)
+        # Compress row idx using bincount; minlength=rows accounts for empty rows
+        counts = t.bincount(row_idx, minlength=rows)
 
-    crow_indices = t.zeros(rows + 1, dtype=t.int32, device=idx.device)
-    t.cumsum(counts, dim=0, out=crow_indices[1:])
+        crow_idx = t.zeros(rows + 1, dtype=t.int32, device=idx.device)
+        t.cumsum(counts, dim=0, out=crow_idx[1:])
 
-    return t.sparse_csr_tensor(
-        crow_indices,
-        col_idx,
-        val,
-        size=shape,
-    )
+        sp_csr_int32 = t.sparse_csr_tensor(
+            crow_idx,
+            col_idx,
+            val,
+            size=shape,
+        )
+
+        return sp_csr_int32
+
+    else:
+        # If there are batch dim(s), the logic for indexing is more involved; so
+        # we let PyTorch handle the conversion to CSR format, at the cost of creating
+        # intermediate sparse tensors.
+        sp_csr = t.sparse_coo_tensor(idx, val, size=shape).to_sparse_csr()
+
+        sp_csr_int32 = t.sparse_csr_tensor(
+            sp_csr.crow_indices().to(dtype=t.int32),
+            sp_csr.col_indices().to(dtype=t.int32),
+            sp_csr.values(),
+            size=shape,
+        )
+
+        return sp_csr_int32
 
 
-def _transpose_sp_csr(sp_csr: Float[t.Tensor, "r c"]) -> Float[t.Tensor, "c r"]:
+def _transpose_sp_csr(sp_csr: Float[t.Tensor, "*b r c"]) -> Float[t.Tensor, "*b c r"]:
     """
     Compute the transpose of a sparse csr matrix.
     """
     sp_csc = sp_csr.to_sparse_csc()
 
+    if sp_csr.ndim == 2:
+        transposed_size = (sp_csc.size(1), sp_csc.size(0))
+    else:
+        transposed_size = sp_csc.shape[:-2] + (sp_csc.shape[-1], sp_csc.shape[-2])
+
     return t.sparse_csr_tensor(
         crow_indices=sp_csc.ccol_indices(),
         col_indices=sp_csc.row_indices(),
         values=sp_csc.values(),
-        size=(sp_csc.size(1), sp_csc.size(0)),
+        size=transposed_size,
         device=sp_csc.device,
         dtype=sp_csc.dtype,
     )
@@ -242,8 +266,8 @@ def nvmath(
     argument overrides the `options.sparse_system_type` attribute.
 
     If either `A` or `b` requires gradient, then a `DirectSolver` object will be
-    cached in memory; this memory will not be cleaned up until one of the following
-    conditions is met:
+    cached in memory to accelerate the backward pass; this memory will not be
+    cleaned up until one of the following conditions is met:
 
     1) a backward() call with `retain_graph=False` has been made through the
     computation graph containing `A` or `b`, or
@@ -253,7 +277,7 @@ def nvmath(
 
     This function currently has the following limitations:
 
-    * Double backward through this function is not supported.
+    * Double backward through this function is currently not supported.
     * While batching of `A` and/or `b` is supported by `DirectSolver`, it is not
     supported in this function.
     * The sparse indices of `A` will be downcasted to `int32` for compatibility with
