@@ -35,6 +35,7 @@ if _HAS_NVMATH:
     }
 
 
+# TODO: consider caching the csr index tensors for performance
 def _coalesced_coo_to_int32_csr(
     idx: Integer[t.LongTensor, "sp nnz"],
     val: Float[t.Tensor, " nnz"],
@@ -116,7 +117,11 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         sol_config: dict[str, Any],
     ) -> tuple[Float[t.Tensor, "*b c *ch"], AutogradDirectSolver]:
         A_csr = _coalesced_coo_to_int32_csr(A_val, A_coo_idx, A_shape)
-        b_col_major = b.contiguous().transpose(-1, -2)
+
+        if b.ndim > 1:
+            b_col_major = b.contiguous().transpose(-1, -2)
+        else:
+            b_col_major = b
 
         stream = t.cuda.current_stream()
 
@@ -159,7 +164,6 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         ) = inputs
 
         x, solver = output
-        ctx.mark_non_differentiable(solver)
 
         ctx.save_for_backward(A_coo_idx, x)
         ctx.solver = solver
@@ -201,9 +205,12 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         # after solve().
         solver.options.blocking = True
 
-        dLdx_col_major: Float[t.Tensor, "*b c *ch"] = (
-            dLdx.transpose(-1, -2).contiguous().transpose(-1, -2)
-        )
+        if dLdx.ndim > 1:
+            dLdx_col_major: Float[t.Tensor, "*b c *ch"] = (
+                dLdx.transpose(-1, -2).contiguous().transpose(-1, -2)
+            )
+        else:
+            dLdx_col_major = dLdx
 
         if (
             ctx.solver.options.sparse_system_type
