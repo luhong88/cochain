@@ -37,7 +37,7 @@ class _CuPySuperLUWrapper(t.autograd.Function):
 
         # Force CuPy to use the current Pytorch stream.
         stream = t.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device):
+        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.coo_matrix(
                 (
                     cp.from_dlpack(val),
@@ -101,7 +101,7 @@ class _CuPySuperLUWrapper(t.autograd.Function):
             solver: cp_sp_linalg.SuperLU = ctx.solver
 
         stream = t.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device):
+        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             lambda_cp: Float[t.Tensor, " r"] = solver.solve(
                 cp.from_dlpack(dLdx.detach().contiguous()), trans="T"
             )

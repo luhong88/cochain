@@ -4,6 +4,14 @@ from jaxtyping import Float
 
 from cochain.sparse.linalg import splu
 
+itemize_backend = pytest.mark.parametrize(
+    "backend",
+    [
+        pytest.param("scipy", marks=[pytest.mark.cpu_only]),
+        pytest.param("cupy", marks=[pytest.mark.gpu_only]),
+    ],
+)
+
 
 @pytest.fixture
 def A():
@@ -18,48 +26,51 @@ def A():
     return A
 
 
-def test_scipy_forward(A):
-    A_sp = A.coalesce()
+@itemize_backend
+def test_splu_forward(A, backend, device):
+    A_sp = A.coalesce().to(device)
     A_dense = A_sp.to_dense()
 
     n_dim = A_sp.size(0)
 
-    x_true = t.randn(n_dim)
+    x_true = t.randn(n_dim).to(device)
     b = A_dense @ x_true
 
-    x = splu(A_sp, b, backend="scipy")
+    x = splu(A_sp, b, backend=backend)
 
     t.testing.assert_close(x, x_true)
 
 
-def test_scipy_forward_with_channel_dim(A):
-    A_sp = A.coalesce()
+@itemize_backend
+def test_scipy_forward_with_channel_dim(A, backend, device):
+    A_sp = A.coalesce().to(device)
     A_dense = A_sp.to_dense()
 
     n_dim = A_sp.size(0)
     n_ch = 2
 
-    x_true = t.randn(n_dim, n_ch)
+    x_true = t.randn(n_dim, n_ch).to(device)
     b = A_dense @ x_true
 
-    x = splu(A_sp, b, backend="scipy")
-    x_T = splu(A_sp, b.T, backend="scipy", channel_first=True)
+    x = splu(A_sp, b, backend=backend)
+    x_T = splu(A_sp, b.T, backend=backend, channel_first=True)
 
     t.testing.assert_close(x.T, x_T)
     t.testing.assert_close(x, x_true)
 
 
+@itemize_backend
 @pytest.mark.parametrize(
     "n_ch1, n_ch2",
     [(2, 3), (2, 1), (1, 2)],
 )
-def test_scipy_forward_with_complex_channel_dim(A, n_ch1, n_ch2):
-    A_sp = A.coalesce()
+def test_scipy_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device):
+    A_sp = A.coalesce().to(device)
     A_dense = A_sp.to_dense()
 
     n_dim = A_sp.size(0)
 
-    x_true = t.randn(n_dim, n_ch1, n_ch2)
+    x_true = t.randn(n_dim, n_ch1, n_ch2).to(device)
     b = t.einsum("ij,jkl->ikl", A_dense, x_true)
 
     x = splu(A_sp, b, backend="scipy")
@@ -69,13 +80,14 @@ def test_scipy_forward_with_complex_channel_dim(A, n_ch1, n_ch2):
     t.testing.assert_close(x, x_true)
 
 
-def test_scipy_backward(A):
+@itemize_backend
+def test_scipy_backward(A, backend, device):
     """
     Let A@x=b and define the loss function as L = <x, v>. Check that the gradients
     dLdA and dLdb computed through the adjoint method matches the autograd gradients
     from t.linalg.solve() (using dense A).
     """
-    A_sp_no_grad = A.coalesce()
+    A_sp_no_grad = A.coalesce().to(device)
     n_dim = A_sp_no_grad.size(0)
 
     # Extract the val tensor from A, tracks grad, and reassemble A.
@@ -87,8 +99,8 @@ def test_scipy_backward(A):
     A_dense = A_sp_no_grad.to_dense()
 
     # Compute b and v
-    b = t.randn(n_dim)
-    v = t.randn(n_dim)
+    b = t.randn(n_dim).to(device)
+    v = t.randn(n_dim).to(device)
 
     # Compute the dLdA and dLdb gradients via the adjoint method.
     b.requires_grad_()

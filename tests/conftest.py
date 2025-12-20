@@ -55,6 +55,38 @@ def set_rng(session_seed):
     yield
 
 
+def pytest_configure(config):
+    """
+    Add custom 'cpu_only' and 'gpu_only' markers to mark a test as running
+    exclusively on CPU or GPU.
+    """
+    config.addinivalue_line("markers", "cpu_only: mark test to run only on cpu.")
+    config.addinivalue_line("markers", "gpu_only: mark test to run only on gpu.")
+
+
+@pytest.fixture(params=["cpu", "cuda"])
+def device(request) -> t.device:
+    """
+    Set up a device fixture, such that
+
+    * Tests accepting this fixutre will be run on both CPU and GPU (when available),
+    * Tests accepting this fixture but marked as 'cpu_only' will only run on CPU.
+    * Tests accepting this fixture but marked as 'gpu_only' will only run on GPU.
+    """
+    mode = request.param
+
+    if mode == "cuda" and not t.cuda.is_available():
+        pytest.skip("[GPU] Skipping CUDA test: No GPU available.")
+
+    if mode == "cpu" and request.node.get_closest_marker("gpu_only"):
+        pytest.skip()
+
+    if mode == "cuda" and request.node.get_closest_marker("cpu_only"):
+        pytest.skip()
+
+    return t.device(mode)
+
+
 @pytest.fixture
 def two_tris_mesh() -> SimplicialComplex:
     return synthetic_tri_meshes.load_two_tris_mesh()
