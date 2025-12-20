@@ -42,7 +42,7 @@ def test_splu_forward(A, backend, device):
 
 
 @itemize_backend
-def test_scipy_forward_with_channel_dim(A, backend, device):
+def test_splu_forward_with_channel_dim(A, backend, device):
     A_sp = A.coalesce().to(device)
     A_dense = A_sp.to_dense()
 
@@ -64,7 +64,7 @@ def test_scipy_forward_with_channel_dim(A, backend, device):
     "n_ch1, n_ch2",
     [(2, 3), (2, 1), (1, 2)],
 )
-def test_scipy_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device):
+def test_splu_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device):
     A_sp = A.coalesce().to(device)
     A_dense = A_sp.to_dense()
 
@@ -74,14 +74,14 @@ def test_scipy_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device
     b = t.einsum("ij,jkl->ikl", A_dense, x_true)
 
     x = splu(A_sp, b, backend="scipy")
-    x_T = splu(A_sp, b.movedim(0, -1), backend="scipy", channel_first=True)
+    x_T = splu(A_sp, b.movedim(0, -1), backend=backend, channel_first=True)
 
     t.testing.assert_close(x.movedim(0, -1), x_T)
     t.testing.assert_close(x, x_true)
 
 
 @itemize_backend
-def test_scipy_backward(A, backend, device):
+def test_splu_backward(A, backend, device):
     """
     Let A@x=b and define the loss function as L = <x, v>. Check that the gradients
     dLdA and dLdb computed through the adjoint method matches the autograd gradients
@@ -104,7 +104,7 @@ def test_scipy_backward(A, backend, device):
 
     # Compute the dLdA and dLdb gradients via the adjoint method.
     b.requires_grad_()
-    x_via_sp = splu(A_sp, b, backend="scipy")
+    x_via_sp = splu(A_sp, b, backend=backend)
     loss = t.sum(x_via_sp * v)
     loss.backward()
 
