@@ -1,14 +1,28 @@
 import pytest
 import torch as t
+from jaxtyping import Float
 
 from cochain.sparse.linalg import splu
 
 
-def test_scipy_forward():
+@pytest.fixture
+def A():
     n_dim = 4
+    nnz = int(n_dim * n_dim * 0.5)
 
-    A_dense = t.rand(n_dim, n_dim) + t.eye(n_dim) * n_dim
-    A_sp = A_dense.to_sparse_coo().coalesce()
+    idx = t.hstack((t.randint(0, n_dim, (2, nnz)), t.tile(t.arange(n_dim), (2, 1))))
+    val = t.hstack((t.randn(nnz), n_dim * t.ones(n_dim))).to(dtype=t.float)
+
+    A = t.sparse_coo_tensor(idx, val, (n_dim, n_dim))
+
+    return A
+
+
+def test_scipy_forward(A):
+    A_sp = A.coalesce()
+    A_dense = A_sp.to_dense()
+
+    n_dim = A_sp.size(0)
 
     x_true = t.randn(n_dim)
     b = A_dense @ x_true
@@ -18,12 +32,12 @@ def test_scipy_forward():
     t.testing.assert_close(x, x_true)
 
 
-def test_scipy_forward_with_channel_dim():
-    n_dim = 4
-    n_ch = 2
+def test_scipy_forward_with_channel_dim(A):
+    A_sp = A.coalesce()
+    A_dense = A_sp.to_dense()
 
-    A_dense = t.rand(n_dim, n_dim) + t.eye(n_dim) * n_dim
-    A_sp = A_dense.to_sparse_coo().coalesce()
+    n_dim = A_sp.size(0)
+    n_ch = 2
 
     x_true = t.randn(n_dim, n_ch)
     b = A_dense @ x_true
@@ -39,11 +53,11 @@ def test_scipy_forward_with_channel_dim():
     "n_ch1, n_ch2",
     [(2, 3), (2, 1), (1, 2)],
 )
-def test_scipy_forward_with_complex_channel_dim(n_ch1, n_ch2):
-    n_dim = 4
+def test_scipy_forward_with_complex_channel_dim(A, n_ch1, n_ch2):
+    A_sp = A.coalesce()
+    A_dense = A_sp.to_dense()
 
-    A_dense = t.rand(n_dim, n_dim) + t.eye(n_dim) * n_dim
-    A_sp = A_dense.to_sparse_coo().coalesce()
+    n_dim = A_sp.size(0)
 
     x_true = t.randn(n_dim, n_ch1, n_ch2)
     b = t.einsum("ij,jkl->ikl", A_dense, x_true)
@@ -53,3 +67,49 @@ def test_scipy_forward_with_complex_channel_dim(n_ch1, n_ch2):
 
     t.testing.assert_close(x.movedim(0, -1), x_T)
     t.testing.assert_close(x, x_true)
+
+
+def test_scipy_backward(A):
+    """
+    Let A@x=b and define the loss function as L = <x, v>. Check that the gradients
+    dLdA and dLdb computed through the adjoint method matches the autograd gradients
+    from t.linalg.solve() (using dense A).
+    """
+    A_sp_no_grad = A.coalesce()
+    n_dim = A_sp_no_grad.size(0)
+
+    # Extract the val tensor from A, tracks grad, and reassemble A.
+    A_sp_val = A_sp_no_grad.values().detach().clone()
+    A_sp_val.requires_grad_()
+    A_sp_idx = A_sp_no_grad.indices()
+
+    A_sp = t.sparse_coo_tensor(A_sp_idx, A_sp_val, (n_dim, n_dim), is_coalesced=True)
+    A_dense = A_sp_no_grad.to_dense()
+
+    # Compute b and v
+    b = t.randn(n_dim)
+    v = t.randn(n_dim)
+
+    # Compute the dLdA and dLdb gradients via the adjoint method.
+    b.requires_grad_()
+    x_via_sp = splu(A_sp, b, backend="scipy")
+    loss = t.sum(x_via_sp * v)
+    loss.backward()
+
+    A_sp_grad = A_sp_val.grad.detach().clone()
+    b_sp_grad = b.grad.detach().clone()
+
+    # Compute the dLdA and dLdb gradients via autograd using a dense A.
+    b.grad = None  # clear the existing gradient on b
+    A_dense.requires_grad_()
+    x_via_dense = t.linalg.solve(A_dense, b)
+    loss = t.sum(x_via_dense * v)
+    loss.backward()
+
+    # Extract the nonzero elements of dLdA computed using a dense A.
+    A_dense_grad = A_dense.grad[A_sp_idx[0], A_sp_idx[1]].detach().clone()
+    b_dense_grad = b.grad.detach().clone()
+
+    # Assert that the adjoint method gradients agree with autograd.
+    t.testing.assert_close(A_sp_grad, A_dense_grad)
+    t.testing.assert_close(b_sp_grad, b_dense_grad)
