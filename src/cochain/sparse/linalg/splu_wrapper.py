@@ -225,9 +225,9 @@ def splu(
     """
     This function provides a differentiable wrapper for SuperLU.
 
-    Here, A is a sparse coo tensor and b is a dense tensor with optional channel
-    dimensions. If `channel_first` is `True`, all but the last dimension of `b`
-    is treated as channel dimensions; if it is `False`, all but the first
+    Here, A is a coalesced sparse coo tensor and b is a dense tensor with optional
+    channel dimensions. If `channel_first` is `True`, all but the last dimension
+    of `b` is treated as channel dimensions; if it is `False`, all but the first
     dimension of `b` is treated as channel dimensions.
 
     If backend is 'cupy', `A` and `b` must be on the CUDA device. If backend is

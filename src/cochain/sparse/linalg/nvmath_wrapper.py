@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import torch as t
@@ -34,6 +35,28 @@ if _HAS_NVMATH:
         "symmetric": nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
         "SPD": nvmath_sp.DirectSolverMatrixType.SPD,
     }
+
+    @dataclass
+    class DirectSolverConfig:
+        """
+        Encapsulates all nvmath DirectSolver configuration.
+
+        The `options` and `execution` arguments are directly passed to the arguments
+        of the same names to the `DirectSolver` constructor. Note that direct control
+        of stream is not allowed to prevent potential stream mismatch during backward().
+        Finer grained control over the `plan_config`, `factorization_config`, and
+        `solution_config` attributes of the `DirectSolver` is also possible through
+        `plan_kwargs`, `factorization_kwargs`, and `solution_kwargs`; the dicts
+        passed to these arguments should contain specific attributes of `plan_config`,
+        `factorization_config`, and `solution_config` as keys, respectively.
+        """
+
+        options: nvmath_sp.DirectSolverOptions | None = None
+        execution: nvmath_sp.ExecutionCUDA | nvmath_sp.ExecutionHybrid | None = None
+
+        plan_kwargs: dict[str, Any] = field(default_factory=dict)
+        factorization_kwargs: dict[str, Any] = field(default_factory=dict)
+        solution_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
 # TODO: consider caching the csr index tensors for performance
@@ -111,11 +134,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         A_coo_idx: Integer[t.LongTensor, "sp nnz"],
         A_shape: t.Size,
         b: Float[t.Tensor, " r"] | Float[t.Tensor, "*b *ch r"],
-        solver_options: nvmath_sp.DirectSolverOptions | None,
-        exec_space_options: nvmath_sp.ExecutionCUDA | nvmath_sp.ExecutionHybrid | None,
-        plan_config: dict[str, Any],
-        fac_config: dict[str, Any],
-        sol_config: dict[str, Any],
+        config: DirectSolverConfig,
     ) -> tuple[Float[t.Tensor, "*b c *ch"], AutogradDirectSolver]:
         A_csr = _coalesced_coo_to_int32_csr(A_val, A_coo_idx, A_shape)
 
@@ -132,19 +151,19 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         solver = AutogradDirectSolver(
             A_csr,
             b_col_major,
-            options=solver_options,
-            execution=exec_space_options,
+            options=config.options,
+            execution=config.execution,
         )
 
-        for k, v in plan_config.items():
+        for k, v in config.plan_kwargs.items():
             setattr(solver.plan_config, k, v)
         solver.plan(stream=stream)
 
-        for k, v in fac_config.items():
+        for k, v in config.factorization_kwargs.items():
             setattr(solver.factorization_config, k, v)
         solver.factorize(stream=stream)
 
-        for k, v in sol_config.items():
+        for k, v in config.solution_kwargs.items():
             setattr(solver.solution_config, k, v)
         x = solver.solve(stream=stream)
 
@@ -157,11 +176,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             A_coo_idx,
             A_shape,
             b,
-            solver_options,
-            exec_space_options,
-            plan_config,
-            fac_config,
-            sol_config,
+            config,
         ) = inputs
 
         x, solver = output
@@ -180,16 +195,12 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         None,
         Float[t.Tensor, "*b *ch r"] | None,
         None,
-        None,
-        None,
-        None,
-        None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
         needs_grad_b = ctx.needs_input_grad[3]
 
         if not (needs_grad_A_val or needs_grad_b):
-            return (None,) * 9
+            return (None,) * 5
 
         A_coo_idx, x = ctx.saved_tensors
 
@@ -239,7 +250,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         ctx.solver = None
 
         if needs_grad_b and not needs_grad_A_val:
-            return (None, None, None, lambda_, None, None, None, None, None)
+            return (None, None, None, lambda_, None)
 
         # dLdA will have the same sparsity pattern as A.
         if lambda_.ndim > 1:
@@ -268,10 +279,10 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
 
         if needs_grad_A_val and not needs_grad_b:
-            return (dLdA_val, None, None, None, None, None, None, None, None)
+            return (dLdA_val, None, None, None, None)
 
         if needs_grad_A_val and needs_grad_b:
-            return (dLdA_val, None, None, lambda_, None, None, None, None, None)
+            return (dLdA_val, None, None, lambda_, None)
 
 
 def nvmath_direct_solver(
@@ -279,11 +290,7 @@ def nvmath_direct_solver(
     b: Float[t.Tensor, "*b *ch r"],
     *,
     sparse_system_type: Literal["general", "symmetric", "SPD"] = "general",
-    options: nvmath_sp.DirectSolverOptions | None = None,
-    execution: nvmath_sp.ExecutionCUDA | nvmath_sp.ExecutionHybrid | None = None,
-    plan_config: dict[str, Any] | None = None,
-    factorization_config: dict[str, Any] | None = None,
-    solution_config: dict[str, Any] | None = None,
+    config: DirectSolverConfig | None = None,
 ) -> Float[t.Tensor, "*b c *ch"]:
     """
     This function provides a differentiable wrapper for the `nvmath.sparse.advanced.DirectSolver`
@@ -322,20 +329,10 @@ def nvmath_direct_solver(
     a "column-major" tensor of shape `(*b, c, ch)`, where the stride of the `c`
     dimension is 1.
 
-    The `options` and `execution` arguments are directly passed to the arguments
-    of the same names to the `DirectSolver` constructor. Note that direct control
-    of stream is not allowed to prevent potential stream mismatch during backward().
-    Finer grained control over the `plan_config`, `factorization_config`, and
-    `solution_config` attributes of the `DirectSolver` is also possible through
-    arguments of the same name to this function; the dicts passed to these arguments
-    should contain specific attributes of `plan_config`, `factorization_config`,
-    and `solution_config` as keys, respectively.
-
     While it is possible to call the `DirectSolver` using the default config,
     it is recommended to at least specify the `sparse_system_type` argument to
-    exploit the symmetry and spectral properties of `A`. Note that, if both
-    `sparse_system_type` and `options` arguments are specified, the `sparse_system_type`
-    argument overrides the `options.sparse_system_type` attribute.
+    exploit the symmetry and spectral properties of `A`. Note that, `sparse_system_type`
+    will override the `options.sparse_system_type` attribute in the config.
 
     If either `A` or `b` requires gradient, then a `DirectSolver` object will be
     cached in memory to accelerate the backward pass; this memory will not be
@@ -365,30 +362,24 @@ def nvmath_direct_solver(
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backend required.")
 
-    if options is None:
-        options = nvmath_sp.DirectSolverOptions(
+    if config is None:
+        config = DirectSolverConfig()
+
+    if config.options is None:
+        config.options = nvmath_sp.DirectSolverOptions(
             sparse_system_type=sp_literal_to_matrix_type[sparse_system_type]
         )
     else:
-        options.sparse_system_type = sp_literal_to_matrix_type[sparse_system_type]
-
-    if plan_config is None:
-        plan_config = {}
-    if factorization_config is None:
-        factorization_config = {}
-    if solution_config is None:
-        solution_config = {}
+        config.options.sparse_system_type = sp_literal_to_matrix_type[
+            sparse_system_type
+        ]
 
     x, solver = _NvmathDirectSolverWrapper.apply(
         A.values(),
         A.indices(),
         A.shape,
         b,
-        options,
-        execution,
-        plan_config,
-        factorization_config,
-        solution_config,
+        config,
     )
 
     return x
