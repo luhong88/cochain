@@ -1,3 +1,4 @@
+import pytest
 import torch as t
 
 from cochain.sparse.linalg import splu
@@ -34,10 +35,12 @@ def test_scipy_forward_with_channel_dim():
     t.testing.assert_close(x, x_true)
 
 
-def test_scipy_forward_with_complex_channel_dim():
+@pytest.mark.parametrize(
+    "n_ch1, n_ch2",
+    [(2, 3), (2, 1), (1, 2)],
+)
+def test_scipy_forward_with_complex_channel_dim(n_ch1, n_ch2):
     n_dim = 4
-    n_ch1 = 2
-    n_ch2 = 3
 
     A_dense = t.rand(n_dim, n_dim) + t.eye(n_dim) * n_dim
     A_sp = A_dense.to_sparse_coo().coalesce()
