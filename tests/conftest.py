@@ -1,3 +1,6 @@
+import os
+import random
+
 import numpy as np
 import pytest
 import pyvista as pv
@@ -5,6 +8,51 @@ import torch as t
 
 from cochain.complex import SimplicialComplex
 from cochain.datasets import synthetic_tet_meshes, synthetic_tri_meshes
+
+
+def pytest_addoption(parser):
+    """
+    Add a commandline option to specify a global RNG seed.
+    """
+    parser.addoption(
+        "--rng-seed",
+        action="store",
+        default=0,
+        type=int,
+        help="Seed for random number generators. Use -1 for a random seed.",
+    )
+
+
+@pytest.fixture(scope="session")
+def session_seed(request):
+    """
+    Determines the RNG seed for the entire session.
+    """
+    seed_arg = request.config.getoption("--rng-seed")
+
+    if seed_arg == -1:
+        seed = int.from_bytes(os.urandom(4), "big")
+        print(f"\n[RNG] Using Random Session Seed: {seed}")
+    else:
+        seed = seed_arg
+
+    return seed
+
+
+@pytest.fixture(scope="function", autouse=True)
+def set_rng(session_seed):
+    """
+    Resets the RNG state before each test function using the sesion seed. Note that
+    'autouse=True' means this runs automatically for every test.
+    """
+    t.manual_seed(session_seed)
+    np.random.seed(session_seed)
+    random.seed(session_seed)
+
+    if t.cuda.is_available():
+        t.cuda.manual_seed_all(session_seed)
+
+    yield
 
 
 @pytest.fixture
