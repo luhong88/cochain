@@ -7,6 +7,7 @@ import scipy.sparse
 import scipy.sparse.linalg
 import torch as t
 from jaxtyping import Float, Integer
+from torch.autograd.function import once_differentiable
 
 try:
     import cupy as cp
@@ -65,6 +66,7 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         ctx.A_shape = A_shape
 
     @staticmethod
+    @once_differentiable
     def backward(
         ctx, dLdx: Float[t.Tensor, " c *ch"], _
     ) -> tuple[
@@ -155,13 +157,13 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         A_val, A_coo_idx, A_shape, b, splu_kwargs = inputs
 
         x, solver = output
-        ctx.mark_non_differentiable(solver)
 
         ctx.save_for_backward(A_coo_idx, x)
         ctx.solver = solver
         ctx.A_shape = A_shape
 
     @staticmethod
+    @once_differentiable
     def backward(
         ctx, dLdx: Float[t.Tensor, " c *ch"], _
     ) -> tuple[
@@ -214,18 +216,18 @@ class _SciPySuperLUWrapper(t.autograd.Function):
 
 def splu(
     A: Float[t.Tensor, "r c"],
-    b: Float[t.Tensor, "*ch r"],
+    b: Float[t.Tensor, " r *ch"],
     *,
     backend: Literal["cupy", "scipy"],
-    channel_first: bool = True,
+    channel_first: bool = False,
     **splu_kwargs,
-) -> Float[t.Tensor, "*ch c"]:
+) -> Float[t.Tensor, " c *ch"]:
     """
     This function provides a differentiable wrapper for SuperLU.
 
     Here, A is a sparse coo tensor and b is a dense tensor with optional channel
     dimensions. If `channel_first` is `True`, all but the last dimension of `b`
-    is treated as channel dimensions; if `channel_first` is `True`, all but the first
+    is treated as channel dimensions; if it is `False`, all but the first
     dimension of `b` is treated as channel dimensions.
 
     If backend is 'cupy', `A` and `b` must be on the CUDA device. If backend is
@@ -255,13 +257,18 @@ def splu(
     will have to create a reshaped and memory-contiguous copy of `b`. Batching of
     the `A` tensor is not supported by the solver.
     """
-    requires_reshape = channel_first and b.ndim > 1
-
-    if requires_reshape:
-        # (*ch, r) -> (r, *ch_flat)
-        b_ready = t.movedim(b, -1, 0).reshape(b.shape[-1], -1).contiguous()
-    else:
-        b_ready = b
+    match b.ndim:
+        case 1:
+            b_ready = b
+        case 2:
+            b_ready = b.transpose(0, 1).contiguous() if channel_first else b
+        case _:
+            if channel_first:
+                # (*ch, r) -> (r, ch_flat)
+                b_ready = t.movedim(b, -1, 0).reshape(b.shape[-1], -1).contiguous()
+            else:
+                # (r, *ch) -> (r, ch_flat)
+                b_ready = b.reshape(b.shape[0], -1).contiguous()
 
     match backend:
         case "cupy":
@@ -280,10 +287,14 @@ def splu(
         case _:
             raise ValueError()
 
-    if requires_reshape:
-        # (c, *ch_flat) -> (*ch, c)
-        x_reshaped = x.transpose(0, 1).reshape(*b.shape[:-1], -1)
-    else:
+    if x.ndim == 1:
         x_reshaped = x
+    else:
+        if channel_first:
+            # (c, ch_flat) -> (*ch, c)
+            x_reshaped = x.transpose(0, 1).reshape(*b.shape[:-1], -1)
+        else:
+            # (c, ch_flat) -> (c, *ch)
+            x_reshaped = x.reshape(-1, *b.shape[1:])
 
     return x_reshaped

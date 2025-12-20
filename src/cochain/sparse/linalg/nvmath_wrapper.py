@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch as t
 from jaxtyping import Float, Integer
+from torch.autograd.function import once_differentiable
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
@@ -170,6 +171,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         ctx.A_shape = A_shape
 
     @staticmethod
+    @once_differentiable
     def backward(
         ctx, dLdx: Float[t.Tensor, "*b c *ch"], _
     ) -> tuple[
