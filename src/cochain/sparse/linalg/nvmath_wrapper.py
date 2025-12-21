@@ -361,19 +361,15 @@ def nvmath_direct_solver(
     * No batching in `A`, but `b` has a channel dimension `ch`; in this case, `A`
     has shape `(r, c)`, `b` has shape `(ch, r)`, and `x` has shape `(c, ch)`.
 
-    * `A` and `b` has one or more matching batch dimensions `*b`; in this case,
-    `A` has shape `(*b, r, c)`, `b` has shape `(*b, 1, r)`, and `x` has shape
-    `(*b, c, 1)`.
+    * `A` and `b` has one matching batch dimension `b`; in this case, `A` has shape
+    `(b, r, c)`, `b` has shape `(b, 1, r)`, and `x` has shape `(b, c, 1)`.
 
-    * `A` and `b` has one or more matching batch dimensions `*b`, and the `b`
-    tensor has a channel dimension `ch`; in this case, `A` has shape `(*b, r, c)`,
-    `b` has shape `(*b, ch, r)`, and `x` has shape `(*b, c, ch)`. When both `b`
-    and `ch` batch dimensions are "active", the solver effectively solves `b*ch`
-    linear systems of the form `A_i@x_ij = b_ij` for matrices `A_i` and vectors
-    `x_ij` and `b_ij`, where `i` iterates over `b` and `j` iterates over `ch`.
-
-    Note that this function does not provide checks on whether the input tensors
-    have the correct batching configurations.
+    * `A` and `b` has one matching batch dimension `b`, and the `b` tensor has a
+    channel dimension `ch`; in this case, `A` has shape `(b, r, c)`, `b` has shape
+    `(b, ch, r)`, and `x` has shape `(b, c, ch)`. When both `b` and `ch` dimensions
+    are "active", the solver effectively solves `b*ch` linear systems of the form
+    `A_i@x_ij = b_ij` for matrices `A_i` and vectors `x_ij` and `b_ij`, where `i`
+    iterates over `b` and `j` iterates over `ch`.
 
     Note that, if `b` has more than one dimension, the `DirectSolver` object expects
     the `b` tensor to have the shape `(*b, r, ch)` where the stride of the `r`
@@ -403,16 +399,17 @@ def nvmath_direct_solver(
 
     * Double backward through this function is currently not supported.
     * `DirectSolver` also supports explicit batching, where a tensor with a batch
-    dimension is represented as a list of tensors; this "explicit batching" method
-    is not supported in this function.
+    dimension is represented as a list of tensors; this method is not supported
+    in this function.
     * The sparse indices of `A` will be downcasted to `int32` for compatibility with
     the cuDSS backend.
     * If `A` is a general, non-symmetric property, the solver will need to redo
-    the factorization step in backward() for the transposed tensor.
-    * Unlike the SuperLU wrapper, the input `A` tensor must be coalesced. This is
-    because a manual conversion is performed from the coo to the csr format with
-    `int32` index tensors; this step assumes that `A` is coalesced to avoid expensive
-    index sorting steps.
+    the factorization step in backward() for the transposed tensor, because the
+    `DirectSolver` class currently does not expose an option to solve the adjoint
+    system directly.
+    * The `DirectSolver` class supports A as a batched sparse CSR tensor with an
+    arbitrary number of batch dimensions, but this function only supports A with
+    at most one batch dimension.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backend required.")
