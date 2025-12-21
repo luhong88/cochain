@@ -1,3 +1,6 @@
+import os
+import random
+
 import numpy as np
 import pytest
 import pyvista as pv
@@ -5,6 +8,83 @@ import torch as t
 
 from cochain.complex import SimplicialComplex
 from cochain.datasets import synthetic_tet_meshes, synthetic_tri_meshes
+
+
+def pytest_addoption(parser):
+    """
+    Add a commandline option to specify a global RNG seed.
+    """
+    parser.addoption(
+        "--rng-seed",
+        action="store",
+        default=0,
+        type=int,
+        help="Seed for random number generators. Use -1 for a random seed.",
+    )
+
+
+@pytest.fixture(scope="session")
+def session_seed(request):
+    """
+    Determines the RNG seed for the entire session.
+    """
+    seed_arg = request.config.getoption("--rng-seed")
+
+    if seed_arg == -1:
+        seed = int.from_bytes(os.urandom(4), "big")
+        print(f"\n[RNG] Using Random Session Seed: {seed}")
+    else:
+        seed = seed_arg
+
+    return seed
+
+
+@pytest.fixture(scope="function", autouse=True)
+def set_rng(session_seed):
+    """
+    Resets the RNG state before each test function using the sesion seed. Note that
+    'autouse=True' means this runs automatically for every test.
+    """
+    t.manual_seed(session_seed)
+    np.random.seed(session_seed)
+    random.seed(session_seed)
+
+    if t.cuda.is_available():
+        t.cuda.manual_seed_all(session_seed)
+
+    yield
+
+
+def pytest_configure(config):
+    """
+    Add custom 'cpu_only' and 'gpu_only' markers to mark a test as running
+    exclusively on CPU or GPU.
+    """
+    config.addinivalue_line("markers", "cpu_only: mark test to run only on cpu.")
+    config.addinivalue_line("markers", "gpu_only: mark test to run only on gpu.")
+
+
+@pytest.fixture(params=["cpu", "cuda"])
+def device(request) -> t.device:
+    """
+    Set up a device fixture, such that
+
+    * Tests accepting this fixutre will be run on both CPU and GPU (when available),
+    * Tests accepting this fixture but marked as 'cpu_only' will only run on CPU.
+    * Tests accepting this fixture but marked as 'gpu_only' will only run on GPU.
+    """
+    mode = request.param
+
+    if mode == "cuda" and not t.cuda.is_available():
+        pytest.skip("[GPU] Skipping CUDA test: No GPU available.")
+
+    if mode == "cpu" and request.node.get_closest_marker("gpu_only"):
+        pytest.skip()
+
+    if mode == "cuda" and request.node.get_closest_marker("cpu_only"):
+        pytest.skip()
+
+    return t.device(mode)
 
 
 @pytest.fixture

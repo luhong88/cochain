@@ -138,11 +138,9 @@ def test_laplacian_1_orthogonality(
     cc = curl_curl(two_tets_mesh).to_dense()
 
     m = mass(two_tets_mesh).to_dense()
-    m_cho = t.linalg.cholesky(m)
-    inv_m = t.cholesky_inverse(m_cho)
 
-    composition_1 = dg @ inv_m @ cc
-    composition_2 = cc @ inv_m @ dg
+    composition_1 = dg @ t.linalg.solve(m, cc)  # dg @ inv_m @ cc
+    composition_2 = cc @ t.linalg.solve(m, dg)  # cc @ inv_m @ dg
 
     t.testing.assert_close(composition_1, t.zeros_like(composition_1))
     t.testing.assert_close(composition_2, t.zeros_like(composition_2))
@@ -173,16 +171,14 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialComplex):
     """
     l1_div_grad = tet_laplacians.weak_laplacian_1_div_grad(two_tets_mesh)
 
-    d1_T = two_tets_mesh.coboundary_1.transpose(0, 1).coalesce()
+    d1_T = two_tets_mesh.coboundary_1.transpose(0, 1).coalesce().to_dense()
 
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
-    m1_cho = t.linalg.cholesky(m1)
-    inv_m1 = t.cholesky_inverse(m1_cho)
 
     x2 = t.arange(two_tets_mesh.n_tris).to(
         dtype=t.float, device=two_tets_mesh.vert_coords.device
     )
-    x1_div_free = inv_m1 @ d1_T @ x2
+    x1_div_free = t.linalg.solve(m1, d1_T) @ x2  # inv_m1 @ d1_T @ x2
 
     x1_zero = (l1_div_grad @ x1_div_free).to_dense()
 
@@ -216,16 +212,14 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialComplex):
         two_tets_mesh, method="dense"
     )
 
-    d2_T = two_tets_mesh.coboundary_2.transpose(0, 1).coalesce()
+    d2_T = two_tets_mesh.coboundary_2.transpose(0, 1).coalesce().to_dense()
 
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
-    m2_cho = t.linalg.cholesky(m2)
-    inv_m2 = t.cholesky_inverse(m2_cho)
 
     x3 = t.arange(two_tets_mesh.n_tets).to(
         dtype=t.float, device=two_tets_mesh.vert_coords.device
     )
-    x2_div_free = inv_m2 @ d2_T @ x3
+    x2_div_free = t.linalg.solve(m2, d2_T) @ x3  # inv_m2 @ d2_T @ x3
 
     x2_zero = (l2_div_grad @ x2_div_free).to_dense()
 
@@ -267,15 +261,12 @@ def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialComplex):
     with respect to the mass matrix-weighted inner product.
     """
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
-    m1_cho = t.linalg.cholesky(m1)
-    inv_m1 = t.cholesky_inverse(m1_cho)
-
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
 
-    d1 = two_tets_mesh.coboundary_1
-    d1_T = d1.transpose(0, 1).coalesce()
+    d1 = two_tets_mesh.coboundary_1.to_dense()
+    d1_T = d1.transpose(0, 1)
 
-    codiff_2 = inv_m1 @ d1_T @ m2
+    codiff_2 = t.linalg.solve(m1, d1_T) @ m2  # inv_m1 @ d1_T @ m2
 
     x1 = t.arange(two_tets_mesh.n_edges).to(
         dtype=t.float, device=two_tets_mesh.vert_coords.device
@@ -296,15 +287,12 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialComplex):
     with respect to the mass matrix-weighted inner product.
     """
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
-    m2_cho = t.linalg.cholesky(m2)
-    inv_m2 = t.cholesky_inverse(m2_cho)
-
     m3 = t.diagflat(tet_masses.mass_3(two_tets_mesh))
 
-    d2 = two_tets_mesh.coboundary_2
-    d2_T = d2.transpose(0, 1).coalesce()
+    d2 = two_tets_mesh.coboundary_2.to_dense()
+    d2_T = d2.transpose(0, 1)
 
-    codiff_3 = inv_m2 @ d2_T @ m3
+    codiff_3 = t.linalg.solve(m2, d2_T) @ m3  # inv_m2 @ d2_T @ m3
 
     x2 = t.arange(two_tets_mesh.n_tris).to(
         dtype=t.float, device=two_tets_mesh.vert_coords.device
