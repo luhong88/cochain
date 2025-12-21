@@ -383,7 +383,7 @@ def nvmath_direct_solver(
     While it is possible to call the `DirectSolver` using the default config,
     it is recommended to at least specify the `sparse_system_type` argument to
     exploit the symmetry and spectral properties of `A`. Note that, `sparse_system_type`
-    will override the `options.sparse_system_type` attribute in the config.
+    will override the `options.sparse_system_type` attribute in the `config`.
 
     If either `A` or `b` requires gradient, then a `DirectSolver` object will be
     cached in memory to accelerate the backward pass; this memory will not be
@@ -401,15 +401,15 @@ def nvmath_direct_solver(
     * `DirectSolver` also supports explicit batching, where a tensor with a batch
     dimension is represented as a list of tensors; this method is not supported
     in this function.
+    * The `DirectSolver` class supports `A` as a batched sparse CSR tensor with an
+    arbitrary number of batch dimensions, but this function only supports A with
+    at most one batch dimension.
     * The sparse indices of `A` will be downcasted to `int32` for compatibility with
     the cuDSS backend.
     * If `A` is a general, non-symmetric property, the solver will need to redo
     the factorization step in backward() for the transposed tensor, because the
     `DirectSolver` class currently does not expose an option to solve the adjoint
     system directly.
-    * The `DirectSolver` class supports A as a batched sparse CSR tensor with an
-    arbitrary number of batch dimensions, but this function only supports A with
-    at most one batch dimension.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backend required.")
