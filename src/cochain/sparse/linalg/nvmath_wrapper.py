@@ -340,6 +340,8 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             return (dLdA_val, None, None, lambda_, None)
 
 
+# TODO: cache CCO -> CSR mapping
+# TODO: cache solver for each sparsity pattern
 def nvmath_direct_solver(
     A: Float[t.Tensor, "*b r c"],
     b: Float[t.Tensor, "*b *ch r"],

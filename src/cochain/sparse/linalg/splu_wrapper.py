@@ -214,6 +214,8 @@ class _SciPySuperLUWrapper(t.autograd.Function):
             return (dLdA_val, None, None, lambda_, None)
 
 
+# TODO: cache COO -> CSC mapping
+# TODO: cache column permutation
 def splu(
     A: Float[t.Tensor, "r c"],
     b: Float[t.Tensor, " r *ch"],
