@@ -13,22 +13,9 @@ itemize_backend = pytest.mark.parametrize(
 )
 
 
-@pytest.fixture
-def A():
-    n_dim = 4
-    nnz = int(n_dim * n_dim * 0.5)
-
-    idx = t.hstack((t.randint(0, n_dim, (2, nnz)), t.tile(t.arange(n_dim), (2, 1))))
-    val = t.hstack((t.randn(nnz), n_dim * t.ones(n_dim))).to(dtype=t.float)
-
-    A = t.sparse_coo_tensor(idx, val, (n_dim, n_dim))
-
-    return A
-
-
 @itemize_backend
 def test_splu_forward(A, backend, device):
-    A_sp = A.coalesce().to(device)
+    A_sp = A.to(device)
     A_dense = A_sp.to_dense()
 
     n_dim = A_sp.size(0)
@@ -43,7 +30,7 @@ def test_splu_forward(A, backend, device):
 
 @itemize_backend
 def test_splu_forward_with_channel_dim(A, backend, device):
-    A_sp = A.coalesce().to(device)
+    A_sp = A.to(device)
     A_dense = A_sp.to_dense()
 
     n_dim = A_sp.size(0)
@@ -65,7 +52,7 @@ def test_splu_forward_with_channel_dim(A, backend, device):
     [(2, 3), (2, 1), (1, 2)],
 )
 def test_splu_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device):
-    A_sp = A.coalesce().to(device)
+    A_sp = A.to(device)
     A_dense = A_sp.to_dense()
 
     n_dim = A_sp.size(0)
@@ -87,7 +74,7 @@ def test_splu_backward(A, backend, device):
     dLdA and dLdb computed through the adjoint method matches the autograd gradients
     from t.linalg.solve() (using dense A).
     """
-    A_sp_no_grad = A.coalesce().to(device)
+    A_sp_no_grad = A.to(device)
     n_dim = A_sp_no_grad.size(0)
 
     # Extract the val tensor from A, tracks grad, and reassemble A.

@@ -64,46 +64,101 @@ def _coalesced_coo_to_int32_csr(
     idx: Integer[t.LongTensor, "sp nnz"],
     val: Float[t.Tensor, " nnz"],
     shape: t.Size,
+    strict_batch_nnz_check: bool = False,
 ):
     """
-    Convert a sparse coo tensor to a sparse csr tensor with `int32` indices.
-    The input tensor must be coalesced.
+    Convert a coalesced, sparse coo tensor to a csr tensor with `int32` indices.
+
+    Caveats:
+    * Batching is supported, but only if there is a single batch dimension; i.e.,
+    the input sparse coo tensor must either be of shape (r, c) or (b, r, c).
+    * Although torch supports batched CSR format, it requires that all tensors
+    in the batch have the same number of nonzero elements. This function will
+    throw a ValueError() if this condition is not met.
     """
-    if len(shape) == 2:
-        rows, cols = shape
+    match len(shape):
+        case 1:
+            raise ValueError(
+                "The input sparse coo tensor must have at least two sparse dimensions."
+            )
 
-        row_idx = idx[0].to(t.int32)
-        col_idx = idx[1].to(t.int32)
+        case 2:
+            rows, cols = shape
 
-        # Compress row idx using bincount; minlength=rows accounts for empty rows
-        counts = t.bincount(row_idx, minlength=rows)
+            row_idx = idx[0].to(t.int32)
+            col_idx = idx[1].to(t.int32)
 
-        crow_idx = t.zeros(rows + 1, dtype=t.int32, device=idx.device)
-        t.cumsum(counts, dim=0, out=crow_idx[1:])
+            # Compress row idx using bincount; minlength=rows accounts for empty rows
+            counts = t.bincount(row_idx, minlength=rows)
 
-        sp_csr_int32 = t.sparse_csr_tensor(
-            crow_idx,
-            col_idx,
-            val,
-            size=shape,
-        )
+            crow_idx = t.zeros(rows + 1, dtype=t.int32, device=idx.device)
+            t.cumsum(counts, dim=0, out=crow_idx[1:])
 
-        return sp_csr_int32
+            sp_csr_int32 = t.sparse_csr_tensor(
+                crow_idx,
+                col_idx,
+                val,
+                size=shape,
+            )
 
-    else:
-        # If there are batch dim(s), the logic for indexing is more involved; so
-        # we let PyTorch handle the conversion to CSR format, at the cost of creating
-        # intermediate sparse tensors.
-        sp_csr = t.sparse_coo_tensor(idx, val, size=shape).to_sparse_csr()
+            return sp_csr_int32
 
-        sp_csr_int32 = t.sparse_csr_tensor(
-            sp_csr.crow_indices().to(dtype=t.int32),
-            sp_csr.col_indices().to(dtype=t.int32),
-            sp_csr.values(),
-            size=shape,
-        )
+        case 3:
+            batch, row, col = shape
+            nnz = val.shape[0]
 
-        return sp_csr_int32
+            # If the input tensor has equal nnz along the batch dimension, then
+            # the nnz per tensor in the batch is given by nnz // batch.
+            if nnz % batch != 0:
+                raise ValueError(
+                    f"Total nnz ({nnz}) is not divisible by batch size ({batch})."
+                )
+
+            nnz_per_batch = nnz // batch
+
+            # It is possible for a tensor to have non-equal nnz along the batch
+            # dimension but still satisfies nnz % batch = 0 (e.g., if the first
+            # tensor has 6 nnz, while the second has 2). This optional (but somewhat
+            # expensive) check rules out this possibility.
+            if strict_batch_nnz_check:
+                batch_idx = idx[0]
+                batch_counts = t.bincount(batch_idx, minlength=batch)
+                if not (batch_counts == nnz_per_batch).all():
+                    raise ValueError("Batched CSR requires equal nnz per batch item.")
+
+            row_idx_batched = idx[1].view(batch, nnz_per_batch).to(dtype=t.int32)
+
+            # Compute histogram of row counts per batch. The scatter_add_() function
+            # effectively counts how many times the k-th row idx shows up per batch,
+            # and then put this count in the k-th position. The +1 is needed to
+            # account for the fact that compressed row idx always starts at 0. The
+            # cumsum() converts the row counts to compressed row idx.
+            counts = t.zeros(batch, row + 1, dtype=t.int32, device=val.device)
+            ones = t.tensor(1, dtype=t.int32, device=val.device).expand_as(
+                row_idx_batched
+            )
+            counts.scatter_add_(1, row_idx_batched + 1, ones)
+            crow_idx = counts.cumsum(dim=1, dtype=t.int32).contiguous()
+
+            col_idx_batched = (
+                idx[2].view(batch, nnz_per_batch).to(dtype=t.int32).contiguous()
+            )
+
+            csr_val = val.view(batch, nnz_per_batch).contiguous()
+
+            sp_csr_int32 = t.sparse_csr_tensor(
+                crow_idx,
+                col_idx_batched,
+                csr_val,
+                size=shape,
+            )
+
+            return sp_csr_int32
+
+        case _:
+            raise NotImplementedError(
+                "More than one batch dimensions is not supported."
+            )
 
 
 def _transpose_sp_csr(sp_csr: Float[t.Tensor, "*b r c"]) -> Float[t.Tensor, "*b c r"]:
@@ -136,7 +191,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         b: Float[t.Tensor, " r"] | Float[t.Tensor, "*b *ch r"],
         config: DirectSolverConfig,
     ) -> tuple[Float[t.Tensor, "*b c *ch"], AutogradDirectSolver]:
-        A_csr = _coalesced_coo_to_int32_csr(A_val, A_coo_idx, A_shape)
+        A_csr = _coalesced_coo_to_int32_csr(A_coo_idx, A_val, A_shape)
 
         if b.ndim > 1:
             b_col_major = b.contiguous().transpose(-1, -2)
@@ -214,16 +269,16 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
 
         stream = t.cuda.current_stream()
 
-        # force blocking operation to make it memory-safe to call free() immediately
-        # after solve().
-        solver.options.blocking = True
-
         if dLdx.ndim > 1:
             dLdx_col_major: Float[t.Tensor, "*b c *ch"] = (
                 dLdx.transpose(-1, -2).contiguous().transpose(-1, -2)
             )
         else:
             dLdx_col_major = dLdx
+
+        # force blocking operation to make it memory-safe to call free() immediately
+        # after solve().
+        solver.options.blocking = True
 
         if (
             ctx.solver.options.sparse_system_type
