@@ -9,6 +9,7 @@ from torch.autograd.function import once_differentiable
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
+    from cuda.core.experimental import Device
 
     _HAS_NVMATH = True
 except ImportError:
@@ -16,6 +17,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     import nvmath.sparse.advanced as nvmath_sp
+    from cuda.core.experimental import Device
 
 
 if _HAS_NVMATH:
@@ -257,8 +259,6 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         if not (needs_grad_A_val or needs_grad_b):
             return (None,) * 5
 
-        A_coo_idx, x = ctx.saved_tensors
-
         if ctx.solver is None:
             raise RuntimeError(
                 "Solver was released. Calling backward() twice with retain_graph=True "
@@ -266,6 +266,16 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             )
         else:
             solver: AutogradDirectSolver = ctx.solver
+
+        A_coo_idx, x = ctx.saved_tensors
+
+        if x.is_cuda:
+            # torch calls backward() on a separate thread where nvmath's internal
+            # cuda state is uninitialized. We must explicitly call Device(id).set_current()
+            # to bind the active CUDA context to this thread's local state, ensuring
+            # nvmath operations recognize the device.
+            t.cuda.set_device(x.device)
+            Device(x.device.index).set_current()
 
         stream = t.cuda.current_stream()
 
@@ -289,7 +299,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             # Since the LHS is updated, we need to redo the plan() and factorize()
             # steps. Note that, currently, the DirectSolver class does not expose
             # a transpose mode option.
-            A_t = _transpose_sp_csr(solver.a)
+            A_t = _transpose_sp_csr(solver.a.tensor)
             solver.reset_operands(a=A_t, b=dLdx_col_major, stream=stream)
             solver.plan(stream=stream)
             solver.factorize(stream=stream)
