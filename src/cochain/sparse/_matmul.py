@@ -189,7 +189,7 @@ class _FixedTopoSpSpMM(t.autograd.Function):
         dLdC_val: Float[t.Tensor, " c_nnz"],
         _3,
     ) -> tuple[
-        Float[t.Tensor, " a_nnz"] | None, None, Float[t.Tensor, " b_nnz"] | None
+        Float[t.Tensor, " a_nnz"] | None, None, Float[t.Tensor, " b_nnz"] | None, None
     ]:
         a_val, b_val, c_crow_idx, c_col_idx = ctx.saved_tensors
 
@@ -380,7 +380,7 @@ def sp_dense_mm(
     a_sp_topo: Integer[SparseTopology, "i j"],
     b_dense: Float[t.Tensor, "j k"],
 ) -> Float[t.Tensor, "i k"]:
-    return _FixedTopoSpDenseMM(a_val, a_sp_topo, b_dense)
+    return _FixedTopoSpDenseMM.apply(a_val, a_sp_topo, b_dense)
 
 
 def dense_sp_mm(
@@ -388,7 +388,7 @@ def dense_sp_mm(
     a_sp_topo: Integer[SparseTopology, "j k"],
     b_dense: Float[t.Tensor, "i j"],
 ) -> Float[t.Tensor, "i k"]:
-    return _FixedTopoDenseSpMM(a_val, a_sp_topo, b_dense)
+    return _FixedTopoDenseSpMM.apply(a_val, a_sp_topo, b_dense)
 
 
 def sp_sp_mm(
@@ -402,7 +402,7 @@ def sp_sp_mm(
     Float[t.Tensor, " c_nnz"],
     t.Size,
 ]:
-    return _FixedTopoSpSpMM(a_val, a_sp_topo, b_val, b_sp_topo)
+    return _FixedTopoSpSpMM.apply(a_val, a_sp_topo, b_val, b_sp_topo)
 
 
 def sp_mv(
@@ -410,7 +410,7 @@ def sp_mv(
     a_sp_topo: Integer[SparseTopology, "i j"],
     b_dense: Float[t.Tensor, " j"],
 ) -> Float[t.Tensor, " i"]:
-    return _FixedTopoSpMV(a_val, a_sp_topo, b_dense)
+    return _FixedTopoSpMV.apply(a_val, a_sp_topo, b_dense)
 
 
 def sp_vm(
@@ -418,4 +418,4 @@ def sp_vm(
     a_sp_topo: Integer[SparseTopology, "i j"],
     b_dense: Float[t.Tensor, " i"],
 ) -> Float[t.Tensor, " j"]:
-    return _FixedTopoSpVM(a_val, a_sp_topo, b_dense)
+    return _FixedTopoSpVM.apply(a_val, a_sp_topo, b_dense)

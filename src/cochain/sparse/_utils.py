@@ -1,7 +1,7 @@
 from typing import Literal
 
 import torch as t
-from jaxtyping import Bool, Float, Integer
+from jaxtyping import Float, Integer
 
 
 def validate_coo_idx_shape(
@@ -96,7 +96,7 @@ def coalesced_coo_to_compressed_idx(
             crow_idx = t.zeros(n_row + 1, dtype=dtype, device=device)
             t.cumsum(counts, dim=0, out=crow_idx[1:])
 
-            return crow_idx
+            return crow_idx.contiguous()
 
         case 3:
             n_row = shape[target_idx]
@@ -118,7 +118,7 @@ def coalesced_coo_to_compressed_idx(
             counts.scatter_add_(1, row_idx_batched + 1, ones)
             crow_idx = counts.cumsum(dim=1, dtype=dtype)
 
-            return crow_idx
+            return crow_idx.contiguous()
 
 
 def coalesced_coo_to_col_idx(
@@ -133,7 +133,7 @@ def coalesced_coo_to_col_idx(
     match len(shape):
         case 2:
             col_idx = coo_idx[1].to(dtype)
-            return col_idx
+            return col_idx.contiguous()
 
         case 3:
             n_batch = shape[0]
@@ -142,7 +142,7 @@ def coalesced_coo_to_col_idx(
 
             col_idx_batched = coo_idx[2].view(n_batch, nnz_per_batch).to(dtype=dtype)
 
-            return col_idx_batched
+            return col_idx_batched.contiguous()
 
 
 def get_csc_sort_perm(
@@ -159,7 +159,7 @@ def get_csc_sort_perm(
             # stable=True to preserve the existing row ordering in the same col.
             perm = t.argsort(col_idx, dim=0, stable=True)
 
-            return perm
+            return perm.contiguous()
 
         case 3:
             n_batch = shape[0]
@@ -179,7 +179,7 @@ def get_csc_sort_perm(
 
             perm = (perm_per_batch + batch_offset).view(-1)
 
-            return perm
+            return perm.contiguous()
 
 
 def coalesced_coo_to_row_idx(
@@ -194,7 +194,7 @@ def coalesced_coo_to_row_idx(
 
     match len(shape):
         case 2:
-            return coo_idx[0][perm].to(dtype)
+            return coo_idx[0][perm].to(dtype).contiguous()
 
         case 3:
             n_batch = shape[0]
@@ -203,7 +203,7 @@ def coalesced_coo_to_row_idx(
 
             row_idx_sorted = coo_idx[1][perm].view(n_batch, nnz_per_batch).to(dtype)
 
-            return row_idx_sorted
+            return row_idx_sorted.contiguous()
 
 
 # TODO: depreciate
@@ -308,6 +308,7 @@ def coalesced_coo_to_int32_csr(
             )
 
 
+# TODO: depreciate
 def transpose_sp_csr(sp_csr: Float[t.Tensor, "*b r c"]) -> Float[t.Tensor, "*b c r"]:
     """
     Compute the transpose of a sparse csr matrix.
@@ -377,4 +378,4 @@ def project_and_extract_cnz_vals(
         t.tensor(0.0, dtype=src_val.dtype, device=src_val.device),
     )
 
-    return cnz_src_val
+    return cnz_src_val.contiguous()

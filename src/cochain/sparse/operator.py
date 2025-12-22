@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import cached_property
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -10,7 +9,6 @@ from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._sp_topo import SparseTopology
 
 
-# TODO: check handling of contiguous memory
 @dataclass
 class SparseOperator:
     val: Float[t.Tensor, " nnz *d"]
@@ -22,6 +20,9 @@ class SparseOperator:
 
         if self.val.size(0) != self.sp_topo._nnz():
             raise ValueError("nnz mismatch between 'val' and 'sp_topo'.")
+
+        # Enforce contiguous memory layout.
+        self.val = self.val.contiguous()
 
     @property
     def shape(self) -> t.Size:
@@ -64,8 +65,18 @@ class SparseOperator:
         """
         Implement self @ other
         """
+        if self.n_batch_dim > 0:
+            raise NotImplementedError(
+                "__matmul__ with batched SparseOperator is not supported."
+            )
+
         match other:
             case SparseOperator():
+                if other.n_batch_dim > 0:
+                    raise NotImplementedError(
+                        "__matmul__ with batched SparseOperator is not supported."
+                    )
+
                 return sp_sp_mm(self.val, self.sp_topo, other.val, other.sp_topo)
 
             case t.Tensor():
@@ -75,7 +86,9 @@ class SparseOperator:
                     case 2:
                         return sp_dense_mm(self.val, self.sp_topo, other)
                     case _:
-                        raise NotImplementedError()
+                        raise NotImplementedError(
+                            "__matmul__ with batched tensor is not supported."
+                        )
 
             case _:
                 raise ValueError()
@@ -84,8 +97,18 @@ class SparseOperator:
         """
         Implement other @ self
         """
+        if self.n_batch_dim > 0:
+            raise NotImplementedError(
+                "__matmul__ with batched SparseOperator is not supported."
+            )
+
         match other:
             case SparseOperator():
+                if other.n_batch_dim > 0:
+                    raise NotImplementedError(
+                        "__matmul__ with batched SparseOperator is not supported."
+                    )
+
                 return sp_sp_mm(
                     other.val,
                     other.sp_topo,
@@ -100,12 +123,14 @@ class SparseOperator:
                     case 2:
                         return dense_sp_mm(self.val, self.sp_topo, other)
                     case _:
-                        raise NotImplementedError()
+                        raise NotImplementedError(
+                            "__matmul__ with batched tensor is not supported."
+                        )
 
             case _:
                 raise ValueError()
 
-    def to_sparse_coo(self):
+    def to_sparse_coo(self) -> Float[t.Tensor, "*b r c *d"]:
         return t.sparse_coo_tensor(
             self.sp_topo.idx_coo,
             self.val,
@@ -114,7 +139,7 @@ class SparseOperator:
             device=self.device,
         )
 
-    def to_sparse_csr(self, int32: bool = False):
+    def to_sparse_csr(self, int32: bool = False) -> Float[t.Tensor, "*b r c *d"]:
         if int32:
             idx_crow = self.sp_topo.idx_crow_int32
             idx_col = self.sp_topo.idx_col_int32
@@ -131,7 +156,7 @@ class SparseOperator:
             device=self.device,
         )
 
-    def to_sparse_csc(self, int32: bool = False):
+    def to_sparse_csc(self, int32: bool = False) -> Float[t.Tensor, "*b r c *d"]:
         if int32:
             idx_ccol = self.sp_topo.idx_ccol_int32
             idx_row = self.sp_topo.idx_row_int32
@@ -147,3 +172,18 @@ class SparseOperator:
             dtype=self.dtype,
             device=self.device,
         )
+
+    def to_dense(self) -> Float[t.Tensor, "*b r c *d"]:
+        return self.to_sparse_coo().to_dense()
+
+    def to(self, *args, **kwargs) -> SparseOperator:
+        new_val = self.val.to(*args, **kwargs)
+
+        # The topology object ignores dtype
+        new_sp_topo = self.sp_topo.to(
+            device=new_val.device,
+            copy=kwargs.get("copy", False),
+            non_blocking=kwargs.get("non_blocking", False),
+        )
+
+        return SparseOperator(new_val, new_sp_topo)

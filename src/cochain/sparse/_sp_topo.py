@@ -29,6 +29,9 @@ class SparseTopology:
     def __post_init__(self):
         validate_coo_idx_shape(self.idx_coo, self.shape)
 
+        # Enforce contiguous memory layout.
+        object.__setattr__(self, "_idx_coo", self._idx_coo.contiguous())
+
     @property
     def idx_coo(self) -> Integer[t.LongTensor, "sp nnz"]:
         return self._idx_coo
@@ -57,8 +60,13 @@ class SparseTopology:
         """
         Use cache injection to preserve cached_property for transpose.
         """
-        idx_coo_trans = self.idx_coo.transpose(-1, -2)[:, self.coo_to_csc_perm]
-        shape_trans = self.shape[::-1]
+        idx_coo_sorted = self.idx_coo[:, self.coo_to_csc_perm]
+
+        idx_coo_trans = idx_coo_sorted.clone()
+        idx_coo_trans[-1] = idx_coo_sorted[-2]
+        idx_coo_trans[-2] = idx_coo_sorted[-1]
+
+        shape_trans = self.shape[:-2] + (self.shape[-1], self.shape[-2])
 
         sp_topo_trans = SparseTopology(idx_coo_trans, shape_trans)
 
@@ -75,7 +83,9 @@ class SparseTopology:
 
         for attr, attr_trans in attr_map.items():
             if attr in self.__dict__:
-                sp_topo_trans.__dict__[attr_trans] = self.__dict_[attr]
+                sp_topo_trans.__dict__[attr_trans] = self.__dict__[attr]
+
+        return sp_topo_trans
 
     @cached_property
     def coo_to_csc_perm(self) -> Integer[t.LongTensor, " nnz"]:
@@ -123,4 +133,54 @@ class SparseTopology:
         return self.idx_coo.size(1)
 
     def to(self, *args, **kwargs) -> SparseTopology:
-        return SparseTopology(self.idx_coo.to(*args, **kwargs), self.shape)
+        # idx_coo respect all to() arguments, including dtype, device, non_blocking,
+        # copy, and memory_format.
+        new_idx_coo = self.idx_coo.to(*args, **kwargs)
+        new_sp_topo = SparseTopology(new_idx_coo, self.shape)
+
+        # Handle the cached index tensors. Extract the device and dtype arguments
+        # from the new_idx_coo, and get the non_blocking and copy arguments from
+        # kwargs. Ignores the memory_format argument, since index tensors will
+        # always be contiguous.
+        target_device = new_idx_coo.device
+        target_dtype = new_idx_coo.dtype
+
+        # Forbid conversion to (most) non-int dtypes.
+        if target_dtype.is_floating_point or target_dtype.is_complex:
+            raise ValueError("SparseTopology indices cannot be float or complex.")
+
+        cache_kwargs = {
+            "non_blocking": kwargs.get("non_blocking", False),
+            "copy": kwargs.get("copy", False),
+        }
+
+        # All cached index tensors respect the dtype, device, non_blocking, and
+        # copy argument, but the coo_to_csc_perm and *_int32 tensors will ignore
+        # the dtype argument.
+        cached_attrs_dtype_covariant = [
+            "idx_ccol",
+            "idx_crow",
+            "idx_col",
+            "idx_row",
+        ]
+        cached_attrs_dtype_invariant = [
+            "coo_to_csc_perm",
+            "idx_ccol_int32",
+            "idx_crow_int32",
+            "idx_col_int32",
+            "idx_row_int32",
+        ]
+
+        for attr in cached_attrs_dtype_covariant:
+            if attr in self.__dict__:
+                new_sp_topo.__dict__[attr] = self.__dict__[attr].to(
+                    dtype=target_dtype, device=target_device, **cache_kwargs
+                )
+
+        for attr in cached_attrs_dtype_invariant:
+            if attr in self.__dict__:
+                new_sp_topo.__dict__[attr] = self.__dict__[attr].to(
+                    device=target_device, **cache_kwargs
+                )
+
+        return new_sp_topo
