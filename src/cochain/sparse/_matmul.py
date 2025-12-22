@@ -1,8 +1,8 @@
 import torch as t
 from jaxtyping import Float, Integer
 
+from ._index import project_and_extract_cnz_vals
 from ._sp_topo import SparseTopology
-from ._utils import project_and_extract_cnz_vals
 
 
 class _FixedTopoSpDenseMM(t.autograd.Function):

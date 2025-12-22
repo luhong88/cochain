@@ -6,7 +6,7 @@ from functools import cached_property
 import torch as t
 from jaxtyping import Integer
 
-from ._utils import (
+from ._index import (
     coalesced_coo_to_col_idx,
     coalesced_coo_to_compressed_idx,
     coalesced_coo_to_row_idx,
