@@ -6,7 +6,7 @@ from functools import cached_property
 import torch as t
 from jaxtyping import Float, Integer
 
-from ._matmul import sp_dense_mm, sp_mv, sp_sp_mm
+from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._sp_topo import SparseTopology
 
 
@@ -54,16 +54,44 @@ class SparseOperator:
         return self.sp_topo._nnz()
 
     def __matmul__(self, other):
+        """
+        Implement self @ other
+        """
         match other:
             case SparseOperator():
-                return sp_sp_mm(self, other)
+                return sp_sp_mm(self.val, self.sp_topo, other.val, other.sp_topo)
 
             case t.Tensor():
                 match other.ndim:
                     case 1:
-                        return sp_mv(self, other)
+                        return sp_mv(self.val, self.sp_topo, other)
                     case 2:
-                        return sp_dense_mm(self, other)
+                        return sp_dense_mm(self.val, self.sp_topo, other)
+                    case _:
+                        raise NotImplementedError()
+
+            case _:
+                raise ValueError()
+
+    def __rmatmul__(self, other):
+        """
+        Implement other @ self
+        """
+        match other:
+            case SparseOperator():
+                return sp_sp_mm(
+                    other.val,
+                    other.sp_topo,
+                    self.val,
+                    self.sp_topo,
+                )
+
+            case t.Tensor():
+                match other.ndim:
+                    case 1:
+                        return sp_vm(self.val, self.sp_topo, other)
+                    case 2:
+                        return dense_sp_mm(self.val, self.sp_topo, other)
                     case _:
                         raise NotImplementedError()
 
