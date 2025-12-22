@@ -9,6 +9,41 @@ from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._sp_topo import SparseTopology
 
 
+def _validate_matmul_args(self: SparseOperator, other: SparseOperator | t.Tensor):
+    if self.n_batch_dim > 0:
+        raise NotImplementedError(
+            "__matmul__ with batched SparseOperator is not supported."
+        )
+
+    if self.n_dense_dim > 0:
+        raise NotImplementedError(
+            "__matmul__ with sparse hybrid SparseOperator is not supported."
+        )
+
+    match other:
+        case SparseOperator():
+            if other.n_batch_dim > 0:
+                raise NotImplementedError(
+                    "__matmul__ with batched SparseOperator is not supported."
+                )
+
+            if other.n_dense_dim > 0:
+                raise NotImplementedError(
+                    "__matmul__ with sparse hybrid SparseOperator is not supported."
+                )
+
+        case t.Tensor():
+            if (other.ndim < 1) or (other.ndim > 2):
+                raise NotImplementedError(
+                    f"__matmul__ with tensor of shape {other.shape} is not supported."
+                )
+
+        case _:
+            raise TypeError(
+                f"__matmul__ between SparseOperator and {type(other)} is not supported."
+            )
+
+
 @dataclass
 class SparseOperator:
     val: Float[t.Tensor, " nnz *d"]
@@ -65,18 +100,10 @@ class SparseOperator:
         """
         Implement self @ other
         """
-        if self.n_batch_dim > 0:
-            raise NotImplementedError(
-                "__matmul__ with batched SparseOperator is not supported."
-            )
+        _validate_matmul_args(self, other)
 
         match other:
             case SparseOperator():
-                if other.n_batch_dim > 0:
-                    raise NotImplementedError(
-                        "__matmul__ with batched SparseOperator is not supported."
-                    )
-
                 return sp_sp_mm(self.val, self.sp_topo, other.val, other.sp_topo)
 
             case t.Tensor():
@@ -85,30 +112,15 @@ class SparseOperator:
                         return sp_mv(self.val, self.sp_topo, other)
                     case 2:
                         return sp_dense_mm(self.val, self.sp_topo, other)
-                    case _:
-                        raise NotImplementedError(
-                            "__matmul__ with batched tensor is not supported."
-                        )
-
-            case _:
-                raise ValueError()
 
     def __rmatmul__(self, other):
         """
         Implement other @ self
         """
-        if self.n_batch_dim > 0:
-            raise NotImplementedError(
-                "__matmul__ with batched SparseOperator is not supported."
-            )
+        _validate_matmul_args(self, other)
 
         match other:
             case SparseOperator():
-                if other.n_batch_dim > 0:
-                    raise NotImplementedError(
-                        "__matmul__ with batched SparseOperator is not supported."
-                    )
-
                 return sp_sp_mm(
                     other.val,
                     other.sp_topo,
@@ -122,13 +134,6 @@ class SparseOperator:
                         return sp_vm(self.val, self.sp_topo, other)
                     case 2:
                         return dense_sp_mm(self.val, self.sp_topo, other)
-                    case _:
-                        raise NotImplementedError(
-                            "__matmul__ with batched tensor is not supported."
-                        )
-
-            case _:
-                raise ValueError()
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b r c *d"]:
         return t.sparse_coo_tensor(
