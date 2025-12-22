@@ -26,36 +26,38 @@ def validate_coo_idx_shape(
                     + "must be of shape (3, nnz)."
                 )
 
+            nnz = coo_idx.size(-1)
+            n_batch = shape[0]
+            batch_idx = coo_idx[0]
+
+            # For batched sparse tensors, enforce the condition that the tensor
+            # has equal nnz along the batch dimension, which is required for
+            # conversion to sparse csr format.
+
+            # If the input tensor has equal nnz along the batch dimension, then
+            # the nnz per tensor in the batch is given by nnz // batch.
+            if nnz % n_batch != 0:
+                raise ValueError(
+                    f"Total nnz ({nnz}) is not divisible by batch size ({n_batch})."
+                )
+
+            nnz_per_batch = nnz // n_batch
+
+            # It is possible for a tensor to have non-equal nnz along the batch
+            # dimension but still satisfies nnz % batch = 0 (e.g., if the first
+            # tensor has 6 nnz, while the second has 2). This second check rules
+            # out this possibility.
+            if batch_idx is not None:
+                batch_counts = t.bincount(batch_idx, minlength=n_batch)
+                if not (batch_counts == nnz_per_batch).all():
+                    raise ValueError(
+                        "The equal nnz per batch item condition is not met."
+                    )
+
         case _:
             raise NotImplementedError(
                 "More than one batch dimensions is not supported."
             )
-
-
-def _get_nnz_per_batch(
-    nnz: int,
-    n_batch: int,
-    batch_idx: Integer[t.Tensor, " nnz"] | None = None,
-) -> int:
-    # If the input tensor has equal nnz along the batch dimension, then the nnz
-    # per tensor in the batch is given by nnz // batch.
-    if nnz % n_batch != 0:
-        raise ValueError(
-            f"Total nnz ({nnz}) is not divisible by batch size ({n_batch})."
-        )
-
-    nnz_per_batch = nnz // n_batch
-
-    # It is possible for a tensor to have non-equal nnz along the batch dimension
-    # but still satisfies nnz % batch = 0 (e.g., if the first tensor has 6 nnz,
-    # while the second has 2). This optional (but somewhat expensive) check rules
-    # out this possibility.
-    if batch_idx is not None:
-        batch_counts = t.bincount(batch_idx, minlength=n_batch)
-        if not (batch_counts == nnz_per_batch).all():
-            raise ValueError("The equal nnz per batch item condition is not met.")
-
-    return nnz_per_batch
 
 
 def coalesced_coo_to_compressed_idx(
@@ -64,7 +66,6 @@ def coalesced_coo_to_compressed_idx(
     *,
     target: Literal["crow", "ccol"],
     dtype: t.dtype | None,
-    strict_batch_nnz_check: bool = False,
 ) -> Integer[t.LongTensor, "*b nnz/b"]:
     """
     Convert a coalesced, sparse coo index tensor to a compressed row idx (crow)
@@ -101,9 +102,7 @@ def coalesced_coo_to_compressed_idx(
             n_row = shape[target_idx]
             n_batch = shape[0]
             nnz = coo_idx.size(1)
-            nnz_per_batch = _get_nnz_per_batch(
-                nnz, n_batch, coo_idx[0] if strict_batch_nnz_check else None
-            )
+            nnz_per_batch = nnz_per_batch = nnz // n_batch
 
             row_idx_batched = (
                 coo_idx[target_idx].view(n_batch, nnz_per_batch).to(dtype=dtype)
@@ -127,7 +126,6 @@ def coalesced_coo_to_col_idx(
     shape: tuple[int, ...] | t.Size,
     *,
     dtype: t.dtype | None,
-    strict_batch_nnz_check: bool = False,
 ) -> Integer[t.LongTensor, "*b nnz/b"]:
     if dtype is None:
         dtype = coo_idx.dtype
@@ -140,9 +138,7 @@ def coalesced_coo_to_col_idx(
         case 3:
             n_batch = shape[0]
             nnz = coo_idx.size(1)
-            nnz_per_batch = _get_nnz_per_batch(
-                nnz, n_batch, coo_idx[0] if strict_batch_nnz_check else None
-            )
+            nnz_per_batch = nnz_per_batch = nnz // n_batch
 
             col_idx_batched = coo_idx[2].view(n_batch, nnz_per_batch).to(dtype=dtype)
 
@@ -152,7 +148,6 @@ def coalesced_coo_to_col_idx(
 def get_csc_sort_perm(
     coo_idx: Integer[t.LongTensor, "sp nnz"],
     shape: tuple[int, ...] | t.Size,
-    strict_batch_nnz_check: bool = False,
 ) -> Integer[t.LongTensor, " nnz"]:
     """
     Returns a permutation that reorders a row-sorted coo tensor into a col-sorted,
@@ -169,9 +164,7 @@ def get_csc_sort_perm(
         case 3:
             n_batch = shape[0]
             nnz = coo_idx.size(1)
-            nnz_per_batch = _get_nnz_per_batch(
-                nnz, n_batch, coo_idx[0] if strict_batch_nnz_check else None
-            )
+            nnz_per_batch = nnz_per_batch = nnz // n_batch
 
             # View cols as (batch, nnz_per_batch) to sort per-batch independently
             col_idx_batched = coo_idx[2].view(n_batch, nnz_per_batch)
@@ -195,7 +188,6 @@ def coalesced_coo_to_row_idx(
     perm: Integer[t.LongTensor, " nnz"],
     *,
     dtype: t.dtype | None,
-    strict_batch_nnz_check: bool = False,
 ) -> Integer[t.LongTensor, "*b nnz/b"]:
     if dtype is None:
         dtype = coo_idx.dtype
@@ -207,9 +199,7 @@ def coalesced_coo_to_row_idx(
         case 3:
             n_batch = shape[0]
             nnz = coo_idx.size(1)
-            nnz_per_batch = _get_nnz_per_batch(
-                nnz, n_batch, coo_idx[0] if strict_batch_nnz_check else None
-            )
+            nnz_per_batch = nnz_per_batch = nnz // n_batch
 
             row_idx_sorted = coo_idx[1][perm].view(n_batch, nnz_per_batch).to(dtype)
 

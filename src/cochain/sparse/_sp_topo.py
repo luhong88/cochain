@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from functools import cached_property
 
 import torch as t
-from jaxtyping import Float, Integer
+from jaxtyping import Integer
 
 from ._utils import (
     coalesced_coo_to_col_idx,
     coalesced_coo_to_compressed_idx,
     coalesced_coo_to_row_idx,
     get_csc_sort_perm,
+    validate_coo_idx_shape,
 )
 
 
@@ -25,6 +26,9 @@ class SparseTopology:
     _idx_coo: Integer[t.LongTensor, "sp nnz"]
     shape: tuple[int, ...] | t.Size
 
+    def __post_init__(self):
+        validate_coo_idx_shape(self.idx_coo, self.shape)
+
     @property
     def idx_coo(self) -> Integer[t.LongTensor, "sp nnz"]:
         return self._idx_coo
@@ -36,6 +40,17 @@ class SparseTopology:
     @property
     def dtype(self) -> t.dtype:
         return self.idx_coo.dtype
+
+    @property
+    def n_batch_dim(self) -> int:
+        return self.idx_coo.size(0) - 2
+
+    @property
+    def n_sp_dim(self) -> int:
+        # For sparse csr/csc tensors, the leading batch dimension(s) do not count
+        # towards sparse_dim(); for sparse coo tensors, no such distinction is
+        # made. Here we follow the sparse csr/csc convention.
+        return 2
 
     @cached_property
     def coo_to_csc_perm(self) -> Integer[t.LongTensor, " nnz"]:
