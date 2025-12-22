@@ -10,6 +10,7 @@ from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._sp_topo import SparseTopology
 
 
+# TODO: check handling of contiguous memory
 @dataclass
 class SparseOperator:
     val: Float[t.Tensor, " nnz *d"]
@@ -49,6 +50,12 @@ class SparseOperator:
     @property
     def n_dim(self) -> int:
         return self.n_batch_dim + self.n_sp_dim + self.n_dense_dim
+
+    @property
+    def T(self) -> SparseOperator:
+        val_trans = self.val[self.sp_topo.coo_to_csc_perm]
+        sp_topo_trans = self.sp_topo.T
+        return SparseOperator(val_trans, sp_topo_trans)
 
     def _nnz(self) -> int:
         return self.sp_topo._nnz()
@@ -135,7 +142,7 @@ class SparseOperator:
         return t.sparse_csc_tensor(
             idx_ccol,
             idx_row,
-            self.val,
+            self.val[self.sp_topo.coo_to_csc_perm],
             self.sp_topo.shape,
             dtype=self.dtype,
             device=self.device,

@@ -52,6 +52,31 @@ class SparseTopology:
         # made. Here we follow the sparse csr/csc convention.
         return 2
 
+    @property
+    def T(self) -> SparseTopology:
+        """
+        Use cache injection to preserve cached_property for transpose.
+        """
+        idx_coo_trans = self.idx_coo.transpose(-1, -2)[:, self.coo_to_csc_perm]
+        shape_trans = self.shape[::-1]
+
+        sp_topo_trans = SparseTopology(idx_coo_trans, shape_trans)
+
+        attr_map = {
+            "idx_ccol": "idx_crow",
+            "idx_ccol_int32": "idx_crow_int32",
+            "idx_crow": "idx_ccol",
+            "idx_crow_int32": "idx_ccol_int32",
+            "idx_col": "idx_row",
+            "idx_col_int32": "idx_row_int32",
+            "idx_row": "idx_col",
+            "idx_row_int32": "idx_col_int32",
+        }
+
+        for attr, attr_trans in attr_map.items():
+            if attr in self.__dict__:
+                sp_topo_trans.__dict__[attr_trans] = self.__dict_[attr]
+
     @cached_property
     def coo_to_csc_perm(self) -> Integer[t.LongTensor, " nnz"]:
         return get_csc_sort_perm(self.idx_coo, self.shape)

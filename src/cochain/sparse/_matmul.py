@@ -62,7 +62,7 @@ class _FixedTopoSpDenseMM(t.autograd.Function):
                 a_sp_topo.idx_ccol,
                 a_sp_topo.idx_row,
                 a_val[a_sp_topo.coo_to_csc_perm],
-                size=(a_sp_topo.shape[1], a_sp_topo.shape[0]),
+                size=a_sp_topo.shape[::-1],
                 device=a_val.device,
             )
             dLdB = t.sparse.mm(a_sp_T, dLdC)
@@ -82,7 +82,7 @@ class _FixedTopoDenseSpMM(t.autograd.Function):
             a_sp_topo.idx_ccol,
             a_sp_topo.idx_row,
             a_val[a_sp_topo.coo_to_csc_perm],
-            size=(a_sp_topo.shape[1], a_sp_topo.shape[0]),
+            size=a_sp_topo.shape[::-1],
             device=a_val.device,
         )
         c_dense = t.sparse.mm(a_sp_T, b_dense.T).T
@@ -222,7 +222,7 @@ class _FixedTopoSpSpMM(t.autograd.Function):
                 b_sp_topo.idx_ccol,
                 b_sp_topo.idx_row,
                 b_val[b_sp_topo.coo_to_csc_perm],
-                size=(b_sp_topo.shape[1], b_sp_topo.shape[0]),
+                size=b_sp_topo.shape[::-1],
                 device=b_val.device,
             )
 
@@ -240,7 +240,7 @@ class _FixedTopoSpSpMM(t.autograd.Function):
                 a_sp_topo.idx_ccol,
                 a_sp_topo.idx_row,
                 a_val[a_sp_topo.coo_to_csc_perm],
-                size=(a_sp_topo.shape[1], a_sp_topo.shape[0]),
+                size=a_sp_topo.shape[::-1],
                 device=a_val.device,
             )
 
@@ -327,7 +327,7 @@ class _FixedTopoSpVM(t.autograd.Function):
             a_sp_topo.idx_ccol,
             a_sp_topo.idx_row,
             a_val[a_sp_topo.coo_to_csc_perm],
-            size=(a_sp_topo.shape[1], a_sp_topo.shape[0]),
+            size=a_sp_topo.shape[::-1],
             device=a_val.device,
         )
         c_dense = t.mv(a_sp_T, b_dense)
