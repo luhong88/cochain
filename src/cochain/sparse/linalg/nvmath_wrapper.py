@@ -7,7 +7,7 @@ import torch as t
 from jaxtyping import Float, Integer
 from torch.autograd.function import once_differentiable
 
-from ..utils import coalesced_coo_to_int32_csr, transpose_sp_csr
+from .._utils import coalesced_coo_to_int32_csr, transpose_sp_csr
 
 try:
     import nvmath.sparse.advanced as nvmath_sp

@@ -1,7 +1,7 @@
 from typing import Literal
 
 import torch as t
-from jaxtyping import Float, Integer
+from jaxtyping import Bool, Float, Integer
 
 
 def validate_coo_idx_shape(
@@ -65,7 +65,7 @@ def coalesced_coo_to_compressed_idx(
     target: Literal["crow", "ccol"],
     dtype: t.dtype | None,
     strict_batch_nnz_check: bool = False,
-):
+) -> Integer[t.LongTensor, "*b nnz/b"]:
     """
     Convert a coalesced, sparse coo index tensor to a compressed row idx (crow)
     tensor or a compressed col idx (ccol) tensor, depending on the 'target' argument.
@@ -337,3 +337,54 @@ def transpose_sp_csr(sp_csr: Float[t.Tensor, "*b r c"]) -> Float[t.Tensor, "*b c
         device=sp_csc.device,
         dtype=sp_csc.dtype,
     )
+
+
+def project_and_extract_cnz_vals(
+    src_coo: Integer[t.LongTensor, "2 src_nnz"],
+    src_val: Float[t.Tensor, " source_nnz"],
+    target_coo: Integer[t.LongTensor, "2 target_nnz"],
+    target_shape: tuple[int, int] | t.Size,
+) -> Integer[t.LongTensor, " target_nnz"]:
+    """
+    For two coalesced sparse coo tensors "source" and "target", find the indices
+    of the nonzero (r, c) index pairs of the source that is also present in the
+    target, and then return a target-shaped value tensor filled with source values
+    at these index pair locations.
+
+    This function is most performant if the source has more nnz than the target.
+
+    B source: with fill in
+    A target: no fill in
+    """
+    target_nnz = target_coo.size(1)
+    src_nnz = src_coo.size(1)
+
+    if target_nnz == 0 or src_nnz == 0:
+        return t.empty(0, dtype=src_val.dtype, device=src_coo.device)
+
+    # Perform a radix packing to index the nonzero index pairs in the source
+    # and target coo index tensors.
+    target_idx_packed = target_coo[0] * target_shape[1] + target_coo[1]
+    src_idx_packed = src_coo[0] * target_shape[1] + src_coo[1]
+
+    # Use searchsorted() to find the insertion location of target index pairs
+    # into the list of source index pairs.
+    target_idx_insert_loc = t.searchsorted(src_idx_packed, target_idx_packed)
+    target_idx_insert_loc_clipped = t.clip(target_idx_insert_loc, 0, src_nnz - 1)
+
+    # If a target index pair has a matching source index pair, then its packed
+    # index matches the packed index of the source index pair at its insertion
+    # location. Checking this gives a "common nonzero" mask for the target index pairs.
+    cnz_target_idx_mask = (
+        src_idx_packed[target_idx_insert_loc_clipped] == target_idx_packed
+    )
+
+    # For each nonzero index pair in the target, if it has a matching index pair
+    # in the source, find the source value at this index pair, otherwise returns 0.
+    cnz_src_val = t.where(
+        cnz_target_idx_mask,
+        src_val[target_idx_insert_loc_clipped],
+        t.tensor(0.0, dtype=src_val.dtype, device=src_val.device),
+    )
+
+    return cnz_src_val
