@@ -11,8 +11,63 @@ from ._index import (
     coalesced_coo_to_compressed_idx,
     coalesced_coo_to_row_idx,
     get_csc_sort_perm,
-    validate_coo_idx_shape,
 )
+
+
+def _validate_coo_idx_shape(
+    coo_idx: Integer[t.LongTensor, "sp nnz"], shape: tuple[int, ...] | t.Size
+):
+    match len(shape):
+        case 1:
+            raise ValueError(
+                "The 'idx_coo' tensor must have at least two sparse dimensions."
+            )
+
+        case 2:
+            if coo_idx.size(0) != 2:
+                raise ValueError(
+                    "For a 2D sparse coo tensor, 'idx_coo' must be of shape (2, nnz)."
+                )
+
+        case 3:
+            if coo_idx.size(0) != 3:
+                raise ValueError(
+                    "For a sparse coo tensor with a batch dimension, 'idx_coo' "
+                    + "must be of shape (3, nnz)."
+                )
+
+            nnz = coo_idx.size(-1)
+            n_batch = shape[0]
+            batch_idx = coo_idx[0]
+
+            # For batched sparse tensors, enforce the condition that the tensor
+            # has equal nnz along the batch dimension, which is required for
+            # conversion to sparse csr format.
+
+            # If the input tensor has equal nnz along the batch dimension, then
+            # the nnz per tensor in the batch is given by nnz // batch.
+            if nnz % n_batch != 0:
+                raise ValueError(
+                    f"Total nnz ({nnz}) is not divisible by batch size ({n_batch})."
+                )
+
+            nnz_per_batch = nnz // n_batch
+
+            # It is possible for a tensor to have non-equal nnz along the batch
+            # dimension but still satisfies nnz % batch = 0 (e.g., if the first
+            # tensor has 6 nnz, while the second has 2). This second check rules
+            # out this possibility.
+            if batch_idx is not None:
+                batch_counts = t.bincount(batch_idx, minlength=n_batch)
+                if not (batch_counts == nnz_per_batch).all():
+                    raise ValueError(
+                        "The equal nnz per batch item condition is not met."
+                    )
+
+        case _:
+            raise NotImplementedError(
+                "More than one batch dimensions is not supported."
+            )
 
 
 @dataclass(frozen=True)
@@ -26,7 +81,7 @@ class SparseTopology:
     shape: tuple[int, ...] | t.Size
 
     def __post_init__(self):
-        validate_coo_idx_shape(self.idx_coo, self.shape)
+        _validate_coo_idx_shape(self.idx_coo, self.shape)
 
         # Manual out-of-bound index check
         min_idx = self.idx_coo.amin(dim=1)
