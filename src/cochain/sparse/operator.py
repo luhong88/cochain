@@ -56,6 +56,9 @@ class SparseOperator:
         if self.val.size(0) != self.sp_topo._nnz():
             raise ValueError("nnz mismatch between 'val' and 'sp_topo'.")
 
+        if not t.isfinite(self.val).all():
+            raise ValueError("SparseOperator values contain NaN or Inf.")
+
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
 

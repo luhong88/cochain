@@ -19,8 +19,7 @@ from ._utils import (
 class SparseTopology:
     """
     idx_coo must be coalesced and of shape (2, nnz) or (3, nnz).
-
-    Operations on idx_coo are not guaranteed to give contiguous tensors.
+    This class does not check that idx_coo is coalesced.
     """
 
     _idx_coo: Integer[t.LongTensor, "sp nnz"]
@@ -28,6 +27,19 @@ class SparseTopology:
 
     def __post_init__(self):
         validate_coo_idx_shape(self.idx_coo, self.shape)
+
+        # Manual out-of-bound index check
+        min_idx = self.idx_coo.amin(dim=1)
+        lower_ok = (min_idx >= 0).all()
+
+        max_idx = self.idx_coo.amax(dim=1)
+        bounds = t.tensor(
+            self.shape, device=self.idx_coo.device, dtype=self.idx_coo.dtype
+        )
+        upper_ok = (max_idx < bounds).all()
+
+        if not (upper_ok and lower_ok):
+            raise ValueError("idx_coo contains out-of-bound indices.")
 
         # Enforce contiguous memory layout.
         object.__setattr__(self, "_idx_coo", self._idx_coo.contiguous())
