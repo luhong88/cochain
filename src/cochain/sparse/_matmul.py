@@ -248,3 +248,33 @@ class _FixedTopoSpMV(t.autograd.Function):
             dLdb.scatter_add_(0, a_sp_topo.idx_col, dLdb_val)
 
         return (dLdA_val, dLdA_sp_topo, dLdb)
+
+
+def sp_dense_mm(
+    a_val: Float[t.Tensor, " nnz"],
+    a_sp_topo: Integer[SparseTopology, "i j"],
+    b_dense: Float[t.Tensor, "j k"],
+) -> Float[t.Tensor, "i k"]:
+    return _FixedTopoSpDenseMM(a_val, a_sp_topo, b_dense)
+
+
+def sp_sp_mm(
+    a_val: Float[t.Tensor, " a_nnz"],
+    a_sp_topo: Integer[SparseTopology, "i j"],
+    b_val: Float[t.Tensor, " b_nnz"],
+    b_sp_topo: Integer[SparseTopology, "j k"],
+) -> tuple[
+    Integer[t.LongTensor, " c_nnz"],
+    Integer[t.LongTensor, " c_nnz"],
+    Float[t.Tensor, " c_nnz"],
+    t.Size,
+]:
+    return _FixedTopoSpSpMM(a_val, a_sp_topo, b_val, b_sp_topo)
+
+
+def sp_mv(
+    a_val: Float[t.Tensor, " nnz"],
+    a_sp_topo: Integer[SparseTopology, "i j"],
+    b_dense: Float[t.Tensor, " j"],
+) -> Float[t.Tensor, " i"]:
+    return _FixedTopoSpMV(a_val, a_sp_topo, b_dense)
