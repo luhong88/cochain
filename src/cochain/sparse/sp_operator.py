@@ -208,10 +208,15 @@ class SparseOperator:
             idx_crow = self.sp_topo.idx_crow
             idx_col = self.sp_topo.idx_col
 
+        if self.n_batch_dim == 0:
+            val = self.val
+        else:
+            val = self.val.view(self.size(0), -1).contiguous()
+
         return t.sparse_csr_tensor(
             idx_crow,
             idx_col,
-            self.val,
+            val,
             self.shape,
             dtype=self.dtype,
             device=self.device,
@@ -225,10 +230,19 @@ class SparseOperator:
             idx_ccol = self.sp_topo.idx_ccol
             idx_row_csc = self.sp_topo.idx_row_csc
 
+        if self.n_batch_dim == 0:
+            val = self.val[self.sp_topo.coo_to_csc_perm]
+        else:
+            val = (
+                self.val[self.sp_topo.coo_to_csc_perm]
+                .view(self.size(0), -1)
+                .contiguous()
+            )
+
         return t.sparse_csc_tensor(
             idx_ccol,
             idx_row_csc,
-            self.val[self.sp_topo.coo_to_csc_perm],
+            val,
             self.shape,
             dtype=self.dtype,
             device=self.device,

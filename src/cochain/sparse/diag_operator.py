@@ -58,11 +58,23 @@ class DiagOperator:
     val: Float[t.Tensor, "*b diag"]
 
     def __post_init__(self):
+        if self.val.layout != t.strided:
+            raise TypeError(
+                "'val' must be a dense tensor of shape (diag,) or (b, diag)."
+            )
+
+        if self.val.ndim < 1 or self.val.ndim > 2:
+            raise ValueError("'val' must be either of shape (diag,) or (b, diag).")
+
         if not t.isfinite(self.val).all():
             raise ValueError("DiagOperator values contain NaN or Inf.")
 
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
+
+    @classmethod
+    def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
+        return cls(tensor)
 
     @property
     def shape(self) -> t.Size:

@@ -57,6 +57,20 @@ def test_coo_conversion(A, device):
     t.testing.assert_close(A_coo.values(), A_coo_true.values())
 
 
+def test_coo_conversion_with_batch_dim(A_batched, device):
+    A_coo_true = A_batched.to(device)
+    A_operator = SparseOperator.from_tensor(A_coo_true)
+
+    A_coo = A_operator.to_sparse_coo().coalesce()
+
+    assert A_coo.shape == A_coo_true.shape
+    assert A_coo.indices().dtype == t.int64
+    assert A_coo.dtype == A_coo_true.dtype
+
+    t.testing.assert_close(A_coo.indices(), A_coo_true.indices())
+    t.testing.assert_close(A_coo.values(), A_coo_true.values())
+
+
 def test_csr_conversion(A, device):
     A_tensor = A.to(device)
     A_operator = SparseOperator.from_tensor(A_tensor)
@@ -82,6 +96,31 @@ def test_csr_conversion(A, device):
     t.testing.assert_close(A_csr.col_indices(), A_csr_int32.col_indices().to(t.int64))
 
 
+def test_csr_conversion_with_batch_dim(A_batched, device):
+    A_tensor = A_batched.to(device)
+    A_operator = SparseOperator.from_tensor(A_tensor)
+
+    A_csr = A_operator.to_sparse_csr()
+
+    assert A_csr.shape == A_operator.shape
+    assert A_csr.crow_indices().dtype == t.int64
+    assert A_csr.col_indices().dtype == t.int64
+    assert A_csr.dtype == A_operator.dtype
+
+    A_csr_int32 = A_operator.to_sparse_csr(int32=True)
+
+    assert A_csr_int32.crow_indices().dtype == t.int32
+    assert A_csr_int32.col_indices().dtype == t.int32
+
+    t.testing.assert_close(A_csr.crow_indices(), A_csr_int32.crow_indices().to(t.int64))
+    t.testing.assert_close(A_csr.col_indices(), A_csr_int32.col_indices().to(t.int64))
+
+    # Since it is not possible to directly convert a batched sparse coo tensor
+    # to a batched sparse csr tensor, we directly check for value agreement in
+    # dense format.
+    t.testing.assert_close(A_tensor.to_dense(), A_csr.to_dense())
+
+
 def test_csc_conversion(A, device):
     A_tensor = A.to(device)
     A_operator = SparseOperator.from_tensor(A_tensor)
@@ -105,6 +144,31 @@ def test_csc_conversion(A, device):
 
     t.testing.assert_close(A_csc.ccol_indices(), A_csc_int32.ccol_indices().to(t.int64))
     t.testing.assert_close(A_csc.row_indices(), A_csc_int32.row_indices().to(t.int64))
+
+
+def test_csc_conversion_with_batch_dim(A_batched, device):
+    A_tensor = A_batched.to(device)
+    A_operator = SparseOperator.from_tensor(A_tensor)
+
+    A_csc = A_operator.to_sparse_csc()
+
+    assert A_csc.shape == A_operator.shape
+    assert A_csc.ccol_indices().dtype == t.int64
+    assert A_csc.row_indices().dtype == t.int64
+    assert A_csc.dtype == A_operator.dtype
+
+    A_csc_int32 = A_operator.to_sparse_csc(int32=True)
+
+    assert A_csc_int32.ccol_indices().dtype == t.int32
+    assert A_csc_int32.row_indices().dtype == t.int32
+
+    t.testing.assert_close(A_csc.ccol_indices(), A_csc_int32.ccol_indices().to(t.int64))
+    t.testing.assert_close(A_csc.row_indices(), A_csc_int32.row_indices().to(t.int64))
+
+    # Since it is not possible to directly convert a batched sparse coo tensor
+    # to a batched sparse csc tensor, we directly check for value agreement in
+    # dense format.
+    t.testing.assert_close(A_tensor.to_dense(), A_csc.to_dense())
 
 
 def test_sp_dense_mm(A, device):
