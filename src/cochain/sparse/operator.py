@@ -63,11 +63,8 @@ class SparseOperator:
         self.val = self.val.contiguous()
 
     @classmethod
-    def from_tensor(cls, tensor: t.Tensor, *, detach: bool = False) -> SparseOperator:
-        if detach:
-            coalesced_tensor = tensor.detach().to_sparse_coo().coalesce()
-        else:
-            coalesced_tensor = tensor.to_sparse_coo().coalesce()
+    def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
+        coalesced_tensor = tensor.to_sparse_coo().coalesce()
 
         return cls(
             coalesced_tensor.values(),

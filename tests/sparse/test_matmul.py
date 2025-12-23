@@ -8,7 +8,7 @@ def test_sp_dense_mm_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor, detach=True)
+    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
@@ -36,7 +36,7 @@ def test_dense_sp_mm_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor, detach=True)
+    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
@@ -64,13 +64,13 @@ def test_sp_sp_mm_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor, detach=True)
+    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
     B_dense.requires_grad_()
 
-    B_operator = SparseOperator.from_tensor(B_dense, detach=True)
+    B_operator = SparseOperator.from_tensor(B_dense).detach().clone()
     B_operator.requires_grad_()
 
     C_dense_true = A_dense @ B_dense
@@ -94,7 +94,7 @@ def test_sp_mv_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor, detach=True)
+    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     b_dense = t.randn(A_tensor.shape[-1], dtype=A_tensor.dtype, device=device)
@@ -122,7 +122,7 @@ def test_sp_vm_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor, detach=True)
+    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     b_dense = t.randn(A_tensor.shape[0], dtype=A_tensor.dtype, device=device)

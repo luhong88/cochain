@@ -94,9 +94,13 @@ class SparseTopology:
         if not (upper_ok and lower_ok):
             raise ValueError("idx_coo contains out-of-bound indices.")
 
-        # Enforce contiguous memory layout. Use object.__setattr__() to bypass
-        # frozen=True.
-        object.__setattr__(self, "_idx_coo", self._idx_coo.contiguous())
+        # Enforce ownership and contiguous memory layout. Use object.__setattr__()
+        # to bypass frozen=True.
+        object.__setattr__(
+            self,
+            "_idx_coo",
+            self._idx_coo.detach().clone(memory_format=t.contiguous_format),
+        )
 
         # Coerse shape dtype.
         object.__setattr__(self, "shape", t.Size(self.shape))
