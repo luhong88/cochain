@@ -149,10 +149,10 @@ class SparseTopology:
             "idx_ccol_int32": "idx_crow_int32",
             "idx_crow": "idx_ccol",
             "idx_crow_int32": "idx_ccol_int32",
-            "idx_col": "idx_row",
-            "idx_col_int32": "idx_row_int32",
-            "idx_row": "idx_col",
-            "idx_row_int32": "idx_col_int32",
+            "idx_col": "idx_row_csc",
+            "idx_col_int32": "idx_row_csc_int32",
+            "idx_row_csc": "idx_col",
+            "idx_row_csc_int32": "idx_col_int32",
         }
 
         for attr, attr_trans in attr_map.items():
@@ -194,11 +194,11 @@ class SparseTopology:
         return coalesced_coo_to_col_idx(self.idx_coo, self.shape, dtype=t.int32)
 
     @cached_property
-    def idx_row(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+    def idx_row_csc(self) -> Integer[t.LongTensor, "*b nnz/b"]:
         return coalesced_coo_to_row_idx(self.idx_coo, self.shape, self.coo_to_csc_perm)
 
     @cached_property
-    def idx_row_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
+    def idx_row_csc_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
         return coalesced_coo_to_row_idx(
             self.idx_coo, self.shape, self.coo_to_csc_perm, dtype=t.int32
         )
@@ -241,14 +241,14 @@ class SparseTopology:
             "idx_ccol",
             "idx_crow",
             "idx_col",
-            "idx_row",
+            "idx_row_csc",
         ]
         cached_attrs_dtype_invariant = [
             "coo_to_csc_perm",
             "idx_ccol_int32",
             "idx_crow_int32",
             "idx_col_int32",
-            "idx_row_int32",
+            "idx_row_csc_int32",
         ]
 
         for attr in cached_attrs_dtype_covariant:

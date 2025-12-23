@@ -63,8 +63,11 @@ class SparseOperator:
         self.val = self.val.contiguous()
 
     @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
-        coalesced_tensor = tensor.to_sparse_coo().coalesce()
+    def from_tensor(cls, tensor: t.Tensor, *, detach: bool = False) -> SparseOperator:
+        if detach:
+            coalesced_tensor = tensor.detach().to_sparse_coo().coalesce()
+        else:
+            coalesced_tensor = tensor.to_sparse_coo().coalesce()
 
         return cls(
             coalesced_tensor.values(),
@@ -121,6 +124,12 @@ class SparseOperator:
     def requires_grad_(self, requires_grad: bool = True) -> SparseOperator:
         self.val.requires_grad_(requires_grad)
         return self
+
+    def detach(self) -> SparseOperator:
+        return SparseOperator(self.val.detach(), self.sp_topo)
+
+    def clone(self) -> SparseOperator:
+        return SparseOperator(self.val.clone(), self.sp_topo)
 
     def _nnz(self) -> int:
         """
@@ -205,14 +214,14 @@ class SparseOperator:
     def to_sparse_csc(self, int32: bool = False) -> Float[t.Tensor, "*b r c *d"]:
         if int32:
             idx_ccol = self.sp_topo.idx_ccol_int32
-            idx_row = self.sp_topo.idx_row_int32
+            idx_row_csc = self.sp_topo.idx_row_csc_int32
         else:
             idx_ccol = self.sp_topo.idx_ccol
-            idx_row = self.sp_topo.idx_row
+            idx_row_csc = self.sp_topo.idx_row_csc
 
         return t.sparse_csc_tensor(
             idx_ccol,
-            idx_row,
+            idx_row_csc,
             self.val[self.sp_topo.coo_to_csc_perm],
             self.shape,
             dtype=self.dtype,

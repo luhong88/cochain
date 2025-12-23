@@ -19,11 +19,11 @@ def sp_with_empty_row():
     idx_col = t.tensor([1, 3, 0, 2, 3])
 
     idx_ccol = t.tensor([0, 1, 2, 3, 5])
-    idx_row = t.tensor([2, 1, 2, 1, 2])
+    idx_row_csc = t.tensor([2, 1, 2, 1, 2])
 
     coo_to_csc_perm = t.tensor([2, 0, 3, 1, 4])
 
-    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row, coo_to_csc_perm
+    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, coo_to_csc_perm
 
 
 @pytest.fixture
@@ -40,11 +40,11 @@ def sp_with_empty_col():
     idx_col = t.tensor([2, 1, 2, 1, 2])
 
     idx_ccol = t.tensor([0, 0, 2, 5])
-    idx_row = t.tensor([1, 3, 0, 2, 3])
+    idx_row_csc = t.tensor([1, 3, 0, 2, 3])
 
     coo_to_csc_perm = t.tensor([1, 3, 0, 2, 4])
 
-    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row, coo_to_csc_perm
+    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, coo_to_csc_perm
 
 
 @pytest.fixture
@@ -64,11 +64,11 @@ def sp_with_batch_dim():
     idx_col = t.tensor([[0, 1, 2], [1, 1, 2]])
 
     idx_ccol = t.tensor([[0, 1, 2, 3], [0, 0, 2, 3]])
-    idx_row = t.tensor([[0, 2, 2], [0, 1, 2]])
+    idx_row_csc = t.tensor([[0, 2, 2], [0, 1, 2]])
 
     coo_to_csc_perm = t.tensor([0, 1, 2, 3, 4, 5])
 
-    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row, coo_to_csc_perm
+    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, coo_to_csc_perm
 
 
 @pytest.fixture
@@ -88,11 +88,11 @@ def sp_with_batch_dim_T():
     idx_col = t.tensor([[0, 2, 2], [0, 1, 2]])
 
     idx_ccol = t.tensor([[0, 1, 1, 3], [0, 1, 2, 3]])
-    idx_row = t.tensor([[0, 1, 2], [1, 1, 2]])
+    idx_row_csc = t.tensor([[0, 1, 2], [1, 1, 2]])
 
     coo_to_csc_perm = t.tensor([0, 1, 2, 3, 4, 5])
 
-    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row, coo_to_csc_perm
+    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, coo_to_csc_perm
 
 
 def test_immutability(device):
@@ -169,7 +169,7 @@ def test_coo_to_csr_conversion(sp_with_empty_row, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_idx_coo_to_csc_perm,
     ) = sp_with_empty_row
 
@@ -186,14 +186,14 @@ def test_coo_to_csc_conversion(sp_with_empty_row, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_coo_to_csc_perm,
     ) = sp_with_empty_row
 
     sp_topo = SparseTopology(idx_coo, shape).to(device)
 
     t.testing.assert_close(sp_topo.idx_ccol, true_idx_ccol.to(device))
-    t.testing.assert_close(sp_topo.idx_row, true_idx_row.to(device))
+    t.testing.assert_close(sp_topo.idx_row_csc, true_idx_row_csc.to(device))
     t.testing.assert_close(sp_topo.coo_to_csc_perm, true_coo_to_csc_perm.to(device))
 
 
@@ -204,7 +204,7 @@ def test_coo_to_csr_conversion_with_batch_dim(sp_with_batch_dim, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_idx_coo_to_csc_perm,
     ) = sp_with_batch_dim
 
@@ -221,14 +221,14 @@ def test_coo_to_csc_conversion_with_batch_dim(sp_with_batch_dim, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_coo_to_csc_perm,
     ) = sp_with_batch_dim
 
     sp_topo = SparseTopology(idx_coo, shape).to(device)
 
     t.testing.assert_close(sp_topo.idx_ccol, true_idx_ccol.to(device))
-    t.testing.assert_close(sp_topo.idx_row, true_idx_row.to(device))
+    t.testing.assert_close(sp_topo.idx_row_csc, true_idx_row_csc.to(device))
     t.testing.assert_close(sp_topo.coo_to_csc_perm, true_coo_to_csc_perm.to(device))
 
 
@@ -242,18 +242,18 @@ def test_idx_dtype(device):
     assert sp_topo.idx_crow.dtype == target_dtype
     assert sp_topo.idx_col.dtype == target_dtype
     assert sp_topo.idx_ccol.dtype == target_dtype
-    assert sp_topo.idx_row.dtype == target_dtype
+    assert sp_topo.idx_row_csc.dtype == target_dtype
     assert sp_topo.coo_to_csc_perm.dtype == target_dtype
 
     assert sp_topo.idx_crow_int32.dtype == t.int32
     assert sp_topo.idx_col_int32.dtype == t.int32
     assert sp_topo.idx_ccol_int32.dtype == t.int32
-    assert sp_topo.idx_row_int32.dtype == t.int32
+    assert sp_topo.idx_row_csc_int32.dtype == t.int32
 
     t.testing.assert_close(sp_topo.idx_crow, sp_topo.idx_crow_int32.to(t.int64))
     t.testing.assert_close(sp_topo.idx_col, sp_topo.idx_col_int32.to(t.int64))
     t.testing.assert_close(sp_topo.idx_ccol, sp_topo.idx_ccol_int32.to(t.int64))
-    t.testing.assert_close(sp_topo.idx_row, sp_topo.idx_row_int32.to(t.int64))
+    t.testing.assert_close(sp_topo.idx_row_csc, sp_topo.idx_row_csc_int32.to(t.int64))
 
 
 def test_sp_dim(sp_with_empty_row, device):
@@ -263,7 +263,7 @@ def test_sp_dim(sp_with_empty_row, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_coo_to_csc_perm,
     ) = sp_with_empty_row
 
@@ -280,7 +280,7 @@ def test_batch_dim(sp_with_batch_dim, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_coo_to_csc_perm,
     ) = sp_with_batch_dim
 
@@ -297,7 +297,7 @@ def test_transpose(sp_with_empty_row, sp_with_empty_col, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_coo_to_csc_perm,
     ) = sp_with_empty_row
 
@@ -307,7 +307,7 @@ def test_transpose(sp_with_empty_row, sp_with_empty_col, device):
         true_idx_crow_T,
         true_idx_col_T,
         true_idx_ccol_T,
-        true_idx_row_T,
+        true_idx_row_csc_T,
         true_coo_to_csc_perm_T,
     ) = sp_with_empty_col
 
@@ -319,7 +319,7 @@ def test_transpose(sp_with_empty_row, sp_with_empty_col, device):
     t.testing.assert_close(sp_topo_T.idx_crow, true_idx_crow_T.to(device))
     t.testing.assert_close(sp_topo_T.idx_col, true_idx_col_T.to(device))
     t.testing.assert_close(sp_topo_T.idx_ccol, true_idx_ccol_T.to(device))
-    t.testing.assert_close(sp_topo_T.idx_row, true_idx_row_T.to(device))
+    t.testing.assert_close(sp_topo_T.idx_row_csc, true_idx_row_csc_T.to(device))
     t.testing.assert_close(sp_topo_T.coo_to_csc_perm, true_coo_to_csc_perm_T.to(device))
 
 
@@ -330,7 +330,7 @@ def test_transpose_with_batch_dim(sp_with_batch_dim, sp_with_batch_dim_T, device
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_coo_to_csc_perm,
     ) = sp_with_batch_dim
 
@@ -340,7 +340,7 @@ def test_transpose_with_batch_dim(sp_with_batch_dim, sp_with_batch_dim_T, device
         true_idx_crow_T,
         true_idx_col_T,
         true_idx_ccol_T,
-        true_idx_row_T,
+        true_idx_row_csc_T,
         true_coo_to_csc_perm_T,
     ) = sp_with_batch_dim_T
 
@@ -354,7 +354,7 @@ def test_transpose_with_batch_dim(sp_with_batch_dim, sp_with_batch_dim_T, device
     t.testing.assert_close(sp_topo_T.idx_crow, true_idx_crow_T.to(device))
     t.testing.assert_close(sp_topo_T.idx_col, true_idx_col_T.to(device))
     t.testing.assert_close(sp_topo_T.idx_ccol, true_idx_ccol_T.to(device))
-    t.testing.assert_close(sp_topo_T.idx_row, true_idx_row_T.to(device))
+    t.testing.assert_close(sp_topo_T.idx_row_csc, true_idx_row_csc_T.to(device))
     t.testing.assert_close(sp_topo_T.coo_to_csc_perm, true_coo_to_csc_perm_T.to(device))
 
 
@@ -391,7 +391,7 @@ def test_nnz(sp_with_empty_row, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_coo_to_csc_perm,
     ) = sp_with_empty_row
 
@@ -407,7 +407,7 @@ def test_nnz_with_batch_dim(sp_with_batch_dim, device):
         true_idx_crow,
         true_idx_col,
         true_idx_ccol,
-        true_idx_row,
+        true_idx_row_csc,
         true_coo_to_csc_perm,
     ) = sp_with_batch_dim
 

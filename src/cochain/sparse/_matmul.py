@@ -54,13 +54,13 @@ class _FixedTopoSpDenseMM(t.autograd.Function):
 
         if needs_dLdA:
             dLdA_val = t.einsum(
-                "ik,ik->i", dLdC[a_sp_topo.idx_row], b_dense[a_sp_topo.idx_col]
+                "ik,ik->i", dLdC[a_sp_topo.idx_coo[0]], b_dense[a_sp_topo.idx_coo[1]]
             )
 
         if needs_dLdB:
             a_sp_T = t.sparse_csr_tensor(
                 a_sp_topo.idx_ccol,
-                a_sp_topo.idx_row,
+                a_sp_topo.idx_row_csc,
                 a_val[a_sp_topo.coo_to_csc_perm],
                 size=a_sp_topo.shape[::-1],
                 device=a_val.device,
@@ -80,7 +80,7 @@ class _FixedTopoDenseSpMM(t.autograd.Function):
         # Forwad pass with sparse csr tensor.
         a_sp_T = t.sparse_csr_tensor(
             a_sp_topo.idx_ccol,
-            a_sp_topo.idx_row,
+            a_sp_topo.idx_row_csc,
             a_val[a_sp_topo.coo_to_csc_perm],
             size=a_sp_topo.shape[::-1],
             device=a_val.device,
@@ -119,7 +119,9 @@ class _FixedTopoDenseSpMM(t.autograd.Function):
 
         if needs_dLdA:
             dLdA_val = t.einsum(
-                "ki,ki->i", dLdC[:, a_sp_topo.idx_col], b_dense[:, a_sp_topo.idx_row]
+                "ki,ki->i",
+                dLdC[:, a_sp_topo.idx_coo[1]],
+                b_dense[:, a_sp_topo.idx_coo[0]],
             )
 
         if needs_dLdB:
@@ -220,7 +222,7 @@ class _FixedTopoSpSpMM(t.autograd.Function):
         if needs_dLdA:
             b_sp_T = t.sparse_csr_tensor(
                 b_sp_topo.idx_ccol,
-                b_sp_topo.idx_row,
+                b_sp_topo.idx_row_csc,
                 b_val[b_sp_topo.coo_to_csc_perm],
                 size=b_sp_topo.shape[::-1],
                 device=b_val.device,
@@ -238,7 +240,7 @@ class _FixedTopoSpSpMM(t.autograd.Function):
         if needs_dLdB:
             a_sp_T = t.sparse_csr_tensor(
                 a_sp_topo.idx_ccol,
-                a_sp_topo.idx_row,
+                a_sp_topo.idx_row_csc,
                 a_val[a_sp_topo.coo_to_csc_perm],
                 size=a_sp_topo.shape[::-1],
                 device=a_val.device,
@@ -303,14 +305,14 @@ class _FixedTopoSpMV(t.autograd.Function):
         #   dLdb_i  = sum_k[dLdc_k * A_ki]
 
         if needs_dLdA:
-            dLdA_val = dLdc[a_sp_topo.idx_row] * b_dense[a_sp_topo.idx_col]
+            dLdA_val = dLdc[a_sp_topo.idx_coo[0]] * b_dense[a_sp_topo.idx_coo[1]]
 
         if needs_dLdb:
             # This is effectively a diagonal-sparse matmul, which is equivalent
             # to scaling the k-th row of A by dLdc_k.
-            dLdb_val = a_val * dLdc[a_sp_topo.idx_row]
+            dLdb_val = a_val * dLdc[a_sp_topo.idx_coo[0]]
             dLdb = t.zeros_like(b_dense)
-            dLdb.index_add_(0, a_sp_topo.idx_col, dLdb_val)
+            dLdb.index_add_(0, a_sp_topo.idx_coo[1], dLdb_val)
 
         return (dLdA_val, dLdA_sp_topo, dLdb)
 
@@ -325,7 +327,7 @@ class _FixedTopoSpVM(t.autograd.Function):
         # Forwad pass with sparse csr tensor.
         a_sp_T = t.sparse_csr_tensor(
             a_sp_topo.idx_ccol,
-            a_sp_topo.idx_row,
+            a_sp_topo.idx_row_csc,
             a_val[a_sp_topo.coo_to_csc_perm],
             size=a_sp_topo.shape[::-1],
             device=a_val.device,
@@ -363,14 +365,14 @@ class _FixedTopoSpVM(t.autograd.Function):
         #   dLdb_i  = sum_k[dLdc_k * A_ik]
 
         if needs_dLdA:
-            dLdA_val = dLdc[a_sp_topo.idx_col] * b_dense[a_sp_topo.idx_row]
+            dLdA_val = dLdc[a_sp_topo.idx_coo[1]] * b_dense[a_sp_topo.idx_coo[0]]
 
         if needs_dLdb:
             # This is effectively a sparse-diagonal matmul, which is equivalent
             # to scaling the k-th col of A by dLdc_k.
-            dLdb_val = a_val * dLdc[a_sp_topo.idx_col]
+            dLdb_val = a_val * dLdc[a_sp_topo.idx_coo[1]]
             dLdb = t.zeros_like(b_dense)
-            dLdb.index_add_(0, a_sp_topo.idx_row, dLdb_val)
+            dLdb.index_add_(0, a_sp_topo.idx_coo[0], dLdb_val)
 
         return (dLdA_val, dLdA_sp_topo, dLdb)
 
