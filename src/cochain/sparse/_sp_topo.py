@@ -96,7 +96,8 @@ class SparseTopology:
         if not (upper_ok and lower_ok):
             raise ValueError("idx_coo contains out-of-bound indices.")
 
-        # Enforce contiguous memory layout.
+        # Enforce contiguous memory layout. Use object.__setattr__() to bypass
+        # frozen=True.
         object.__setattr__(self, "_idx_coo", self._idx_coo.contiguous())
 
     @property
@@ -117,9 +118,11 @@ class SparseTopology:
 
     @property
     def n_sp_dim(self) -> int:
-        # For sparse csr/csc tensors, the leading batch dimension(s) do not count
-        # towards sparse_dim(); for sparse coo tensors, no such distinction is
-        # made. Here we follow the sparse csr/csc convention.
+        """
+        For sparse csr/csc tensors, the leading batch dimension(s) do not count
+        towards sparse_dim(); for sparse coo tensors, no such distinction is
+        made. Here we follow the sparse csr/csc convention.
+        """
         return 2
 
     @property
@@ -160,22 +163,22 @@ class SparseTopology:
 
     @cached_property
     def idx_ccol(self) -> Integer[t.LongTensor, "*b nnz/b"]:
-        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, target="ccol")
+        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="ccol")
 
     @cached_property
     def idx_ccol_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
         return coalesced_coo_to_compressed_idx(
-            self.idx_coo, self.shape, target="ccol", dtype=t.int32
+            self.idx_coo, self.shape, format="ccol", dtype=t.int32
         )
 
     @cached_property
     def idx_crow(self) -> Integer[t.LongTensor, "*b nnz/b"]:
-        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, target="crow")
+        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="crow")
 
     @cached_property
     def idx_crow_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
         return coalesced_coo_to_compressed_idx(
-            self.idx_coo, self.shape, target="crow", dtype=t.int32
+            self.idx_coo, self.shape, format="crow", dtype=t.int32
         )
 
     @cached_property
@@ -197,6 +200,12 @@ class SparseTopology:
         )
 
     def _nnz(self) -> int:
+        """
+        For batched sparse csr/csc tensors, the _nnz() method returns the number
+        of nonzero elements per batch item; for sparse coo tensors, the _nnz()
+        method returns the total number of nonzero elements, regardless of batch
+        dimensions. Here we follow the sparse coo convention.
+        """
         return self.idx_coo.size(1)
 
     def to(self, *args, **kwargs) -> SparseTopology:

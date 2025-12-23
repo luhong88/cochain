@@ -8,27 +8,27 @@ def coalesced_coo_to_compressed_idx(
     coo_idx: Integer[t.LongTensor, "sp nnz"],
     shape: tuple[int, ...] | t.Size,
     *,
-    target: Literal["crow", "ccol"],
-    dtype: t.dtype | None,
+    format: Literal["crow", "ccol"],
+    dtype: t.dtype | None = None,
 ) -> Integer[t.LongTensor, "*b nnz/b"]:
     """
     Convert a coalesced, sparse coo index tensor to a compressed row idx (crow)
-    tensor or a compressed col idx (ccol) tensor, depending on the 'target' argument.
+    tensor or a compressed col idx (ccol) tensor, depending on the 'format' argument.
     """
     if dtype is None:
         dtype = coo_idx.dtype
 
     device = coo_idx.device
 
-    # The following code is written with variable names assuming target = 'crow',
+    # The following code is written with variable names assuming format = 'crow',
     # but the same logic applies for ccol by switching the target_idx.
-    match target:
+    match format:
         case "crow":
             target_idx = -2
         case "ccol":
             target_idx = -1
         case _:
-            raise ValueError(f"Unknown target argument '{target}'.")
+            raise ValueError(f"Unknown format argument '{format}'.")
 
     match len(shape):
         case 2:
@@ -69,7 +69,7 @@ def coalesced_coo_to_col_idx(
     coo_idx: Integer[t.LongTensor, "sp nnz"],
     shape: tuple[int, ...] | t.Size,
     *,
-    dtype: t.dtype | None,
+    dtype: t.dtype | None = None,
 ) -> Integer[t.LongTensor, "*b nnz/b"]:
     if dtype is None:
         dtype = coo_idx.dtype
@@ -131,7 +131,7 @@ def coalesced_coo_to_row_idx(
     shape: tuple[int, ...] | t.Size,
     perm: Integer[t.LongTensor, " nnz"],
     *,
-    dtype: t.dtype | None,
+    dtype: t.dtype | None = None,
 ) -> Integer[t.LongTensor, "*b nnz/b"]:
     if dtype is None:
         dtype = coo_idx.dtype
