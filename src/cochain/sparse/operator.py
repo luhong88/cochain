@@ -128,11 +128,14 @@ class SparseOperator:
         """
         return SparseOperator(self.val.detach(), self.sp_topo)
 
-    def clone(self) -> SparseOperator:
+    def clone(
+        self, memory_format: t.memory_format = t.contiguous_format
+    ) -> SparseOperator:
         """
-        Create a new SparseOperator with the same `sp_topo` but with the `val` cloned.
+        Create a new SparseOperator with the same `sp_topo` but with the `val`
+        cloned (in the contiguous format by default).
         """
-        return SparseOperator(self.val.clone(), self.sp_topo)
+        return SparseOperator(self.val.clone(memory_format=memory_format), self.sp_topo)
 
     def _nnz(self) -> int:
         """
