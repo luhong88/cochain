@@ -6,6 +6,7 @@ from typing import Callable
 import torch as t
 from jaxtyping import Float
 
+from ._base_operator import BaseOperator, validate_matmul_args
 from ._matmul import (
     dense_diag_mm,
     diag_dense_mm,
@@ -15,46 +16,8 @@ from ._matmul import (
 from .sp_operator import SparseOperator
 
 
-def _validate_diag_matmul_args(
-    self: DiagOperator, other: DiagOperator | SparseOperator | t.Tensor
-):
-    if self.n_batch_dim > 0:
-        raise NotImplementedError(
-            "__matmul__ with batched DiagOperator is not supported."
-        )
-
-    match other:
-        case DiagOperator():
-            if other.n_batch_dim > 0:
-                raise NotImplementedError(
-                    "__matmul__ with batched DiagOperator is not supported."
-                )
-
-        case SparseOperator():
-            if other.n_batch_dim > 0:
-                raise NotImplementedError(
-                    "__matmul__ with batched SparseOperator is not supported."
-                )
-
-            if other.n_dense_dim > 0:
-                raise NotImplementedError(
-                    "__matmul__ with sparse hybrid SparseOperator is not supported."
-                )
-
-        case t.Tensor():
-            if (other.ndim < 1) or (other.ndim > 2):
-                raise NotImplementedError(
-                    f"__matmul__ with tensor of shape {other.shape} is not supported."
-                )
-
-        case _:
-            raise TypeError(
-                f"__matmul__ between DiagOperator and {type(other)} is not supported."
-            )
-
-
 @dataclass
-class DiagOperator:
+class DiagOperator(BaseOperator):
     val: Float[t.Tensor, "*b diag"]
 
     def __post_init__(self):
@@ -73,20 +36,12 @@ class DiagOperator:
         self.val = self.val.contiguous()
 
     @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
+    def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
         return cls(tensor)
 
     @property
     def shape(self) -> t.Size:
         return t.Size(self.val.shape + (self.val.shape[-1],))
-
-    @property
-    def device(self) -> t.device:
-        return self.val.device
-
-    @property
-    def dtype(self) -> t.dtype:
-        return self.val.dtype
 
     @property
     def n_dense_dim(self) -> int:
@@ -101,22 +56,10 @@ class DiagOperator:
         return self.val.ndim - 1
 
     @property
-    def n_dim(self) -> int:
-        return self.n_batch_dim + self.n_sp_dim + self.n_dense_dim
-
-    @property
     def T(self) -> DiagOperator:
         """
         Note that the transpose preserves the batch dimensions.
         """
-        return self
-
-    @property
-    def requires_grad(self) -> bool:
-        return self.val.requires_grad
-
-    def requires_grad_(self, requires_grad: bool = True) -> DiagOperator:
-        self.val.requires_grad_(requires_grad)
         return self
 
     def detach(self) -> DiagOperator:
@@ -140,7 +83,7 @@ class DiagOperator:
         """
         Implement self @ other
         """
-        _validate_diag_matmul_args(self, other)
+        validate_matmul_args(self, other)
 
         match other:
             case DiagOperator():
@@ -158,16 +101,17 @@ class DiagOperator:
                     case 2:
                         return diag_dense_mm(self.val, other)
 
+            case _:
+                return NotImplemented
+
     def __rmatmul__(self, other):
         """
         Implement other @ self
         """
-        _validate_diag_matmul_args(self, other)
+        validate_matmul_args(self, other)
 
         match other:
-            case DiagOperator():
-                return DiagOperator(self.val * other.val)
-
+            # Do not check for case DiagOperator(), which is handled by __matmul__
             case SparseOperator():
                 val, sp_topo = sp_diag_mm(other.val, other.sp_topo, self.val)
                 sp_diag = SparseOperator(val, sp_topo)
@@ -179,6 +123,9 @@ class DiagOperator:
                         return other * self.val
                     case 2:
                         return dense_diag_mm(other, self.val)
+
+            case _:
+                return NotImplemented
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
         if self.n_batch_dim == 0:
@@ -246,9 +193,3 @@ class DiagOperator:
 
     def to(self, *args, **kwargs) -> DiagOperator:
         return DiagOperator(self.val.to(*args, **kwargs))
-
-    def size(self, dim: int | None = None) -> int | t.Size:
-        if dim is None:
-            return self.shape
-        else:
-            return self.shape[dim]

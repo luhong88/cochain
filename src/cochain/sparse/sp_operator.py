@@ -5,47 +5,13 @@ from dataclasses import dataclass
 import torch as t
 from jaxtyping import Float, Integer
 
+from ._base_operator import BaseOperator, validate_matmul_args
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._sp_topo import SparseTopology
 
 
-def _validate_sp_matmul_args(self: SparseOperator, other: SparseOperator | t.Tensor):
-    if self.n_batch_dim > 0:
-        raise NotImplementedError(
-            "__matmul__ with batched SparseOperator is not supported."
-        )
-
-    if self.n_dense_dim > 0:
-        raise NotImplementedError(
-            "__matmul__ with sparse hybrid SparseOperator is not supported."
-        )
-
-    match other:
-        case SparseOperator():
-            if other.n_batch_dim > 0:
-                raise NotImplementedError(
-                    "__matmul__ with batched SparseOperator is not supported."
-                )
-
-            if other.n_dense_dim > 0:
-                raise NotImplementedError(
-                    "__matmul__ with sparse hybrid SparseOperator is not supported."
-                )
-
-        case t.Tensor():
-            if (other.ndim < 1) or (other.ndim > 2):
-                raise NotImplementedError(
-                    f"__matmul__ with tensor of shape {other.shape} is not supported."
-                )
-
-        case _:
-            raise TypeError(
-                f"__matmul__ between SparseOperator and {type(other)} is not supported."
-            )
-
-
 @dataclass
-class SparseOperator:
+class SparseOperator(BaseOperator):
     val: Float[t.Tensor, " nnz *d"]
     sp_topo: Integer[SparseTopology, "*b r c"]
 
@@ -76,14 +42,6 @@ class SparseOperator:
         return self.sp_topo.shape + self.val.shape[1:]
 
     @property
-    def device(self) -> t.device:
-        return self.val.device
-
-    @property
-    def dtype(self) -> t.dtype:
-        return self.val.dtype
-
-    @property
     def n_dense_dim(self) -> int:
         return self.val.ndim - 1
 
@@ -101,10 +59,6 @@ class SparseOperator:
         return self.sp_topo.n_batch_dim
 
     @property
-    def n_dim(self) -> int:
-        return self.n_batch_dim + self.n_sp_dim + self.n_dense_dim
-
-    @property
     def T(self) -> SparseOperator:
         """
         Note that the transpose preserves the batch and dense dimensions and only
@@ -113,14 +67,6 @@ class SparseOperator:
         val_trans = self.val[self.sp_topo.coo_to_csc_perm]
         sp_topo_trans = self.sp_topo.T
         return SparseOperator(val_trans, sp_topo_trans)
-
-    @property
-    def requires_grad(self) -> bool:
-        return self.val.requires_grad
-
-    def requires_grad_(self, requires_grad: bool = True) -> SparseOperator:
-        self.val.requires_grad_(requires_grad)
-        return self
 
     def detach(self) -> SparseOperator:
         """
@@ -150,7 +96,7 @@ class SparseOperator:
         """
         Implement self @ other
         """
-        _validate_sp_matmul_args(self, other)
+        validate_matmul_args(self, other)
 
         match other:
             case SparseOperator():
@@ -167,29 +113,26 @@ class SparseOperator:
                     case 2:
                         return sp_dense_mm(self.val, self.sp_topo, other)
 
+            case _:
+                return NotImplemented
+
     def __rmatmul__(self, other):
         """
         Implement other @ self
         """
-        _validate_sp_matmul_args(self, other)
+        validate_matmul_args(self, other)
 
         match other:
-            case SparseOperator():
-                idx_crow, idx_col, val, shape = sp_sp_mm(
-                    other.val,
-                    other.sp_topo,
-                    self.val,
-                    self.sp_topo,
-                )
-                sp_sp = t.sparse_csr_tensor(idx_crow, idx_col, val, shape)
-                return self.from_tensor(sp_sp)
-
+            # Do not check for case SparseOperator(), which is handled by __matmul__
             case t.Tensor():
                 match other.ndim:
                     case 1:
                         return sp_vm(other, self.val, self.sp_topo)
                     case 2:
                         return dense_sp_mm(other, self.val, self.sp_topo)
+
+            case _:
+                return NotImplemented
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b r c *d"]:
         return t.sparse_coo_tensor(
@@ -262,9 +205,3 @@ class SparseOperator:
         )
 
         return SparseOperator(new_val, new_sp_topo)
-
-    def size(self, dim: int | None = None) -> int | t.Size:
-        if dim is None:
-            return self.shape
-        else:
-            return self.shape[dim]

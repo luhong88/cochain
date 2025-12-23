@@ -175,7 +175,7 @@ def test_sp_dense_mm(A, device):
     A_tensor = A.to(device)
     A_operator = SparseOperator.from_tensor(A_tensor)
 
-    B_dense = t.randn(A_tensor.shape, dtype=A_tensor.dtype, device=device)
+    B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
 
     C_dense_true = A_tensor @ B_dense
     C_dense = A_operator @ B_dense
@@ -187,7 +187,7 @@ def test_dense_sp_mm(A, device):
     A_tensor = A.to(device)
     A_operator = SparseOperator.from_tensor(A_tensor)
 
-    B_dense = t.randn(A_tensor.shape, dtype=A_tensor.dtype, device=device)
+    B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
 
     C_dense_true = B_dense @ A_tensor
     C_dense = B_dense @ A_operator
@@ -243,6 +243,12 @@ def test_matmul_with_batch_dim(A, A_batched, device):
     with pytest.raises(NotImplementedError):
         A_batched_operator @ A_operator
 
+    with pytest.raises(NotImplementedError):
+        b_dense @ A_batched_operator
+
+    with pytest.raises(NotImplementedError):
+        A_operator @ A_batched_operator
+
 
 def test_matmul_with_dense_dim(A, device):
     A_operator = SparseOperator.from_tensor(A).to(device)
@@ -260,6 +266,12 @@ def test_matmul_with_dense_dim(A, device):
 
     with pytest.raises(NotImplementedError):
         hybrid_operator @ A_operator
+
+    with pytest.raises(NotImplementedError):
+        b_dense @ hybrid_operator
+
+    with pytest.raises(NotImplementedError):
+        A_operator @ hybrid_operator
 
 
 def test_matmul_with_wrong_tensor_ndim(A, device):
