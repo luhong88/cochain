@@ -189,6 +189,7 @@ class SparseTopology:
             self.idx_coo, self.shape, format="crow", dtype=t.int32
         )
 
+    # TODO: consider renaming this to idx_col_csr to avoid confusion.
     @cached_property
     def idx_col(self) -> Integer[t.LongTensor, "*b nnz/b"]:
         return coalesced_coo_to_col_idx(self.idx_coo, self.shape)

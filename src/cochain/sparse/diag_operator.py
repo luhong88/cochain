@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 import torch as t
 from jaxtyping import Float
@@ -76,6 +77,10 @@ class DiagOperator:
         return self.val.dtype
 
     @property
+    def n_dense_dim(self) -> int:
+        return 0
+
+    @property
     def n_sp_dim(self) -> int:
         return 2
 
@@ -85,7 +90,7 @@ class DiagOperator:
 
     @property
     def n_dim(self) -> int:
-        return self.n_batch_dim + self.n_sp_dim
+        return self.n_batch_dim + self.n_sp_dim + self.n_dense_dim
 
     @property
     def T(self) -> DiagOperator:
@@ -162,6 +167,70 @@ class DiagOperator:
                         return other * self.val
                     case 2:
                         return dense_diag_mm(other, self.val)
+
+    def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
+        if self.n_batch_dim == 0:
+            idx_coo = t.tile(t.arange(self._nnz(), device=self.device), (2, 1))
+
+        else:
+            b = t.size(0)
+            d = t.size(-1)
+
+            idx_coo = t.vstack(
+                (
+                    t.repeat_interleave(t.arange(b, device=self.device), d),
+                    t.tile(t.arange(d, device=self.device), (2, b)),
+                )
+            )
+
+        return t.sparse_coo_tensor(
+            idx_coo,
+            self.val.flatten(),
+            self.shape,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+    def _to_compressed_sparse_tensor(
+        self, constructor: Callable, idx_dtype: t.dtype = t.int64
+    ) -> Float[t.Tensor, "*b d d"]:
+        if self.n_batch_dim == 0:
+            idx_crow = t.arange(self._nnz() + 1, dtype=idx_dtype, device=self.device)
+            idx_col = t.arange(self._nnz(), dtype=idx_dtype, device=self.device)
+
+        else:
+            b = t.size(0)
+            d = t.size(-1)
+
+            idx_crow = t.tile(
+                t.arange(d + 1, dtype=idx_dtype, device=self.device), (b, 1)
+            )
+            idx_col = t.tile(t.arange(d, dtype=idx_dtype, device=self.device), (b, 1))
+
+        return constructor(
+            idx_crow,
+            idx_col,
+            self.val,
+            self.shape,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+    def to_sparse_csr(self, int32: bool = False) -> Float[t.Tensor, "*b d d"]:
+        return self._to_compressed_sparse_tensor(
+            t.sparse_csr_tensor, t.int32 if int32 else t.int64
+        )
+
+    def to_sparse_csc(self, int32: bool = False) -> Float[t.Tensor, "*b d d"]:
+        return self._to_compressed_sparse_tensor(
+            t.sparse_csr_tensor, t.int32 if int32 else t.int64
+        )
+
+    def to_dense(self) -> Float[t.Tensor, "*b d d"]:
+        if self.n_batch_dim == 0:
+            return t.diagflat(self.val)
+        else:
+            return t.diag_embed(self.val)
 
     def to(self, *args, **kwargs) -> DiagOperator:
         return DiagOperator(self.val.to(*args, **kwargs))
