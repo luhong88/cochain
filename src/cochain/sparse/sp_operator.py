@@ -141,7 +141,7 @@ class SparseOperator(BaseOperator):
             self.shape,
             dtype=self.dtype,
             device=self.device,
-        )
+        ).coalesce()
 
     def to_sparse_csr(self, int32: bool = False) -> Float[t.Tensor, "*b r c *d"]:
         if int32:

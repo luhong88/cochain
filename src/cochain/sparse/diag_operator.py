@@ -132,8 +132,8 @@ class DiagOperator(BaseOperator):
             idx_coo = t.tile(t.arange(self._nnz(), device=self.device), (2, 1))
 
         else:
-            b = t.size(0)
-            d = t.size(-1)
+            b = self.size(0)
+            d = self.size(-1)
 
             idx_coo = t.vstack(
                 (
@@ -148,7 +148,7 @@ class DiagOperator(BaseOperator):
             self.shape,
             dtype=self.dtype,
             device=self.device,
-        )
+        ).coalesce()
 
     def _to_compressed_sparse_tensor(
         self, constructor: Callable, idx_dtype: t.dtype = t.int64
@@ -158,8 +158,8 @@ class DiagOperator(BaseOperator):
             idx_col = t.arange(self._nnz(), dtype=idx_dtype, device=self.device)
 
         else:
-            b = t.size(0)
-            d = t.size(-1)
+            b = self.size(0)
+            d = self.size(-1)
 
             idx_crow = t.tile(
                 t.arange(d + 1, dtype=idx_dtype, device=self.device), (b, 1)
@@ -182,7 +182,7 @@ class DiagOperator(BaseOperator):
 
     def to_sparse_csc(self, int32: bool = False) -> Float[t.Tensor, "*b d d"]:
         return self._to_compressed_sparse_tensor(
-            t.sparse_csr_tensor, t.int32 if int32 else t.int64
+            t.sparse_csc_tensor, t.int32 if int32 else t.int64
         )
 
     def to_dense(self) -> Float[t.Tensor, "*b d d"]:
