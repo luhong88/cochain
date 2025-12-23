@@ -14,10 +14,10 @@ def test_device_mismatch(A, device):
     sp_topo = SparseTopology(idx_coo, shape)
 
     with pytest.raises(RuntimeError):
-        SparseOperator(val, sp_topo.to(device))
+        SparseOperator(sp_topo.to(device), val)
 
     with pytest.raises(RuntimeError):
-        SparseOperator(val.to(device), sp_topo)
+        SparseOperator(sp_topo, val.to(device))
 
 
 def test_nnz_mismatch(device):
@@ -28,7 +28,7 @@ def test_nnz_mismatch(device):
     val = t.randn(3).to(device)
 
     with pytest.raises(ValueError):
-        SparseOperator(val, sp_topo)
+        SparseOperator(sp_topo, val)
 
 
 def test_dense_conversion(A, device):
@@ -257,7 +257,7 @@ def test_matmul_with_dense_dim(A, device):
     idx_coo = t.tensor([[0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (4, 4)
 
-    hybrid_operator = SparseOperator(val, SparseTopology(idx_coo, shape)).to(device)
+    hybrid_operator = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
 
     b_dense = t.randn(shape[-1], dtype=hybrid_operator.dtype, device=device)
 
@@ -314,7 +314,7 @@ def test_dim_with_batch_dense(device):
     idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
-    A_operator = SparseOperator(val, SparseTopology(idx_coo, shape)).to(device)
+    A_operator = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
 
     assert len(A_operator.shape) == 4
 
@@ -349,7 +349,7 @@ def test_transpose_with_batch_dense_dim(device):
     idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
-    sp_op = SparseOperator(val, SparseTopology(idx_coo, shape)).to(device)
+    sp_op = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
 
     sp_op_T = sp_op.T.to_dense()
     sp_tensor_T = sp_op.to_dense().transpose(1, 2)
@@ -400,7 +400,7 @@ def test_size(device):
     idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
-    sp_op = SparseOperator(val, SparseTopology(idx_coo, shape)).to(device)
+    sp_op = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
 
     assert sp_op.size() == sp_op.shape
 

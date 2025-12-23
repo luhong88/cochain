@@ -12,8 +12,8 @@ from ._sp_topo import SparseTopology
 
 @dataclass
 class SparseOperator(BaseOperator):
-    val: Float[t.Tensor, " nnz *d"]
     sp_topo: Integer[SparseTopology, "*b r c"]
+    val: Float[t.Tensor, " nnz *d"]
 
     def __post_init__(self):
         if self.val.device != self.sp_topo.device:
@@ -66,13 +66,13 @@ class SparseOperator(BaseOperator):
         """
         val_trans = self.val[self.sp_topo.coo_to_csc_perm]
         sp_topo_trans = self.sp_topo.T
-        return SparseOperator(val_trans, sp_topo_trans)
+        return SparseOperator(sp_topo_trans, val_trans)
 
     def detach(self) -> SparseOperator:
         """
         Create a new SparseOperator with the same `sp_topo` but with the `val` detached.
         """
-        return SparseOperator(self.val.detach(), self.sp_topo)
+        return SparseOperator(self.sp_topo, self.val.detach())
 
     def clone(
         self, memory_format: t.memory_format = t.contiguous_format
@@ -81,7 +81,7 @@ class SparseOperator(BaseOperator):
         Create a new SparseOperator with the same `sp_topo` but with the `val`
         cloned (in the contiguous format by default).
         """
-        return SparseOperator(self.val.clone(memory_format=memory_format), self.sp_topo)
+        return SparseOperator(self.sp_topo, self.val.clone(memory_format=memory_format))
 
     def _nnz(self) -> int:
         """
@@ -204,4 +204,4 @@ class SparseOperator(BaseOperator):
             non_blocking=kwargs.get("non_blocking", False),
         )
 
-        return SparseOperator(new_val, new_sp_topo)
+        return SparseOperator(new_sp_topo, new_val)

@@ -91,7 +91,7 @@ class DiagOperator(BaseOperator):
 
             case SparseOperator():
                 val, sp_topo = diag_sp_mm(self.val, other.val, other.sp_topo)
-                diag_sp = SparseOperator(val, sp_topo)
+                diag_sp = SparseOperator(sp_topo, val)
                 return diag_sp
 
             case t.Tensor():
@@ -114,7 +114,7 @@ class DiagOperator(BaseOperator):
             # Do not check for case DiagOperator(), which is handled by __matmul__
             case SparseOperator():
                 val, sp_topo = sp_diag_mm(other.val, other.sp_topo, self.val)
-                sp_diag = SparseOperator(val, sp_topo)
+                sp_diag = SparseOperator(sp_topo, val)
                 return sp_diag
 
             case t.Tensor():

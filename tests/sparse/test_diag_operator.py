@@ -283,7 +283,7 @@ def test_matmul_with_dense_dim(diag, device):
     idx_coo = t.tensor([[0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (4, 4)
 
-    hybrid_operator = SparseOperator(val, SparseTopology(idx_coo, shape)).to(device)
+    hybrid_operator = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
 
     with pytest.raises(NotImplementedError):
         A_operator @ hybrid_operator
