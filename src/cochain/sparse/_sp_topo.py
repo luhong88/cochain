@@ -14,9 +14,7 @@ from ._index import (
 )
 
 
-def _validate_coo_idx_shape(
-    coo_idx: Integer[t.LongTensor, "sp nnz"], shape: tuple[int, ...] | t.Size
-):
+def _validate_coo_idx_shape(coo_idx: Integer[t.LongTensor, "sp nnz"], shape: t.Size):
     match len(shape):
         case 1:
             raise ValueError(
@@ -78,7 +76,7 @@ class SparseTopology:
     """
 
     _idx_coo: Integer[t.LongTensor, "sp nnz"]
-    shape: tuple[int, ...] | t.Size
+    shape: t.tuple[int, ...] | t.Size
 
     def __post_init__(self):
         _validate_coo_idx_shape(self.idx_coo, self.shape)
@@ -99,6 +97,9 @@ class SparseTopology:
         # Enforce contiguous memory layout. Use object.__setattr__() to bypass
         # frozen=True.
         object.__setattr__(self, "_idx_coo", self._idx_coo.contiguous())
+
+        # Coerse shape dtype.
+        object.__setattr__(self, "shape", t.Size(self.shape))
 
     @property
     def idx_coo(self) -> Integer[t.LongTensor, "sp nnz"]:
@@ -128,6 +129,9 @@ class SparseTopology:
     @property
     def T(self) -> SparseTopology:
         """
+        Note that the transpose preserves the batch dimension and only operates
+        on the sparse dimensions.
+
         Use cache injection to preserve cached_property for transpose.
         """
         idx_coo_sorted = self.idx_coo[:, self.coo_to_csc_perm]
@@ -260,3 +264,9 @@ class SparseTopology:
                 )
 
         return new_sp_topo
+
+    def size(self, dim: int | None = None) -> int | t.Size:
+        if dim is None:
+            return self.shape
+        else:
+            return self.shape[dim]

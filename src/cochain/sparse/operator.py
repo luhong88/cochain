@@ -62,6 +62,15 @@ class SparseOperator:
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
 
+    @classmethod
+    def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
+        coalesced_tensor = tensor.to_sparse_coo().coalesce()
+
+        return cls(
+            coalesced_tensor.values(),
+            SparseTopology(coalesced_tensor.indices(), coalesced_tensor.shape),
+        )
+
     @property
     def shape(self) -> t.Size:
         return self.sp_topo.shape + self.val.shape[1:]
@@ -80,6 +89,11 @@ class SparseOperator:
 
     @property
     def n_sp_dim(self) -> int:
+        """
+        For sparse csr/csc tensors, the leading batch dimension(s) do not count
+        towards sparse_dim(); for sparse coo tensors, no such distinction is
+        made. Here we follow the sparse csr/csc convention.
+        """
         return self.sp_topo.n_sp_dim
 
     @property
@@ -92,11 +106,29 @@ class SparseOperator:
 
     @property
     def T(self) -> SparseOperator:
+        """
+        Note that the transpose preserves the batch and dense dimensions and only
+        operates on the sparse dimensions.
+        """
         val_trans = self.val[self.sp_topo.coo_to_csc_perm]
         sp_topo_trans = self.sp_topo.T
         return SparseOperator(val_trans, sp_topo_trans)
 
+    @property
+    def requires_grad(self) -> bool:
+        return self.val.requires_grad
+
+    def requires_grad_(self, requires_grad: bool = True) -> SparseOperator:
+        self.val.requires_grad_(requires_grad)
+        return self
+
     def _nnz(self) -> int:
+        """
+        For batched sparse csr/csc tensors, the _nnz() method returns the number
+        of nonzero elements per batch item; for sparse coo tensors, the _nnz()
+        method returns the total number of nonzero elements, regardless of batch
+        dimensions. Here we follow the sparse coo convention.
+        """
         return self.sp_topo._nnz()
 
     def __matmul__(self, other):
@@ -107,7 +139,11 @@ class SparseOperator:
 
         match other:
             case SparseOperator():
-                return sp_sp_mm(self.val, self.sp_topo, other.val, other.sp_topo)
+                idx_crow, idx_col, val, shape = sp_sp_mm(
+                    self.val, self.sp_topo, other.val, other.sp_topo
+                )
+                sp_sp = t.sparse_csr_tensor(idx_crow, idx_col, val, shape)
+                return self.from_tensor(sp_sp)
 
             case t.Tensor():
                 match other.ndim:
@@ -124,12 +160,14 @@ class SparseOperator:
 
         match other:
             case SparseOperator():
-                return sp_sp_mm(
+                idx_crow, idx_col, val, shape = sp_sp_mm(
                     other.val,
                     other.sp_topo,
                     self.val,
                     self.sp_topo,
                 )
+                sp_sp = t.sparse_csr_tensor(idx_crow, idx_col, val, shape)
+                return self.from_tensor(sp_sp)
 
             case t.Tensor():
                 match other.ndim:
@@ -142,7 +180,7 @@ class SparseOperator:
         return t.sparse_coo_tensor(
             self.sp_topo.idx_coo,
             self.val,
-            self.sp_topo.shape,
+            self.shape,
             dtype=self.dtype,
             device=self.device,
         )
@@ -159,7 +197,7 @@ class SparseOperator:
             idx_crow,
             idx_col,
             self.val,
-            self.sp_topo.shape,
+            self.shape,
             dtype=self.dtype,
             device=self.device,
         )
@@ -176,7 +214,7 @@ class SparseOperator:
             idx_ccol,
             idx_row,
             self.val[self.sp_topo.coo_to_csc_perm],
-            self.sp_topo.shape,
+            self.shape,
             dtype=self.dtype,
             device=self.device,
         )
@@ -195,3 +233,9 @@ class SparseOperator:
         )
 
         return SparseOperator(new_val, new_sp_topo)
+
+    def size(self, dim: int | None = None) -> int | t.Size:
+        if dim is None:
+            return self.shape
+        else:
+            return self.shape[dim]

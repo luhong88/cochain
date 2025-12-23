@@ -416,4 +416,15 @@ def test_nnz_with_batch_dim(sp_with_batch_dim, device):
     assert sp_topo._nnz() == 6
 
 
+def test_size(device):
+    idx_coo = t.tensor([[0, 0, 1, 2], [0, 1, 0, 3]]).to(device)
+    shape = (4, 4)
+    sp_topo = SparseTopology(idx_coo, shape)
+
+    assert sp_topo.size() == sp_topo.shape
+
+    for idx, val in enumerate(shape):
+        assert sp_topo.size(idx) == val
+
+
 # TODO: test empty edge case?

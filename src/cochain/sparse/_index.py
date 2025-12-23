@@ -6,7 +6,7 @@ from jaxtyping import Float, Integer
 
 def coalesced_coo_to_compressed_idx(
     coo_idx: Integer[t.LongTensor, "sp nnz"],
-    shape: tuple[int, ...] | t.Size,
+    shape: t.Size,
     *,
     format: Literal["crow", "ccol"],
     dtype: t.dtype | None = None,
@@ -67,7 +67,7 @@ def coalesced_coo_to_compressed_idx(
 
 def coalesced_coo_to_col_idx(
     coo_idx: Integer[t.LongTensor, "sp nnz"],
-    shape: tuple[int, ...] | t.Size,
+    shape: t.Size,
     *,
     dtype: t.dtype | None = None,
 ) -> Integer[t.LongTensor, "*b nnz/b"]:
@@ -91,7 +91,7 @@ def coalesced_coo_to_col_idx(
 
 def get_csc_sort_perm(
     coo_idx: Integer[t.LongTensor, "sp nnz"],
-    shape: tuple[int, ...] | t.Size,
+    shape: t.Size,
 ) -> Integer[t.LongTensor, " nnz"]:
     """
     Returns a permutation that reorders a row-sorted coo tensor into a col-sorted,
@@ -128,7 +128,7 @@ def get_csc_sort_perm(
 
 def coalesced_coo_to_row_idx(
     coo_idx: Integer[t.LongTensor, "sp nnz"],
-    shape: tuple[int, ...] | t.Size,
+    shape: t.Size,
     perm: Integer[t.LongTensor, " nnz"],
     *,
     dtype: t.dtype | None = None,
@@ -278,7 +278,7 @@ def project_and_extract_cnz_vals(
     src_coo: Integer[t.LongTensor, "2 src_nnz"],
     src_val: Float[t.Tensor, " source_nnz"],
     target_coo: Integer[t.LongTensor, "2 target_nnz"],
-    target_shape: tuple[int, int] | t.Size,
+    target_shape: t.Size,
 ) -> Integer[t.LongTensor, " target_nnz"]:
     """
     For two coalesced sparse coo tensors "source" and "target", find the indices
