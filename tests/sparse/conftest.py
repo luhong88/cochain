@@ -1,11 +1,12 @@
 import pytest
 import torch as t
+from jaxtyping import Float
 
 
 @pytest.fixture
-def A():
+def A() -> Float[t.Tensor, "4 4"]:
     n_dim = 4
-    nnz = int(n_dim * n_dim * 0.5)
+    nnz = int(n_dim * n_dim * 0.4)
 
     idx = t.hstack((t.randint(0, n_dim, (2, nnz)), t.tile(t.arange(n_dim), (2, 1))))
     val = t.hstack((t.randn(nnz), n_dim * t.ones(n_dim))).to(dtype=t.float)
@@ -16,7 +17,7 @@ def A():
 
 
 @pytest.fixture
-def A_batched():
+def A_batched() -> Float[t.Tensor, "2 4 4"]:
     n_batch = 2
     n_dim = 4
     target_nnz = int(n_dim * n_dim * 0.2)
@@ -34,7 +35,7 @@ def A_batched():
         # the random permutation is required since unique() will sort the idx.
         perm = t.randperm(unique_idx.size(1))
 
-        idx_list.append(unique_idx)
+        idx_list.append(unique_idx[:, perm])
         idx_size_list.append(unique_idx.size(1))
 
     # Since stacked CSR requires that each tensor has the same nnz, find the minimum
