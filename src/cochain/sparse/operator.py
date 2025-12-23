@@ -126,9 +126,15 @@ class SparseOperator:
         return self
 
     def detach(self) -> SparseOperator:
+        """
+        Create a new SparseOperator with the same `sp_topo` but with the `val` detached.
+        """
         return SparseOperator(self.val.detach(), self.sp_topo)
 
     def clone(self) -> SparseOperator:
+        """
+        Create a new SparseOperator with the same `sp_topo` but with the `val` cloned.
+        """
         return SparseOperator(self.val.clone(), self.sp_topo)
 
     def _nnz(self) -> int:
