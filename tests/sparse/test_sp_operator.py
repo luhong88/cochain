@@ -2,7 +2,7 @@ import pytest
 import torch as t
 
 from cochain.sparse._sp_topo import SparseTopology
-from cochain.sparse.operator import SparseOperator
+from cochain.sparse.sp_operator import SparseOperator
 
 
 @pytest.mark.gpu_only

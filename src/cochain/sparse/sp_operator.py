@@ -9,7 +9,7 @@ from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._sp_topo import SparseTopology
 
 
-def _validate_matmul_args(self: SparseOperator, other: SparseOperator | t.Tensor):
+def _validate_sp_matmul_args(self: SparseOperator, other: SparseOperator | t.Tensor):
     if self.n_batch_dim > 0:
         raise NotImplementedError(
             "__matmul__ with batched SparseOperator is not supported."
@@ -150,7 +150,7 @@ class SparseOperator:
         """
         Implement self @ other
         """
-        _validate_matmul_args(self, other)
+        _validate_sp_matmul_args(self, other)
 
         match other:
             case SparseOperator():
@@ -171,7 +171,7 @@ class SparseOperator:
         """
         Implement other @ self
         """
-        _validate_matmul_args(self, other)
+        _validate_sp_matmul_args(self, other)
 
         match other:
             case SparseOperator():
@@ -187,9 +187,9 @@ class SparseOperator:
             case t.Tensor():
                 match other.ndim:
                     case 1:
-                        return sp_vm(self.val, self.sp_topo, other)
+                        return sp_vm(other, self.val, self.sp_topo)
                     case 2:
-                        return dense_sp_mm(self.val, self.sp_topo, other)
+                        return dense_sp_mm(other, self.val, self.sp_topo)
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b r c *d"]:
         return t.sparse_coo_tensor(

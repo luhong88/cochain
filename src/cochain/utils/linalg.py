@@ -1,6 +1,8 @@
 import torch as t
 from jaxtyping import Float
 
+# TODO: depreciate this file
+
 
 def diag_sp_mm(
     diag: Float[t.Tensor, " r"], sp: Float[t.Tensor, "r c"]
