@@ -22,40 +22,6 @@ if TYPE_CHECKING:
     from cuda.core.experimental import Device
 
 
-# def _transpose_sp_csr(
-#     sp_csr: Float[t.Tensor, "*b r c"], sp_topo: Integer[SparseTopology, "*b r c"]
-# ) -> Float[t.Tensor, "*b c r"]:
-#     """
-#     Compute the transpose of a sparse (batched) csr matrix using precomputed
-#     SparseTopology.
-#     """
-#     sp_op = SparseOperator(sp_topo, sp_csr.values().flatten())
-
-#     return sp_op.T.to_sparse_csr(int32=True)
-
-#     if sp_topo.n_batch_dim == 0:
-#         val_trans = sp_csr.values()[sp_topo.coo_to_csc_perm].contiguous()
-#         shape_trans = sp_topo.shape[::-1]
-
-#     else:
-#         val_trans = (
-#             sp_csr.values()
-#             .flatten()[sp_topo.coo_to_csc_perm]
-#             .view(sp_topo.shape[0], -1)
-#             .contiguous()
-#         )
-#         shape_trans = sp_topo.shape[:-2] + (sp_topo.shape[-1], sp_topo.shape[-2])
-
-#     return t.sparse_csr_tensor(
-#         crow_indices=sp_topo.idx_ccol_int32,
-#         col_indices=sp_topo.idx_row_csc_int32,
-#         values=val_trans,
-#         size=shape_trans,
-#         device=sp_csr.device,
-#         dtype=sp_csr.dtype,
-#     )
-
-
 if _HAS_NVMATH:
 
     class AutogradDirectSolver(nvmath_sp.DirectSolver):
