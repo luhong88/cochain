@@ -50,8 +50,8 @@ class SparseOperator(BaseOperator):
         coalesced_tensor = tensor.to_sparse_coo().coalesce()
 
         return cls(
-            coalesced_tensor.values(),
-            SparseTopology(coalesced_tensor.indices(), coalesced_tensor.shape),
+            sp_topo=SparseTopology(coalesced_tensor.indices(), coalesced_tensor.shape),
+            val=coalesced_tensor.values(),
         )
 
     @classmethod
@@ -302,3 +302,7 @@ class SparseOperator(BaseOperator):
         )
 
         return SparseOperator(new_sp_topo, new_val)
+
+    @property
+    def zeros_like(self) -> SparseOperator:
+        return SparseOperator(self.sp_topo, t.zeros_like(self.val))

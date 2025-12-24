@@ -247,3 +247,7 @@ class DiagOperator(BaseOperator):
 
     def to(self, *args, **kwargs) -> DiagOperator:
         return DiagOperator(self.val.to(*args, **kwargs))
+
+    @property
+    def zeros_like(self) -> DiagOperator:
+        return SparseOperator(t.zeros_like(self.val))
