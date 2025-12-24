@@ -6,14 +6,14 @@ from typing import Callable
 import torch as t
 from jaxtyping import Float
 
-from ._base_operator import BaseOperator, validate_matmul_args
+from ._base_operator import BaseOperator, is_scalar, validate_matmul_args
 from ._matmul import (
     dense_diag_mm,
     diag_dense_mm,
     diag_sp_mm,
     sp_diag_mm,
 )
-from .sp_operator import SparseOperator
+from ._sp_operator import SparseOperator
 
 
 @dataclass
@@ -61,6 +61,14 @@ class DiagOperator(BaseOperator):
         Note that the transpose preserves the batch dimensions.
         """
         return self
+
+    def apply(self, fn: Callable, **kwargs) -> SparseOperator:
+        new_val = fn(self.val, **kwargs)
+        return SparseOperator(self.sp_topo, new_val)
+
+    @property
+    def inv(self) -> DiagOperator:
+        return DiagOperator(1.0 / self.val)
 
     def detach(self) -> DiagOperator:
         return DiagOperator(self.val.detach())
@@ -126,6 +134,52 @@ class DiagOperator(BaseOperator):
 
             case _:
                 return NotImplemented
+
+    def __neg__(self) -> DiagOperator:
+        return DiagOperator(-self.val)
+
+    def __pow__(self, exp: float | int) -> DiagOperator:
+        return DiagOperator(self.val**exp)
+
+    def pow(self, exp: float | int) -> DiagOperator:
+        return self.__pow__(exp)
+
+    def __add__(self, other) -> DiagOperator:
+        match other:
+            case DiagOperator():
+                return DiagOperator(self.val + other.val)
+            case _:
+                return NotImplemented
+
+    def __sub__(self, other) -> DiagOperator:
+        match other:
+            case DiagOperator():
+                return DiagOperator(self.val - other.val)
+            case _:
+                return NotImplemented
+
+    def __mul__(self, other) -> DiagOperator:
+        if isinstance(other, DiagOperator):
+            return self.__matmul(other)
+        elif is_scalar(other):
+            return DiagOperator(self.val * other)
+        else:
+            return NotImplemented
+
+    def __truediv__(self, other) -> DiagOperator:
+        if isinstance(other, DiagOperator):
+            return DiagOperator(self.val / other.val)
+        elif is_scalar(other):
+            return DiagOperator(self.val / other)
+        else:
+            return NotImplemented
+
+    @property
+    def tr(self) -> t.Tensor:
+        if self.n_batch_dim == 0:
+            return self.val.sum()
+        else:
+            return self.val.sum(dim=-1)
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
         if self.n_batch_dim == 0:

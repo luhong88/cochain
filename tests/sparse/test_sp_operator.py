@@ -1,8 +1,11 @@
 import pytest
 import torch as t
 
+from cochain.sparse._sp_operator import SparseOperator
 from cochain.sparse._sp_topo import SparseTopology
-from cochain.sparse.sp_operator import SparseOperator
+
+# TODO: test new dunder method
+# TODO; test apply, assemble
 
 
 @pytest.mark.gpu_only

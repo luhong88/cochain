@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Callable
 
 import torch as t
+
+
+def is_scalar(other) -> bool:
+    return isinstance(other, (float, int)) or (
+        isinstance(other, t.Tensor) and other.numel() == 1
+    )
 
 
 def validate_matmul_args(self: BaseOperator, other: BaseOperator | t.Tensor):
@@ -88,6 +95,9 @@ class BaseOperator(ABC):
         return self
 
     @abstractmethod
+    def apply(self, fn: Callable, **kwargs) -> BaseOperator: ...
+
+    @abstractmethod
     def detach(self) -> BaseOperator: ...
 
     @abstractmethod
@@ -103,6 +113,24 @@ class BaseOperator(ABC):
 
     @abstractmethod
     def __rmatmul__(self, other): ...
+
+    @abstractmethod
+    def __mul__(self, other) -> BaseOperator: ...
+
+    def __rmul__(self, other) -> BaseOperator:
+        return self.__mul__(other)
+
+    @abstractmethod
+    def __truediv__(self, other) -> BaseOperator: ...
+
+    @abstractmethod
+    def __add__(self, other) -> BaseOperator: ...
+
+    @abstractmethod
+    def __sub__(self, other) -> BaseOperator: ...
+
+    @abstractmethod
+    def __neg__(self) -> BaseOperator: ...
 
     @abstractmethod
     def to_sparse_coo(self) -> t.Tensor: ...

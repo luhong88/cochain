@@ -3,6 +3,7 @@ from functools import cached_property
 import torch as t
 from jaxtyping import Float, Integer
 
+from .sparse.operators import SparseOperator
 from .topology import coboundaries, tet_topology, tri_topology
 
 
@@ -14,9 +15,9 @@ class SimplicialComplex:
     def __init__(
         self,
         coboundaries: tuple[
-            Float[t.Tensor, "edge vert"],
-            Float[t.Tensor, "tri edge"],
-            Float[t.Tensor, "tet tri"],
+            Float[SparseOperator, "edge vert"],
+            Float[SparseOperator, "tri edge"],
+            Float[SparseOperator, "tet tri"],
         ],
         simplices: tuple[
             Integer[t.LongTensor, "edge 2"],
@@ -228,6 +229,7 @@ class SimplicialBatch(SimplicialComplex):
         return self.batch_verts.max().item() + 1
 
 
+# TODO: update to use SparseOperator
 def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     """
     This function takes in a list of `SimplicialComplex` objects and collate them

@@ -1,9 +1,12 @@
 import pytest
 import torch as t
 
+from cochain.sparse._diag_operator import DiagOperator
+from cochain.sparse._sp_operator import SparseOperator
 from cochain.sparse._sp_topo import SparseTopology
-from cochain.sparse.diag_operator import DiagOperator
-from cochain.sparse.sp_operator import SparseOperator
+
+# TODO: test new dunder methods
+# TODO: test pow, tr, apply, inv
 
 
 @pytest.fixture

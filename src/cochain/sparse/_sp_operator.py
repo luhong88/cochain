@@ -1,13 +1,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 import torch as t
 from jaxtyping import Float, Integer
 
-from ._base_operator import BaseOperator, validate_matmul_args
+from ._base_operator import BaseOperator, is_scalar, validate_matmul_args
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._sp_topo import SparseTopology
+
+
+def _check_topo_equality(self: SparseOperator, other: SparseOperator, msg: str):
+    # Enforce equal topology requirement with three increasingly more expensive
+    # checks: 1) same underlying sp_topo object, 2) same sp_topo shape, and 3)
+    # same sp_topo.idx_coo elements.
+    if self.sp_topo is other.sp_topo:
+        pass
+
+    elif self.sp_topo.shape == other.sp_topo.shape and t.equal(
+        self.sp_topo.idx_coo, other.sp_topo.idx_coo
+    ):
+        pass
+
+    else:
+        raise ValueError(msg)
 
 
 @dataclass
@@ -36,6 +53,24 @@ class SparseOperator(BaseOperator):
             coalesced_tensor.values(),
             SparseTopology(coalesced_tensor.indices(), coalesced_tensor.shape),
         )
+
+    @classmethod
+    def assemble(cls, *operators: BaseOperator) -> SparseOperator:
+        """
+        Efficiently sum multiple SparseOperators and/or DiagOperators with different
+        topologies.
+        """
+        if not operators:
+            raise ValueError("No operators to assemble.")
+
+        coo_tensors = [op.to_sparse_coo() for op in operators]
+
+        all_idx = t.hstack([coo.indices() for coo in coo_tensors])
+        all_val = t.hstack([coo.values() for coo in coo_tensors])
+
+        return t.sparse_coo_tensor(
+            all_idx, all_val, size=coo_tensors[0].size()
+        ).coalesce()
 
     @property
     def shape(self) -> t.Size:
@@ -67,6 +102,17 @@ class SparseOperator(BaseOperator):
         val_trans = self.val[self.sp_topo.coo_to_csc_perm]
         sp_topo_trans = self.sp_topo.T
         return SparseOperator(sp_topo_trans, val_trans)
+
+    def apply(self, fn: Callable, **kwargs) -> SparseOperator:
+        """
+        Apply a sparsity-preserving function on the values of SparseOperator.
+        """
+        new_val = fn(self.val, **kwargs)
+
+        if new_val.size(0) != self.val.size(0):
+            raise RuntimeError("Function changed the nnz dim of the SparseOperator.")
+
+        return SparseOperator(self.sp_topo, new_val)
 
     def detach(self) -> SparseOperator:
         """
@@ -131,6 +177,57 @@ class SparseOperator(BaseOperator):
                     case 2:
                         return dense_sp_mm(other, self.val, self.sp_topo)
 
+            case _:
+                return NotImplemented
+
+    def __neg__(self) -> SparseOperator:
+        return SparseOperator(self.sp_topo, -self.val)
+
+    def __mul__(self, other) -> SparseOperator:
+        """
+        Scalar multiplication.
+        """
+        return (
+            SparseOperator(self.sp_topo, self.val * other)
+            if is_scalar()
+            else NotImplemented
+        )
+
+    def __truediv__(self, other) -> SparseOperator:
+        """
+        Scalar division.
+        """
+        return (
+            SparseOperator(self.sp_topo, self.val / other)
+            if is_scalar()
+            else NotImplemented
+        )
+
+    def __add__(self, other) -> SparseOperator:
+        """
+        Elementwise-addition of two SparseOperators that share the same topology/
+        sparsity pattern.
+        """
+        match other:
+            case SparseOperator():
+                _check_topo_equality(
+                    self,
+                    other,
+                    msg="SparseOperator __add__ only supports operators with identical topologies.",
+                )
+                return SparseOperator(self.sp_topo, self.val + other.val)
+            case _:
+                return NotImplemented
+
+    def __sub__(self, other) -> SparseOperator:
+        match other:
+            case SparseOperator():
+                _check_topo_equality(
+                    self,
+                    other,
+                    msg="SparseOperator __sub__ only supports operators with identical topologies.",
+                )
+                return SparseOperator(self.sp_topo, self.val - other.val)
             case _:
                 return NotImplemented
 
