@@ -17,6 +17,7 @@ class SparseOperator(BaseOperator):
     val: Float[t.Tensor, " nnz *d"]
 
     # TODO: optimized intake paths for csc/csr formats
+    # TODO: allow additional kwargs, e.g., copy=True
     @classmethod
     def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
         coalesced_tensor = tensor.to_sparse_coo().coalesce()
@@ -105,7 +106,7 @@ class SparseOperator(BaseOperator):
         """
         return (
             SparseOperator(self.sp_topo, self.val * other)
-            if is_scalar()
+            if is_scalar(other)
             else NotImplemented
         )
 
@@ -115,7 +116,7 @@ class SparseOperator(BaseOperator):
         """
         return (
             SparseOperator(self.sp_topo, self.val / other)
-            if is_scalar()
+            if is_scalar(other)
             else NotImplemented
         )
 

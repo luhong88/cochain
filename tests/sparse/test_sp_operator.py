@@ -4,10 +4,6 @@ import torch as t
 from cochain.sparse._sp_operator import SparseOperator
 from cochain.sparse._sp_topo import SparseTopology
 
-# TODO: test new dunder method
-# TODO: test apply, assemble
-# TODO: test sparse csr trans direct conversion
-
 
 @pytest.mark.gpu_only
 def test_device_mismatch(A, device):
@@ -123,6 +119,30 @@ def test_csr_conversion_with_batch_dim(A_batched, device):
     # to a batched sparse csr tensor, we directly check for value agreement in
     # dense format.
     t.testing.assert_close(A_tensor.to_dense(), A_csr.to_dense())
+
+
+def test_csr_transposed_conversion(A, device):
+    A_op = SparseOperator.from_tensor(A).to(device)
+    A_T_direct = A_op.to_sparse_csr_transposed()
+    A_T_indirect = A_op.T.to_sparse_csr()
+
+    assert A_T_direct.shape == A_T_indirect.shape
+
+    t.testing.assert_close(A_T_direct.values(), A_T_indirect.values())
+    t.testing.assert_close(A_T_direct.crow_indices(), A_T_indirect.crow_indices())
+    t.testing.assert_close(A_T_direct.col_indices(), A_T_indirect.col_indices())
+
+
+def test_csr_transposed_conversion_with_batch_dim(A_batched, device):
+    A_op = SparseOperator.from_tensor(A_batched).to(device)
+    A_T_direct = A_op.to_sparse_csr_transposed()
+    A_T_indirect = A_op.T.to_sparse_csr()
+
+    assert A_T_direct.shape == A_T_indirect.shape
+
+    t.testing.assert_close(A_T_direct.values(), A_T_indirect.values())
+    t.testing.assert_close(A_T_direct.crow_indices(), A_T_indirect.crow_indices())
+    t.testing.assert_close(A_T_direct.col_indices(), A_T_indirect.col_indices())
 
 
 def test_csc_conversion(A, device):
@@ -425,3 +445,76 @@ def test_to_device(A, device):
 
     assert A_operator.val.device.type == device.type
     assert A_operator.sp_topo.device.type == device.type
+
+
+def test_apply(A, device):
+    A_tensor = A.to(device)
+    A_op = SparseOperator.from_tensor(A).clone().to(device)
+
+    tensor_applied = t.relu(A_tensor.to_dense())
+    op_applied = A_op.apply(t.relu).to_dense()
+
+    t.testing.assert_close(op_applied, tensor_applied)
+
+
+def test_neg(A, device):
+    A_tensor = A.to(device)
+    neg_A_tensor = -A_tensor
+    A_op = SparseOperator.from_tensor(A).to(device)
+    neg_A_op = -A_op
+
+    t.testing.assert_close(neg_A_op.to_dense(), neg_A_tensor.to_dense())
+
+
+def test_add(A, device):
+    A_tensor = A.to(device)
+    A_op = SparseOperator.from_tensor(A).to(device)
+
+    tensor_sum = A_tensor + A_tensor
+    op_sum = A_op + A_op
+
+    t.testing.assert_close(op_sum.to_dense(), tensor_sum.to_dense())
+
+
+def test_sub(A, device):
+    A_tensor = A.to(device)
+    A_op = SparseOperator.from_tensor(A).to(device)
+
+    tensor_sub = A_tensor - A_tensor
+    op_sub = A_op - A_op
+
+    t.testing.assert_close(op_sub.to_dense(), tensor_sub.to_dense())
+
+
+def test_assemble(A, device):
+    A_tensor = A.to(device)
+    A_op = SparseOperator.from_tensor(A).to(device)
+
+    tensor_sum = A_tensor + A_tensor.T
+    op_sum = SparseOperator.assemble(A_op, A_op.T)
+
+    t.testing.assert_close(op_sum.to_dense(), tensor_sum.to_dense())
+
+
+def test_mul(A, device):
+    A_tensor = A.to(device)
+    A_op = SparseOperator.from_tensor(A).to(device)
+
+    for scalar in [2, 3.0, t.tensor(-9.0).to(device)]:
+        tensor_scaled = scalar * A_tensor
+        op_scaled = scalar * A_op
+        op_rscaled = A_op * scalar
+
+        t.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())
+        t.testing.assert_close(op_rscaled.to_dense(), tensor_scaled.to_dense())
+
+
+def test_trudiv(A, device):
+    A_tensor = A.to(device)
+    A_op = SparseOperator.from_tensor(A).to(device)
+
+    for scalar in [2, 3.0, t.tensor(-9.0).to(device)]:
+        tensor_scaled = A_tensor / scalar
+        op_scaled = A_op / scalar
+
+        t.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())

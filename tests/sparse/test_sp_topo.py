@@ -5,8 +5,6 @@ import torch as t
 
 from cochain.sparse._sp_topo import SparseTopology
 
-# TODO: test inv()
-
 
 @pytest.fixture
 def sp_with_empty_row():
