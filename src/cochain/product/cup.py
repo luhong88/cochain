@@ -6,6 +6,7 @@ from jaxtyping import Float
 from ..complex import SimplicialComplex
 
 
+# TODO: cache front/back face index mapping
 def cup_product(
     k_cochain: Float[t.Tensor, " k-simp *ch"],
     l_cochain: Float[t.Tensor, " l-simp *ch"],
@@ -15,11 +16,12 @@ def cup_product(
     pairing: Literal["scalar", "dot", "cross", "outer"],
 ) -> Float[t.Tensor, " (k+l)-simp *ch"]:
     dtype = mesh.edges.dtype
+    pack_dtype = t.int64
     device = mesh.edges.device
 
     verts = t.arange(mesh.n_verts, dtype=dtype, device=device)
 
-    simp_dim_map: dict[int, t.Tensor] = {
+    simp_map: dict[int, t.Tensor] = {
         dim: simp for dim, simp in enumerate([verts, mesh.edges, mesh.tris, mesh.tets])
     }
     n_simp_map: dict[int, int] = {
@@ -37,36 +39,34 @@ def cup_product(
     # Sort the (k+l)-simplices by vert indices; for an simplicial n-complex, this
     # is unnecessary if k + l < n, because all but the top-level simplices are
     # sorted by vert indices by default.
-    kl_simp: Float[t.Tensor, " (k+l)-simp *ch"] = (
-        simp_dim_map[k + l].sort(dim=-1).values
-    )
+    kl_simp: Float[t.Tensor, " (k+l)-simp *ch"] = simp_map[k + l].sort(dim=-1).values
 
     n_k_simp = n_simp_map[k]
-    k_simp = simp_dim_map[k]
+    k_simp = simp_map[k]
     k_front_face = kl_simp[:, : k + 1]
 
     n_l_simp = n_simp_map[l]
-    l_simp = simp_dim_map[l]
+    l_simp = simp_map[l]
     k_back_face = kl_simp[:, k:]
 
     # Find the index of the k-front faces in the list of k-simplices and the index
     # of the k-back faces in the list of l-simplices.
-    k_simp_packed = t.zeros(n_k_simp, dtype=dtype, device=device)
+    k_simp_packed = t.zeros(n_k_simp, dtype=pack_dtype, device=device)
     for idx in range(k + 1):
         k_simp_packed.add_(k_simp[:, idx] * (mesh.n_verts ** (k - idx)))
 
-    k_front_face_packed = t.zeros(k_front_face.size(0), dtype=dtype, device=device)
+    k_front_face_packed = t.zeros(k_front_face.size(0), dtype=pack_dtype, device=device)
     for idx in range(l + 1):
         k_front_face_packed.add_(k_front_face[:, idx] * (mesh.n_verts ** (k - idx)))
 
     k_front_face_idx = t.searchsorted(k_simp_packed, k_front_face_packed)
     k_cochain_at_front_face = k_cochain[k_front_face_idx]
 
-    l_simp_packed = t.zeros(n_l_simp, dtype=dtype, device=device)
+    l_simp_packed = t.zeros(n_l_simp, dtype=pack_dtype, device=device)
     for idx in range(k + 1):
         l_simp_packed.add_(l_simp[:, idx] * (mesh.n_verts ** (l - idx)))
 
-    k_back_face_packed = t.zeros(k_back_face.size(0), dtype=dtype, device=device)
+    k_back_face_packed = t.zeros(k_back_face.size(0), dtype=pack_dtype, device=device)
     for idx in range(l + 1):
         k_back_face_packed.add_(k_back_face[:, idx] * (mesh.n_verts ** (k - idx)))
 

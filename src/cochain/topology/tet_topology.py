@@ -106,3 +106,29 @@ def get_tri_face_idx(
     ].view(-1, 4)
 
     return all_canon_tris_idx
+
+
+def get_tri_face_orientations(
+    tets: Integer[t.LongTensor, "tet 4"],
+) -> Float[t.Tensor, "tet 4"]:
+    i, j, k, l = 0, 1, 2, 3
+
+    # For each tet and each vertex, find the outward-facing triangle opposite
+    # to the vertex (note that the way the triangles are indexed here satisfies
+    # the right-hand rule for positively oriented tets).
+    all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[
+        :, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
+    ]
+
+    canon_pos_orientation = t.tensor([0, 1, 2], dtype=t.long, device=tets.device)
+
+    all_tris_orientations = all_tris.sort(dim=-1).indices
+    # Same method as used in the construction of coboundary operators to use
+    # sort() to identify triangle orientations.
+    all_tris_signs: Float[t.Tensor, "tet 4"] = t.where(
+        condition=t.sum(all_tris_orientations == canon_pos_orientation, dim=-1) == 1,
+        self=-1.0,
+        other=1.0,
+    )
+
+    return all_tris_signs

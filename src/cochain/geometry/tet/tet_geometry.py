@@ -4,7 +4,7 @@ from jaxtyping import Float, Integer
 from ...utils.constants import EPS
 
 
-def _tet_signed_vols(
+def get_tet_signed_vols(
     vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
 ) -> Float[t.Tensor, " tet"]:
     """
@@ -30,7 +30,7 @@ def _tet_signed_vols(
     return tet_signed_vols
 
 
-def _d_tet_signed_vols_d_vert_coords(
+def d_tet_signed_vols_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
 ) -> Float[t.Tensor, "tet 4 3"]:
     """
@@ -67,7 +67,7 @@ def _d_tet_signed_vols_d_vert_coords(
     return dVdV
 
 
-def _tet_face_vector_areas(
+def tet_face_vector_areas(
     vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
 ) -> tuple[
     Float[t.Tensor, "tet 6 3"], Float[t.Tensor, "tet 6 3"], Float[t.Tensor, "tet 6"]
@@ -83,7 +83,7 @@ def _tet_face_vector_areas(
     """
     i, j, k, l = 0, 1, 2, 3
 
-    tet_vols = t.abs(_tet_signed_vols(vert_coords, tets))
+    tet_vols = t.abs(get_tet_signed_vols(vert_coords, tets))
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
@@ -113,7 +113,7 @@ def _tet_face_vector_areas(
     return area_vec_to, area_vec_ho, weight_o
 
 
-def _bary_coord_grad_inner_prods(
+def bary_coord_grad_inner_prods(
     tet_signed_vols: Float[t.Tensor, " tet"],
     d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"],
 ) -> Float[t.Tensor, "tet 4 4"]:
@@ -136,8 +136,10 @@ def _bary_coord_grad_inner_prods(
     return bary_coords_grad_dot
 
 
-def _whitney_2_form_inner_prods(
-    vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
+def whitney_2_form_inner_prods(
+    vert_coords: Float[t.Tensor, "vert 3"],
+    tets: Integer[t.LongTensor, "tet 4"],
+    tet_tris_signs: Float[t.Tensor, "tet 4"],
 ) -> tuple[Float[t.Tensor, "tet 1"], Float[t.Tensor, "tet 4 4"]]:
     """
     For each tet, compute the pairwise inner product of the Whitney 2-form basis
@@ -148,7 +150,7 @@ def _whitney_2_form_inner_prods(
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    tet_signed_vols: Float[t.Tensor, " tet"] = _tet_signed_vols(vert_coords, tets)
+    tet_signed_vols: Float[t.Tensor, " tet"] = get_tet_signed_vols(vert_coords, tets)
     tet_vols = t.abs(tet_signed_vols)
     tet_signs = t.sign(tet_signed_vols)
 
@@ -187,29 +189,11 @@ def _whitney_2_form_inner_prods(
         20.0 * gram - 5.0 * gram_partial_sum + gram_sum
     ) / (180.0 * tet_vols.view(-1, 1, 1))
 
-    # For each tet and each vertex, find the outward-facing triangle opposite
-    # to the vertex (note that the way the triangles are indexed here satisfies
-    # the right-hand rule for positively oriented tets).
-    all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[
-        :, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
-    ]
-
-    canon_pos_orientation = t.tensor([0, 1, 2], dtype=t.long, device=tets.device)
-
-    all_tris_orientations = all_tris.sort(dim=-1).indices
-    # Same method as used in the construction of coboundary operators to use
-    # sort() to identify triangle orientations.
-    all_tris_signs: Float[t.Tensor, "tet 4"] = t.where(
-        condition=t.sum(all_tris_orientations == canon_pos_orientation, dim=-1) == 1,
-        self=-1.0,
-        other=1.0,
-    ).to(dtype=vert_coords.dtype)
-
     # Mapping the local basis function to the global basis function requires
     # correction of both the triangle face orientation as well as the tet orientations
     # (to account for negatively oriented tets, for which all_tris no longer satisfies
     # the right-hand rule).
-    sign_corrections = all_tris_signs * tet_signs.view(-1, 1)
+    sign_corrections = tet_tris_signs * tet_signs.view(-1, 1)
 
     whitney_inner_prod_signed: Float[t.Tensor, "tet 4 4"] = (
         whitney_inner_prod
@@ -220,14 +204,14 @@ def _whitney_2_form_inner_prods(
     return sign_corrections, whitney_inner_prod_signed
 
 
-def _cotan_weights(
+def cotan_weights(
     vert_coords: Float[t.Tensor, "vert 3"],
     tets: Integer[t.LongTensor, "tri 3"],
     n_verts: int,
 ) -> Float[t.Tensor, "vert vert"]:
     i, j, k, l = 0, 1, 2, 3
 
-    _, _, weight_o = _tet_face_vector_areas(vert_coords, tets)
+    _, _, weight_o = tet_face_vector_areas(vert_coords, tets)
 
     # For each tet ijkl, each edge s contributes one term w_o to the weight matrix,
     # thus each tet contributes six terms (in COO format):

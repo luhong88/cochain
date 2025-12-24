@@ -93,6 +93,10 @@ class SimplicialComplex:
         return tet_topology.get_tri_face_idx(self.tets, self.tris, self.n_verts)
 
     @cached_property
+    def tet_tri_orientations(self) -> Float[t.Tensor, "tet 4"]:
+        return tet_topology.get_tri_face_orientations(self.tets)
+
+    @cached_property
     def tri_edge_idx(self) -> Integer[t.LongTensor, "tri 3"]:
         return tri_topology.get_edge_face_idx(self.tris, self.edges, self.n_verts)
 
