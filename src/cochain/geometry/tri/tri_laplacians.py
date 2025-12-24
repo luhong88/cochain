@@ -76,7 +76,7 @@ def laplacian_0(
 
     match dual_complex:
         case "circumcentric":
-            return star_0(tri_mesh) @ stiffness_matrix(tri_mesh)
+            return star_0(tri_mesh).inv @ stiffness_matrix(tri_mesh)
 
         case "barycentric":
             return codifferential_1(tri_mesh, dual_complex) @ tri_mesh.coboundary_0
