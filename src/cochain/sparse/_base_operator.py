@@ -152,7 +152,3 @@ class BaseOperator(ABC):
             return self.shape
         else:
             return self.shape[dim]
-
-    @property
-    @abstractmethod
-    def zeros_like(self) -> BaseOperator: ...

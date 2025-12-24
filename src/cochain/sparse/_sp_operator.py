@@ -302,7 +302,3 @@ class SparseOperator(BaseOperator):
         )
 
         return SparseOperator(new_sp_topo, new_val)
-
-    @property
-    def zeros_like(self) -> SparseOperator:
-        return SparseOperator(self.sp_topo, t.zeros_like(self.val))
