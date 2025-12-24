@@ -75,8 +75,9 @@ def test_mass_2_with_skfem(two_tets_mesh: SimplicialComplex):
     ],
 )
 def test_mass_matrix_symmetry(mass_matrix, two_tets_mesh: SimplicialComplex):
-    mass = mass_matrix(two_tets_mesh).to_dense()
-    t.testing.assert_close(mass, mass.T)
+    mass = mass_matrix(two_tets_mesh)
+    mass_T = mass.T
+    t.testing.assert_close(mass.to_dense(), mass_T.to_dense())
 
 
 @pytest.mark.parametrize(
@@ -104,7 +105,7 @@ def test_mass_matrix_total_vol_partition(mass_matrix, two_tets_mesh: SimplicialC
     The sum of the diagonal 0- and 3-form mass matrices should be equal to the
     total volume of the tet.
     """
-    total_mass = t.sum(mass_matrix(two_tets_mesh))
+    total_mass = mass_matrix(two_tets_mesh).tr
     total_vol = t.sum(
         t.abs(_tet_signed_vols(two_tets_mesh.vert_coords, two_tets_mesh.tets))
     )
@@ -114,7 +115,7 @@ def test_mass_matrix_total_vol_partition(mass_matrix, two_tets_mesh: SimplicialC
 def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialComplex):
     mass_1 = tet_masses.mass_1(two_tets_mesh)
     mass_1_mask = t.zeros_like(mass_1.to_dense(), dtype=t.long)
-    mass_1_mask[*mass_1.indices()] = 1
+    mass_1_mask[mass_1.sp_topo.idx_coo.unbind(0)] = 1
 
     true_mass_1_mask = t.tensor(
         [
@@ -137,7 +138,7 @@ def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialComplex):
 def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialComplex):
     mass_2 = tet_masses.mass_2(two_tets_mesh)
     mass_2_mask = t.zeros_like(mass_2.to_dense(), dtype=t.long)
-    mass_2_mask[*mass_2.indices()] = 1
+    mass_2_mask[mass_2.sp_topo.idx_coo.unbind(0)] = 1
 
     true_mass_2_mask = t.tensor(
         [

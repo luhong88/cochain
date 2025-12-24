@@ -2,18 +2,19 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
+from ...sparse.operators import DiagOperator
 from ..tri.tri_geometry import _tri_areas
 from .tet_masses import mass_0, mass_3
 
 
-def star_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " tet"]:
+def star_3(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tet tet"]:
     """
     Compute the Hodge 3-star, which is the inverse of the mass-3 matrix.
     """
-    return 1.0 / mass_3(tet_mesh)
+    return mass_3(tet_mesh).inv
 
 
-def star_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " tri"]:
+def star_2(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:
     """
     Compute the barycentric Hodge 2-star operator.
     """
@@ -55,10 +56,10 @@ def star_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " tri"]:
     tri_areas = _tri_areas(vert_coords, tris)
     diag.divide_(tri_areas)
 
-    return diag
+    return DiagOperator.from_tensor(diag)
 
 
-def star_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
+def star_1(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "edge edge"]:
     """
     Compute the barycentric Hodge 1-star operator.
     """
@@ -119,7 +120,7 @@ def star_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
     )
     diag.divide_(edge_lens)
 
-    return diag
+    return DiagOperator.from_tensor(diag)
 
 
 star_0 = mass_0

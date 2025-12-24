@@ -386,9 +386,9 @@ def sp_dense_mm(
 
 
 def dense_sp_mm(
+    b_dense: Float[t.Tensor, "i j"],
     a_val: Float[t.Tensor, " nnz"],
     a_sp_topo: Integer[SparseTopology, "j k"],
-    b_dense: Float[t.Tensor, "i j"],
 ) -> Float[t.Tensor, "i k"]:
     return _FixedTopoDenseSpMM.apply(a_val, a_sp_topo, b_dense)
 
@@ -416,8 +416,58 @@ def sp_mv(
 
 
 def sp_vm(
+    b_dense: Float[t.Tensor, " i"],
     a_val: Float[t.Tensor, " nnz"],
     a_sp_topo: Integer[SparseTopology, "i j"],
-    b_dense: Float[t.Tensor, " i"],
 ) -> Float[t.Tensor, " j"]:
     return _FixedTopoSpVM.apply(a_val, a_sp_topo, b_dense)
+
+
+# Specialized functions for diagonal operators that do not require custom backward()
+
+
+def diag_sp_mm(
+    diag_val: Float[t.Tensor, " r"],
+    sp_val: Float[t.Tensor, " nnz"],
+    sp_topo: Integer[SparseTopology, "r c"],
+) -> tuple[Float[t.Tensor, " nnz"], Integer[SparseTopology, "r c"]]:
+    """
+    `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
+    """
+    rows = sp_topo.idx_coo[0]
+    scaled_vals = sp_val * diag_val[rows]
+    return scaled_vals, sp_topo
+
+
+def diag_dense_mm(
+    diag_val: Float[t.Tensor, " r"],
+    dense: Float[t.Tensor, "r c"],
+) -> Float[t.Tensor, "r c"]:
+    """
+    `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
+    """
+    return diag_val.view(-1, 1) * dense
+
+
+def sp_diag_mm(
+    sp_val: Float[t.Tensor, " nnz"],
+    sp_topo: Integer[SparseTopology, "r c"],
+    diag_val: Float[t.Tensor, " c"],
+) -> tuple[Float[t.Tensor, " nnz"], Integer[SparseTopology, "r c"]]:
+    """
+    `A@D` scales the `i`th col of `A` by the `i`th element of `D`.
+    """
+    cols = sp_topo.idx_coo[1]
+    scaled_vals = sp_val * diag_val[cols]
+
+    return scaled_vals, sp_topo
+
+
+def dense_diag_mm(
+    dense: Float[t.Tensor, "r c"],
+    diag_val: Float[t.Tensor, " c"],
+) -> Float[t.Tensor, "r c"]:
+    """
+    `A@D` scales the `i`th col of `A` by the `i`th element of `D`.
+    """
+    return dense * diag_val.view(1, -1)

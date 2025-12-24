@@ -4,21 +4,24 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
+from ...sparse.operators import DiagOperator
 from .tri_geometry import _tri_areas
 from .tri_stiffness import _cotan_weights
 
 
-def star_2(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " tri"]:
+def star_2(tri_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:
     """
     The Hodge 2-star operator maps the 2-simplices (triangles) in a mesh to their
     dual 0-cells. This function computes the ratio of the "volume" of the dual 0-cells
     (which is 1 by convention) to the area of the primal triangles. The returned tensor
     forms the diagonal of the 2-star tensor.
     """
-    return 1.0 / _tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
+    return DiagOperator(1.0 / _tri_areas(tri_mesh.vert_coords, tri_mesh.tris))
 
 
-def _star_1_circumcentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
+def _star_1_circumcentric(
+    tri_mesh: SimplicialComplex,
+) -> Float[DiagOperator, "edge edge"]:
     """
     The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the
     circumcentric dual 1-cells. This function computes the length ratio of the dual
@@ -51,10 +54,12 @@ def _star_1_circumcentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge
     subset_idx = t.searchsorted(all_idx_flat, edge_idx_flat)
     subset_vals = weights.values()[subset_idx]
 
-    return -subset_vals  # note the negative sign to get dual edge lengths
+    return DiagOperator(-subset_vals)  # note the negative sign to get dual edge lengths
 
 
-def _star_1_barycentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]:
+def _star_1_barycentric(
+    tri_mesh: SimplicialComplex,
+) -> Float[DiagOperator, "edge edge"]:
     """
     Compute the barycentric Hodge 1-star operator.
     """
@@ -100,13 +105,13 @@ def _star_1_barycentric(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " edge"]
     )
     diag.divide_(edge_lens)
 
-    return diag
+    return DiagOperator(diag)
 
 
 def star_1(
     tri_mesh: SimplicialComplex,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
-):
+) -> Float[DiagOperator, "edge edge"]:
     match dual_complex:
         case "circumcentric":
             return _star_1_circumcentric(tri_mesh)
@@ -116,7 +121,7 @@ def star_1(
             raise ValueError()
 
 
-def star_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " vert"]:
+def star_0(tri_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
     """
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
     barycentric dual 2-cells. This function computes the ratio of the area of the
@@ -139,4 +144,4 @@ def star_0(tri_mesh: SimplicialComplex) -> Float[t.Tensor, " vert"]:
         src=t.repeat_interleave(tri_area / 3.0, 3),
     )
 
-    return diag
+    return DiagOperator(diag)

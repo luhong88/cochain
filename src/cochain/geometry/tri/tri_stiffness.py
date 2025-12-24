@@ -2,12 +2,13 @@ import torch as t
 from jaxtyping import Float
 
 from ...complex import SimplicialComplex
+from ...sparse.operators import SparseOperator
 from .tri_geometry import _cotan_weights
 
 
 def stiffness_matrix(
     tri_mesh: SimplicialComplex,
-) -> Float[t.Tensor, "vert vert"]:
+) -> Float[SparseOperator, "vert vert"]:
     """
     Computes the stiffness matrix for a 2D mesh, sometimes also known as the "cotan
     Laplacian".
@@ -29,4 +30,4 @@ def stiffness_matrix(
         t.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
     ).coalesce()
 
-    return stiffness
+    return SparseOperator.from_tensor(stiffness)

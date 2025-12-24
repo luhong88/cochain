@@ -1,6 +1,8 @@
 import torch as t
 from jaxtyping import Float, Integer
 
+from ..sparse.operators import SparseOperator
+
 # TODO: replace unique() with you can use a dict-based hashing approach (if on CPU)
 # or a parallel radix sort (if on CUDA) for large meshes.
 
@@ -9,8 +11,8 @@ def coboundaries_from_tri_mesh(
     tris: Integer[t.LongTensor, "tri 3"],
 ) -> tuple[
     Integer[t.LongTensor, "edge 2"],
-    Float[t.Tensor, "edge vert"],
-    Float[t.Tensor, "tri edge"],
+    Float[SparseOperator, "edge vert"],
+    Float[SparseOperator, "tri edge"],
 ]:
     tris = tris.long()
 
@@ -87,7 +89,11 @@ def coboundaries_from_tri_mesh(
         .to(device)
     )
 
-    return unique_canon_edges, coboundary_0, coboundary_1
+    return (
+        unique_canon_edges,
+        SparseOperator.from_tensor(coboundary_0),
+        SparseOperator.from_tensor(coboundary_1),
+    )
 
 
 def coboundaries_from_tet_mesh(
@@ -95,9 +101,9 @@ def coboundaries_from_tet_mesh(
 ) -> tuple[
     Integer[t.LongTensor, "edge 2"],
     Integer[t.LongTensor, "tri 3"],
-    Float[t.Tensor, "edge vert"],
-    Float[t.Tensor, "tri edge"],
-    Float[t.Tensor, "tet tri"],
+    Float[SparseOperator, "edge vert"],
+    Float[SparseOperator, "tri edge"],
+    Float[SparseOperator, "tet tri"],
 ]:
     tets = tets.long()
 
@@ -144,9 +150,9 @@ def coboundaries_from_tet_mesh(
     d2_idx = t.stack([t.tile(t.arange(n_tets), (4,)), all_tri_idx]).to(device=device)
     d2_val = tri_topo_signs * tri_orientation_signs
 
-    coboundary_2 = (
-        t.sparse_coo_tensor(d2_idx, d2_val, (n_tets, n_tris)).coalesce().to(device)
-    )
+    coboundary_2 = t.sparse_coo_tensor(
+        d2_idx, d2_val, (n_tets, n_tris), device=device
+    ).coalesce()
 
     # Generate the 1st- and 0th-coboundary operators. This can be done via
     # coboundaries_from_tri_mesh(), using unique_canon_tris as the triangle mesh.
@@ -159,5 +165,5 @@ def coboundaries_from_tet_mesh(
         unique_canon_tris,
         coboundary_0,
         coboundary_1,
-        coboundary_2,
+        SparseOperator.from_tensor(coboundary_2),
     )

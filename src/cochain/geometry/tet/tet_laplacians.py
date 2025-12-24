@@ -4,7 +4,7 @@ import torch as t
 from jaxtyping import Float
 
 from ...complex import SimplicialComplex
-from ...utils.linalg import diag_sp_mm, sp_diag_mm
+from ...sparse.operators import SparseOperator
 from .tet_hodge_stars import star_1, star_2
 from .tet_masses import mass_0, mass_1, mass_2, mass_3
 from .tet_stiffness import stiffness_matrix
@@ -24,7 +24,7 @@ from .tet_stiffness import stiffness_matrix
 
 def weak_laplacian_0(
     tet_mesh: SimplicialComplex, method: Literal["cotan", "consistent"]
-) -> Float[t.Tensor, "vert vert"]:
+) -> Float[SparseOperator, "vert vert"]:
     """
     Compute the weak 0-Laplacian (vertex Laplacian)
     S0= d0.T @ M_1 @ d0
@@ -38,54 +38,54 @@ def weak_laplacian_0(
             return stiffness_matrix(tet_mesh)
         case "consistent":
             d0 = tet_mesh.coboundary_0
-            d0_T = d0.transpose(0, 1).coalesce()
+            d0_T = d0.T
 
             m_1 = mass_1(tet_mesh)
 
-            return (d0_T @ m_1 @ d0).coalesce()
+            return d0_T @ m_1 @ d0
         case _:
             raise ValueError()
 
 
 def weak_laplacian_1_div_grad(
     tet_mesh: SimplicialComplex,
-) -> Float[t.Tensor, "edge edge"]:
+) -> Float[SparseOperator, "edge edge"]:
     """
     Compute the div grad component of the weak 1-Laplacian
     M_1 @ d_0 @ inv_M_0 @ d_0.T @ M_1
     """
     d0 = tet_mesh.coboundary_0
-    d0_T = d0.transpose(0, 1).coalesce()
+    d0_T = d0.T
 
     m_1 = mass_1(tet_mesh)
-    inv_m_0 = 1.0 / mass_0(tet_mesh)
+    inv_m_0 = mass_0(tet_mesh).inv
 
-    return (m_1 @ d0 @ diag_sp_mm(inv_m_0, d0_T @ m_1)).coalesce()
+    return m_1 @ d0 @ inv_m_0 @ d0_T @ m_1
 
 
 def weak_laplacian_1_curl_curl(
     tet_mesh: SimplicialComplex,
-) -> Float[t.Tensor, "edge edge"]:
+) -> Float[SparseOperator, "edge edge"]:
     """
     Compute the curl curl component of the weak 1-Laplacian
     d_1.T @ M_2 @ d_1
     """
     d1 = tet_mesh.coboundary_1
-    d1_T = d1.transpose(0, 1).coalesce()
+    d1_T = d1.T
 
     m_2 = mass_2(tet_mesh)
 
-    return (d1_T @ m_2 @ d1).coalesce()
+    return d1_T @ m_2 @ d1
 
 
-def weak_laplacian_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
+def weak_laplacian_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
     """
     Compute the weak 1-Laplacian (edge/vector Laplacian)
     S1 = d_1.T @ M_2 @ d_1 + M_1 @ d_0 @ inv_M_0 @ d_0.T @ M_1
     """
-    return (
-        weak_laplacian_1_div_grad(tet_mesh) + weak_laplacian_1_curl_curl(tet_mesh)
-    ).coalesce()
+    return SparseOperator.assemble(
+        weak_laplacian_1_div_grad(tet_mesh), weak_laplacian_1_curl_curl(tet_mesh)
+    )
 
 
 def weak_laplacian_2_div_grad(
@@ -95,7 +95,7 @@ def weak_laplacian_2_div_grad(
         "solver",
         "inv_star",
     ],
-) -> Float[t.Tensor, "tri tri"]:
+) -> Float[SparseOperator, "tri tri"] | Float[t.Tensor, "tri tri"]:
     """
     Compute the div grad component of the weak 2-Laplacian
     M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
@@ -111,7 +111,7 @@ def weak_laplacian_2_div_grad(
     of inv_M_1.
     """
     d1 = tet_mesh.coboundary_1
-    d1_T = d1.transpose(0, 1).coalesce()
+    d1_T = d1.T
 
     match method:
         case "dense":
@@ -120,14 +120,14 @@ def weak_laplacian_2_div_grad(
             inv_m_1 = t.cholesky_inverse(m_1_cho)
             m_2 = mass_2(tet_mesh)
 
-            return m_2 @ d1 @ inv_m_1 @ d1_T @ m_2
+            return (m_2 @ d1) @ inv_m_1 @ (d1_T @ m_2)
 
         case "inv_star":
             m_1 = mass_1(tet_mesh)
-            inv_m_1 = 1.0 / star_1(tet_mesh)
+            inv_m_1 = star_1(tet_mesh).inv
             m_2 = mass_2(tet_mesh)
 
-            return (m_2 @ d1 @ diag_sp_mm(inv_m_1, d1_T @ m_2)).coalesce()
+            return m_2 @ d1 @ inv_m_1 @ d1_T @ m_2
 
         case "solver":
             raise NotImplementedError()
@@ -138,17 +138,17 @@ def weak_laplacian_2_div_grad(
 
 def weak_laplacian_2_curl_curl(
     tet_mesh: SimplicialComplex,
-) -> Float[t.Tensor, "tri tri"]:
+) -> Float[SparseOperator, "tri tri"]:
     """
     Compute the curl curl component of the weak 1-Laplacian
     d_2.T @ M_3 @ d_2
     """
     d2 = tet_mesh.coboundary_2
-    d2_T = d2.transpose(0, 1).coalesce()
+    d2_T = d2.T
 
     m_3 = mass_3(tet_mesh)
 
-    return (d2_T @ diag_sp_mm(m_3, d2)).coalesce()
+    return d2_T @ m_3 @ d2
 
 
 def weak_laplacian_2(
@@ -158,7 +158,7 @@ def weak_laplacian_2(
         "solver",
         "inv_star",
     ],
-) -> Float[t.Tensor, "tri tri"]:
+) -> Float[SparseOperator, "tri tri"] | Float[t.Tensor, "tri tri"]:
     """
     Compute the weak 2-Laplacian (face Laplacian)
     S2 = d_2.T @ M_3 @ d_2 + M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
@@ -172,7 +172,13 @@ def weak_laplacian_2(
         curl_curl = weak_laplacian_2_curl_curl(tet_mesh)
         div_grad = weak_laplacian_2_div_grad(tet_mesh, method)
 
-        return div_grad + curl_curl
+        match div_grad:
+            case SparseOperator():
+                return SparseOperator.assemble(div_grad, curl_curl)
+            case t.Tensor():
+                return div_grad + curl_curl.to_dense()
+            case _:
+                raise TypeError()
 
     else:
         raise ValueError()
@@ -185,7 +191,7 @@ def weak_laplacian_3(
         "solver",
         "inv_star",
     ],
-) -> Float[t.Tensor, "tri tri"]:
+) -> Float[SparseOperator, "tri tri"] | Float[t.Tensor, "tri tri"]:
     """
     Compute the weak 3-Laplacian (tet Laplacian)
     M_3 @ d_2 @ inv_M_2 @ d_2.T @ M_3
@@ -203,7 +209,7 @@ def weak_laplacian_3(
     of inv_M_2.
     """
     d2 = tet_mesh.coboundary_2
-    d2_T = d2.transpose(0, 1).coalesce()
+    d2_T = d2.T
 
     match method:
         case "dense":
@@ -211,19 +217,17 @@ def weak_laplacian_3(
             inv_m_2 = t.cholesky_inverse(m_2)
             m_3 = mass_3(tet_mesh)
 
-            return diag_sp_mm(m_3, d2) @ inv_m_2 @ sp_diag_mm(d2_T, m_3)
+            return (m_3 @ d2) @ inv_m_2 @ (d2_T @ m_3)
 
         case "solver":
             raise NotImplementedError()
 
         case "inv_star":
             m_2 = mass_2(tet_mesh)
-            inv_m_2 = 1.0 / star_2(tet_mesh)
+            inv_m_2 = star_2(tet_mesh).inv
             m_3 = mass_3(tet_mesh)
 
-            return (
-                diag_sp_mm(m_3, d2) @ diag_sp_mm(inv_m_2, sp_diag_mm(d2_T, m_3))
-            ).coalesce()
+            return m_3 @ d2 @ inv_m_2 @ d2_T @ m_3
 
         case _:
             raise ValueError()

@@ -37,8 +37,9 @@ def test_mass_1_with_skfem(flat_annulus_mesh: SimplicialComplex):
 
 
 def test_mass_1_symmetry(two_tris_mesh: SimplicialComplex):
-    mass = tri_masses.mass_1(two_tris_mesh).to_dense()
-    t.testing.assert_close(mass, mass.T)
+    mass = tri_masses.mass_1(two_tris_mesh)
+    mass_T = mass.T
+    t.testing.assert_close(mass.to_dense(), mass_T.to_dense())
 
 
 def test_mass_matrix_positive_definite(two_tris_mesh: SimplicialComplex):
@@ -50,7 +51,7 @@ def test_mass_matrix_positive_definite(two_tris_mesh: SimplicialComplex):
 def test_mass_1_matrix_connectivity(two_tris_mesh: SimplicialComplex):
     mass_1 = tri_masses.mass_1(two_tris_mesh)
     mass_1_mask = t.zeros_like(mass_1.to_dense(), dtype=t.long)
-    mass_1_mask[*mass_1.indices()] = 1
+    mass_1_mask[mass_1.sp_topo.idx_coo.unbind(0)] = 1
 
     true_mass_1_mask = t.tensor(
         [

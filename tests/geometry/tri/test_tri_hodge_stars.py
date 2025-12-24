@@ -12,7 +12,7 @@ from cochain.geometry.tri import tri_geometry, tri_hodge_stars
 
 
 def test_star_0_on_tent(tent_mesh: SimplicialComplex):
-    s0 = tri_hodge_stars.star_0(tent_mesh)
+    s0 = tri_hodge_stars.star_0(tent_mesh).val
 
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
@@ -22,7 +22,7 @@ def test_star_0_on_tent(tent_mesh: SimplicialComplex):
 
 
 def test_star_0_on_tet(hollow_tet_mesh: SimplicialComplex):
-    s0 = tri_hodge_stars.star_0(hollow_tet_mesh).cpu().detach().numpy()
+    s0 = tri_hodge_stars.star_0(hollow_tet_mesh).val.cpu().detach().numpy()
 
     true_s0 = igl.massmatrix(
         hollow_tet_mesh.vert_coords.cpu().detach().numpy(),
@@ -34,7 +34,7 @@ def test_star_0_on_tet(hollow_tet_mesh: SimplicialComplex):
 
 
 def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="circumcentric")
+    s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="circumcentric").val
 
     # Find the tangent of the angle between a base edge and side edge
     tan_ang = 2 * math.sqrt(1.25)
@@ -49,7 +49,7 @@ def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialComplex):
 
 
 def test_star_1_barycentric_on_tent(tent_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="barycentric")
+    s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="barycentric").val
 
     face_bary = t.tensor([1.5, 0.5, 1.0]) / 3.0
     side_edge_bary = t.tensor([0.5, 0.5, 1.0]) / 2.0
@@ -66,7 +66,7 @@ def test_star_1_barycentric_on_tent(tent_mesh: SimplicialComplex):
 
 
 def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialComplex):
-    s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex="circumcentric")
+    s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex="circumcentric").val
 
     # extract the Hodge 1-star from `igl.cotmatrix()`.
     igl_cotan_laplacian = t.from_numpy(
@@ -83,7 +83,7 @@ def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialComplex):
 
 
 def test_star_2_on_tent(tent_mesh: SimplicialComplex):
-    s2 = tri_hodge_stars.star_2(tent_mesh)
+    s2 = tri_hodge_stars.star_2(tent_mesh).val
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
 
@@ -92,7 +92,7 @@ def test_star_2_on_tent(tent_mesh: SimplicialComplex):
 
 
 def test_star_2_on_tet(hollow_tet_mesh: SimplicialComplex):
-    s2 = tri_hodge_stars.star_2(hollow_tet_mesh).cpu().detach().numpy()
+    s2 = tri_hodge_stars.star_2(hollow_tet_mesh).val.cpu().detach().numpy()
 
     true_s2 = 2.0 / igl.doublearea(
         hollow_tet_mesh.vert_coords.cpu().detach().numpy(),

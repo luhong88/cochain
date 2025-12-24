@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
 import torch as t
 from jaxtyping import Float, Integer
 from torch.autograd.function import once_differentiable
+
+from ..operators import SparseOperator, SparseTopology
 
 try:
     import cupy as cp
@@ -27,27 +28,25 @@ class _CuPySuperLUWrapper(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
-        A_coo_idx: Integer[t.LongTensor, "2 nnz"],
-        A_shape: tuple[int, int],
+        A_sp_topo: Integer[SparseTopology, "r c"],
         b: Float[t.Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[t.Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
-        val = A_val.detach().contiguous()
-        idx = A_coo_idx.detach().to(dtype=t.int32).contiguous()
+        val = A_val[A_sp_topo.coo_to_csc_perm].detach().contiguous()
+        idx_ccol = A_sp_topo.idx_ccol_int32.detach().contiguous()
+        idx_row = A_sp_topo.idx_row_csc_int32.detach().contiguous()
 
         # Force CuPy to use the current Pytorch stream.
         stream = t.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.coo_matrix(
+            A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
                 (
                     cp.from_dlpack(val),
-                    (
-                        cp.from_dlpack(idx[0]),
-                        cp.from_dlpack(idx[1]),
-                    ),
+                    cp.from_dlpack(idx_row),
+                    cp.from_dlpack(idx_ccol),
                 ),
-                shape=A_shape,
-            ).tocsc()
+                shape=tuple(A_sp_topo.shape),
+            )
             x_cp = cp.from_dlpack(b.detach().contiguous())
 
             solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
@@ -57,13 +56,13 @@ class _CuPySuperLUWrapper(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_coo_idx, A_shape, b, splu_kwargs = inputs
+        A_val, A_sp_topo, b, splu_kwargs = inputs
 
         x, solver = output
 
-        ctx.save_for_backward(A_coo_idx, x)
+        ctx.save_for_backward(x)
         ctx.solver = solver
-        ctx.A_shape = A_shape
+        ctx.A_sp_topo = A_sp_topo
 
     @staticmethod
     @once_differentiable
@@ -71,7 +70,6 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         ctx, dLdx: Float[t.Tensor, " c *ch"], _
     ) -> tuple[
         Float[t.Tensor, " nnz"] | None,
-        None,
         None,
         Float[t.Tensor, " r *ch"] | None,
         None,
@@ -85,12 +83,13 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         by lambda, and dLdA is given by the outer product -lambda@x.T.
         """
         needs_grad_A_val = ctx.needs_input_grad[0]
-        needs_grad_b = ctx.needs_input_grad[-2]
+        needs_grad_b = ctx.needs_input_grad[2]
 
         if not (needs_grad_A_val or needs_grad_b):
-            return (None,) * 5
+            return (None,) * 4
 
-        A_coo_idx, x = ctx.saved_tensors
+        (x,) = ctx.saved_tensors
+        A_sp_topo: SparseTopology = ctx.A_sp_topo
 
         if ctx.solver is None:
             raise RuntimeError(
@@ -111,38 +110,40 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         ctx.solver = None
 
         if needs_grad_b and not needs_grad_A_val:
-            return (None, None, None, lambda_, None)
+            return (None, None, lambda_, None)
 
         # dLdA will have the same sparsity pattern as A.
         if lambda_.dim() > 1:
             # If there is a channel dimension, sum over it.
-            dLdA_val = t.sum(-lambda_[A_coo_idx[0]] * x[A_coo_idx[1]], dim=-1)
+            dLdA_val = t.sum(
+                -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]], dim=-1
+            )
         else:
-            dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
+            dLdA_val = -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]]
 
         if needs_grad_A_val and not needs_grad_b:
-            return (dLdA_val, None, None, None, None)
+            return (dLdA_val, None, None, None)
 
         if needs_grad_A_val and needs_grad_b:
-            return (dLdA_val, None, None, lambda_, None)
+            return (dLdA_val, None, lambda_, None)
 
 
 class _SciPySuperLUWrapper(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
-        A_coo_idx: Integer[t.LongTensor, "2 nnz"],
-        A_shape: tuple[int, int],
+        A_sp_topo: Integer[SparseTopology, "r c"],
         b: Float[t.Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[t.Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
-        A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.coo_array(
-            (
-                A_val.detach().contiguous().cpu().numpy(),
-                A_coo_idx.detach().contiguous().cpu().numpy().astype(np.int32),
-            ),
-            shape=A_shape,
-        ).tocsc()
+        val = A_val[A_sp_topo.coo_to_csc_perm].detach().contiguous().cpu().numpy()
+        idx_ccol = A_sp_topo.idx_ccol_int32.detach().contiguous().cpu().numpy()
+        idx_row = A_sp_topo.idx_row_csc_int32.detach().contiguous().cpu().numpy()
+
+        A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
+            (val, idx_row, idx_ccol),
+            shape=A_sp_topo.shape,
+        )
         x_np = b.detach().contiguous().cpu().numpy()
 
         solver = scipy.sparse.linalg.splu(A_scipy, **splu_kwargs)
@@ -154,13 +155,13 @@ class _SciPySuperLUWrapper(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_coo_idx, A_shape, b, splu_kwargs = inputs
+        A_val, A_sp_topo, b, splu_kwargs = inputs
 
         x, solver = output
 
-        ctx.save_for_backward(A_coo_idx, x)
+        ctx.save_for_backward(x)
         ctx.solver = solver
-        ctx.A_shape = A_shape
+        ctx.A_sp_topo = A_sp_topo
 
     @staticmethod
     @once_differentiable
@@ -169,17 +170,17 @@ class _SciPySuperLUWrapper(t.autograd.Function):
     ) -> tuple[
         Float[t.Tensor, " nnz"] | None,
         None,
-        None,
         Float[t.Tensor, " r *ch"] | None,
         None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
-        needs_grad_b = ctx.needs_input_grad[-2]
+        needs_grad_b = ctx.needs_input_grad[2]
 
         if not (needs_grad_A_val or needs_grad_b):
-            return (None,) * 5
+            return (None,) * 4
 
-        A_coo_idx, x = ctx.saved_tensors
+        (x,) = ctx.saved_tensors
+        A_sp_topo: SparseTopology = ctx.A_sp_topo
 
         if ctx.solver is None:
             raise RuntimeError(
@@ -198,26 +199,26 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         ctx.solver = None
 
         if needs_grad_b and not needs_grad_A_val:
-            return (None, None, None, lambda_, None)
+            return (None, None, lambda_, None)
 
         # dLdA will have the same sparsity pattern as A.
         if lambda_.ndim > 1:
             # If there is a channel dimension, sum over it.
-            dLdA_val = t.sum(-lambda_[A_coo_idx[0]] * x[A_coo_idx[1]], dim=-1)
+            dLdA_val = t.sum(
+                -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]], dim=-1
+            )
         else:
-            dLdA_val = -lambda_[A_coo_idx[0]] * x[A_coo_idx[1]]
+            dLdA_val = -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]]
 
         if needs_grad_A_val and not needs_grad_b:
-            return (dLdA_val, None, None, None, None)
+            return (dLdA_val, None, None, None)
 
         if needs_grad_A_val and needs_grad_b:
-            return (dLdA_val, None, None, lambda_, None)
+            return (dLdA_val, None, lambda_, None)
 
 
-# TODO: cache COO -> CSC mapping
-# TODO: cache column permutation
 def splu(
-    A: Float[t.Tensor, "r c"],
+    A: Float[SparseOperator, "r c"],
     b: Float[t.Tensor, " r *ch"],
     *,
     backend: Literal["cupy", "scipy"],
@@ -227,10 +228,10 @@ def splu(
     """
     This function provides a differentiable wrapper for SuperLU.
 
-    Here, A is a coalesced sparse coo tensor and b is a dense tensor with optional
-    channel dimensions. If `channel_first` is `True`, all but the last dimension
-    of `b` is treated as channel dimensions; if it is `False`, all but the first
-    dimension of `b` is treated as channel dimensions.
+    Here, A is a SparseOperator and b is a dense tensor with optional channel
+    dimensions. If `channel_first` is `True`, all but the last dimension of `b`
+    is treated as channel dimensions; if it is `False`, all but the first dimension
+    of `b` is treated as channel dimensions.
 
     If backend is 'cupy', `A` and `b` must be on the CUDA device. If backend is
     'scipy', `A` and `b` will be copied to CPU.
@@ -263,14 +264,14 @@ def splu(
         case 1:
             b_ready = b
         case 2:
-            b_ready = b.transpose(0, 1).contiguous() if channel_first else b
+            b_ready = b.transpose(0, 1) if channel_first else b
         case _:
             if channel_first:
                 # (*ch, r) -> (r, ch_flat)
-                b_ready = t.movedim(b, -1, 0).reshape(b.shape[-1], -1).contiguous()
+                b_ready = t.movedim(b, -1, 0).reshape(b.shape[-1], -1)
             else:
                 # (r, *ch) -> (r, ch_flat)
-                b_ready = b.reshape(b.shape[0], -1).contiguous()
+                b_ready = b.reshape(b.shape[0], -1)
 
     match backend:
         case "cupy":
@@ -278,12 +279,12 @@ def splu(
                 raise ImportError("CuPy backend required.")
 
             x, solver = _CuPySuperLUWrapper.apply(
-                A.values(), A.indices(), A.shape, b_ready, splu_kwargs
+                A.val, A.sp_topo, b_ready, splu_kwargs
             )
 
         case "scipy":
             x, solver = _SciPySuperLUWrapper.apply(
-                A.values(), A.indices(), A.shape, b_ready, splu_kwargs
+                A.val, A.sp_topo, b_ready, splu_kwargs
             )
 
         case _:

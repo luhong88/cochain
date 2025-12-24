@@ -116,7 +116,7 @@ def d_star_2_d_vert_coords(
     """
     d_inv_S_dV = d_inv_star_2_d_vert_coords(tri_mesh)
 
-    s2 = star_2(tri_mesh)[d_inv_S_dV.indices()[0]]
+    s2 = star_2(tri_mesh).val[d_inv_S_dV.indices()[0]]
     inv_scale = -s2.square()[:, None]
 
     dSdV = t.sparse_coo_tensor(
@@ -189,7 +189,7 @@ def d_inv_star_1_circumcentric_d_vert_coords(
     """
     dSdV = d_star_1_circumcentric_d_vert_coords(tri_mesh)
 
-    s1 = _star_1_circumcentric(tri_mesh)[dSdV.indices()[0]]
+    s1 = _star_1_circumcentric(tri_mesh).val[dSdV.indices()[0]]
     inv_scale = -1.0 / (s1.square()[:, None] + EPS)
 
     d_inv_S_dV = t.sparse_coo_tensor(
@@ -259,7 +259,7 @@ def d_inv_star_0_d_vert_coords(
     """
     dSdV = d_star_0_d_vert_coords(tri_mesh)
 
-    s0 = star_0(tri_mesh)[dSdV.indices()[0]]
+    s0 = star_0(tri_mesh).val[dSdV.indices()[0]]
     inv_scale = -1.0 / (s0.square()[:, None] + EPS)
 
     d_inv_S_dV = t.sparse_coo_tensor(

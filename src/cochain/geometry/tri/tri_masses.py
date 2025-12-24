@@ -2,6 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
+from ...sparse.operators import SparseOperator
 from .tri_geometry import (
     _bary_coord_grad_inner_prods,
     _d_tri_areas_d_vert_coords,
@@ -9,7 +10,7 @@ from .tri_geometry import (
 )
 
 
-def mass_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
+def mass_1(tri_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
 
@@ -107,4 +108,4 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
         (n_edges, n_edges),
     ).coalesce()
 
-    return mass
+    return SparseOperator.from_tensor(mass)

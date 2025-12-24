@@ -15,7 +15,7 @@ def test_l0_stiffness_relation(two_tris_mesh: SimplicialComplex):
 
     s0 = tri_hodge_stars.star_0(two_tris_mesh)
     l0 = tri_laplacians.laplacian_0(two_tris_mesh, dual_complex="circumcentric")
-    stiffness_indirect = tri_laplacians.diag_sp_mm(s0, l0).to_dense()
+    stiffness_indirect = (s0 @ l0).to_dense()
 
     t.testing.assert_close(stiffness_indirect, stiffness_direct)
 
@@ -151,13 +151,13 @@ def test_laplacian_symmetry(
     """
     star_i = star(hollow_tet_mesh)
     laplacian_i = laplacian(hollow_tet_mesh, dual_complex)
-    stiffness_i = tri_laplacians.diag_sp_mm(star_i, laplacian_i)
+    stiffness_i = star_i @ laplacian_i
 
-    laplacian_i_dense = laplacian_i.to_dense()
-    stiffness_i_dense = stiffness_i.to_dense()
+    laplacian_i_T = laplacian_i.T
+    stiffness_i_T = stiffness_i.T
 
-    t.testing.assert_close(stiffness_i_dense, stiffness_i_dense.T)
-    assert not t.allclose(laplacian_i_dense, laplacian_i_dense.T)
+    t.testing.assert_close(stiffness_i.to_dense(), stiffness_i_T.to_dense())
+    assert not t.allclose(laplacian_i.to_dense(), laplacian_i_T.to_dense())
 
 
 @pytest.mark.parametrize(
@@ -187,7 +187,7 @@ def test_laplacian_PSD(
     """
     star_i = star(hollow_tet_mesh)
     laplacian_i = laplacian(hollow_tet_mesh, dual_complex)
-    stiffness_i = tri_laplacians.diag_sp_mm(star_i, laplacian_i).to_dense()
+    stiffness_i = (star_i @ laplacian_i).to_dense()
 
     eigs = t.linalg.eigvalsh(stiffness_i)
     assert eigs.min() >= -1e-6
@@ -198,15 +198,11 @@ def test_laplacian_PSD(
     ["circumcentric", "barycentric"],
 )
 def test_laplacian_1_orthogonality(dual_complex, hollow_tet_mesh: SimplicialComplex):
-    l1_div_grad = tri_laplacians.laplacian_1_div_grad(
-        hollow_tet_mesh, dual_complex
-    ).to_dense()
-    l1_curl_curl = tri_laplacians.laplacian_1_curl_curl(
-        hollow_tet_mesh, dual_complex
-    ).to_dense()
+    l1_div_grad = tri_laplacians.laplacian_1_div_grad(hollow_tet_mesh, dual_complex)
+    l1_curl_curl = tri_laplacians.laplacian_1_curl_curl(hollow_tet_mesh, dual_complex)
 
-    composition_1 = l1_div_grad @ l1_curl_curl
-    composition_2 = l1_curl_curl @ l1_div_grad
+    composition_1 = (l1_div_grad @ l1_curl_curl).to_dense()
+    composition_2 = (l1_curl_curl @ l1_div_grad).to_dense()
 
     t.testing.assert_close(composition_1, t.zeros_like(composition_1))
     t.testing.assert_close(composition_2, t.zeros_like(composition_2))
@@ -262,8 +258,8 @@ def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComp
     Check that the 1-codifferential and the coboundary-0 operators are adjoints
     with respect to the Hodge star-weighted inner product.
     """
-    s0 = t.diagflat(tri_hodge_stars.star_0(hollow_tet_mesh))
-    s1 = t.diagflat(tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex))
+    s0 = tri_hodge_stars.star_0(hollow_tet_mesh)
+    s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex)
 
     d0 = hollow_tet_mesh.coboundary_0
     codiff_1 = tri_laplacians.codifferential_1(hollow_tet_mesh, dual_complex)
@@ -290,8 +286,8 @@ def test_codiff_2_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComp
     Check that the 2-codifferential and the coboundary-1 operators are adjoints
     with respect to the Hodge star-weighted inner products.
     """
-    s1 = t.diagflat(tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex))
-    s2 = t.diagflat(tri_hodge_stars.star_2(hollow_tet_mesh))
+    s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex)
+    s2 = tri_hodge_stars.star_2(hollow_tet_mesh)
 
     d1 = hollow_tet_mesh.coboundary_1
     codiff_2 = tri_laplacians.codifferential_2(hollow_tet_mesh, dual_complex)

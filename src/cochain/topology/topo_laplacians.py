@@ -4,14 +4,15 @@ import torch as t
 from jaxtyping import Float
 
 from ..complex import SimplicialComplex
+from ..sparse.operators import SparseOperator
 
 
 def laplacian_k(
     sc: SimplicialComplex, k: int
 ) -> tuple[
-    Float[t.Tensor, "k_simp k_simp"],
-    Float[t.Tensor, "k_simp k_simp"],
-    Float[t.Tensor, "k_simp k_simp"],
+    Float[SparseOperator, "k_simp k_simp"],
+    Float[SparseOperator, "k_simp k_simp"],
+    Float[SparseOperator, "k_simp k_simp"],
 ]:
     """
     Laplacian_k = d_j @ d_j.T + d_k.T @ d_k, where d_k is the k-coboundary
@@ -56,4 +57,8 @@ def laplacian_k(
 
     laplacian_k = (up_laplacian + down_laplacian).coalesce()
 
-    return down_laplacian, up_laplacian, laplacian_k
+    return (
+        SparseOperator.from_tensor(down_laplacian),
+        SparseOperator.from_tensor(up_laplacian),
+        SparseOperator.from_tensor(laplacian_k),
+    )

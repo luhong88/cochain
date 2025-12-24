@@ -39,8 +39,8 @@ def test_stiffness_symmetry(simple_bcc_mesh: SimplicialComplex):
     The stifness matrix should be a symmetric matrix.
     """
     bcc_S = stiffness_matrix(simple_bcc_mesh)
-    bcc_S_dense = bcc_S.to_dense()
-    t.testing.assert_close(bcc_S_dense, bcc_S_dense.T)
+    bcc_S_T = bcc_S.T
+    t.testing.assert_close(bcc_S.to_dense(), bcc_S_T.to_dense())
 
 
 def test_stiffness_PSD(simple_bcc_mesh: SimplicialComplex):

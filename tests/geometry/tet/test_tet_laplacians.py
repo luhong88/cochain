@@ -2,10 +2,9 @@ from functools import partial
 
 import pytest
 import torch as t
-from jaxtyping import Float
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.tet import tet_hodge_stars, tet_laplacians, tet_masses
+from cochain.geometry.tet import tet_laplacians, tet_masses
 
 
 @pytest.mark.parametrize(
@@ -77,8 +76,9 @@ def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialComplex):
     """
     Test that the weak Laplacians are symmetric.
     """
-    weak_laplacian_i = weak_laplacian(two_tets_mesh).to_dense()
-    t.testing.assert_close(weak_laplacian_i, weak_laplacian_i.T)
+    weak_laplacian_i = weak_laplacian(two_tets_mesh)
+    weak_laplacian_i_T = weak_laplacian_i.T
+    t.testing.assert_close(weak_laplacian_i.to_dense(), weak_laplacian_i_T.to_dense())
 
 
 @pytest.mark.parametrize(
@@ -116,6 +116,7 @@ def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(row_sum, t.zeros_like(row_sum))
 
 
+# TODO: update to use custom solver wrapper
 @pytest.mark.parametrize(
     "div_grad, curl_curl, mass",
     [
@@ -164,6 +165,7 @@ def test_laplacian_1_curl_free(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(x1_zero, t.zeros_like(x1_zero))
 
 
+# TODO: update to use custom solver wrapper
 def test_laplacian_1_div_free(two_tets_mesh: SimplicialComplex):
     """
     The div grad component of the 1-Laplacian acting on a div-free 1-cochain/
@@ -171,7 +173,7 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialComplex):
     """
     l1_div_grad = tet_laplacians.weak_laplacian_1_div_grad(two_tets_mesh)
 
-    d1_T = two_tets_mesh.coboundary_1.transpose(0, 1).coalesce().to_dense()
+    d1_T = two_tets_mesh.coboundary_1.T.to_dense()
 
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
 
@@ -203,6 +205,7 @@ def test_laplacian_2_curl_free(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(x2_zero, t.zeros_like(x2_zero))
 
 
+# TODO: update to use custom solver wrapper
 def test_laplacian_2_div_free(two_tets_mesh: SimplicialComplex):
     """
     The div grad component of the 2-Laplacian acting on a div-free 2-cochain/
@@ -212,7 +215,7 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialComplex):
         two_tets_mesh, method="dense"
     )
 
-    d2_T = two_tets_mesh.coboundary_2.transpose(0, 1).coalesce().to_dense()
+    d2_T = two_tets_mesh.coboundary_2.T.to_dense()
 
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
 
@@ -231,14 +234,13 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialComplex):
     Check that the 1-codifferential and the 0-coboundary operators are adjoints
     with respect to the mass matrix-weighted inner product.
     """
-    m0_diag = tet_masses.mass_0(two_tets_mesh)
-    m0 = t.diagflat(m0_diag)
-    inv_m0 = t.diagflat(1.0 / m0_diag)
+    m0 = tet_masses.mass_0(two_tets_mesh)
+    inv_m0 = m0.inv
 
-    m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
+    m1 = tet_masses.mass_1(two_tets_mesh)
 
     d0 = two_tets_mesh.coboundary_0
-    d0_T = d0.transpose(0, 1).coalesce()
+    d0_T = d0.T
 
     codiff_1 = inv_m0 @ d0_T @ m1
 
@@ -255,6 +257,7 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(dot_1, dot_2)
 
 
+# TODO: update to use custom solver wrapper
 def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialComplex):
     """
     Check that the 2-codifferential and the 1-coboundary operators are adjoints
@@ -281,13 +284,14 @@ def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(dot_1, dot_2)
 
 
+# TODO: update to use custom solver wrapper
 def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialComplex):
     """
     Check that the 3-codifferential and the 2-coboundary operators are adjoints
     with respect to the mass matrix-weighted inner product.
     """
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
-    m3 = t.diagflat(tet_masses.mass_3(two_tets_mesh))
+    m3 = tet_masses.mass_3(two_tets_mesh).to_dense()
 
     d2 = two_tets_mesh.coboundary_2.to_dense()
     d2_T = d2.transpose(0, 1)

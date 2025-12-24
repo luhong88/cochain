@@ -2,6 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
+from ...sparse.operators import DiagOperator, SparseOperator
 from .tet_geometry import (
     _bary_coord_grad_inner_prods,
     _d_tet_signed_vols_d_vert_coords,
@@ -10,7 +11,7 @@ from .tet_geometry import (
 )
 
 
-def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " vert"]:
+def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
     """
     Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
     barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
@@ -30,10 +31,10 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " vert"]:
         src=t.repeat_interleave(tet_vol / 4.0, 4),
     )
 
-    return diag
+    return DiagOperator.from_tensor(diag)
 
 
-def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
+def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
 
@@ -133,10 +134,10 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "edge edge"]:
         (n_edges, n_edges),
     ).coalesce()
 
-    return mass
+    return SparseOperator.from_tensor(mass)
 
 
-def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
+def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
     """
     Compute the Galerkin triangle/2-form mass matrix.
 
@@ -172,12 +173,14 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[t.Tensor, "tri tri"]:
     mass_val = whitney_inner_prod_signed.flatten()
     mass = t.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
 
-    return mass
+    return SparseOperator.from_tensor(mass)
 
 
-def mass_3(tet_mesh: SimplicialComplex) -> Float[t.Tensor, " tet"]:
+def mass_3(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tet tet"]:
     """
     Compute the diagonal of the tet/3-form mass matrix, which is equivalent to
     the inverse of 3-star.
     """
-    return t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    return DiagOperator.from_tensor(
+        t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    )
