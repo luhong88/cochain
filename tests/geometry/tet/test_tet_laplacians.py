@@ -171,7 +171,7 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialComplex):
     """
     l1_div_grad = tet_laplacians.weak_laplacian_1_div_grad(two_tets_mesh)
 
-    d1_T = two_tets_mesh.coboundary_1.transpose(0, 1).coalesce().to_dense()
+    d1_T = two_tets_mesh.coboundary_1.T.to_dense()
 
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
 
@@ -212,7 +212,7 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialComplex):
         two_tets_mesh, method="dense"
     )
 
-    d2_T = two_tets_mesh.coboundary_2.transpose(0, 1).coalesce().to_dense()
+    d2_T = two_tets_mesh.coboundary_2.T.to_dense()
 
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
 
@@ -231,9 +231,9 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialComplex):
     Check that the 1-codifferential and the 0-coboundary operators are adjoints
     with respect to the mass matrix-weighted inner product.
     """
-    m0_diag = tet_masses.mass_0(two_tets_mesh)
-    m0 = t.diagflat(m0_diag)
-    inv_m0 = t.diagflat(1.0 / m0_diag)
+    m0_op = tet_masses.mass_0(two_tets_mesh)
+    m0 = m0_op.to_dense()
+    inv_m0 = m0_op.inv.to_dense()
 
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
 
@@ -287,7 +287,7 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialComplex):
     with respect to the mass matrix-weighted inner product.
     """
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
-    m3 = t.diagflat(tet_masses.mass_3(two_tets_mesh))
+    m3 = tet_masses.mass_3(two_tets_mesh).to_dense()
 
     d2 = two_tets_mesh.coboundary_2.to_dense()
     d2_T = d2.transpose(0, 1)
