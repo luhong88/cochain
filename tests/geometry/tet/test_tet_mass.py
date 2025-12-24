@@ -75,8 +75,9 @@ def test_mass_2_with_skfem(two_tets_mesh: SimplicialComplex):
     ],
 )
 def test_mass_matrix_symmetry(mass_matrix, two_tets_mesh: SimplicialComplex):
-    mass = mass_matrix(two_tets_mesh).to_dense()
-    t.testing.assert_close(mass, mass.T)
+    mass = mass_matrix(two_tets_mesh)
+    mass_T = mass.T
+    t.testing.assert_close(mass.to_dense(), mass_T.to_dense())
 
 
 @pytest.mark.parametrize(

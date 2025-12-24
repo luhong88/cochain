@@ -57,7 +57,7 @@ def test_stiffness_planar(square_mesh: SimplicialComplex):
     The stiffness matrix acting on a planar mesh coordinates should result in
     zero (for interior vertices).
     """
-    plane_S = stiffness_matrix(square_mesh).to_dense()
+    plane_S = stiffness_matrix(square_mesh)
     zero_tensor = plane_S @ square_mesh.vert_coords
 
     t.testing.assert_close(zero_tensor[-1], t.zeros_like(zero_tensor[-1]))
