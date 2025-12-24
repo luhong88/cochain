@@ -252,28 +252,6 @@ def coalesced_coo_to_int32_csr(
             )
 
 
-# TODO: depreciate
-def transpose_sp_csr(sp_csr: Float[t.Tensor, "*b r c"]) -> Float[t.Tensor, "*b c r"]:
-    """
-    Compute the transpose of a sparse csr matrix.
-    """
-    sp_csc = sp_csr.to_sparse_csc()
-
-    if sp_csr.ndim == 2:
-        transposed_size = (sp_csc.size(1), sp_csc.size(0))
-    else:
-        transposed_size = sp_csc.shape[:-2] + (sp_csc.shape[-1], sp_csc.shape[-2])
-
-    return t.sparse_csr_tensor(
-        crow_indices=sp_csc.ccol_indices(),
-        col_indices=sp_csc.row_indices(),
-        values=sp_csc.values(),
-        size=transposed_size,
-        device=sp_csc.device,
-        dtype=sp_csc.dtype,
-    )
-
-
 def project_and_extract_cnz_vals(
     src_coo: Integer[t.LongTensor, "2 src_nnz"],
     src_val: Float[t.Tensor, " source_nnz"],

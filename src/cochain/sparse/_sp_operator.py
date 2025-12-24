@@ -262,7 +262,7 @@ class SparseOperator(BaseOperator):
             device=self.device,
         )
 
-    def to_sparse_csc(self, int32: bool = False) -> Float[t.Tensor, "*b r c *d"]:
+    def _prepare_sparse_csr_components(self, int32: bool):
         if int32:
             idx_ccol = self.sp_topo.idx_ccol_int32
             idx_row_csc = self.sp_topo.idx_row_csc_int32
@@ -271,13 +271,38 @@ class SparseOperator(BaseOperator):
             idx_row_csc = self.sp_topo.idx_row_csc
 
         if self.n_batch_dim == 0:
-            val = self.val[self.sp_topo.coo_to_csc_perm]
+            val = self.val[self.sp_topo.coo_to_csc_perm].contiguous()
         else:
             val = (
                 self.val[self.sp_topo.coo_to_csc_perm]
                 .view(self.size(0), -1)
                 .contiguous()
             )
+
+        return idx_ccol, idx_row_csc, val
+
+    def to_sparse_csr_transposed(
+        self, int32: bool = False
+    ) -> Float[t.Tensor, "*b c r *d"]:
+        idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components(int32)
+
+        shape_trans = (
+            self.shape[: self.n_batch_dim]
+            + self.shape[self.n_batch_dim : -self.n_dense_dim - 1]
+            + self.shape[-self.n_dense_dim :]
+        )
+
+        return t.sparse_csr_tensor(
+            idx_ccol,
+            idx_row_csc,
+            val,
+            shape_trans,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+    def to_sparse_csc(self, int32: bool = False) -> Float[t.Tensor, "*b r c *d"]:
+        idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components(int32)
 
         return t.sparse_csc_tensor(
             idx_ccol,
