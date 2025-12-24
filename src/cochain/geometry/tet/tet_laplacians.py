@@ -4,8 +4,7 @@ import torch as t
 from jaxtyping import Float
 
 from ...complex import SimplicialComplex
-from ...sparse.operators import DiagOperator, SparseOperator
-from ...utils.linalg import diag_sp_mm, sp_diag_mm
+from ...sparse.operators import SparseOperator
 from .tet_hodge_stars import star_1, star_2
 from .tet_masses import mass_0, mass_1, mass_2, mass_3
 from .tet_stiffness import stiffness_matrix
