@@ -68,6 +68,24 @@ def _validate_coo_idx_shape(coo_idx: Integer[t.LongTensor, "sp nnz"], shape: t.S
             )
 
 
+def check_topo_equality(
+    self_topo: SparseTopology, other_topo: SparseTopology, msg: str
+):
+    # Enforce equal topology requirement with three increasingly more expensive
+    # checks: 1) same underlying sp_topo object, 2) same sp_topo shape, and 3)
+    # same sp_topo.idx_coo elements.
+    if self_topo is other_topo:
+        pass
+
+    elif self_topo.shape == other_topo.shape and t.equal(
+        self_topo.idx_coo, other_topo.idx_coo
+    ):
+        pass
+
+    else:
+        raise ValueError(msg)
+
+
 @dataclass(frozen=True)
 class SparseTopology:
     """
@@ -77,6 +95,10 @@ class SparseTopology:
 
     _idx_coo: Integer[t.LongTensor, "sp nnz"]
     shape: t.tuple[int, ...] | t.Size
+
+    @property
+    def idx_coo(self) -> Integer[t.LongTensor, "sp nnz"]:
+        return self._idx_coo
 
     def __post_init__(self):
         _validate_coo_idx_shape(self.idx_coo, self.shape)
@@ -105,17 +127,20 @@ class SparseTopology:
         # Coerse shape dtype.
         object.__setattr__(self, "shape", t.Size(self.shape))
 
-    @property
-    def idx_coo(self) -> Integer[t.LongTensor, "sp nnz"]:
-        return self._idx_coo
+    def size(self, dim: int | None = None) -> int | t.Size:
+        if dim is None:
+            return self.shape
+        else:
+            return self.shape[dim]
 
-    @property
-    def device(self) -> t.device:
-        return self.idx_coo.device
-
-    @property
-    def dtype(self) -> t.dtype:
-        return self.idx_coo.dtype
+    def _nnz(self) -> int:
+        """
+        For batched sparse csr/csc tensors, the _nnz() method returns the number
+        of nonzero elements per batch item; for sparse coo tensors, the _nnz()
+        method returns the total number of nonzero elements, regardless of batch
+        dimensions. Here we follow the sparse coo convention.
+        """
+        return self.idx_coo.size(1)
 
     @property
     def n_batch_dim(self) -> int:
@@ -165,57 +190,13 @@ class SparseTopology:
 
         return sp_topo_trans
 
-    @cached_property
-    def coo_to_csc_perm(self) -> Integer[t.LongTensor, " nnz"]:
-        return get_csc_sort_perm(self.idx_coo, self.shape)
+    @property
+    def dtype(self) -> t.dtype:
+        return self.idx_coo.dtype
 
-    @cached_property
-    def idx_ccol(self) -> Integer[t.LongTensor, "*b nnz/b"]:
-        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="ccol")
-
-    @cached_property
-    def idx_ccol_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
-        return coalesced_coo_to_compressed_idx(
-            self.idx_coo, self.shape, format="ccol", dtype=t.int32
-        )
-
-    @cached_property
-    def idx_crow(self) -> Integer[t.LongTensor, "*b nnz/b"]:
-        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="crow")
-
-    @cached_property
-    def idx_crow_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
-        return coalesced_coo_to_compressed_idx(
-            self.idx_coo, self.shape, format="crow", dtype=t.int32
-        )
-
-    # TODO: consider renaming this to idx_col_csr to avoid confusion.
-    @cached_property
-    def idx_col(self) -> Integer[t.LongTensor, "*b nnz/b"]:
-        return coalesced_coo_to_col_idx(self.idx_coo, self.shape)
-
-    @cached_property
-    def idx_col_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
-        return coalesced_coo_to_col_idx(self.idx_coo, self.shape, dtype=t.int32)
-
-    @cached_property
-    def idx_row_csc(self) -> Integer[t.LongTensor, "*b nnz/b"]:
-        return coalesced_coo_to_row_idx(self.idx_coo, self.shape, self.coo_to_csc_perm)
-
-    @cached_property
-    def idx_row_csc_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
-        return coalesced_coo_to_row_idx(
-            self.idx_coo, self.shape, self.coo_to_csc_perm, dtype=t.int32
-        )
-
-    def _nnz(self) -> int:
-        """
-        For batched sparse csr/csc tensors, the _nnz() method returns the number
-        of nonzero elements per batch item; for sparse coo tensors, the _nnz()
-        method returns the total number of nonzero elements, regardless of batch
-        dimensions. Here we follow the sparse coo convention.
-        """
-        return self.idx_coo.size(1)
+    @property
+    def device(self) -> t.device:
+        return self.idx_coo.device
 
     def to(self, *args, **kwargs) -> SparseTopology:
         # idx_coo respect all to() arguments, including dtype, device, non_blocking,
@@ -270,8 +251,45 @@ class SparseTopology:
 
         return new_sp_topo
 
-    def size(self, dim: int | None = None) -> int | t.Size:
-        if dim is None:
-            return self.shape
-        else:
-            return self.shape[dim]
+    @cached_property
+    def idx_crow(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="crow")
+
+    @cached_property
+    def idx_crow_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
+        return coalesced_coo_to_compressed_idx(
+            self.idx_coo, self.shape, format="crow", dtype=t.int32
+        )
+
+    # TODO: consider renaming this to idx_col_csr to avoid confusion.
+    @cached_property
+    def idx_col(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+        return coalesced_coo_to_col_idx(self.idx_coo, self.shape)
+
+    @cached_property
+    def idx_col_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
+        return coalesced_coo_to_col_idx(self.idx_coo, self.shape, dtype=t.int32)
+
+    @cached_property
+    def coo_to_csc_perm(self) -> Integer[t.LongTensor, " nnz"]:
+        return get_csc_sort_perm(self.idx_coo, self.shape)
+
+    @cached_property
+    def idx_ccol(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="ccol")
+
+    @cached_property
+    def idx_ccol_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
+        return coalesced_coo_to_compressed_idx(
+            self.idx_coo, self.shape, format="ccol", dtype=t.int32
+        )
+
+    @cached_property
+    def idx_row_csc(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+        return coalesced_coo_to_row_idx(self.idx_coo, self.shape, self.coo_to_csc_perm)
+
+    @cached_property
+    def idx_row_csc_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
+        return coalesced_coo_to_row_idx(
+            self.idx_coo, self.shape, self.coo_to_csc_perm, dtype=t.int32
+        )

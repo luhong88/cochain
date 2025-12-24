@@ -20,6 +20,10 @@ from ._sp_operator import SparseOperator
 class DiagOperator(BaseOperator):
     val: Float[t.Tensor, "*b diag"]
 
+    @classmethod
+    def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
+        return cls(tensor)
+
     def __post_init__(self):
         if self.val.layout != t.strided:
             raise TypeError(
@@ -35,57 +39,59 @@ class DiagOperator(BaseOperator):
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
 
-    @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
-        return cls(tensor)
-
-    @property
-    def shape(self) -> t.Size:
-        return t.Size(self.val.shape + (self.val.shape[-1],))
-
-    @property
-    def n_dense_dim(self) -> int:
-        return 0
-
-    @property
-    def n_sp_dim(self) -> int:
-        return 2
-
-    @property
-    def n_batch_dim(self) -> int:
-        return self.val.ndim - 1
-
-    @property
-    def T(self) -> DiagOperator:
-        """
-        Note that the transpose preserves the batch dimensions.
-        """
-        return self
-
     def apply(self, fn: Callable, **kwargs) -> SparseOperator:
         new_val = fn(self.val, **kwargs)
         return SparseOperator(self.sp_topo, new_val)
+
+    def __neg__(self) -> DiagOperator:
+        return DiagOperator(-self.val)
+
+    def __pow__(self, exp: float | int) -> DiagOperator:
+        return DiagOperator(self.val**exp)
+
+    def pow(self, exp: float | int) -> DiagOperator:
+        return self.__pow__(exp)
 
     @property
     def inv(self) -> DiagOperator:
         return DiagOperator(1.0 / self.val)
 
-    def detach(self) -> DiagOperator:
-        return DiagOperator(self.val.detach())
+    @property
+    def tr(self) -> t.Tensor:
+        if self.n_batch_dim == 0:
+            return self.val.sum()
+        else:
+            return self.val.sum(dim=-1)
 
-    def clone(
-        self, memory_format: t.memory_format = t.contiguous_format
-    ) -> DiagOperator:
-        return DiagOperator(self.val.clone(memory_format=memory_format))
+    def __add__(self, other) -> DiagOperator:
+        match other:
+            case DiagOperator():
+                return DiagOperator(self.val + other.val)
+            case _:
+                return NotImplemented
 
-    def _nnz(self) -> int:
-        """
-        For batched sparse csr/csc tensors, the _nnz() method returns the number
-        of nonzero elements per batch item; for sparse coo tensors, the _nnz()
-        method returns the total number of nonzero elements, regardless of batch
-        dimensions. Here we follow the sparse coo convention.
-        """
-        return self.val.numel()
+    def __sub__(self, other) -> DiagOperator:
+        match other:
+            case DiagOperator():
+                return DiagOperator(self.val - other.val)
+            case _:
+                return NotImplemented
+
+    def __mul__(self, other) -> DiagOperator:
+        if isinstance(other, DiagOperator):
+            return self.__matmul(other)
+        elif is_scalar(other):
+            return DiagOperator(self.val * other)
+        else:
+            return NotImplemented
+
+    def __truediv__(self, other) -> DiagOperator:
+        if isinstance(other, DiagOperator):
+            return DiagOperator(self.val / other.val)
+        elif is_scalar(other):
+            return DiagOperator(self.val / other)
+        else:
+            return NotImplemented
 
     def __matmul__(self, other):
         """
@@ -135,51 +141,54 @@ class DiagOperator(BaseOperator):
             case _:
                 return NotImplemented
 
-    def __neg__(self) -> DiagOperator:
-        return DiagOperator(-self.val)
+    @property
+    def shape(self) -> t.Size:
+        return t.Size(self.val.shape + (self.val.shape[-1],))
 
-    def __pow__(self, exp: float | int) -> DiagOperator:
-        return DiagOperator(self.val**exp)
-
-    def pow(self, exp: float | int) -> DiagOperator:
-        return self.__pow__(exp)
-
-    def __add__(self, other) -> DiagOperator:
-        match other:
-            case DiagOperator():
-                return DiagOperator(self.val + other.val)
-            case _:
-                return NotImplemented
-
-    def __sub__(self, other) -> DiagOperator:
-        match other:
-            case DiagOperator():
-                return DiagOperator(self.val - other.val)
-            case _:
-                return NotImplemented
-
-    def __mul__(self, other) -> DiagOperator:
-        if isinstance(other, DiagOperator):
-            return self.__matmul(other)
-        elif is_scalar(other):
-            return DiagOperator(self.val * other)
-        else:
-            return NotImplemented
-
-    def __truediv__(self, other) -> DiagOperator:
-        if isinstance(other, DiagOperator):
-            return DiagOperator(self.val / other.val)
-        elif is_scalar(other):
-            return DiagOperator(self.val / other)
-        else:
-            return NotImplemented
+    def _nnz(self) -> int:
+        """
+        For batched sparse csr/csc tensors, the _nnz() method returns the number
+        of nonzero elements per batch item; for sparse coo tensors, the _nnz()
+        method returns the total number of nonzero elements, regardless of batch
+        dimensions. Here we follow the sparse coo convention.
+        """
+        return self.val.numel()
 
     @property
-    def tr(self) -> t.Tensor:
+    def n_batch_dim(self) -> int:
+        return self.val.ndim - 1
+
+    @property
+    def n_sp_dim(self) -> int:
+        return 2
+
+    @property
+    def n_dense_dim(self) -> int:
+        return 0
+
+    @property
+    def T(self) -> DiagOperator:
+        """
+        Note that the transpose preserves the batch dimensions.
+        """
+        return self
+
+    def clone(
+        self, memory_format: t.memory_format = t.contiguous_format
+    ) -> DiagOperator:
+        return DiagOperator(self.val.clone(memory_format=memory_format))
+
+    def detach(self) -> DiagOperator:
+        return DiagOperator(self.val.detach())
+
+    def to(self, *args, **kwargs) -> DiagOperator:
+        return DiagOperator(self.val.to(*args, **kwargs))
+
+    def to_dense(self) -> Float[t.Tensor, "*b d d"]:
         if self.n_batch_dim == 0:
-            return self.val.sum()
+            return t.diagflat(self.val)
         else:
-            return self.val.sum(dim=-1)
+            return t.diag_embed(self.val)
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
         if self.n_batch_dim == 0:
@@ -238,12 +247,3 @@ class DiagOperator(BaseOperator):
         return self._to_compressed_sparse_tensor(
             t.sparse_csc_tensor, t.int32 if int32 else t.int64
         )
-
-    def to_dense(self) -> Float[t.Tensor, "*b d d"]:
-        if self.n_batch_dim == 0:
-            return t.diagflat(self.val)
-        else:
-            return t.diag_embed(self.val)
-
-    def to(self, *args, **kwargs) -> DiagOperator:
-        return DiagOperator(self.val.to(*args, **kwargs))
