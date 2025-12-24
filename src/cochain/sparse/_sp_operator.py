@@ -288,10 +288,11 @@ class SparseOperator(BaseOperator):
     ) -> Float[t.Tensor, "*b c r *d"]:
         idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components(int32)
 
+        # (*b, r, c, *d) -> (*b, c, r, *d)
         shape_trans = (
             self.shape[: self.n_batch_dim]
-            + self.shape[self.n_batch_dim : -self.n_dense_dim - 1]
-            + self.shape[-self.n_dense_dim :]
+            + self.shape[self.n_batch_dim : self.n_batch_dim + self.n_sp_dim][::-1]
+            + self.shape[(self.n_dim - self.n_dense_dim) :]
         )
 
         return t.sparse_csr_tensor(

@@ -347,7 +347,6 @@ def nvmath_direct_solver(
     x, solver = _NvmathDirectSolverWrapper.apply(
         A.val,
         A.sp_topo,
-        A.shape,
         b,
         config,
     )
