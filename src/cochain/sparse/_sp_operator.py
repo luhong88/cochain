@@ -45,6 +45,7 @@ class SparseOperator(BaseOperator):
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
 
+    # TODO: optimized intake paths for csc/csr formats
     @classmethod
     def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
         coalesced_tensor = tensor.to_sparse_coo().coalesce()
@@ -281,6 +282,7 @@ class SparseOperator(BaseOperator):
 
         return idx_ccol, idx_row_csc, val
 
+    # TODO: add other direct transpose conversion options?
     def to_sparse_csr_transposed(
         self, int32: bool = False
     ) -> Float[t.Tensor, "*b c r *d"]:

@@ -41,11 +41,9 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
                 (
-                    (
-                        cp.from_dlpack(val),
-                        cp.from_dlpack(idx_row),
-                        cp.from_dlpack(idx_ccol),
-                    ),
+                    cp.from_dlpack(val),
+                    cp.from_dlpack(idx_row),
+                    cp.from_dlpack(idx_ccol),
                 ),
                 shape=tuple(A_sp_topo.shape),
             )
@@ -90,7 +88,7 @@ class _CuPySuperLUWrapper(t.autograd.Function):
         if not (needs_grad_A_val or needs_grad_b):
             return (None,) * 4
 
-        x = ctx.saved_tensors
+        (x,) = ctx.saved_tensors
         A_sp_topo: SparseTopology = ctx.A_sp_topo
 
         if ctx.solver is None:
@@ -143,7 +141,7 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         idx_row = A_sp_topo.idx_row_csc_int32.detach().contiguous().cpu().numpy()
 
         A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
-            ((val, idx_row, idx_ccol)),
+            (val, idx_row, idx_ccol),
             shape=A_sp_topo.shape,
         )
         x_np = b.detach().contiguous().cpu().numpy()
@@ -181,7 +179,7 @@ class _SciPySuperLUWrapper(t.autograd.Function):
         if not (needs_grad_A_val or needs_grad_b):
             return (None,) * 4
 
-        x = ctx.saved_tensors
+        (x,) = ctx.saved_tensors
         A_sp_topo: SparseTopology = ctx.A_sp_topo
 
         if ctx.solver is None:
@@ -286,7 +284,7 @@ def splu(
 
         case "scipy":
             x, solver = _SciPySuperLUWrapper.apply(
-                A.val, A.sp_topo, A.shape, b_ready, splu_kwargs
+                A.val, A.sp_topo, b_ready, splu_kwargs
             )
 
         case _:

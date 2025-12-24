@@ -5,7 +5,8 @@ from cochain.sparse._sp_operator import SparseOperator
 from cochain.sparse._sp_topo import SparseTopology
 
 # TODO: test new dunder method
-# TODO; test apply, assemble
+# TODO: test apply, assemble
+# TODO: test sparse csr trans direct conversion
 
 
 @pytest.mark.gpu_only

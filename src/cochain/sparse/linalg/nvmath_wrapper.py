@@ -172,7 +172,7 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
         else:
             solver: AutogradDirectSolver = ctx.solver
 
-        x = ctx.saved_tensors
+        (x,) = ctx.saved_tensors
         A_sp_topo: SparseTopology = ctx.A_sp_topo
 
         if x.is_cuda:
