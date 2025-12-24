@@ -39,9 +39,9 @@ class DiagOperator(BaseOperator):
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
 
-    def apply(self, fn: Callable, **kwargs) -> SparseOperator:
+    def apply(self, fn: Callable, **kwargs) -> DiagOperator:
         new_val = fn(self.val, **kwargs)
-        return SparseOperator(self.sp_topo, new_val)
+        return DiagOperator(new_val)
 
     def __neg__(self) -> DiagOperator:
         return DiagOperator(-self.val)

@@ -1,8 +1,7 @@
 import pytest
 import torch as t
 
-from cochain.sparse._sp_operator import SparseOperator
-from cochain.sparse._sp_topo import SparseTopology
+from cochain.sparse.operators import DiagOperator, SparseOperator, SparseTopology
 
 
 @pytest.mark.gpu_only
@@ -494,6 +493,20 @@ def test_assemble(A, device):
     op_sum = SparseOperator.assemble(A_op, A_op.T)
 
     t.testing.assert_close(op_sum.to_dense(), tensor_sum.to_dense())
+
+
+def test_assemble_with_diag_operator(A, device):
+    A_tensor = A.to(device)
+    A_op = SparseOperator.from_tensor(A).to(device)
+
+    diag = t.randn(A_tensor.size(0))
+    diag_tensor = t.diagflat(diag).to(device)
+    diag_op = DiagOperator.from_tensor(diag).to(device)
+
+    tensor_sum = diag_tensor + A_tensor
+    op_sum = SparseOperator.assemble(A_op, diag_op)
+
+    t.testing.assert_close(op_sum.to_dense(), tensor_sum)
 
 
 def test_mul(A, device):

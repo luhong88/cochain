@@ -5,9 +5,6 @@ from cochain.sparse._diag_operator import DiagOperator
 from cochain.sparse._sp_operator import SparseOperator
 from cochain.sparse._sp_topo import SparseTopology
 
-# TODO: test new dunder methods
-# TODO: test pow, tr, apply, inv
-
 
 @pytest.fixture
 def diag():
@@ -410,3 +407,112 @@ def test_to_device(diag, device):
     A_operator = DiagOperator.from_tensor(A_tensor).to(device)
 
     assert A_operator.val.device.type == device.type
+
+
+def test_apply(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).clone().to(device)
+
+    tensor_applied = t.relu(A_tensor)
+    op_applied = A_op.apply(t.relu)
+
+    t.testing.assert_close(op_applied.to_dense(), tensor_applied)
+
+
+def test_neg(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).to(device)
+
+    neg_A_tensor = -A_tensor
+    neg_A_op = -A_op
+
+    t.testing.assert_close(neg_A_op.to_dense(), neg_A_tensor)
+
+
+def test_pow(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).to(device)
+
+    tensor_pow = A_tensor**2
+    op_pow = A_op**2
+
+    t.testing.assert_close(op_pow.to_dense(), tensor_pow)
+
+    tensor_pow = A_tensor.pow(2)
+    op_pow = A_op.pow(2)
+
+    t.testing.assert_close(op_pow.to_dense(), tensor_pow)
+
+
+def test_inv(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).to(device)
+
+    tensor_inv = t.linalg.inv(A_tensor)
+    op_inv = A_op.inv
+
+    t.testing.assert_close(op_inv.to_dense(), tensor_inv)
+
+
+def test_tr(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).to(device)
+
+    tensor_tr = A_tensor.trace()
+    op_tr = A_op.tr
+
+    t.testing.assert_close(op_tr, tensor_tr)
+
+
+def test_tr_with_batch(diag_batched, device):
+    A_tensor = t.diag_embed(diag_batched).to(device)
+    A_op = DiagOperator.from_tensor(diag_batched).to(device)
+
+    tensor_tr = t.einsum("ijj->i", A_tensor)
+    op_tr = A_op.tr
+
+    t.testing.assert_close(op_tr, tensor_tr)
+
+
+def test_add(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).to(device)
+
+    tensor_sum = A_tensor + A_tensor
+    op_sum = A_op + A_op
+
+    t.testing.assert_close(op_sum.to_dense(), tensor_sum)
+
+
+def test_sub(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).to(device)
+
+    tensor_sub = A_tensor - A_tensor
+    op_sub = A_op - A_op
+
+    t.testing.assert_close(op_sub.to_dense(), tensor_sub)
+
+
+def test_mul(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).to(device)
+
+    for scalar in [2, 3.0, t.tensor(-9.0).to(device)]:
+        tensor_scaled = scalar * A_tensor
+        op_scaled = scalar * A_op
+        op_rscaled = A_op * scalar
+
+        t.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())
+        t.testing.assert_close(op_rscaled.to_dense(), tensor_scaled.to_dense())
+
+
+def test_trudiv(diag, device):
+    A_tensor = t.diagflat(diag).to(device)
+    A_op = DiagOperator.from_tensor(diag).to(device)
+
+    for scalar in [2, 3.0, t.tensor(-9.0).to(device)]:
+        tensor_scaled = A_tensor / scalar
+        op_scaled = A_op / scalar
+
+        t.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())
