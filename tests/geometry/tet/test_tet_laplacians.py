@@ -2,10 +2,9 @@ from functools import partial
 
 import pytest
 import torch as t
-from jaxtyping import Float
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.tet import tet_hodge_stars, tet_laplacians, tet_masses
+from cochain.geometry.tet import tet_laplacians, tet_masses
 
 
 @pytest.mark.parametrize(
@@ -238,7 +237,7 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialComplex):
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
 
     d0 = two_tets_mesh.coboundary_0
-    d0_T = d0.transpose(0, 1).coalesce()
+    d0_T = d0.T
 
     codiff_1 = inv_m0 @ d0_T @ m1
 
