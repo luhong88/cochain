@@ -25,10 +25,10 @@ class SimplicialComplex:
             Integer[t.LongTensor, "tet 4"],
         ],
         cochains: tuple[
-            Float[t.Tensor, " vert *vert_feat"] | None,
-            Float[t.Tensor, " edge *edge_feat"] | None,
-            Float[t.Tensor, " tri *tri_feat"] | None,
-            Float[t.Tensor, " tet *tet_feat"] | None,
+            Float[t.Tensor, " vert vert_ch"] | None,
+            Float[t.Tensor, " edge edge_ch"] | None,
+            Float[t.Tensor, " tri tri_ch"] | None,
+            Float[t.Tensor, " tet tet_ch"] | None,
         ],
         vert_coords: Float[t.Tensor, "vert 3"] | None,
     ):
@@ -111,9 +111,9 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],
         cochains: tuple[
-            Float[t.Tensor, " vert *vert_feat"] | None,
-            Float[t.Tensor, " edge *edge_feat"] | None,
-            Float[t.Tensor, " tri *tri_feat"] | None,
+            Float[t.Tensor, " vert vert_ch"] | None,
+            Float[t.Tensor, " edge edge_ch"] | None,
+            Float[t.Tensor, " tri tri_ch"] | None,
         ]
         | None = None,
     ):
@@ -156,10 +156,10 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tets: Integer[t.LongTensor, "tet 4"],
         cochains: tuple[
-            Float[t.Tensor, " vert *vert_feat"] | None,
-            Float[t.Tensor, " edge *edge_feat"] | None,
-            Float[t.Tensor, " tri *tri_feat"] | None,
-            Float[t.Tensor, " tet *tet_feat"] | None,
+            Float[t.Tensor, " vert vert_ch"] | None,
+            Float[t.Tensor, " edge edge_ch"] | None,
+            Float[t.Tensor, " tri tri_ch"] | None,
+            Float[t.Tensor, " tet tet_ch"] | None,
         ]
         | None = None,
     ):
