@@ -114,7 +114,7 @@ def test_laplacian_2_kernel(dual_complex, hollow_tet_mesh: SimplicialComplex):
     a closed mesh.
     """
     l2 = tri_laplacians.laplacian_2(hollow_tet_mesh, dual_complex)
-    areas = tri_hodge_stars._tri_areas(
+    areas = tri_hodge_stars.compute_tri_areas(
         hollow_tet_mesh.vert_coords, hollow_tet_mesh.tris
     )
 

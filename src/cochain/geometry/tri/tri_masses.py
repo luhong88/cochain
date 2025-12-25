@@ -4,9 +4,9 @@ from jaxtyping import Float, Integer
 from ...complex import SimplicialComplex
 from ...sparse.operators import SparseOperator
 from .tri_geometry import (
-    _bary_coord_grad_inner_prods,
-    _d_tri_areas_d_vert_coords,
-    _tri_areas,
+    bary_coord_grad_inner_prods,
+    compute_d_tri_areas_d_vert_coords,
+    compute_tri_areas,
 )
 
 
@@ -32,12 +32,12 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
     n_tris = tri_mesh.n_tris
     n_edges = tri_mesh.n_edges
 
-    tri_areas = _tri_areas(vert_coords, tris).view(-1, 1, 1)
-    d_tri_areas_d_vert_coords = _d_tri_areas_d_vert_coords(vert_coords, tris)
+    tri_areas = compute_tri_areas(vert_coords, tris).view(-1, 1, 1)
+    d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(vert_coords, tris)
 
     # For each tri ijk, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
-    bary_coords_grad_dot: Float[t.Tensor, "tri 3 3"] = _bary_coord_grad_inner_prods(
+    bary_coords_grad_dot: Float[t.Tensor, "tri 3 3"] = bary_coord_grad_inner_prods(
         tri_areas, d_tri_areas_d_vert_coords
     )
 

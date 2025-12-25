@@ -4,7 +4,7 @@ from jaxtyping import Float, Integer
 from ...utils.constants import EPS
 
 
-def _tri_areas(
+def compute_tri_areas(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
 ) -> Float[t.Tensor, " tri"]:
     """
@@ -20,7 +20,7 @@ def _tri_areas(
     return area
 
 
-def _d_tri_areas_d_vert_coords(
+def compute_d_tri_areas_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert 3"], tris: Integer[t.LongTensor, "tri 3"]
 ) -> Float[t.Tensor, "tri 3 3"]:
     """
@@ -46,7 +46,7 @@ def _d_tri_areas_d_vert_coords(
     return dAdV
 
 
-def _bary_coord_grad_inner_prods(
+def bary_coord_grad_inner_prods(
     tri_areas: Float[t.Tensor, " tri"],
     d_tri_areas_d_vert_coords: Float[t.Tensor, "tri 3 3"],
 ) -> Float[t.Tensor, "tri 3 3"]:
@@ -67,7 +67,7 @@ def _bary_coord_grad_inner_prods(
     return bary_coords_grad_dot
 
 
-def _cotan_weights(
+def cotan_weights(
     vert_coords: Float[t.Tensor, "vert 3"],
     tris: Integer[t.LongTensor, "tri 3"],
     n_verts: int,

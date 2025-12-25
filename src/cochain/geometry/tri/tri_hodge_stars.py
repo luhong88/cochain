@@ -5,8 +5,8 @@ from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
 from ...sparse.operators import DiagOperator
-from .tri_geometry import _tri_areas
-from .tri_stiffness import _cotan_weights
+from .tri_geometry import compute_tri_areas
+from .tri_stiffness import cotan_weights
 
 
 def star_2(tri_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:
@@ -16,7 +16,7 @@ def star_2(tri_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:
     (which is 1 by convention) to the area of the primal triangles. The returned tensor
     forms the diagonal of the 2-star tensor.
     """
-    return DiagOperator(1.0 / _tri_areas(tri_mesh.vert_coords, tri_mesh.tris))
+    return DiagOperator(1.0 / compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris))
 
 
 def _star_1_circumcentric(
@@ -36,7 +36,7 @@ def _star_1_circumcentric(
     # The cotan weights matrix (i.e., off-diagonal elements of the stiffness matrix)
     # already contains the desired values; i.e., S_ij = -0.5*sum_k[cot_k] for all
     # k that forms a triangle with i and j.
-    weights: Float[t.Tensor, "vert vert"] = _cotan_weights(vert_coords, tris, n_verts)
+    weights: Float[t.Tensor, "vert vert"] = cotan_weights(vert_coords, tris, n_verts)
 
     # For the weights matrix W_ij in COO format, the first row of its index tensor
     # is for the i dimension, and the second row is for the j dimension. We flatten
@@ -131,7 +131,7 @@ def star_0(tri_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
     The barycentric dual area for each vertex is the sum of 1/3 of the areas of
     all triangles that share the vertex as a face.
     """
-    tri_area = _tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
+    tri_area = compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
     diag = t.zeros(
         tri_mesh.n_verts,
