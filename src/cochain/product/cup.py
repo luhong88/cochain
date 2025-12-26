@@ -46,11 +46,11 @@ def cup_product(
 
     n_k_simp = n_simp_map[k]
     k_simp = simp_map[k]
-    k_front_face = kl_simp[:, : k + 1]
+    k_front_face = kl_simp[:, : k + 1].sort(dim=-1).values
 
     n_l_simp = n_simp_map[l]
     l_simp = simp_map[l]
-    k_back_face = kl_simp[:, k:]
+    k_back_face = kl_simp[:, k:].sort(dim=-1).values
 
     # Find the index of the k-front faces in the list of k-simplices and the index
     # of the k-back faces in the list of l-simplices.
@@ -136,14 +136,16 @@ def antisymmetric_cup_product(
 
     n_k_simp = n_simp_map[k]
     k_simp = simp_map[k]
-    uf_face: Integer[t.Tensor, " (k+l)_simp uf_face k+1"] = kl_simp[
-        :, perm.unique_front
-    ]
+    uf_face: Integer[t.Tensor, " (k+l)_simp uf_face k+1"] = (
+        kl_simp[:, perm.unique_front].sort(dim=-1).values
+    )
     uf_face_flat = uf_face.view(-1, k + 1)
 
     n_l_simp = n_simp_map[l]
     l_simp = simp_map[l]
-    ub_face: Integer[t.Tensor, " (k+l)_simp ub_face l+1"] = kl_simp[:, perm.unique_back]
+    ub_face: Integer[t.Tensor, " (k+l)_simp ub_face l+1"] = (
+        kl_simp[:, perm.unique_back].sort(dim=-1).values
+    )
     ub_face_flat = ub_face.view(-1, l + 1)
 
     # Find the index of the k-front faces in the list of k-simplices and the index
