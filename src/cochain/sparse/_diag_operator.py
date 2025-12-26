@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import torch as t
-from jaxtyping import Float
+from jaxtyping import Float, Integer
 
 from ._base_operator import BaseOperator, is_scalar, validate_matmul_args
 from ._matmul import (
@@ -14,6 +14,7 @@ from ._matmul import (
     sp_diag_mm,
 )
 from ._sp_operator import SparseOperator
+from ._sp_topo import SparseTopology
 
 
 @dataclass
@@ -190,7 +191,7 @@ class DiagOperator(BaseOperator):
         else:
             return t.diag_embed(self.val)
 
-    def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
+    def _get_idx_coo(self) -> Integer[t.Tensor, " sp nnz"]:
         if self.n_batch_dim == 0:
             idx_coo = t.tile(t.arange(self._nnz(), device=self.device), (2, 1))
 
@@ -204,6 +205,19 @@ class DiagOperator(BaseOperator):
                     t.tile(t.arange(d, device=self.device), (2, b)),
                 )
             )
+
+        return idx_coo
+
+    def to_sparse_operator(self) -> SparseOperator:
+        idx_coo = self._get_idx_coo()
+        sp_topo = SparseTopology(idx_coo, self.shape)
+
+        val = self.val.flatten()
+
+        return SparseOperator(sp_topo, val)
+
+    def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
+        idx_coo = self._get_idx_coo()
 
         return t.sparse_coo_tensor(
             idx_coo,

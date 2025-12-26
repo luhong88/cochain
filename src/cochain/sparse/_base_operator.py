@@ -145,6 +145,9 @@ class BaseOperator(ABC):
     def to_dense(self) -> t.Tensor: ...
 
     @abstractmethod
+    def to_sparse_operator(self) -> BaseOperator: ...
+
+    @abstractmethod
     def to_sparse_coo(self) -> t.Tensor: ...
 
     @abstractmethod

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Sequence
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -26,6 +26,20 @@ class SparseOperator(BaseOperator):
             sp_topo=SparseTopology(coalesced_tensor.indices(), coalesced_tensor.shape),
             val=coalesced_tensor.values(),
         )
+
+    @classmethod
+    def to_block_diag_matirx(
+        cls, tensors: Sequence[t.Tensor | BaseOperator]
+    ) -> SparseOperator:
+        sp_ops = []
+        for tensor in tensors:
+            match tensor:
+                case t.Tensor():
+                    sp_ops.append(SparseOperator.from_tensor(tensor))
+                case BaseOperator():
+                    sp_ops.append(tensor.to_sparse_operator())
+                case _:
+                    raise TypeError()
 
     def __post_init__(self):
         if self.val.device != self.sp_topo.device:
@@ -231,6 +245,9 @@ class SparseOperator(BaseOperator):
 
     def to_dense(self) -> Float[t.Tensor, "*b r c *d"]:
         return self.to_sparse_coo().to_dense()
+
+    def to_sparse_operator(self) -> SparseOperator:
+        return self
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b r c *d"]:
         return t.sparse_coo_tensor(
