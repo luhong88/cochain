@@ -82,7 +82,7 @@ class SimplicialComplex:
     # TODO: check that the tet topo properties work for non-tet meshes
     @cached_property
     def tet_edge_idx(self) -> Integer[t.LongTensor, "tet 6"]:
-        return tet_topology.get_edge_face_idx(self.tets, self.edges, self.n_verts)
+        return tet_topology.get_edge_face_idx(self.tets, self.edges)
 
     @cached_property
     def tet_edge_orientations(self) -> Float[t.Tensor, "tet 6"]:
@@ -90,7 +90,7 @@ class SimplicialComplex:
 
     @cached_property
     def tet_tri_idx(self) -> Integer[t.LongTensor, "tet 4"]:
-        return tet_topology.get_tri_face_idx(self.tets, self.tris, self.n_verts)
+        return tet_topology.get_tri_face_idx(self.tets, self.tris)
 
     @cached_property
     def tet_tri_orientations(self) -> Float[t.Tensor, "tet 4"]:
@@ -98,7 +98,7 @@ class SimplicialComplex:
 
     @cached_property
     def tri_edge_idx(self) -> Integer[t.LongTensor, "tri 3"]:
-        return tri_topology.get_edge_face_idx(self.tris, self.edges, self.n_verts)
+        return tri_topology.get_edge_face_idx(self.tris, self.edges)
 
     @cached_property
     def tri_edge_orientations(self) -> Float[t.Tensor, "tri 3"]:
