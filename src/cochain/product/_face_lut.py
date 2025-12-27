@@ -1,17 +1,38 @@
 from dataclasses import dataclass
 
 import torch as t
+from jaxtyping import Float, Integer
 
 
+# TODO: explain why it is not necessary to enumerate all permutation of vertex
+# indices.
 @dataclass
-class perm_idx:
+class FaceLUT:
+    """
+    This class contains face permutation information required for computing the
+    anti-symmetrized cup product between a k-cochain and an l-cochain.
+
+    unique_front: a list of all unique k-subcomplexes (up to vertex permutation)
+    in a (k+l)-simplex.
+
+    unique_back: a lsit of all unique l-subcomplexes (up to vertex permutation)
+    in a (k+l)-simplex.
+
+    front_idx/back_idx: indices of (k-subcomplex, l-subcomplex) pairs that form
+    a valid k-front face/k-back face split of a (k+l)-simplex (up to vertex
+    permutation within the subcomplexes).
+
+    sign: the parity of the permutation required to rearrange the (k+l)-simplex
+    vertex indices to the front/back split order.
+    """
+
     k: int
     l: int
-    unique_front: t.Tensor
-    unique_back: t.Tensor
-    front_idx: t.Tensor
-    back_idx: t.Tensor
-    sign: t.Tensor
+    unique_front: Integer[t.Tensor, "1 uf_face vert"]
+    unique_back: Integer[t.Tensor, "1 ub_face vert"]
+    front_idx: Integer[t.Tensor, " face"]
+    back_idx: Integer[t.Tensor, " face"]
+    sign: Float[t.Tensor, "1 face 1"]
 
     def __post_init__(self):
         for attr in [
@@ -24,7 +45,14 @@ class perm_idx:
             setattr(self, attr, t.tensor(getattr(self, attr)))
 
     def flip(self):
-        return perm_idx(
+        """
+        Because the anti-symmetrized cup product is graded-commutative, it is not
+        necessary to write out the front/back face splits explicitly when `k` and
+        `l` are flipped. When this happens, the front and back face information
+        switches position, and the permutation sign is multiplied by a factor of
+        (-1)^(k + l) due to graded commutativity.
+        """
+        return FaceLUT(
             self.l,
             self.k,
             self.unique_back,
@@ -47,7 +75,7 @@ class perm_idx:
 # --------------------
 # [i]/[i]    i     1
 # --------------------
-s00 = perm_idx(
+s00 = FaceLUT(
     k=0,
     l=0,
     unique_front=[[0]],
@@ -67,7 +95,7 @@ s00 = perm_idx(
 # [ij]/[i]   ji   -1
 # [ij]/[j]   ij    1
 # --------------------
-s01 = perm_idx(
+s01 = FaceLUT(
     k=0,
     l=1,
     unique_front=[[0], [1]],
@@ -97,7 +125,7 @@ s10 = s01.flip()
 # [ijk]/[j]  ikj  -1
 # [ijk]/[k]  ijk   1
 # --------------------
-s02 = perm_idx(
+s02 = FaceLUT(
     k=0,
     l=2,
     unique_front=[[0], [1], [2]],
@@ -106,7 +134,7 @@ s02 = perm_idx(
     back_idx=[0, 0, 0],
     sign=[[[1.0], [-1.0], [1.0]]],
 )
-s11 = perm_idx(
+s11 = FaceLUT(
     k=1,
     l=1,
     # 0: ij, 1: ik, 2: jk
@@ -159,7 +187,7 @@ s20 = s02.flip()
 # [ijkl]/[k] ijlk -1
 # [ijkl]/[l] ijkl  1
 # --------------------
-s03 = perm_idx(
+s03 = FaceLUT(
     k=0,
     l=3,
     unique_front=[[0], [1], [2], [3]],
@@ -168,7 +196,7 @@ s03 = perm_idx(
     back_idx=[0, 0, 0, 0],
     sign=[[[1.0], [-1.0], [1.0], [-1.0]]],
 )
-s12 = perm_idx(
+s12 = FaceLUT(
     k=1,
     l=2,
     # 0: ij, 1: ik, 2: il, 3: jk, 4: jl, 5: kl
@@ -198,7 +226,7 @@ s21 = s12.flip()
 s30 = s03.flip()
 
 
-perm_idx_lut: dict[int, perm_idx] = {
+face_lut: dict[int, FaceLUT] = {
     (perm.k, perm.l): perm
     for perm in [s00, s01, s10, s02, s11, s20, s03, s12, s21, s30]
 }

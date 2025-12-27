@@ -5,7 +5,7 @@ from jaxtyping import Float, Integer
 
 from ..complex import SimplicialComplex
 from ..utils.search import simplex_search
-from ._perm_lut import perm_idx_lut
+from ._face_lut import face_lut
 
 
 class CupProduct(t.nn.Module):
@@ -119,7 +119,7 @@ class AntisymmetricCupProduct(t.nn.Module):
             for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
         }
 
-        perm = perm_idx_lut[(k, l)]
+        perm = face_lut[(k, l)]
 
         self.perm_sign: Float[t.Tensor, "1 face 1"]
         self.register_buffer("perm_sign", perm.sign)
