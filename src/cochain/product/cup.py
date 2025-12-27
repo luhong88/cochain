@@ -25,8 +25,11 @@ class CupProduct(t.nn.Module):
         coboundary operator.
 
         Note that this operator does not satisfy the graded commutativity property;
-        i.e., in general, it is not true that `ξ ⋀ η = (-1)^(k*l)*(η ⋀ ξ)`.
+        i.e., in general, it is not true that `ξ ⋀ η = (-1)^(k*l)*(η ⋀ ξ)`, unless
+        k = l = 0.
         """
+        super().__init__()
+
         m = k + l
 
         simp_map = {
@@ -40,7 +43,7 @@ class CupProduct(t.nn.Module):
         # necessary unless k is the top dimension.
         f_face_idx = simplex_search(
             key_simps=simp_map[k],
-            query_simps=simp_map[m][:, : self.k + 1],
+            query_simps=simp_map[m][:, : k + 1],
             sort_key_simp=True if k == mesh.dim else False,
             sort_key_vert=True if k == mesh.dim else False,
             sort_query_vert=True,
@@ -64,7 +67,7 @@ class CupProduct(t.nn.Module):
         self,
         k_cochain: Float[t.Tensor, " k_simp *ch_in"],
         l_cochain: Float[t.Tensor, " l_simp *ch_in"],
-        pairing: Literal["scalar", "dot", "cross", "outer"],
+        pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
     ) -> Float[t.Tensor, " m_simp *ch_out"]:
         k_cochain_at_f_face = k_cochain[self.f_face_idx]
         l_cochain_at_b_face = l_cochain[self.b_face_idx]
@@ -112,6 +115,8 @@ class AntisymmetricCupProduct(t.nn.Module):
         it does not ingeneral satisfies the associativity rule or the Leibniz
         rule.
         """
+        super().__init__()
+
         m = k + l
 
         simp_map = {
@@ -160,7 +165,7 @@ class AntisymmetricCupProduct(t.nn.Module):
         self,
         k_cochain: Float[t.Tensor, " k_simp *ch_in"],
         l_cochain: Float[t.Tensor, " l_simp *ch_in"],
-        pairing: Literal["scalar", "dot", "cross", "outer"],
+        pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
     ) -> Float[t.Tensor, " m_simp *ch_out"]:
         k_cochain_at_f_face: Float[t.Tensor, "m_simp face *ch_in"] = k_cochain[
             self.f_face_idx

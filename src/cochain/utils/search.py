@@ -34,7 +34,7 @@ def _polynomial_hash_simplex_search(
     max_vert_idx = max(key_simps_reduced.max(), query_simps_reduced.max()).to(dtype) + 1
 
     exponent = t.arange(simp_dim, -1, -1, device=device, dtype=dtype)
-    coef = t.pow(max_vert_idx, exponent)
+    coef = t.pow(max_vert_idx, exponent).view(1, -1)
 
     max_allowed_hash_val = t.iinfo(dtype).max
     worst_case_hash_val = float(max_vert_idx) ** (simp_dim + 1)
@@ -43,8 +43,8 @@ def _polynomial_hash_simplex_search(
             "Potential polynomial hash overflow detected. Use method='lex_sort' instead."
         )
 
-    key_simps_packed = t.einsum("sv,v->s", key_simps_reduced, coef)
-    query_simps_packed = t.einsum("sv,v->s", query_simps_reduced, coef)
+    key_simps_packed = t.sum(key_simps_reduced * coef, dim=-1)
+    query_simps_packed = t.sum(query_simps_reduced * coef, dim=-1)
 
     if sort_key_simp:
         key_simps_packed_sorted, key_simps_packed_sort_idx = key_simps_packed.sort()

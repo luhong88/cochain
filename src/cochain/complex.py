@@ -64,7 +64,7 @@ class SimplicialComplex:
     @property
     def verts(self) -> Integer[t.LongTensor, "vert 1"]:
         # This is mostly redundant information; so compute only when needed.
-        return t.arange(self.n_verts).view(-1, 1)
+        return t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
 
     @property
     def n_edges(self) -> int:
