@@ -37,16 +37,22 @@ class CupProduct(t.nn.Module):
             for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
         }
 
-        # For a simplicial n-complex, all but the top level simplices are sorted
-        # by vertex index in lex order (both within a simplex and how the simplices
-        # are ordered). As such, 'sort_key_simp' and 'sort_key_vert' are not
-        # necessary unless k is the top dimension.
+        # The cup product is purely topological and should be invariant to the
+        # geometric orientation of each simplex in the mesh. To enforce this, we
+        # compute the product on lex sorted simplices. The SimplicialComplex
+        # class stores k-simplices this way, except for the top level n-simplices.
+        # Therefore, if k = n, l = n, or k + l = n, then a sort is needed.
+        if m == mesh.dim:
+            m_simps_sorted = simp_map[m].sort(dim=-1).values
+        else:
+            m_simps_sorted = simp_map[m]
+
         f_face_idx = simplex_search(
             key_simps=simp_map[k],
-            query_simps=simp_map[m][:, : k + 1],
+            query_simps=m_simps_sorted[:, : k + 1],
             sort_key_simp=True if k == mesh.dim else False,
             sort_key_vert=True if k == mesh.dim else False,
-            sort_query_vert=True,
+            sort_query_vert=False,
         )
 
         self.f_face_idx: Integer[t.LongTensor, " m_simp"]
@@ -54,10 +60,10 @@ class CupProduct(t.nn.Module):
 
         b_face_idx = simplex_search(
             key_simps=simp_map[l],
-            query_simps=simp_map[m][:, k:],
+            query_simps=m_simps_sorted[:, k:],
             sort_key_simp=True if l == mesh.dim else False,
             sort_key_vert=True if l == mesh.dim else False,
-            sort_query_vert=True,
+            sort_query_vert=False,
         )
 
         self.b_face_idx: Integer[t.LongTensor, " m_simp"]

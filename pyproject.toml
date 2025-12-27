@@ -39,4 +39,4 @@ dev = [
 where = ["src"]
 
 [tool.ruff.lint]
-extend-ignore = ["F722"]
+extend-ignore = ["F722", "E741"]

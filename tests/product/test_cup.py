@@ -35,3 +35,31 @@ def test_cup_product_graded_commutativity(mesh_name, request, device):
                 t.testing.assert_close(lhs, rhs)
             else:
                 assert not t.allclose(lhs, rhs)
+
+
+@pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
+def test_cup_product_associativity(mesh_name, request, device):
+    mesh: SimplicialComplex = request.getfixturevalue(mesh_name).to(device)
+
+    n_simp_map = {
+        dim: n_simp
+        for dim, n_simp in enumerate(
+            [mesh.n_verts, mesh.n_edges, mesh.n_tris, mesh.n_tets]
+        )
+    }
+
+    for u, v, w in itertools.product(range(mesh.dim), repeat=3):
+        if u + v + w <= mesh.dim:
+            u_cochain = t.randn(n_simp_map[u]).to(device)
+            v_cochain = t.randn(n_simp_map[v]).to(device)
+            w_cochain = t.randn(n_simp_map[w]).to(device)
+
+            wedge_uv = CupProduct(u, v, mesh).to(device)
+            wedge_vw = CupProduct(v, w, mesh).to(device)
+            wedge_u_vw = CupProduct(u, v + w, mesh).to(device)
+            wedge_uv_w = CupProduct(u + v, w, mesh).to(device)
+
+            lhs = wedge_uv_w(wedge_uv(u_cochain, v_cochain), w_cochain)
+            rhs = wedge_u_vw(u_cochain, wedge_vw(v_cochain, w_cochain))
+
+            t.testing.assert_close(lhs, rhs)
