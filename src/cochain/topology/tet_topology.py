@@ -1,6 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
+from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import simplex_search
 
 

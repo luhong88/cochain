@@ -9,7 +9,7 @@ from cochain.product.cup import AntisymmetricCupProduct, CupProduct
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
 def test_cup_product_graded_commutativity(mesh_name, request, device):
-    mesh: SimplicialComplex = request.getfixturevalue(mesh_name).to(device)
+    mesh: SimplicialComplex = request.getfixturevalue(mesh_name)
 
     n_simp_map = {
         dim: n_simp
@@ -39,7 +39,7 @@ def test_cup_product_graded_commutativity(mesh_name, request, device):
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
 def test_cup_product_associativity(mesh_name, request, device):
-    mesh: SimplicialComplex = request.getfixturevalue(mesh_name).to(device)
+    mesh: SimplicialComplex = request.getfixturevalue(mesh_name)
 
     n_simp_map = {
         dim: n_simp
@@ -63,3 +63,49 @@ def test_cup_product_associativity(mesh_name, request, device):
             rhs = wedge_u_vw(u_cochain, wedge_vw(v_cochain, w_cochain))
 
             t.testing.assert_close(lhs, rhs)
+
+
+@pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
+def test_cup_product_leibniz(mesh_name, request, device):
+    mesh: SimplicialComplex = request.getfixturevalue(mesh_name)
+
+    n_simp_map = {
+        dim: n_simp
+        for dim, n_simp in enumerate(
+            [mesh.n_verts, mesh.n_edges, mesh.n_tris, mesh.n_tets]
+        )
+    }
+
+    for k, l in itertools.product(range(mesh.dim), repeat=2):
+        m = k + l
+
+        if m < mesh.dim:
+            # LHS: d(ξ ⋀ η)
+            d_m = getattr(mesh, f"coboundary_{m}").to(device)
+
+            k_cochain = t.randn(n_simp_map[k]).to(device)
+            l_cochain = t.randn(n_simp_map[l]).to(device)
+
+            wedge_kl = CupProduct(k, l, mesh).to(device)
+            lhs = d_m @ wedge_kl(k_cochain, l_cochain)
+
+            # RHS: dξ ⋀ η + (-1)^k * (ξ ⋀ dη)
+            d_k = getattr(mesh, f"coboundary_{k}").to(device)
+            d_l = getattr(mesh, f"coboundary_{l}").to(device)
+
+            k1_cochain = d_k @ k_cochain
+            l1_cochain = d_l @ l_cochain
+
+            wedge_k1l = CupProduct(k + 1, l, mesh).to(device)
+            wedge_kl1 = CupProduct(k, l + 1, mesh).to(device)
+
+            sign = (-1.0) ** k
+
+            rhs = wedge_k1l(k1_cochain, l_cochain) + sign * wedge_kl1(
+                k_cochain, l1_cochain
+            )
+
+            try:
+                t.testing.assert_close(lhs, rhs)
+            except:
+                raise ValueError(k, l)

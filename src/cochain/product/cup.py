@@ -4,6 +4,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..complex import SimplicialComplex
+from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import simplex_search
 from ._face_lut import face_lut
 
@@ -37,15 +38,13 @@ class CupProduct(t.nn.Module):
             for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
         }
 
-        # The cup product is purely topological and should be invariant to the
-        # geometric orientation of each simplex in the mesh. To enforce this, we
-        # compute the product on lex sorted simplices. The SimplicialComplex
-        # class stores k-simplices this way, except for the top level n-simplices.
-        # Therefore, if k = n, l = n, or k + l = n, then a sort is needed.
-        if m == mesh.dim:
-            m_simps_sorted = simp_map[m].sort(dim=-1).values
-        else:
-            m_simps_sorted = simp_map[m]
+        m_simps_sorted = simp_map[m].sort(dim=-1).values
+        m_simp_parity = compute_lex_rel_orient(simp_map[m]).to(
+            dtype=mesh.vert_coords.dtype
+        )
+
+        self.m_simp_parity: Float[t.Tensor, " m_simp"]
+        self.register_buffer("m_simp_parity", m_simp_parity)
 
         f_face_idx = simplex_search(
             key_simps=simp_map[k],
@@ -58,6 +57,10 @@ class CupProduct(t.nn.Module):
         self.f_face_idx: Integer[t.LongTensor, " m_simp"]
         self.register_buffer("f_face_idx", f_face_idx)
 
+        f_face_parity = compute_lex_rel_orient(simp_map[k][self.f_face_idx])
+        self.f_face_parity: Integer[t.LongTensor, " m_simp"]
+        self.register_buffer("f_face_parity", f_face_parity)
+
         b_face_idx = simplex_search(
             key_simps=simp_map[l],
             query_simps=m_simps_sorted[:, k:],
@@ -69,33 +72,52 @@ class CupProduct(t.nn.Module):
         self.b_face_idx: Integer[t.LongTensor, " m_simp"]
         self.register_buffer("b_face_idx", b_face_idx)
 
+        b_face_parity = compute_lex_rel_orient(simp_map[l][self.b_face_idx])
+        self.b_face_parity: Integer[t.LongTensor, " m_simp"]
+        self.register_buffer("b_face_parity", b_face_parity)
+
     def forward(
         self,
         k_cochain: Float[t.Tensor, " k_simp *ch_in"],
         l_cochain: Float[t.Tensor, " l_simp *ch_in"],
         pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
     ) -> Float[t.Tensor, " m_simp *ch_out"]:
-        k_cochain_at_f_face = k_cochain[self.f_face_idx]
-        l_cochain_at_b_face = l_cochain[self.b_face_idx]
+        k_cochain_at_f_face = t.einsum(
+            "n,n...->n...", self.f_face_parity, k_cochain[self.f_face_idx]
+        )
+        l_cochain_at_b_face = t.einsum(
+            "n,n...->n...", self.b_face_parity, l_cochain[self.b_face_idx]
+        )
 
         # If pairing='scalar', *ch_in can match to an arbitrary number of channel
         # dimensions; for other pairing method, *ch_in need to match to one dimension.
         match pairing:
             case "scalar":
-                prod = k_cochain_at_f_face * l_cochain_at_b_face
+                prod = t.einsum(
+                    "n,n...->n...",
+                    self.m_simp_parity,
+                    k_cochain_at_f_face * l_cochain_at_b_face,
+                )
 
             case "dot":
-                prod = t.sum(
+                prod = self.m_simp_parity.view(-1, 1) * t.sum(
                     k_cochain_at_f_face * l_cochain_at_b_face,
                     dim=-1,
                     keepdim=True,
                 )
 
             case "cross":
-                prod = t.cross(k_cochain_at_f_face, l_cochain_at_b_face, dim=-1)
+                prod = self.m_simp_parity.view(-1, 1) * t.cross(
+                    k_cochain_at_f_face, l_cochain_at_b_face, dim=-1
+                )
 
             case "outer":
-                prod = t.einsum("nk,nl->nkl", k_cochain_at_f_face, l_cochain_at_b_face)
+                prod = t.einsum(
+                    "n,nk,nl->nkl",
+                    self.m_simp_parity,
+                    k_cochain_at_f_face,
+                    l_cochain_at_b_face,
+                )
 
             case _:
                 raise ValueError()

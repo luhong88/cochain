@@ -37,7 +37,7 @@ def _tet_perm_parity(
     return parity
 
 
-def compute_lex_relative_orientation(
+def compute_lex_rel_orient(
     simps: Integer[t.LongTensor, "simp vert"],
 ) -> Integer[t.LongTensor, " simp"]:
     simp_dim = simps.size(-1) - 1
