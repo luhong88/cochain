@@ -4,95 +4,84 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..complex import SimplicialComplex
+from ..utils.search import simplex_search
 from ._perm_lut import perm_idx_lut
 
 
-# TODO: cache front/back face index mapping
-def cup_product(
-    k_cochain: Float[t.Tensor, " k_simp ch"],
-    l_cochain: Float[t.Tensor, " l_simp ch"],
-    k: int,
-    l: int,
-    mesh: SimplicialComplex,
-    pairing: Literal["scalar", "dot", "cross", "outer"],
-) -> Float[t.Tensor, " (k+l)_simp ch"]:
-    dtype = mesh.edges.dtype
-    pack_dtype = t.int64
-    device = mesh.edges.device
+class CupProduct(t.nn.Module):
+    def __init__(
+        self,
+        k: int,
+        l: int,
+        mesh: SimplicialComplex,
+    ):
+        """
+        Compute the cup product between a `k`-cochain `ξ` and an `l`-cochain `η`,
+        which produces a (k+l)-cochain.
 
-    verts = t.arange(mesh.n_verts, dtype=dtype, device=device).view(-1, 1)
+        This operator satisfies the following properties:
+        * Associativity: `(ξ ⋀ η) ⋀ μ = ξ ⋀ (η ⋀ μ)`.
+        * Leibniz rule: `d(ξ ⋀ η) = dξ ⋀ η + (-1)^k ξ ⋀ dη`, where `d` is the
+        coboundary operator.
 
-    simp_map: dict[int, t.Tensor] = {
-        dim: simp for dim, simp in enumerate([verts, mesh.edges, mesh.tris, mesh.tets])
-    }
-    n_simp_map: dict[int, int] = {
-        dim: n_simp
-        for dim, n_simp in enumerate(
-            [mesh.n_verts, mesh.n_edges, mesh.n_tris, mesh.n_tets]
+        Note that this operator does not satisfy the graded commutativity property;
+        i.e., in general, it is not true that `ξ ⋀ η = (-1)^(k*l)*(η ⋀ ξ)`.
+        """
+        m = k + l
+
+        simp_map = {
+            dim: simp
+            for dim, simp in enumerate([self.verts, mesh.edges, mesh.tris, mesh.tets])
+        }
+
+        f_face_idx = simplex_search(
+            key_simps=simp_map[k],
+            query_simps=simp_map[m][:, : self.k + 1],
+            sort_key_simp=False,
+            sort_key_vert=False,
+            sort_query_vert=True,
         )
-    }
 
-    if k_cochain.size(0) != n_simp_map[k]:
-        raise ValueError()
-    if l_cochain.size(0) != n_simp_map[l]:
-        raise ValueError()
+        self.f_face_idx: Integer[t.LongTensor, " m_simp"]
+        self.register_buffer("f_face_idx", f_face_idx)
 
-    # Sort the (k+l)-simplices by vert indices; for an simplicial n-complex, this
-    # is unnecessary if k + l < n, because all but the top-level simplices are
-    # sorted by vert indices by default.
-    kl_simp: Integer[t.Tensor, " (k+l)_simp k+l+1"] = (
-        simp_map[k + l].sort(dim=-1).values
-    )
+        b_face_idx = simplex_search(
+            key_simps=simp_map[l],
+            query_simps=simp_map[m][:, k:],
+            sort_key_simp=False,
+            sort_key_vert=False,
+            sort_query_vert=True,
+        )
 
-    n_k_simp = n_simp_map[k]
-    k_simp = simp_map[k]
-    k_front_face = kl_simp[:, : k + 1].sort(dim=-1).values
+        self.b_face_idx: Integer[t.LongTensor, " m_simp"]
+        self.register_buffer("b_face_idx", b_face_idx)
 
-    n_l_simp = n_simp_map[l]
-    l_simp = simp_map[l]
-    k_back_face = kl_simp[:, k:].sort(dim=-1).values
+    def forward(
+        self,
+        k_cochain: Float[t.Tensor, " k_simp *ch_in"],
+        l_cochain: Float[t.Tensor, " l_simp *ch_in"],
+        pairing: Literal["scalar", "dot", "cross", "outer"],
+    ) -> Float[t.Tensor, " m_simp *ch_out"]:
+        k_cochain_at_f_face = k_cochain[self.f_face_idx]
+        l_cochain_at_b_face = l_cochain[self.b_face_idx]
 
-    # Find the index of the k-front faces in the list of k-simplices and the index
-    # of the k-back faces in the list of l-simplices.
-    k_simp_packed = t.zeros(n_k_simp, dtype=pack_dtype, device=device)
-    for idx in range(k + 1):
-        k_simp_packed.add_(k_simp[:, idx] * (mesh.n_verts ** (k - idx)))
+        match pairing:
+            case "scalar":
+                prod = k_cochain_at_f_face * l_cochain_at_b_face
+            case "dot":
+                prod = t.sum(
+                    k_cochain_at_f_face * l_cochain_at_b_face,
+                    dim=-1,
+                    keepdim=True,
+                )
+            case "cross":
+                prod = t.cross(k_cochain_at_f_face, l_cochain_at_b_face, dim=-1)
+            case "outer":
+                prod = t.einsum("nk,nl->nkl", k_cochain_at_f_face, l_cochain_at_b_face)
+            case _:
+                raise ValueError()
 
-    k_front_face_packed = t.zeros(k_front_face.size(0), dtype=pack_dtype, device=device)
-    for idx in range(k + 1):
-        k_front_face_packed.add_(k_front_face[:, idx] * (mesh.n_verts ** (k - idx)))
-
-    k_front_face_idx = t.searchsorted(k_simp_packed, k_front_face_packed)
-    k_cochain_at_front_face = k_cochain[k_front_face_idx]
-
-    l_simp_packed = t.zeros(n_l_simp, dtype=pack_dtype, device=device)
-    for idx in range(l + 1):
-        l_simp_packed.add_(l_simp[:, idx] * (mesh.n_verts ** (l - idx)))
-
-    k_back_face_packed = t.zeros(k_back_face.size(0), dtype=pack_dtype, device=device)
-    for idx in range(l + 1):
-        k_back_face_packed.add_(k_back_face[:, idx] * (mesh.n_verts ** (l - idx)))
-
-    k_back_face_idx = t.searchsorted(l_simp_packed, k_back_face_packed)
-    l_cochain_at_back_face = l_cochain[k_back_face_idx]
-
-    match pairing:
-        case "scalar":
-            prod = k_cochain_at_front_face * l_cochain_at_back_face
-        case "dot":
-            prod = t.sum(
-                k_cochain_at_front_face * l_cochain_at_back_face, dim=-1, keepdim=True
-            )
-        case "cross":
-            prod = t.cross(k_cochain_at_front_face, l_cochain_at_back_face, dim=-1)
-        case "outer":
-            prod = t.einsum(
-                "nk,nl->nkl", k_cochain_at_front_face, l_cochain_at_back_face
-            )
-        case _:
-            raise ValueError()
-
-    return prod
+        return prod
 
 
 def antisymmetric_cup_product(

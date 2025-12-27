@@ -5,13 +5,13 @@ from jaxtyping import Integer
 
 
 def _polynomial_hash_simplex_search(
-    key_simps: Integer[t.Tensor, "key_simp vert"],
-    query_simps: Integer[t.Tensor, "query_simp vert"],
+    key_simps: Integer[t.LongTensor, "key_simp vert"],
+    query_simps: Integer[t.LongTensor, "query_simp vert"],
     *,
     sort_key_simp: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
-) -> Integer[t.Tensor, " query_simp"]:
+) -> Integer[t.LongTensor, " query_simp"]:
     dtype = t.int64
     device = key_simps.device
 
@@ -60,13 +60,13 @@ def _polynomial_hash_simplex_search(
 
 
 def _lex_simplex_search(
-    key_simps: Integer[t.Tensor, "key_simp vert"],
-    query_simps: Integer[t.Tensor, "query_simp vert"],
+    key_simps: Integer[t.LongTensor, "key_simp vert"],
+    query_simps: Integer[t.LongTensor, "query_simp vert"],
     *,
     sort_key_simp: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
-) -> Integer[t.Tensor, " query_simp"]:
+) -> Integer[t.LongTensor, " query_simp"]:
     if key_simps.size(1) != query_simps.size(1):
         raise ValueError(
             "The 'key_simps' and 'query_simps' must have the same dimension."
@@ -98,14 +98,14 @@ def _lex_simplex_search(
 
 
 def simplex_search(
-    key_simps: Integer[t.Tensor, "key_simp vert"],
-    query_simps: Integer[t.Tensor, "query_simp vert"],
+    key_simps: Integer[t.LongTensor, "key_simp vert"],
+    query_simps: Integer[t.LongTensor, "query_simp vert"],
     *,
     sort_key_simp: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
-    method: Literal["lex_sort", "polynomial_hash"] = "lex_sort",
-) -> Integer[t.Tensor, " query_simp"]:
+    method: Literal["lex_sort", "polynomial_hash", "auto"] = "auto",
+) -> Integer[t.LongTensor, " query_simp"]:
     """
     Search for simplices in `query_simps` in the `key_simps`. It uses polynomial
     rolling hash to convert the simplex vert index tuples into integers and use
@@ -114,7 +114,8 @@ def simplex_search(
     This function supports two search methods based on either lex sort or
     polynomial hashing. In general, polynomial hashing is faster than lex sort,
     but is not as overflow-safe as lex sort. As such, polynomial hashing is not
-    recommended for searching over k-simplices for k >= 3.
+    recommended for searching over k-simplices for k >= 3. If `method='auto'`,
+    use polynomial hashing if k < 2 and lex sort if k >= 2.
 
     This function has the following requirements:
     * `query_simps` must be a subset of `key_simps` (up to vertex permutation).
@@ -127,6 +128,14 @@ def simplex_search(
     index, with tie breaks based on the second vertex index, and so on. If this is
     not true, set `sort_key_simp=True`.
     """
+    if method == "auto":
+        simp_dim = key_simps.size(-1) - 1
+
+        if simp_dim < 2:
+            method = "polynomial_hash"
+        else:
+            method = "lex_sort"
+
     match method:
         case "lex_sort":
             return _lex_simplex_search(

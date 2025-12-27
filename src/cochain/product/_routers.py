@@ -77,9 +77,9 @@ def router_2simp_2form(
     The Whitney 2-form of an triangle ijk is defined by
 
     w_ijk = 2*(
-        λ_i * dλ_j ∧ dλ_k +
-        λ_j * dλ_k ∧ dλ_i +
-        λ_k * dλ_i ∧ dλ_j +
+        λ_i * dλ_j ⋀ dλ_k +
+        λ_j * dλ_k ⋀ dλ_i +
+        λ_k * dλ_i ⋀ dλ_j +
     )
 
     This function contains the +1/-1 coefficients that specify how each 2-form
@@ -153,9 +153,9 @@ def router_3simp_2form(
     The Whitney 2-form of an triangle ijk is defined by
 
     w_ijk = 2*(
-        λ_i * dλ_j ∧ dλ_k +
-        λ_j * dλ_k ∧ dλ_i +
-        λ_k * dλ_i ∧ dλ_j +
+        λ_i * dλ_j ⋀ dλ_k +
+        λ_j * dλ_k ⋀ dλ_i +
+        λ_k * dλ_i ⋀ dλ_j +
     )
 
     This function contains the +1/-1 coefficients that specify how each 2-form
@@ -198,10 +198,10 @@ def router_3simp_3form(
     The Whitney 3-form of a tet ijkl is defined by
 
     w_ijkl = 6*(
-        λ_i * dλ_j ∧ dλ_k ∧ dλ_l -
-        λ_j * dλ_i ∧ dλ_k ∧ dλ_l +
-        λ_k * dλ_i ∧ dλ_j ∧ dλ_l -
-        λ_l * dλ_i ∧ dλ_j ∧ dλ_k
+        λ_i * dλ_j ⋀ dλ_k ⋀ dλ_l -
+        λ_j * dλ_i ⋀ dλ_k ⋀ dλ_l +
+        λ_k * dλ_i ⋀ dλ_j ⋀ dλ_l -
+        λ_l * dλ_i ⋀ dλ_j ⋀ dλ_k
     )
 
     This function contains the coefficients that specify how each 3-form

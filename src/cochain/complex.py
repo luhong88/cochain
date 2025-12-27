@@ -25,10 +25,10 @@ class SimplicialComplex:
             Integer[t.LongTensor, "tet 4"],
         ],
         cochains: tuple[
-            Float[t.Tensor, " vert vert_ch"] | None,
-            Float[t.Tensor, " edge edge_ch"] | None,
-            Float[t.Tensor, " tri tri_ch"] | None,
-            Float[t.Tensor, " tet tet_ch"] | None,
+            Float[t.Tensor, " vert *vert_ch"] | None,
+            Float[t.Tensor, " edge *edge_ch"] | None,
+            Float[t.Tensor, " tri *tri_ch"] | None,
+            Float[t.Tensor, " tet *tet_ch"] | None,
         ],
         vert_coords: Float[t.Tensor, "vert 3"] | None,
     ):
@@ -60,6 +60,11 @@ class SimplicialComplex:
     @property
     def n_verts(self) -> int:
         return self.coboundary_0.shape[1]
+
+    @property
+    def verts(self) -> Integer[t.LongTensor, "vert 1"]:
+        # This is mostly redundant information; so compute only when needed.
+        return t.arange(self.n_verts).view(-1, 1)
 
     @property
     def n_edges(self) -> int:
@@ -111,9 +116,9 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],
         cochains: tuple[
-            Float[t.Tensor, " vert vert_ch"] | None,
-            Float[t.Tensor, " edge edge_ch"] | None,
-            Float[t.Tensor, " tri tri_ch"] | None,
+            Float[t.Tensor, " vert *vert_ch"] | None,
+            Float[t.Tensor, " edge *edge_ch"] | None,
+            Float[t.Tensor, " tri *tri_ch"] | None,
         ]
         | None = None,
     ):
@@ -156,10 +161,10 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tets: Integer[t.LongTensor, "tet 4"],
         cochains: tuple[
-            Float[t.Tensor, " vert vert_ch"] | None,
-            Float[t.Tensor, " edge edge_ch"] | None,
-            Float[t.Tensor, " tri tri_ch"] | None,
-            Float[t.Tensor, " tet tet_ch"] | None,
+            Float[t.Tensor, " vert *vert_ch"] | None,
+            Float[t.Tensor, " edge *edge_ch"] | None,
+            Float[t.Tensor, " tri *tri_ch"] | None,
+            Float[t.Tensor, " tet *tet_ch"] | None,
         ]
         | None = None,
     ):
