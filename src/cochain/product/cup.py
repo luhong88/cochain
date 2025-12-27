@@ -38,14 +38,45 @@ class CupProduct(t.nn.Module):
             for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
         }
 
-        m_simps_sorted = simp_map[m].sort(dim=-1).values
-        m_simp_parity = compute_lex_rel_orient(simp_map[m]).to(
-            dtype=mesh.vert_coords.dtype
-        )
+        # Note that, in algebraic topology, the orientation on the chain groups
+        # is imposed globally by the lex order of the vertex indices. In the
+        # SimplicialComplex class, this orientation is imposed on all but the top
+        # level n-simplices, where the vertex index ordering carries information
+        # on geometric orientation. In general, such "geometric" n-simplices are
+        # not necessarily vectors in the n-th chain group defined using the
+        # canonically oriented n-simplices as bases. Therefore, a vector space
+        # isomorphism/coordinate transform is required to map the "geometric"
+        # n-simplices to the canonical n-simplices prior to the application of
+        # cup product, and this mapping incurs a permutation sign correction (i.e.,
+        # a geometric n-simplex is related to the corresponding canonical n-simplex
+        # by the parity of the permutation required to put its vertices in lex
+        # order). For the cup product between a k- and l-cochain, this results in
+        # three potential sign corrections:
+        #
+        # 1. Convert the (k+l)-simplices to the canonical (k+l)-simplices, which
+        #    incurs a sign correction at the (k+l)-simplex level.
+        # 2. Identify the k-front and k-back faces of the canonical (k+l)-simplices,
+        #    and then convert them to the geometric (k+l)-simplices, which incurs
+        #    two sign corrections on the front/back face level.
+        # 3. Look up the k- and l-cochain values at the geometric front/back faces,
+        #    and find their product.
+
+        # Compute (k+l)-simplex sign correction
+        if m == mesh.dim:
+            m_simps_sorted = simp_map[m].sort(dim=-1).values
+            m_simp_parity = compute_lex_rel_orient(simp_map[m]).to(
+                dtype=mesh.vert_coords.dtype
+            )
+        else:
+            m_simps_sorted = simp_map[m]
+            m_simp_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+                simp_map[m].size(0)
+            )
 
         self.m_simp_parity: Float[t.Tensor, " m_simp"]
         self.register_buffer("m_simp_parity", m_simp_parity)
 
+        # Identify the k-front faces of (k+l)-simplices and their sign correction
         f_face_idx = simplex_search(
             key_simps=simp_map[k],
             query_simps=m_simps_sorted[:, : k + 1],
@@ -57,10 +88,17 @@ class CupProduct(t.nn.Module):
         self.f_face_idx: Integer[t.LongTensor, " m_simp"]
         self.register_buffer("f_face_idx", f_face_idx)
 
-        f_face_parity = compute_lex_rel_orient(simp_map[k][self.f_face_idx])
+        if k == mesh.dim:
+            f_face_parity = compute_lex_rel_orient(simp_map[k][self.f_face_idx])
+        else:
+            f_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+                self.f_face_idx.size(0)
+            )
+
         self.f_face_parity: Integer[t.LongTensor, " m_simp"]
         self.register_buffer("f_face_parity", f_face_parity)
 
+        # Identify the k-back faces of (k+l)-simplices and their sign correction
         b_face_idx = simplex_search(
             key_simps=simp_map[l],
             query_simps=m_simps_sorted[:, k:],
@@ -72,7 +110,13 @@ class CupProduct(t.nn.Module):
         self.b_face_idx: Integer[t.LongTensor, " m_simp"]
         self.register_buffer("b_face_idx", b_face_idx)
 
-        b_face_parity = compute_lex_rel_orient(simp_map[l][self.b_face_idx])
+        if l == mesh.dim:
+            b_face_parity = compute_lex_rel_orient(simp_map[l][self.b_face_idx])
+        else:
+            b_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+                self.b_face_idx.size(0)
+            )
+
         self.b_face_parity: Integer[t.LongTensor, " m_simp"]
         self.register_buffer("b_face_parity", b_face_parity)
 
