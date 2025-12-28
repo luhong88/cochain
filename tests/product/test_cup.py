@@ -8,7 +8,13 @@ from cochain.geometry.tri.tri_geometry import compute_tri_areas
 from cochain.product.cup import AntisymmetricCupProduct, CupProduct
 
 
-def test_antisymmetric_cup_product_patch(square_mesh: SimplicialComplex, device):
+def test_cup_product_patch(square_mesh: SimplicialComplex, device):
+    """
+    For a tri mesh on the z = 0 plane, the cup product between the constant
+    1-forms dx and dy is not expected to exactly match the area 2-form dx ⋀ dy.
+    But the absolute sum of the cup product 2-form over all 2-simplices should
+    match the sum of the area form (i.e., the total area is invariant).
+    """
     d_0 = square_mesh.coboundary_0.to(device)
 
     x = square_mesh.vert_coords[:, 0].to(device)
@@ -23,7 +29,30 @@ def test_antisymmetric_cup_product_patch(square_mesh: SimplicialComplex, device)
 
     tri_areas = compute_tri_areas(square_mesh.vert_coords, square_mesh.tris).to(device)
 
-    t.testing.assert_close(t.abs(dxdy), tri_areas)
+    t.testing.assert_close(dxdy.abs().sum(), tri_areas.sum())
+
+
+def test_antisymmetric_cup_product_patch(square_mesh: SimplicialComplex, device):
+    """
+    For a tri mesh on the z = 0 plane, the antisymmetric cup product between the
+    constant 1-forms dx and dy should exactly match the area 2-form dx ⋀ dy, up
+    to a sign flip.
+    """
+    d_0 = square_mesh.coboundary_0.to(device)
+
+    x = square_mesh.vert_coords[:, 0].to(device)
+    y = square_mesh.vert_coords[:, 1].to(device)
+
+    dx = d_0 @ x
+    dy = d_0 @ y
+
+    wedge = AntisymmetricCupProduct(1, 1, square_mesh).to(device)
+
+    dxdy = wedge(dx, dy)
+
+    tri_areas = compute_tri_areas(square_mesh.vert_coords, square_mesh.tris).to(device)
+
+    t.testing.assert_close(dxdy.abs(), tri_areas)
 
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
@@ -151,7 +180,48 @@ def test_cup_product_leibniz(mesh_name, request, device):
                 k_cochain, l1_cochain
             )
 
-            try:
-                t.testing.assert_close(lhs, rhs)
-            except:
-                raise ValueError(k, l)
+            t.testing.assert_close(lhs, rhs)
+
+
+def test_cup_product_cohomology_class(hollow_tet_mesh, device):
+    """
+    The cup product and the antisymmetric cup product should belong to the same
+    cohomology class (i.e., differ by a coboundary). Therefore, on a closed mesh,
+    the surface integral of the two products of exact forms should match.
+    """
+    n_simp_map = {
+        dim: n_simp
+        for dim, n_simp in enumerate(
+            [
+                hollow_tet_mesh.n_verts,
+                hollow_tet_mesh.n_edges,
+                hollow_tet_mesh.n_tris,
+                hollow_tet_mesh.n_tets,
+            ]
+        )
+    }
+
+    for k in range(hollow_tet_mesh.dim + 1):
+        l = hollow_tet_mesh.dim - k
+
+        if k == 0:
+            k_cochain = t.randn(1).expand(n_simp_map[k]).to(device)
+        if k > 0:
+            d_k_1 = getattr(hollow_tet_mesh, f"coboundary_{k - 1}").to(device)
+            k_1_cochain = t.randn(n_simp_map[k - 1]).to(device)
+            k_cochain = d_k_1 @ k_1_cochain
+
+        if l == 0:
+            l_cochain = t.randn(1).expand(n_simp_map[l]).to(device)
+        if l > 0:
+            d_l_1 = getattr(hollow_tet_mesh, f"coboundary_{l - 1}").to(device)
+            l_1_cochain = t.randn(n_simp_map[l - 1]).to(device)
+            l_cochain = d_l_1 @ l_1_cochain
+
+        cup_kl = CupProduct(k, l, hollow_tet_mesh).to(device)
+        anti_cup_kl = AntisymmetricCupProduct(k, l, hollow_tet_mesh).to(device)
+
+        t.testing.assert_close(
+            cup_kl(k_cochain, l_cochain).sum(),
+            anti_cup_kl(k_cochain, l_cochain).sum(),
+        )
