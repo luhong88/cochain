@@ -8,7 +8,7 @@ from cochain.utils.perm_parity import compute_lex_rel_orient
 
 
 @dataclass
-class FaceLUT:
+class FacePermLUT:
     """
     This class contains face permutation information required for computing the
     anti-symmetrized cup product between a k-cochain and an l-cochain.
@@ -24,7 +24,9 @@ class FaceLUT:
     permutation within the subcomplexes).
 
     sign: the parity of the permutation required to rearrange the (k+l)-simplex
-    vertex indices to the front/back split order.
+    vertex indices to the front/back split order. Note that this correction is
+    distinct from the sign correction required to map a geometric simplex to
+    a canonical simplex (with lex sorted indices).
     """
 
     k: int
@@ -36,7 +38,7 @@ class FaceLUT:
     sign: Integer[t.LongTensor, "1 face 1"]
 
 
-def compute_face_lut(k: int, l: int) -> FaceLUT:
+def compute_face_perm_lut(k: int, l: int) -> FacePermLUT:
     m = k + l
 
     all_perms = t.tensor(list(itertools.permutations(range(m + 1))))
@@ -62,7 +64,7 @@ def compute_face_lut(k: int, l: int) -> FaceLUT:
     unique_front, front_idx = f_faces_sorted.unique(dim=0, return_inverse=True)
     unique_back, back_idx = b_faces_sorted.unique(dim=0, return_inverse=True)
 
-    lut = FaceLUT(
+    lut = FacePermLUT(
         k=k,
         l=l,
         unique_front=unique_front,
