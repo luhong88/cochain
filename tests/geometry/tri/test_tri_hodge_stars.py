@@ -103,7 +103,7 @@ def test_star_2_on_tet(hollow_tet_mesh: SimplicialComplex):
 
 
 def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialComplex):
-    tri_areas = tri_geometry._tri_areas(
+    tri_areas = tri_geometry.compute_tri_areas(
         flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
     )
 
@@ -121,12 +121,14 @@ def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialComplex):
 def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialComplex):
     # Note that this function does not return the Jacobian; rather, for each
     # triangle, it returns the gradient of its area wrt each of its three verticies.
-    dAdV = tri_geometry._d_tri_areas_d_vert_coords(
+    dAdV = tri_geometry.compute_d_tri_areas_d_vert_coords(
         hollow_tet_mesh.vert_coords, hollow_tet_mesh.tris
     ).flatten(end_dim=1)
 
     jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: tri_geometry._tri_areas(vert_coords, hollow_tet_mesh.tris),
+        lambda vert_coords: tri_geometry.compute_tri_areas(
+            vert_coords, hollow_tet_mesh.tris
+        ),
         hollow_tet_mesh.vert_coords,
     )
     # Extract the nonzero components of the Jacobian.

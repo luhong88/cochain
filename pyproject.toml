@@ -37,3 +37,6 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff.lint]
+extend-ignore = ["F722", "E741"]

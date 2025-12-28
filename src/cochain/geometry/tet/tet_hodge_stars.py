@@ -3,7 +3,7 @@ from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
 from ...sparse.operators import DiagOperator
-from ..tri.tri_geometry import _tri_areas
+from ..tri.tri_geometry import compute_tri_areas
 from .tet_masses import mass_0, mass_3
 
 
@@ -53,7 +53,7 @@ def star_2(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:
     )
 
     # Divide the dual edge length sum by the tri area to get the Hodge 2-star.
-    tri_areas = _tri_areas(vert_coords, tris)
+    tri_areas = compute_tri_areas(vert_coords, tris)
     diag.divide_(tri_areas)
 
     return DiagOperator.from_tensor(diag)

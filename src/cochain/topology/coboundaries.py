@@ -3,9 +3,6 @@ from jaxtyping import Float, Integer
 
 from ..sparse.operators import SparseOperator
 
-# TODO: replace unique() with you can use a dict-based hashing approach (if on CPU)
-# or a parallel radix sort (if on CUDA) for large meshes.
-
 
 def coboundaries_from_tri_mesh(
     tris: Integer[t.LongTensor, "tri 3"],

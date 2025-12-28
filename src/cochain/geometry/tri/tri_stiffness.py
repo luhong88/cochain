@@ -3,7 +3,7 @@ from jaxtyping import Float
 
 from ...complex import SimplicialComplex
 from ...sparse.operators import SparseOperator
-from .tri_geometry import _cotan_weights
+from .tri_geometry import cotan_weights
 
 
 def stiffness_matrix(
@@ -15,9 +15,7 @@ def stiffness_matrix(
     """
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
-    sym_stiffness = _cotan_weights(
-        tri_mesh.vert_coords, tri_mesh.tris, tri_mesh.n_verts
-    )
+    sym_stiffness = cotan_weights(tri_mesh.vert_coords, tri_mesh.tris, tri_mesh.n_verts)
 
     # Compute the diagonal elements of the stiffness matrix.
     stiffness_diag = t.sparse.sum(sym_stiffness, dim=-1)

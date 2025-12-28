@@ -4,10 +4,10 @@ from jaxtyping import Float, Integer
 from ...complex import SimplicialComplex
 from ...sparse.operators import DiagOperator, SparseOperator
 from .tet_geometry import (
-    _bary_coord_grad_inner_prods,
-    _d_tet_signed_vols_d_vert_coords,
-    _tet_signed_vols,
-    _whitney_2_form_inner_prods,
+    bary_coord_grad_inner_prods,
+    d_tet_signed_vols_d_vert_coords,
+    get_tet_signed_vols,
+    whitney_2_form_inner_prods,
 )
 
 
@@ -22,7 +22,7 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
     """
     n_verts = tet_mesh.n_verts
 
-    tet_vol = t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    tet_vol = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
     diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
     diag.scatter_add_(
@@ -56,12 +56,12 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
     n_tets = tet_mesh.n_tets
     n_edges = tet_mesh.n_edges
 
-    tet_signed_vols = _tet_signed_vols(vert_coords, tets).view(-1, 1, 1)
-    d_signed_vols_d_vert_coords = _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+    tet_signed_vols = get_tet_signed_vols(vert_coords, tets).view(-1, 1, 1)
+    d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(vert_coords, tets)
 
     # For each tet ijkl, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
-    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = _bary_coord_grad_inner_prods(
+    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = bary_coord_grad_inner_prods(
         tet_signed_vols, d_signed_vols_d_vert_coords
     )
 
@@ -154,8 +154,8 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
     n_tris = tet_mesh.n_tris
 
     # First, compute the inner products of the Whitney 2-form basis functions.
-    _, whitney_inner_prod_signed = _whitney_2_form_inner_prods(
-        tet_mesh.vert_coords, tet_mesh.tets
+    _, whitney_inner_prod_signed = whitney_2_form_inner_prods(
+        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.tet_tri_orientations
     )
 
     # Then, find the indices of the tet triangle faces associated with the basis
@@ -182,5 +182,5 @@ def mass_3(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tet tet"]:
     the inverse of 3-star.
     """
     return DiagOperator.from_tensor(
-        t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+        t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
     )

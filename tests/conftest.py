@@ -9,6 +9,8 @@ import torch as t
 from cochain.complex import SimplicialComplex
 from cochain.datasets import synthetic_tet_meshes, synthetic_tri_meshes
 
+# TODO: update all tests to run on both GPU and CPU
+
 
 def pytest_addoption(parser):
     """

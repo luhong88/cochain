@@ -3,9 +3,9 @@ from jaxtyping import Float, Integer
 
 from ..complex import SimplicialComplex
 from ..geometry.tri.tri_geometry import (
-    _bary_coord_grad_inner_prods,
-    _d_tri_areas_d_vert_coords,
-    _tri_areas,
+    bary_coord_grad_inner_prods,
+    compute_d_tri_areas_d_vert_coords,
+    compute_tri_areas,
 )
 from ..geometry.tri.tri_hodge_stars import _star_1_circumcentric, star_0, star_2
 from ..utils.constants import EPS
@@ -64,11 +64,11 @@ def _d2_tri_areas_d2_vert_coords(
         inner_prod + outer_diff
     ) * sign_mask
 
-    tri_area_grad: Float[t.Tensor, "tri 3 3"] = _d_tri_areas_d_vert_coords(
+    tri_area_grad: Float[t.Tensor, "tri 3 3"] = compute_d_tri_areas_d_vert_coords(
         vert_coords, tris
     )
 
-    tri_areas: Float[t.Tensor, "tri 1 1 1 1"] = _tri_areas(vert_coords, tris).view(
+    tri_areas: Float[t.Tensor, "tri 1 1 1 1"] = tri_areas(vert_coords, tris).view(
         -1, 1, 1, 1, 1
     )
 
@@ -96,7 +96,7 @@ def d_inv_star_2_d_vert_coords(
     n_verts = tri_mesh.n_verts
     n_tris = tri_mesh.n_tris
 
-    dAdV = _d_tri_areas_d_vert_coords(vert_coords, tris)
+    dAdV = compute_d_tri_areas_d_vert_coords(vert_coords, tris)
 
     dSdV_idx = t.vstack(
         (t.repeat_interleave(t.arange(n_tris, device=tris.device), 3), tris.flatten())
@@ -210,7 +210,9 @@ def d_star_0_d_vert_coords(
     tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
     n_verts = tri_mesh.n_verts
 
-    dAdV: Float[t.Tensor, "tri 3 3"] = _d_tri_areas_d_vert_coords(vert_coords, tris)
+    dAdV: Float[t.Tensor, "tri 3 3"] = compute_d_tri_areas_d_vert_coords(
+        vert_coords, tris
+    )
 
     # For each triangle ijk and each vertex s, dAdV_ijk_s contributes to the gradient
     # star0_ll wrt s whenever l = s or js is an edge in the mesh. Therefore, each
@@ -289,8 +291,8 @@ def d_mass_1_d_vert_coords(
     # its Jacobian wrt vertex p is given by
     #     grad_p[D_xy] = (hess_xp[V]*grad_y[V] + hess_yp[V]*grad_x[V])/V**2
     #                    - 2*D_xy*grad_p[V])/V
-    tri_areas: Float[t.Tensor, "tri"] = _tri_areas(vert_coords, tris)
-    d_tri_areas_d_vert_coords: Float[t.Tensor, "tri 3 3"] = _d_tri_areas_d_vert_coords(
+    tri_areas: Float[t.Tensor, "tri"] = tri_areas(vert_coords, tris)
+    d_tri_areas_d_vert_coords: Float[t.Tensor, "tri 3 3"] = d_tri_areas_d_vert_coords(
         vert_coords, tris
     )
 
@@ -298,7 +300,7 @@ def d_mass_1_d_vert_coords(
         vert_coords, tris, d_tri_areas_d_vert_coords
     )
 
-    bary_coords_grad_dot: Float[t.Tensor, "tri 3 3"] = _bary_coord_grad_inner_prods(
+    bary_coords_grad_dot: Float[t.Tensor, "tri 3 3"] = bary_coord_grad_inner_prods(
         tri_areas, d_tri_areas_d_vert_coords
     )
 
