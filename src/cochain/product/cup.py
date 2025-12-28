@@ -178,7 +178,7 @@ class AntisymmetricCupProduct(t.nn.Module):
     ):
         """
         Compute the anti-symmetrized cup product between a `k`-cochain `ξ` and an
-        `l`-cochain `η`, which produces a (k+l)-cochain. This differs from the
+        `l`-cochain `η`, which produces a `(k+l)`-cochain. This differs from the
         regular cup product in that it averages over all permutations of k-front
         and k-back face splits, thus is invariant to simplex vertex permutation.
 
@@ -201,37 +201,84 @@ class AntisymmetricCupProduct(t.nn.Module):
         self.perm_sign: Float[t.Tensor, "1 face 1"]
         self.register_buffer("perm_sign", perm.sign)
 
-        uf_face: Integer[t.LongTensor, " m_simp uf_face k+1"] = simp_map[m][
+        # Compute (k+l)-simplex sign correction.
+        if m == mesh.dim:
+            m_simps_sorted = simp_map[m].sort(dim=-1).values
+            m_simp_parity = compute_lex_rel_orient(simp_map[m]).to(
+                dtype=mesh.vert_coords.dtype
+            )
+        else:
+            m_simps_sorted = simp_map[m]
+            m_simp_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+                simp_map[m].size(0)
+            )
+
+        self.m_simp_parity: Float[t.Tensor, " m_simp"]
+        self.register_buffer("m_simp_parity", m_simp_parity)
+
+        # Identify permutations of the  k-front faces of (k+l)-simplices and their
+        # sign correction.
+        uf_face: Integer[t.LongTensor, " m_simp uf_face k+1"] = m_simps_sorted[
             :, perm.unique_front
         ]
         uf_face_flat = uf_face.view(-1, k + 1)
-        uf_face_idx: Integer[t.LongTensor, " m_simp uf_face"] = simplex_search(
+        uf_face_idx: Integer[t.LongTensor, " m_simp*uf_face"] = simplex_search(
             key_simps=simp_map[k],
             query_simps=uf_face_flat,
             sort_key_simp=True if k == mesh.dim else False,
             sort_key_vert=True if k == mesh.dim else False,
-            sort_query_vert=True,
+            sort_query_vert=False,
         )
-        f_face_idx = uf_face_idx[:, perm.front_idx]
+        f_face_idx = uf_face_idx.view(*uf_face.shape[:-1])[:, perm.front_idx]
 
         self.f_face_idx: Integer[t.LongTensor, "m_simp face"]
         self.register_buffer("f_face_idx", f_face_idx)
 
+        if k == mesh.dim:
+            f_face_parity = (
+                compute_lex_rel_orient(simp_map[k][uf_face_idx])
+                .to(dtype=mesh.vert_coords.dtype)
+                .view(*uf_face.shape[:-1])[:, perm.front_idx]
+            )
+        else:
+            f_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+                self.f_face_idx.shape
+            )
+
+        self.f_face_parity: Integer[t.LongTensor, " m_simp face"]
+        self.register_buffer("f_face_parity", f_face_parity)
+
+        # Identify permutations of the  k-back faces of (k+l)-simplices and their
+        # sign correction.
         ub_face: Integer[t.LongTensor, " m_simp ub_face l+1"] = (
-            simp_map[m][:, perm.unique_back].sort(dim=-1).values
+            m_simps_sorted[:, perm.unique_back].sort(dim=-1).values
         )
         ub_face_flat = ub_face.view(-1, l + 1)
-        ub_face_idx: Integer[t.LongTensor, " (k+l)_simp ub_face"] = simplex_search(
+        ub_face_idx: Integer[t.LongTensor, " m_simp*ub_face"] = simplex_search(
             key_simps=simp_map[l],
             query_simps=ub_face_flat,
             sort_key_simp=True if l == mesh.dim else False,
             sort_key_vert=True if l == mesh.dim else False,
-            sort_query_vert=True,
+            sort_query_vert=False,
         )
-        b_face_idx = ub_face_idx[:, perm.front_idx]
+        b_face_idx = ub_face_idx.view(*ub_face.shape[:-1])[:, perm.back_idx]
 
         self.b_face_idx: Integer[t.LongTensor, "m_simp face"]
         self.register_buffer("b_face_idx", b_face_idx)
+
+        if l == mesh.dim:
+            b_face_parity = (
+                compute_lex_rel_orient(simp_map[l][ub_face_idx])
+                .to(dtype=mesh.vert_coords.dtype)
+                .view(*ub_face.shape[:-1])[:, perm.back_idx]
+            )
+        else:
+            b_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+                self.b_face_idx.shape
+            )
+
+        self.b_face_parity: Integer[t.LongTensor, " m_simp face"]
+        self.register_buffer("b_face_parity", b_face_parity)
 
     def forward(
         self,
@@ -246,35 +293,48 @@ class AntisymmetricCupProduct(t.nn.Module):
             self.b_face_idx
         ]
 
+        combined_perm_sign: Float[t.Tensor, "m_simp face 1"] = (
+            self.m_simp_parity.view(-1, 1, 1)
+            * self.f_face_parity.unsqueeze(-1)
+            * self.b_face_parity.unsqueeze(-1)
+            * self.perm_sign
+        )
+
         # If pairing='scalar', *ch_in can match to an arbitrary number of channel
         # dimensions; for other pairing method, *ch_in need to match to one dimension.
         match pairing:
             case "scalar":
-                prod = t.mean(
-                    self.perm_sign * k_cochain_at_f_face * l_cochain_at_b_face, dim=1
-                )
+                prod = t.einsum(
+                    "nf,nf...->n...",
+                    combined_perm_sign.squeeze(-1),
+                    k_cochain_at_f_face * l_cochain_at_b_face,
+                ) / combined_perm_sign.size(1)
+
             case "dot":
                 prod = t.mean(
                     t.sum(
-                        self.perm_sign * k_cochain_at_f_face * l_cochain_at_b_face,
+                        combined_perm_sign * k_cochain_at_f_face * l_cochain_at_b_face,
                         dim=-1,
                         keepdim=True,
                     ),
                     dim=1,
                 )
+
             case "cross":
                 prod = t.mean(
-                    self.perm_sign
+                    combined_perm_sign
                     * t.cross(k_cochain_at_f_face, l_cochain_at_b_face, dim=-1),
                     dim=1,
                 )
+
             case "outer":
                 prod = t.einsum(
                     "nf,nfk,nfl->nkl",
-                    self.perm_sign.flatten(start_dim=1),
+                    combined_perm_sign.flatten(start_dim=1),
                     k_cochain_at_f_face,
                     l_cochain_at_b_face,
-                ) / self.perm_sign.size(1)
+                ) / combined_perm_sign.size(1)
+
             case _:
                 raise ValueError()
 
