@@ -4,7 +4,26 @@ import pytest
 import torch as t
 
 from cochain.complex import SimplicialComplex
+from cochain.geometry.tri.tri_geometry import compute_tri_areas
 from cochain.product.cup import AntisymmetricCupProduct, CupProduct
+
+
+def test_antisymmetric_cup_product_patch(square_mesh: SimplicialComplex, device):
+    d_0 = square_mesh.coboundary_0.to(device)
+
+    x = square_mesh.vert_coords[:, 0].to(device)
+    y = square_mesh.vert_coords[:, 1].to(device)
+
+    dx = d_0 @ x
+    dy = d_0 @ y
+
+    wedge = AntisymmetricCupProduct(1, 1, square_mesh).to(device)
+
+    dxdy = wedge(dx, dy)
+
+    tri_areas = compute_tri_areas(square_mesh.vert_coords, square_mesh.tris).to(device)
+
+    t.testing.assert_close(t.abs(dxdy), tri_areas)
 
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])

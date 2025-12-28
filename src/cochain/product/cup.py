@@ -6,7 +6,7 @@ from jaxtyping import Float, Integer
 from ..complex import SimplicialComplex
 from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import simplex_search
-from ._face_lut import face_lut
+from ._face_lut import compute_face_lut
 
 
 class CupProduct(t.nn.Module):
@@ -196,10 +196,10 @@ class AntisymmetricCupProduct(t.nn.Module):
             for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
         }
 
-        perm = face_lut[(k, l)]
+        perm = compute_face_lut(k, l)
 
         self.perm_sign: Float[t.Tensor, "1 face 1"]
-        self.register_buffer("perm_sign", perm.sign)
+        self.register_buffer("perm_sign", perm.sign.to(mesh.vert_coords.dtype))
 
         # Compute (k+l)-simplex sign correction.
         if m == mesh.dim:
