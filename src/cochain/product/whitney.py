@@ -141,116 +141,29 @@ def inv_gram_det(g: Float[t.Tensor, "simp vert vert"], form_deg=int):
     return grad_wedge_dot
 
 
-def _einsum_str(k: int, l: int) -> str:
-    match (k, l):
-        # 0-simplex
-        case (0, 0):
-            # 0-form_router: (u=vert, a=λ)
-            # 0-form_router: (v=vert, b=λ)
-            # 0-form_router: (w=vert, c=λ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp,)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "ua, vb, wc, t, abc, t -> tuvw"
+def get_triple_scalar_prod_einsum_str(k: int, l: int) -> str:
+    m = k + l
+    d_lambda_input_vars = "xyz"
+    d_lambda_output_vars = "pqr"
 
-        # 1-simplex
-        case (0, 1):
-            # 0-form_router: (u=vert, a=λ)
-            # 1-form_router: (v=edge, b=λ, y=dλ)
-            # 1-form_router: (w=edge, c=λ, p=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, y=dλ, p=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "ua, vby, wcp, t, abc, typ -> tuvw"
+    k_d_lambda_vars = d_lambda_input_vars[:k]
+    l_d_lambda_vars = d_lambda_input_vars[k : k + l]
+    m_d_lambda_vars = d_lambda_output_vars[:m]
 
-        case (1, 0):
-            # 0-form_router: (u=vert, a=λ, x=dλ)
-            # 1-form_router: (v=edge, b=λ)
-            # 1-form_router: (w=edge, c=λ, p=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, x=dλ, p=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "uax, vb, wcp, t, abc, txp -> tuvw"
+    einsum_inputs = [
+        "ua" + k_d_lambda_vars,  # k-form router
+        "vb" + l_d_lambda_vars,  # l-form router
+        "wc" + m_d_lambda_vars,  # m-form router
+        "t",  # simplex size
+        "abc",  # moments
+        "t" + k_d_lambda_vars + l_d_lambda_vars + m_d_lambda_vars,  # wedge dot
+    ]
 
-        # 2-simplex
-        case (0, 2):
-            # 0-form_router: (u=vert, a=λ)
-            # 2-form_router: (v=tri, b=λ, x=dλ, y= dλ)
-            # 2-form_router: (w=tri, c=λ, p=dλ, q=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, x=dλ, y=dλ, p=dλ, q=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "ua, vbxy, wcpq, t, abc, txypq -> tuvw"
+    einsum_output = "tuvw"
 
-        case (1, 1):
-            # 1-form_router: (u=edge, a=λ, x=dλ)
-            # 1-form_router: (v=edge, b=λ, y=dλ)
-            # 2-form_router: (w=tri, c=λ, p=dλ, q=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, x=dλ, y=dλ, p=dλ, q=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "uax, vby, wcpq, t, abc, txypq -> tuvw"
+    einsum_str = ",".join(einsum_inputs) + "->" + einsum_output
 
-        case (2, 0):
-            # 2-form_router: (u=tri, a=λ, x=dλ, y=dλ)
-            # 0-form_router: (v=vert, b=λ)
-            # 2-form_router: (w=tri, c=λ, p=dλ, q=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, x=dλ, y=dλ, p=dλ, q=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "uaxy, vb, wcpq, t, abc, txypq -> tuvw"
-
-        # 3-simplex
-        case (0, 3):
-            # 0-form_router: (u=vert, a=λ)
-            # 3-form_router: (v=tet, b=λ, x=dλ, y=dλ, z= dλ)
-            # 3-form_router: (w=tet, c=λ, p=dλ, q=dλ, r=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, x=dλ, y=dλ, z=dλ, p=dλ, q=dλ, r=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "ua, vbxyz, wcpqr, t, abc, txyzpqr -> tuvw"
-
-        case (1, 2):
-            # 1-form_router: (u=edge, a=λ, x=dλ)
-            # 2-form_router: (v=tri, b=λ, y=dλ, z= dλ)
-            # 3-form_router: (w=tet, c=λ, p=dλ, q=dλ, r=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, x=dλ, y=dλ, z=dλ, p=dλ, q=dλ, r=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "uax, vbyz, wcpqr, t, abc, txyzpqr -> tuvw"
-
-        case (2, 1):
-            # 2-form_router: (u=tri, a=λ, x=dλ, y=dλ)
-            # 1-form_router: (v=edge, b=λ, z= dλ)
-            # 3-form_router: (w=tet, c=λ, p=dλ, q=dλ, r=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, x=dλ, y=dλ, z=dλ, p=dλ, q=dλ, r=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "uaxy, vbz, wcpqr, t, abc, txyzpqr -> tuvw"
-
-        case (3, 0):
-            # 3-form_router: (u=tet, a=λ, x=dλ, y=dλ, z= dλ)
-            # 0-form_router: (v=vert, b=λ)
-            # 3-form_router: (w=tet, c=λ, p=dλ, q=dλ, r=dλ)
-            # size: (t=simp,)
-            # moments: (a=λ, b=λ, c=λ)
-            # wedge_dot: (t=simp, x=dλ, y=dλ, z=dλ, p=dλ, q=dλ, r=dλ)
-            # output: (t=simp, u=λ, v=λ, w=dλ)
-            einsum = "uaxyz, vb, wcpqr, t, abc, txyzpqr -> tuvw"
-
-        case _:
-            raise NotImplementedError()
-
-    return einsum
+    return einsum_str
 
 
 def triple_scalar_prod(
@@ -294,7 +207,7 @@ def triple_scalar_prod(
 
     wedge_dot = inv_gram_det(bary_cord_grad, k + l)
 
-    einsum_str = _einsum_str(k, l)
+    einsum_str = get_triple_scalar_prod_einsum_str(k, l)
 
     return t.einsum(
         einsum_str,
