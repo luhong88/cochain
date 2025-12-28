@@ -28,10 +28,10 @@ class SparseOperator(BaseOperator):
         )
 
     @classmethod
-    def to_block_diag_matirx(
+    def to_block_diag(
         cls, tensors: Sequence[t.Tensor | BaseOperator]
     ) -> SparseOperator:
-        sp_ops = []
+        sp_ops: list[SparseOperator] = []
         for tensor in tensors:
             match tensor:
                 case t.Tensor():
@@ -40,6 +40,58 @@ class SparseOperator(BaseOperator):
                     sp_ops.append(tensor.to_sparse_operator())
                 case _:
                     raise TypeError()
+
+        device = sp_ops[0].device
+        val_dtype = sp_ops[0].dtype
+        idx_dtype = sp_ops[0].sp_topo.dtype
+
+        r_sizes_cum = t.tensor(
+            [0] + [sp_op.sp_topo.size(-2) for sp_op in sp_ops],
+            dtype=idx_dtype,
+            device=device,
+        ).cumsum(dim=0)
+
+        c_sizes_cum = t.tensor(
+            [0] + [sp_op.sp_topo.size(-1) for sp_op in sp_ops],
+            dtype=idx_dtype,
+            device=device,
+        ).cumsum(dim=0)
+
+        nnz_concat = t.tensor([sp_op.sp_topo._nnz() for sp_op in sp_ops])
+
+        r_offset = t.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
+        c_offset = t.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
+
+        idx_coo_concat = t.hstack(
+            [
+                sp_op.sp_topo.idx_coo.to(device=device, dtype=idx_dtype)
+                for sp_op in sp_ops
+            ]
+        )
+        idx_coo_concat[-2] += r_offset
+        idx_coo_concat[-1] += c_offset
+
+        perm = t.sort(idx_coo_concat[0], stable=True).indices
+
+        if sp_ops[0].sp_topo.n_batch_dim > 0:
+            sp_topo_shape_concat = t.Size(
+                [sp_ops[0].sp_topo.size(0), r_sizes_cum[-1], c_sizes_cum[-1]]
+            )
+        else:
+            sp_topo_shape_concat = t.Size([r_sizes_cum[-1], c_sizes_cum[-1]])
+
+        sp_topo_concat = SparseTopology(
+            idx_coo_concat[:, perm], shape=sp_topo_shape_concat
+        )
+
+        val_list = [sp_op.val.to(device=device, dtype=val_dtype) for sp_op in sp_ops]
+
+        if sp_ops[0].n_dense_dim == 0:
+            val_concat = t.hstack(val_list)[perm]
+        else:
+            val_concat = t.vstack(val_list)[perm]
+
+        return SparseOperator(sp_topo_concat, val_concat)
 
     def __post_init__(self):
         if self.val.device != self.sp_topo.device:
