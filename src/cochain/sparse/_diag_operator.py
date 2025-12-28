@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Sequence
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -24,6 +24,28 @@ class DiagOperator(BaseOperator):
     @classmethod
     def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
         return cls(tensor)
+
+    @classmethod
+    def to_block_diag(cls, blocks: Sequence[t.Tensor | DiagOperator]) -> DiagOperator:
+        """
+        Construct a diagonal matrix as a DiagOperator from tensor or DiagOperator
+        objects.
+
+        If a block diagonal matrix is desired, please use SparseOperator.to_block_diag().
+        """
+        val_list = []
+        for block in blocks:
+            match block:
+                case t.Tensor():
+                    val_list.append(block)
+                case DiagOperator():
+                    val_list.append(block.val)
+                case _:
+                    raise TypeError()
+
+        val_concat = t.hstack(val_list)
+
+        return DiagOperator(val_concat)
 
     def __post_init__(self):
         if self.val.layout != t.strided:

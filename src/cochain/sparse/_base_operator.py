@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, Sequence
 
 import torch as t
 
@@ -53,6 +53,12 @@ class BaseOperator(ABC):
     @classmethod
     @abstractmethod
     def from_tensor(cls, tensor: t.Tensor) -> BaseOperator: ...
+
+    @classmethod
+    @abstractmethod
+    def to_block_diag(
+        cls, blocks: Sequence[t.Tensor | BaseOperator]
+    ) -> BaseOperator: ...
 
     @abstractmethod
     def apply(self, fn: Callable, **kwargs) -> BaseOperator: ...

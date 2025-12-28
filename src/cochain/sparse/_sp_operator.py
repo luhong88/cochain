@@ -28,17 +28,19 @@ class SparseOperator(BaseOperator):
         )
 
     @classmethod
-    def to_block_diag(
-        cls, tensors: Sequence[t.Tensor | BaseOperator]
-    ) -> SparseOperator:
+    def to_block_diag(cls, blocks: Sequence[t.Tensor | BaseOperator]) -> SparseOperator:
+        """
+        Construct a block diagonal matrix as a SparseOperator from a list of tensor,
+        SparseOperator, and DiagOperator objects.
+        """
         # Convert all input elements to SparseOperator.
         sp_ops: list[SparseOperator] = []
-        for tensor in tensors:
-            match tensor:
+        for block in blocks:
+            match block:
                 case t.Tensor():
-                    sp_ops.append(SparseOperator.from_tensor(tensor))
+                    sp_ops.append(SparseOperator.from_tensor(block))
                 case BaseOperator():
-                    sp_ops.append(tensor.to_sparse_operator())
+                    sp_ops.append(block.to_sparse_operator())
                 case _:
                     raise TypeError()
 
@@ -107,7 +109,7 @@ class SparseOperator(BaseOperator):
 
     # TODO: optimize to avoid multiple index tensor copies
     @classmethod
-    def to_block(cls, tensors: Sequence[Sequence[t.Tensor | BaseOperator | None]]):
+    def to_block(cls, blocks: Sequence[Sequence[t.Tensor | BaseOperator | None]]):
         """
         Construct a block matrix as a SparseOperator from a 2D grid of existing
         tensor, SparseOperator, or DiagOperator. None is allowed to represent
@@ -115,14 +117,14 @@ class SparseOperator(BaseOperator):
         """
         # Convert all input blocks except for None to SparseOperator.
         sp_ops: list[list[SparseOperator]] = []
-        for tensor_row in tensors:
+        for block_row in blocks:
             sp_op_row = []
-            for tensor in tensor_row:
-                match tensor:
+            for block in block_row:
+                match block:
                     case t.Tensor():
-                        sp_op_row.append(SparseOperator.from_tensor(tensor))
+                        sp_op_row.append(SparseOperator.from_tensor(block))
                     case BaseOperator():
-                        sp_op_row.append(tensor.to_sparse_operator())
+                        sp_op_row.append(block.to_sparse_operator())
                     case None:
                         sp_op_row.append(None)
                     case _:
@@ -138,7 +140,7 @@ class SparseOperator(BaseOperator):
                     rep_sp_op = sp_op
 
         if rep_sp_op is None:
-            raise ValueError("At least one block in 'tensors' must be non-null value.")
+            raise ValueError("At least one block in 'blocks' must be non-null value.")
 
         device = rep_sp_op.device
         val_dtype = rep_sp_op.dtype
