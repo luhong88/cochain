@@ -9,8 +9,53 @@ from ..complex import SimplicialComplex
 from ..geometry.tet import tet_geometry
 from ..geometry.tri import tri_geometry
 from ..sparse.operators import SparseOperator
-from ..topology import tet_topology, tri_topology
-from ._routers import whitney_router
+from ..utils.perm_parity import compute_lex_rel_orient
+
+
+def enumerate_faces(simp_dim: int, face_dim: int) -> Integer[t.Tensor, "face vert"]:
+    if face_dim > simp_dim:
+        raise ValueError()
+
+    return t.tensor(
+        list(itertools.combinations(list(range(simp_dim + 1)), face_dim + 1))
+    )
+
+
+def compute_face_sign(
+    mesh: SimplicialComplex, simp_dim: int, face_dim: int
+) -> Float[t.Tensor, "simp face 1"]:
+    simp_map = {
+        dim: simp
+        for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
+    }
+
+    face_idx = enumerate_faces(simp_dim, face_dim)
+    all_faces = simp_map[simp_dim][:, face_idx]
+
+    signs = compute_lex_rel_orient(all_faces.flatten(end_dim=-2))
+    signs_shaped = signs.view(simp_map[simp_dim].size(0), face_idx.size(0), 1)
+
+    return signs_shaped
+
+
+def compute_whitney_router(
+    simp_dim: int, form_deg: int, device: t.device, dtype: t.dtype = t.float
+) -> Float[t.Tensor, "face lambda *d_lambda"]:
+    """
+    Compute the coefficients required to construct the Whitney forms from the
+    λ's and the dλ's.
+    """
+    faces = enumerate_faces(simp_dim, form_deg)
+
+    router_shape = (faces.size(0),) + (simp_dim + 1,) * (form_deg + 1)
+    router = t.zeros(router_shape, dtype=dtype, device=device)
+
+    for simp_idx, simp in enumerate(faces):
+        perms = t.tensor(list(itertools.permutations(simp)))
+        signs = compute_lex_rel_orient(perms).to(dtype=dtype, device=device)
+        router[simp_idx][perms.T.unbind(0)] = signs
+
+    return router
 
 
 def compute_moments(
@@ -219,9 +264,9 @@ def triple_scalar_prod(
     float_dtype = mesh.vert_coords.dtype
     int_dtype = mesh.edges.dtype
 
-    k_form_router = whitney_router(sc_dim, k, device, int_dtype)
-    l_form_router = whitney_router(sc_dim, l, device, int_dtype)
-    kl_form_router = whitney_router(sc_dim, k + l, device, int_dtype)
+    k_form_router = compute_whitney_router(sc_dim, k, device, float_dtype)
+    l_form_router = compute_whitney_router(sc_dim, l, device, float_dtype)
+    kl_form_router = compute_whitney_router(sc_dim, k + l, device, float_dtype)
 
     moments = compute_moments(3, sc_dim, device, float_dtype)
 
@@ -262,108 +307,6 @@ def triple_scalar_prod(
     )
 
 
-def _get_face_idx(simp_dim: int, face_dim: int) -> list:
-    i, j, k, l = 0, 1, 2, 3
-
-    match simp_dim:
-        case 0:
-            match face_dim:
-                case 0:
-                    return [[i]]
-                case _:
-                    return ValueError()
-
-        case 1:
-            match face_dim:
-                case 0:
-                    return [[i], [j]]
-                case 1:
-                    return [[i, j]]
-                case _:
-                    raise ValueError()
-
-        case 2:
-            match face_dim:
-                case 0:
-                    return [[i], [j], [k]]
-                case 1:
-                    return [[i, j], [i, k], [j, k]]
-                case 2:
-                    return [i, j, k]
-                case _:
-                    raise ValueError()
-
-        case 3:
-            match face_dim:
-                case 0:
-                    return [[i], [j], [k], [l]]
-                case 1:
-                    return [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]]
-                case 2:
-                    return [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]
-                case 3:
-                    return [[i, j, k, l]]
-                case _:
-                    raise ValueError()
-
-        case _:
-            raise NotImplementedError()
-
-
-def _get_face_sign(
-    simp_dim: int, face_dim: int, mesh: SimplicialComplex
-) -> float | Float[t.Tensor, "simp face 1"]:
-    match simp_dim:
-        case 0:
-            match face_dim:
-                case 0:
-                    return 1.0
-                case _:
-                    return ValueError()
-
-        case 1:
-            match face_dim:
-                case 0:
-                    return 1.0
-                case 1:
-                    return 1.0
-                case _:
-                    raise ValueError()
-
-        case 2:
-            match face_dim:
-                case 0:
-                    return 1.0
-                case 1:
-                    return tri_topology.get_edge_face_orientations(mesh.tris).unsqueeze(
-                        -1
-                    )
-                case 2:
-                    return 1.0
-                case _:
-                    raise ValueError()
-
-        case 3:
-            match face_dim:
-                case 0:
-                    return 1.0
-                case 1:
-                    return tet_topology.get_edge_face_orientations(mesh.tets).unsqueeze(
-                        -1
-                    )
-                case 2:
-                    return tet_topology.get_tri_face_orientations(mesh.tets).unsqueeze(
-                        -1
-                    )
-                case 3:
-                    return 1.0
-                case _:
-                    raise ValueError()
-
-        case _:
-            raise NotImplementedError()
-
-
 # TODO: further optimization when the face_dim = mesh_dim
 def _find_face_global_idx(
     face_dim: int,
@@ -379,7 +322,7 @@ def _find_face_global_idx(
     n_k_simp = n_simp_map[k]
     # this is not necessary unless k is the top dimension in the complex.
     k_simp = simp_map[k].sort(dim=-1).values
-    all_k_faces = _get_face_idx(mesh_dim, k)
+    all_k_faces = enumerate_faces(mesh_dim, k)
     k_face = simp_map[mesh_dim][:, all_k_faces]
     k_face_flat = k_face.view(-1, k + 1)
     k_face_sorted = k_face_flat.sort(dim=-1).values
@@ -435,7 +378,7 @@ def whitney_wedge_product(
     k_face_idx, n_k_face = _find_face_global_idx(
         k, mesh.dim, mesh.n_verts, simp_map, n_simp_map, pack_dtype, device
     )
-    signed_k_cochain_at_k_face = _get_face_sign(mesh.dim, k, mesh) * k_cochain[
+    signed_k_cochain_at_k_face = compute_face_sign(mesh, mesh.dim, k) * k_cochain[
         k_face_idx
     ].view(n_simp_map[mesh.dim], n_k_face, -1)
 
@@ -443,7 +386,7 @@ def whitney_wedge_product(
     l_face_idx, n_l_face = _find_face_global_idx(
         l, mesh.dim, mesh.n_verts, simp_map, n_simp_map, pack_dtype, device
     )
-    signed_l_cochain_at_l_face = _get_face_sign(mesh.dim, l, mesh) * l_cochain[
+    signed_l_cochain_at_l_face = compute_face_sign(mesh, mesh.dim, l) * l_cochain[
         l_face_idx
     ].view(n_simp_map[mesh.dim], n_l_face, -1)
 
@@ -451,7 +394,7 @@ def whitney_wedge_product(
     m_face_idx, n_m_face = _find_face_global_idx(
         m, mesh.dim, mesh.n_verts, simp_map, n_simp_map, pack_dtype, device
     )
-    m_sign = _get_face_sign(mesh.dim, m, mesh)
+    m_sign = compute_face_sign(mesh, mesh.dim, m)
 
     load = triple_scalar_prod(k, l, mesh)
 
