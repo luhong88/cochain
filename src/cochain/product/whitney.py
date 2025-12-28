@@ -10,9 +10,14 @@ from ..geometry.tet import tet_geometry
 from ..geometry.tri import tri_geometry
 from ..sparse.operators import SparseOperator
 from ..utils.perm_parity import compute_lex_rel_orient
+from ..utils.search import simplex_search
 
 
 def enumerate_faces(simp_dim: int, face_dim: int) -> Integer[t.Tensor, "face vert"]:
+    """
+    For a simplex of dimension `simp_dim`, enumerate all canonical faces of dimension
+    `face_dim`.
+    """
     if face_dim > simp_dim:
         raise ValueError()
 
@@ -24,6 +29,11 @@ def enumerate_faces(simp_dim: int, face_dim: int) -> Integer[t.Tensor, "face ver
 def compute_face_sign(
     mesh: SimplicialComplex, simp_dim: int, face_dim: int
 ) -> Float[t.Tensor, "simp face 1"]:
+    """
+    Find all simplices of dimension `simp_dim` from the `mesh`, enumerate all their
+    faces, and find the permutation sign/parity required to convert the faces to
+    lex/canonical ordering.
+    """
     simp_map = {
         dim: simp
         for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
@@ -221,38 +231,30 @@ def triple_scalar_prod(
 
 
 # TODO: further optimization when the face_dim = mesh_dim
-def _find_face_global_idx(
+def find_face_global_idx(
     face_dim: int,
     mesh_dim: int,
-    n_verts: int,
     simp_map: dict[int, t.Tensor],
-    n_simp_map: dict[int, int],
-    pack_dtype: t.dtype,
-    device=t.device,
 ):
     k = face_dim
 
-    n_k_simp = n_simp_map[k]
     # this is not necessary unless k is the top dimension in the complex.
     k_simp = simp_map[k].sort(dim=-1).values
     all_k_faces = enumerate_faces(mesh_dim, k)
     k_face = simp_map[mesh_dim][:, all_k_faces]
     k_face_flat = k_face.view(-1, k + 1)
-    k_face_sorted = k_face_flat.sort(dim=-1).values
 
-    k_simp_packed = t.zeros(n_k_simp, dtype=pack_dtype, device=device)
-    for idx in range(k + 1):
-        k_simp_packed.add_(k_simp[:, idx] * (n_verts ** (k - idx)))
-
-    k_face_packed = t.zeros(k_face_sorted.size(0), dtype=pack_dtype, device=device)
-    for idx in range(k + 1):
-        k_face_packed.add_(k_face_sorted[:, idx] * (n_verts ** (k - idx)))
-
-    k_face_idx = t.searchsorted(k_simp_packed, k_face_packed)
+    k_face_idx_flat = simplex_search(
+        key_simps=k_simp,
+        query_simps=k_face_flat,
+        sort_key_simp=True,
+        sort_key_vert=True,
+        sort_query_vert=True,
+    )
 
     n_k_face_per_top_simp = len(all_k_faces)
 
-    return k_face_idx, n_k_face_per_top_simp
+    return k_face_idx_flat, n_k_face_per_top_simp
 
 
 def whitney_wedge_product(
@@ -288,25 +290,19 @@ def whitney_wedge_product(
         raise ValueError()
 
     # Do all k-faces
-    k_face_idx, n_k_face = _find_face_global_idx(
-        k, mesh.dim, mesh.n_verts, simp_map, n_simp_map, pack_dtype, device
-    )
+    k_face_idx, n_k_face = find_face_global_idx(k, mesh.dim, simp_map)
     signed_k_cochain_at_k_face = compute_face_sign(mesh, mesh.dim, k) * k_cochain[
         k_face_idx
     ].view(n_simp_map[mesh.dim], n_k_face, -1)
 
     # Do all l-faces
-    l_face_idx, n_l_face = _find_face_global_idx(
-        l, mesh.dim, mesh.n_verts, simp_map, n_simp_map, pack_dtype, device
-    )
+    l_face_idx, n_l_face = find_face_global_idx(l, mesh.dim, simp_map)
     signed_l_cochain_at_l_face = compute_face_sign(mesh, mesh.dim, l) * l_cochain[
         l_face_idx
     ].view(n_simp_map[mesh.dim], n_l_face, -1)
 
     # Do all m-faces
-    m_face_idx, n_m_face = _find_face_global_idx(
-        m, mesh.dim, mesh.n_verts, simp_map, n_simp_map, pack_dtype, device
-    )
+    m_face_idx, n_m_face = find_face_global_idx(m, mesh.dim, simp_map)
     m_sign = compute_face_sign(mesh, mesh.dim, m)
 
     load = triple_scalar_prod(k, l, mesh)
