@@ -56,6 +56,90 @@ def test_antisymmetric_cup_product_patch(square_mesh: SimplicialComplex, device)
 
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
+def test_cup_product_bilinearity(mesh_name, request, device):
+    mesh: SimplicialComplex = request.getfixturevalue(mesh_name)
+
+    n_simp_map = {
+        dim: n_simp
+        for dim, n_simp in enumerate(
+            [mesh.n_verts, mesh.n_edges, mesh.n_tris, mesh.n_tets]
+        )
+    }
+
+    for k, l in itertools.product(range(mesh.dim), repeat=2):
+        if k + l <= mesh.dim:
+            k1_cochain = t.randn(n_simp_map[k]).to(device)
+            k2_cochain = t.randn(n_simp_map[k]).to(device)
+            l_cochain = t.randn(n_simp_map[l]).to(device)
+
+            c1, c2 = t.randn(2)
+
+            wedge_kl = CupProduct(k, l, mesh).to(device)
+
+            lhs = wedge_kl(c1 * k1_cochain + c2 * k2_cochain, l_cochain)
+            rhs = c1 * wedge_kl(k1_cochain, l_cochain) + c2 * wedge_kl(
+                k2_cochain, l_cochain
+            )
+
+            t.testing.assert_close(lhs, rhs)
+
+            k_cochain = t.randn(n_simp_map[k]).to(device)
+            l1_cochain = t.randn(n_simp_map[l]).to(device)
+            l2_cochain = t.randn(n_simp_map[l]).to(device)
+
+            c1, c2 = t.randn(2)
+
+            lhs = wedge_kl(k_cochain, c1 * l1_cochain + c2 * l2_cochain)
+            rhs = c1 * wedge_kl(k_cochain, l1_cochain) + c2 * wedge_kl(
+                k_cochain, l2_cochain
+            )
+
+            t.testing.assert_close(lhs, rhs)
+
+
+@pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
+def test_antisymmetric_cup_product_bilinearity(mesh_name, request, device):
+    mesh: SimplicialComplex = request.getfixturevalue(mesh_name)
+
+    n_simp_map = {
+        dim: n_simp
+        for dim, n_simp in enumerate(
+            [mesh.n_verts, mesh.n_edges, mesh.n_tris, mesh.n_tets]
+        )
+    }
+
+    for k, l in itertools.product(range(mesh.dim), repeat=2):
+        if k + l <= mesh.dim:
+            k1_cochain = t.randn(n_simp_map[k]).to(device)
+            k2_cochain = t.randn(n_simp_map[k]).to(device)
+            l_cochain = t.randn(n_simp_map[l]).to(device)
+
+            c1, c2 = t.randn(2)
+
+            wedge_kl = AntisymmetricCupProduct(k, l, mesh).to(device)
+
+            lhs = wedge_kl(c1 * k1_cochain + c2 * k2_cochain, l_cochain)
+            rhs = c1 * wedge_kl(k1_cochain, l_cochain) + c2 * wedge_kl(
+                k2_cochain, l_cochain
+            )
+
+            t.testing.assert_close(lhs, rhs)
+
+            k_cochain = t.randn(n_simp_map[k]).to(device)
+            l1_cochain = t.randn(n_simp_map[l]).to(device)
+            l2_cochain = t.randn(n_simp_map[l]).to(device)
+
+            c1, c2 = t.randn(2)
+
+            lhs = wedge_kl(k_cochain, c1 * l1_cochain + c2 * l2_cochain)
+            rhs = c1 * wedge_kl(k_cochain, l1_cochain) + c2 * wedge_kl(
+                k_cochain, l2_cochain
+            )
+
+            t.testing.assert_close(lhs, rhs)
+
+
+@pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
 def test_antisymmetric_cup_product_graded_commutativity(mesh_name, request, device):
     mesh: SimplicialComplex = request.getfixturevalue(mesh_name)
 
