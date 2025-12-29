@@ -11,6 +11,31 @@ from .tet_geometry import (
 )
 
 
+def mass_0_consistent(tet_mesh) -> Float[SparseOperator, "vert vert"]:
+    """
+    Compute the "consistent" Galerkin vertex/0-form mass matrix.
+    """
+    tet_vols = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+
+    ref_local_mass_0 = ((t.ones(4, 4) + t.eye(4)) / 20.0).to(
+        dtype=tet_mesh.vert_coords.dtype, device=tet_mesh.vert_coords.device
+    )
+    local_mass_0: Float[t.Tensor, "tet 4 4"] = tet_vols.view(
+        -1, 1, 1
+    ) * ref_local_mass_0.view(1, 4, 4)
+
+    r_idx = tet_mesh.tets.view(-1, 4, 1).expand(-1, 4, 4)
+    c_idx = tet_mesh.tets.view(-1, 1, 4).expand(-1, 4, 4)
+
+    mass = t.sparse_coo_tensor(
+        indices=t.vstack((r_idx.flatten(), c_idx.flatten())),
+        values=local_mass_0.flatten(),
+        size=(tet_mesh.n_verts, tet_mesh.n_verts),
+    ).coalesce()
+
+    return SparseOperator.from_tensor(mass)
+
+
 def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
     """
     Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the

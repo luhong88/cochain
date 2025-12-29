@@ -10,6 +10,31 @@ from .tri_geometry import (
 )
 
 
+def mass_0_consistent(tri_mesh) -> Float[SparseOperator, "vert vert"]:
+    """
+    Compute the "consistent" Galerkin vertex/0-form mass matrix.
+    """
+    tri_areas = compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
+
+    ref_local_mass_0 = ((t.ones(3, 3) + t.eye(3)) / 12.0).to(
+        dtype=tri_mesh.vert_coords.dtype, device=tri_mesh.vert_coords.device
+    )
+    local_mass_0: Float[t.Tensor, "tri 3 3"] = tri_areas.view(
+        -1, 1, 1
+    ) * ref_local_mass_0.view(1, 3, 3)
+
+    r_idx = tri_mesh.tris.view(-1, 3, 1).expand(-1, 3, 3)
+    c_idx = tri_mesh.tris.view(-1, 1, 3).expand(-1, 3, 3)
+
+    mass = t.sparse_coo_tensor(
+        indices=t.vstack((r_idx.flatten(), c_idx.flatten())),
+        values=local_mass_0.flatten(),
+        size=(tri_mesh.n_verts, tri_mesh.n_verts),
+    ).coalesce()
+
+    return SparseOperator.from_tensor(mass)
+
+
 def mass_1(tri_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
