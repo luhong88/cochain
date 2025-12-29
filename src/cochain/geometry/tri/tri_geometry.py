@@ -47,7 +47,7 @@ def compute_d_tri_areas_d_vert_coords(
 
 
 def bary_coord_grad_inner_prods(
-    tri_areas: Float[t.Tensor, " tri"],
+    tri_areas: Float[t.Tensor, " tri 1 1"],
     d_tri_areas_d_vert_coords: Float[t.Tensor, "tri 3 3"],
 ) -> Float[t.Tensor, "tri 3 3"]:
     """

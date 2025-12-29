@@ -35,13 +35,15 @@ def _compute_whitney_router(
     Compute the coefficients required to construct the Whitney forms from the
     λ's and the dλ's.
     """
-    faces = _enumerate_faces(simp_dim, form_deg).detach().cpu().tolist()
+    faces = _enumerate_faces(simp_dim, form_deg, device="cpu").tolist()
 
     router_shape = (len(faces),) + (simp_dim + 1,) * (form_deg + 1)
     router = t.zeros(router_shape, dtype=dtype, device=device)
 
     for simp_idx, simp in enumerate(faces):
-        perms = t.tensor(list(itertools.permutations(simp)), dtype=dtype, device=device)
+        perms = t.tensor(
+            list(itertools.permutations(simp)), dtype=t.int64, device=device
+        )
         signs = compute_lex_rel_orient(perms).to(dtype=dtype, device=device)
         router[simp_idx][perms.T.unbind(0)] = signs
 
@@ -74,35 +76,39 @@ def _compute_moments(
     return moments.to(device=device, dtype=dtype)
 
 
-def _compute_bc_grad_dot(mesh: SimplicialComplex) -> Float[t.Tensor, "simp vert vert"]:
+def _compute_bc_grad_dot(
+    mesh: SimplicialComplex,
+) -> tuple[Float[t.Tensor, "simp vert vert"], Float[t.Tensor, " simp"]]:
     """
     A wrapper function for dispatching the correct bary_coord_grad_inner_prods()
     function for either tri or tet meshes.
     """
     match mesh.dim:
         case 2:
-            abs_simp_size = tri_geometry.compute_tri_areas(mesh.vert_coords, mesh.tris)
-            abs_simp_size_grad = tri_geometry.compute_d_tri_areas_d_vert_coords(
+            simp_size = tri_geometry.compute_tri_areas(mesh.vert_coords, mesh.tris)
+            simp_size_grad = tri_geometry.compute_d_tri_areas_d_vert_coords(
                 mesh.vert_coords, mesh.tris
             )
             bc_grad_dot = tri_geometry.bary_coord_grad_inner_prods(
-                abs_simp_size, abs_simp_size_grad
+                simp_size.view(-1, 1, 1), simp_size_grad
             )
 
         case 3:
-            simp_size = tet_geometry.get_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            abs_simp_size = t.abs(simp_size)
-            simp_size_grad = tet_geometry.d_tet_signed_vols_d_vert_coords(
+            signed_simp_size = tet_geometry.get_tet_signed_vols(
+                mesh.vert_coords, mesh.tets
+            )
+            simp_size = t.abs(signed_simp_size)
+            signed_simp_size_grad = tet_geometry.d_tet_signed_vols_d_vert_coords(
                 mesh.vert_coords, mesh.tets
             )
             bc_grad_dot = tet_geometry.bary_coord_grad_inner_prods(
-                simp_size, simp_size_grad
+                signed_simp_size.view(-1, 1, 1), signed_simp_size_grad
             )
 
         case _:
             raise NotImplementedError()
 
-    return bc_grad_dot
+    return bc_grad_dot, simp_size
 
 
 def _inv_metric_det(
@@ -247,7 +253,7 @@ def triple_tensor_prod(
 
     moments = _compute_moments(3, mesh.dim, device, dtype)
 
-    bc_grad_dot = _compute_bc_grad_dot(mesh)
+    bc_grad_dot, simp_size = _compute_bc_grad_dot(mesh)
     wedge_dot = _inv_metric_det(bc_grad_dot, k + l)
 
     einsum_str = _get_triple_tensor_prod_einsum_str(k, l)
@@ -257,7 +263,7 @@ def triple_tensor_prod(
         k_form_router,
         l_form_router,
         kl_form_router,
-        bc_grad_dot,
+        simp_size,
         moments,
         wedge_dot,
     )
@@ -279,7 +285,7 @@ def _find_top_simp_faces(
     k = face_dim
     # Identify the k-faces of the top level simplices and their sign corrections.
     k_faces: Float[t.Tensor, "top_simp k_face k+1"] = simp_map[mesh_dim][
-        :, _enumerate_faces(mesh_dim, k)
+        :, _enumerate_faces(mesh_dim, k, device=mesh.vert_coords.device)
     ]
     k_faces_flat = k_faces.view(-1, k + 1)
     k_faces_idx_flat = simplex_search(
@@ -293,7 +299,7 @@ def _find_top_simp_faces(
 
     k_face_parity = (
         compute_lex_rel_orient(simp_map[k][k_faces_idx_flat])
-        .to(dtype=mesh.vert_coords.dtype)
+        .to(dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device)
         .view(*k_faces.shape[:-1])
     )
 
@@ -336,7 +342,7 @@ class WhitneyWedgeProjection(t.nn.Module):
         m_face_idx, m_face_parity = _find_top_simp_faces(m, mesh.dim, mesh, simp_map)
 
         self.m_face_idx: Integer[t.LongTensor, "top_simp m_face"]
-        self.register_buffer("m_faces_idx", m_face_idx)
+        self.register_buffer("m_face_idx", m_face_idx)
 
         self.m_face_parity: Float[t.Tensor, "top_simp m_face"]
         self.register_buffer("m_face_parity", m_face_parity)

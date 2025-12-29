@@ -114,7 +114,7 @@ def tet_face_vector_areas(
 
 
 def bary_coord_grad_inner_prods(
-    tet_signed_vols: Float[t.Tensor, " tet"],
+    tet_signed_vols: Float[t.Tensor, " tet 1 1"],
     d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"],
 ) -> Float[t.Tensor, "tet 4 4"]:
     """
