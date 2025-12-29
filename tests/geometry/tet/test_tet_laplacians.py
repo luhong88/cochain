@@ -143,8 +143,15 @@ def test_laplacian_orthogonality(
     composition_1 = dg @ t.linalg.solve(m, cc)  # dg @ inv_m @ cc
     composition_2 = cc @ t.linalg.solve(m, dg)  # cc @ inv_m @ dg
 
-    t.testing.assert_close(composition_1, t.zeros_like(composition_1))
-    t.testing.assert_close(composition_2, t.zeros_like(composition_2))
+    # For these tests, the numerical tolerance needs to be more lenient, since
+    # the calculation involves a long chain of matrix multiplications and effectively
+    # two matrix inverses.
+    t.testing.assert_close(
+        composition_1, t.zeros_like(composition_1), atol=1e-4, rtol=0
+    )
+    t.testing.assert_close(
+        composition_2, t.zeros_like(composition_2), atol=1e-4, rtol=0
+    )
 
 
 def test_laplacian_1_curl_free(two_tets_mesh: SimplicialComplex):

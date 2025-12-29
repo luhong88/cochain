@@ -85,6 +85,7 @@ class SimplicialComplex:
         )
 
     # TODO: check that the tet topo properties work for non-tet meshes
+    # TODO: these should use canonical face orientations
     @cached_property
     def tet_edge_idx(self) -> Integer[t.LongTensor, "tet 6"]:
         return tet_topology.get_edge_face_idx(self.tets, self.edges)
