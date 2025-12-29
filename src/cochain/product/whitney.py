@@ -29,28 +29,6 @@ def _enumerate_faces(
     )
 
 
-def _compute_face_sign(
-    mesh: SimplicialComplex, simp_dim: int, face_dim: int
-) -> Float[t.Tensor, "simp face 1"]:
-    """
-    Find all simplices of dimension `simp_dim` from the `mesh`, enumerate all their
-    faces, and find the permutation sign/parity required to convert the faces to
-    lex/canonical ordering.
-    """
-    simp_map = {
-        dim: simp
-        for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
-    }
-
-    face_idx = _enumerate_faces(simp_dim, face_dim, device=mesh.vert_coords.device)
-    all_faces = simp_map[simp_dim][:, face_idx]
-
-    signs = compute_lex_rel_orient(all_faces.flatten(end_dim=-2))
-    signs_shaped = signs.view(simp_map[simp_dim].size(0), face_idx.size(0), 1)
-
-    return signs_shaped
-
-
 def _compute_whitney_router(
     simp_dim: int, form_deg: int, device: t.device, dtype: t.dtype = t.float
 ) -> Float[t.Tensor, "face lambda *d_lambda"]:
@@ -252,7 +230,7 @@ def triple_tensor_prod(
     k: int,
     l: int,
     mesh: SimplicialComplex,
-) -> Float[t.Tensor, ""]:
+) -> Float[t.Tensor, "top_simp k_face l_face m_face"]:
     """
     Compute the triple product tensor T_ijk required for computing the load vector.
 
@@ -286,124 +264,159 @@ def triple_tensor_prod(
     )
 
 
-# TODO: further optimization when the face_dim = mesh_dim
-def find_face_global_idx(
+def _find_top_simp_faces(
     face_dim: int,
     mesh_dim: int,
-    simp_map: dict[int, t.Tensor],
-):
+    mesh: SimplicialComplex,
+    simp_map: dict[int, Integer[t.Tensor, "simp vert"]],
+) -> tuple[
+    Integer[t.LongTensor, "top_simp k_face"], Float[t.Tensor, "top_simp k_face"]
+]:
+    """
+    Given a simplicial n-complex, for each top level n-simplex, find all of its
+    k-faces, their indices in the list of k-simplices in the mesh, and their
+    orientation sign corrections.
+    """
     k = face_dim
-
-    # this is not necessary unless k is the top dimension in the complex.
-    k_simp = simp_map[k].sort(dim=-1).values
-    all_k_faces = _enumerate_faces(mesh_dim, k)
-    k_face = simp_map[mesh_dim][:, all_k_faces]
-    k_face_flat = k_face.view(-1, k + 1)
-
-    k_face_idx_flat = simplex_search(
-        key_simps=k_simp,
-        query_simps=k_face_flat,
+    # Identify the k-faces of the top level simplices and their sign corrections.
+    k_faces: Float[t.Tensor, "top_simp k_face k+1"] = simp_map[mesh_dim][
+        :, _enumerate_faces(mesh_dim, k)
+    ]
+    k_faces_flat = k_faces.view(-1, k + 1)
+    k_faces_idx_flat = simplex_search(
+        key_simps=simp_map[k],
+        query_simps=k_faces_flat,
         sort_key_simp=True,
         sort_key_vert=True,
         sort_query_vert=True,
     )
+    k_faces_idx = k_faces_idx_flat.view(*k_faces.shape[:-1])
 
-    n_k_face_per_top_simp = len(all_k_faces)
-
-    return k_face_idx_flat, n_k_face_per_top_simp
-
-
-def whitney_wedge_product(
-    k_cochain: Float[t.Tensor, " k_simp ch"],
-    l_cochain: Float[t.Tensor, " l_simp ch"],
-    k: int,
-    l: int,
-    mass: Float[SparseOperator, "(k+l)_simp (k+l)_simp"],
-    mesh: SimplicialComplex,
-    pairing: Literal["scalar", "dot", "cross", "outer"],
-) -> Float[t.Tensor, " (k+l)_simp ch"]:
-    dtype = mesh.edges.dtype
-    device = mesh.edges.device
-
-    m = k + l
-
-    verts = t.arange(mesh.n_verts, dtype=dtype, device=device).view(-1, 1)
-
-    simp_map: dict[int, t.Tensor] = {
-        dim: simp for dim, simp in enumerate([verts, mesh.edges, mesh.tris, mesh.tets])
-    }
-    n_simp_map: dict[int, int] = {
-        dim: n_simp
-        for dim, n_simp in enumerate(
-            [mesh.n_verts, mesh.n_edges, mesh.n_tris, mesh.n_tets]
-        )
-    }
-
-    if k_cochain.size(0) != n_simp_map[k]:
-        raise ValueError()
-    if l_cochain.size(0) != n_simp_map[l]:
-        raise ValueError()
-
-    # Do all k-faces
-    k_face_idx, n_k_face = find_face_global_idx(k, mesh.dim, simp_map)
-    signed_k_cochain_at_k_face = _compute_face_sign(mesh, mesh.dim, k) * k_cochain[
-        k_face_idx
-    ].view(n_simp_map[mesh.dim], n_k_face, -1)
-
-    # Do all l-faces
-    l_face_idx, n_l_face = find_face_global_idx(l, mesh.dim, simp_map)
-    signed_l_cochain_at_l_face = _compute_face_sign(mesh, mesh.dim, l) * l_cochain[
-        l_face_idx
-    ].view(n_simp_map[mesh.dim], n_l_face, -1)
-
-    # Do all m-faces
-    m_face_idx, n_m_face = find_face_global_idx(m, mesh.dim, simp_map)
-    m_sign = _compute_face_sign(mesh, mesh.dim, m)
-
-    load = triple_tensor_prod(k, l, mesh)
-
-    match pairing:
-        case "scalar":
-            signed_m_cochain_at_m_face = m_sign * t.einsum(
-                "tuvw,tuc,tvc->twc",
-                load,
-                signed_k_cochain_at_k_face,
-                signed_l_cochain_at_l_face,
-            )
-        case "dot":
-            signed_m_cochain_at_m_face = m_sign * t.einsum(
-                "tuvw,tuc,tvc->tw",
-                load,
-                signed_k_cochain_at_k_face,
-                signed_l_cochain_at_l_face,
-            ).unsqueeze(-1)
-        case "cross":
-            epsilon = t.tensor(
-                [
-                    [[0, 0, 0], [0, 0, 1], [0, -1, 0]],
-                    [[0, 0, -1], [0, 0, 0], [1, 0, 0]],
-                    [[0, 1, 0], [-1, 0, 0], [0, 0, 0]],
-                ],
-                device=device,
-                dtype=dtype,
-            )
-            signed_m_cochain_at_m_face = m_sign * t.einsum(
-                "tuvw,tuc,tvd,cde->twe",
-                load,
-                signed_k_cochain_at_k_face,
-                signed_l_cochain_at_l_face,
-                epsilon,
-            )
-        case _:
-            raise NotImplementedError()
-
-    n_out_ch = signed_m_cochain_at_m_face.shape[-1]
-    m_cochain = t.zeros((n_simp_map[m], n_out_ch), device=device, dtype=dtype)
-    m_cochain.index_add_(
-        0, m_face_idx.flatten(), signed_m_cochain_at_m_face.reshape(-1, n_out_ch)
+    k_face_parity = (
+        compute_lex_rel_orient(simp_map[k][k_faces_idx_flat])
+        .to(dtype=mesh.vert_coords.dtype)
+        .view(*k_faces.shape[:-1])
     )
 
-    # TODO: use implemented sparse solver wrapper
-    x = t.linalg.solve(mass.to_dense(), m_cochain)
+    return k_faces_idx, k_face_parity
 
-    return x
+
+class WhitneyWedgeProjection(t.nn.Module):
+    def __init__(self, k: int, l: int, mesh: SimplicialComplex):
+        """
+        Compute the Whitney L2 wedge product.
+        """
+        super().__init__()
+
+        simp_map = {
+            dim: simp
+            for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
+        }
+
+        m = k + l
+
+        # Identify the k-faces of the top level simplices and their sign corrections.
+        k_face_idx, k_face_parity = _find_top_simp_faces(k, mesh.dim, mesh, simp_map)
+
+        self.k_face_idx: Integer[t.LongTensor, "top_simp k_face"]
+        self.register_buffer("k_face_idx", k_face_idx)
+
+        self.k_face_parity: Float[t.Tensor, "top_simp k_face"]
+        self.register_buffer("k_face_parity", k_face_parity)
+
+        # Identify the l-faces of the top level simplices and their sign corrections.
+        l_face_idx, l_face_parity = _find_top_simp_faces(l, mesh.dim, mesh, simp_map)
+
+        self.l_face_idx: Integer[t.LongTensor, "top_simp l_face"]
+        self.register_buffer("l_face_idx", l_face_idx)
+
+        self.l_face_parity: Float[t.Tensor, "top_simp l_face"]
+        self.register_buffer("l_face_parity", l_face_parity)
+
+        # Identify the (k+l)-faces of the top level simplices and their sign corrections.
+        m_face_idx, m_face_parity = _find_top_simp_faces(m, mesh.dim, mesh, simp_map)
+
+        self.m_face_idx: Integer[t.LongTensor, "top_simp m_face"]
+        self.register_buffer("m_faces_idx", m_face_idx)
+
+        self.m_face_parity: Float[t.Tensor, "top_simp m_face"]
+        self.register_buffer("m_face_parity", m_face_parity)
+
+        self.n_m_simp = simp_map[m].size(0)
+
+        # Compute the triple tensor product.
+        triple_prod = triple_tensor_prod(k, l, mesh)
+
+        self.triple_prod: Float[t.Tensor, "top_simp k_face l_face m_face"]
+        self.register_buffer("triple_prod", triple_prod)
+
+    def forward(
+        self,
+        k_cochain: Float[t.Tensor, " k_simp *ch_in"],
+        l_cochain: Float[t.Tensor, " l_simp *ch_in"],
+        pairing: Literal["scalar", "dot", "cross"] = "scalar",
+    ) -> Float[t.Tensor, " m_simp *ch_out"]:
+        k_cochain_at_k_face = t.einsum(
+            "tf,tf...->tf...", self.k_face_parity, k_cochain[self.k_face_idx]
+        )
+        l_cochain_at_l_face = t.einsum(
+            "tf,tf...->tf...", self.l_face_parity, l_cochain[self.l_face_idx]
+        )
+
+        # If pairing='scalar', *ch_in can match to an arbitrary number of channel
+        # dimensions; for other pairing method, *ch_in need to match to one dimension.
+        match pairing:
+            case "scalar":
+                m_cochain_at_m_face = t.einsum(
+                    "tuvw,tu...,tv...,tw->tw...",
+                    self.triple_prod,
+                    k_cochain_at_k_face,
+                    l_cochain_at_l_face,
+                    self.m_face_parity,
+                )
+
+            case "dot":
+                m_cochain_at_m_face = t.einsum(
+                    "tuvw,tuc,tvc,tw->tw",
+                    self.triple_prod,
+                    k_cochain_at_k_face,
+                    l_cochain_at_l_face,
+                    self.m_face_parity,
+                ).unsqueeze(-1)
+
+            case "cross":
+                epsilon = t.tensor(
+                    [
+                        [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]],
+                        [[0.0, 0.0, -1.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                        [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+                    ],
+                    device=self.triple_prod.device,
+                    dtype=self.triple_prod.dtype,
+                )
+
+                m_cochain_at_m_face = t.einsum(
+                    "tuvw,tuc,tvd,tw,cde->twe",
+                    self.triple_prod,
+                    k_cochain_at_k_face,
+                    l_cochain_at_l_face,
+                    self.m_face_parity,
+                    epsilon,
+                )
+
+            case _:
+                raise NotImplementedError()
+
+        ch_out_dims = m_cochain_at_m_face.shape[2:]
+        load = t.zeros(
+            (self.n_m_simp,) + ch_out_dims,
+            device=self.triple_prod.device,
+            dtype=self.triple_prod.dtype,
+        )
+        load.index_add_(
+            0,
+            self.m_face_idx.flatten(),
+            m_cochain_at_m_face.reshape(self.n_m_simp, *ch_out_dims),
+        )
+
+        return load

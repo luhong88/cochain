@@ -245,10 +245,10 @@ class AntisymmetricCupProduct(t.nn.Module):
                 self.f_face_idx.shape
             )
 
-        self.f_face_parity: Integer[t.LongTensor, " m_simp face"]
+        self.f_face_parity: Float[t.Tensor, " m_simp face"]
         self.register_buffer("f_face_parity", f_face_parity)
 
-        # Identify permutations of the  k-back faces of (k+l)-simplices and their
+        # Identify permutations of the k-back faces of (k+l)-simplices and their
         # sign correction.
         ub_face: Integer[t.LongTensor, " m_simp ub_face l+1"] = (
             m_simps_sorted[:, perm.unique_back].sort(dim=-1).values
@@ -277,7 +277,7 @@ class AntisymmetricCupProduct(t.nn.Module):
                 self.b_face_idx.shape
             )
 
-        self.b_face_parity: Integer[t.LongTensor, " m_simp face"]
+        self.b_face_parity: Float[t.Tensor, " m_simp face"]
         self.register_buffer("b_face_parity", b_face_parity)
 
     def forward(
