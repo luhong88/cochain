@@ -66,7 +66,7 @@ def test_cup_product_bilinearity(mesh_name, request, device):
         )
     }
 
-    for k, l in itertools.product(range(mesh.dim), repeat=2):
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
         if k + l <= mesh.dim:
             k1_cochain = t.randn(n_simp_map[k]).to(device)
             k2_cochain = t.randn(n_simp_map[k]).to(device)
@@ -108,7 +108,7 @@ def test_antisymmetric_cup_product_bilinearity(mesh_name, request, device):
         )
     }
 
-    for k, l in itertools.product(range(mesh.dim), repeat=2):
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
         if k + l <= mesh.dim:
             k1_cochain = t.randn(n_simp_map[k]).to(device)
             k2_cochain = t.randn(n_simp_map[k]).to(device)
@@ -150,7 +150,7 @@ def test_antisymmetric_cup_product_graded_commutativity(mesh_name, request, devi
         )
     }
 
-    for k, l in itertools.product(range(mesh.dim), repeat=2):
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
         if k + l <= mesh.dim:
             k_cochain = t.randn(n_simp_map[k]).to(device)
             l_cochain = t.randn(n_simp_map[l]).to(device)
@@ -177,7 +177,7 @@ def test_cup_product_graded_commutativity(mesh_name, request, device):
         )
     }
 
-    for k, l in itertools.product(range(mesh.dim), repeat=2):
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
         if k + l <= mesh.dim:
             k_cochain = t.randn(n_simp_map[k]).to(device)
             l_cochain = t.randn(n_simp_map[l]).to(device)
@@ -207,7 +207,7 @@ def test_cup_product_associativity(mesh_name, request, device):
         )
     }
 
-    for u, v, w in itertools.product(range(mesh.dim), repeat=3):
+    for u, v, w in itertools.product(range(mesh.dim + 1), repeat=3):
         if u + v + w <= mesh.dim:
             u_cochain = t.randn(n_simp_map[u]).to(device)
             v_cochain = t.randn(n_simp_map[v]).to(device)
@@ -235,7 +235,7 @@ def test_cup_product_leibniz(mesh_name, request, device):
         )
     }
 
-    for k, l in itertools.product(range(mesh.dim), repeat=2):
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
         m = k + l
 
         if m < mesh.dim:
