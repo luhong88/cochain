@@ -303,7 +303,7 @@ def _find_top_simp_faces(
 class WhitneyWedgeProjection(t.nn.Module):
     def __init__(self, k: int, l: int, mesh: SimplicialComplex):
         """
-        Compute load vector required to compute the Whitney L2 wedge product.
+        Compute the load vector required to compute the Whitney L2 wedge product.
         """
         super().__init__()
 
@@ -415,7 +415,7 @@ class WhitneyWedgeProjection(t.nn.Module):
         load.index_add_(
             0,
             self.m_face_idx.flatten(),
-            m_cochain_at_m_face.reshape(self.n_m_simp, *ch_out_dims),
+            m_cochain_at_m_face.flatten(end_dim=1),
         )
 
         return load
