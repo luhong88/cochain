@@ -8,24 +8,9 @@ from jaxtyping import Float, Integer
 from ..complex import SimplicialComplex
 from ..geometry.tet import tet_geometry
 from ..geometry.tri import tri_geometry
+from ..utils.faces import enumerate_faces
 from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import simplex_search
-
-
-def _enumerate_faces(
-    simp_dim: int, face_dim: int, device: t.device
-) -> Integer[t.Tensor, "face vert"]:
-    """
-    For a simplex of dimension `simp_dim`, enumerate all faces of dimension
-    `face_dim` (up to vertex index permutation) in lex order.
-    """
-    if face_dim > simp_dim:
-        raise ValueError()
-
-    return t.tensor(
-        list(itertools.combinations(list(range(simp_dim + 1)), face_dim + 1)),
-        device=device,
-    )
 
 
 def _compute_whitney_router(
@@ -35,7 +20,7 @@ def _compute_whitney_router(
     Compute the coefficients required to construct the Whitney forms from the
     λ's and the dλ's.
     """
-    faces = _enumerate_faces(simp_dim, form_deg, device="cpu").tolist()
+    faces = enumerate_faces(simp_dim, form_deg, device="cpu").tolist()
 
     router_shape = (len(faces),) + (simp_dim + 1,) * (form_deg + 1)
     router = t.zeros(router_shape, dtype=dtype, device=device)
@@ -285,7 +270,7 @@ def _find_top_simp_faces(
     k = face_dim
     # Identify the k-faces of the top level simplices and their sign corrections.
     k_faces: Float[t.Tensor, "top_simp k_face k+1"] = simp_map[mesh_dim][
-        :, _enumerate_faces(mesh_dim, k, device=mesh.vert_coords.device)
+        :, enumerate_faces(mesh_dim, k, device=mesh.vert_coords.device)
     ]
     k_faces_flat = k_faces.view(-1, k + 1)
     k_faces_idx_flat = simplex_search(
@@ -297,8 +282,17 @@ def _find_top_simp_faces(
     )
     k_faces_idx = k_faces_idx_flat.view(*k_faces.shape[:-1])
 
+    # Note that, in the implementation of the cup product, the parental simplices
+    # are sorted before extracting their faces; as such, the faces automatically
+    # possesses the canonical orientation, and we only need to correct for the
+    # permutation parity required to sort the parental simplices. Here, since the
+    # parental simplices are not sorted first, we need two parity corrections, one
+    # for the permutation parity of the unsorted faces (induced parity), and one
+    # for the permutation parity of the unsorted parental (global parity).
+    k_face_parity_induced = compute_lex_rel_orient(k_faces_flat)
+    k_face_parity_global = compute_lex_rel_orient(simp_map[k][k_faces_idx_flat])
     k_face_parity = (
-        compute_lex_rel_orient(simp_map[k][k_faces_idx_flat])
+        (k_face_parity_induced * k_face_parity_global)
         .to(dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device)
         .view(*k_faces.shape[:-1])
     )

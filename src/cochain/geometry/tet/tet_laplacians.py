@@ -88,7 +88,7 @@ def weak_laplacian_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge
     )
 
 
-def weak_laplacian_2_div_grad(
+def weak_laplacian_2_curl_curl(
     tet_mesh: SimplicialComplex,
     method: Literal[
         "dense",
@@ -97,7 +97,7 @@ def weak_laplacian_2_div_grad(
     ],
 ) -> Float[SparseOperator, "tri tri"] | Float[t.Tensor, "tri tri"]:
     """
-    Compute the div grad component of the weak 2-Laplacian
+    Compute the curl curl component of the weak 2-Laplacian
     M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
 
     In general, the inverse of the sparse mass-1 matrix is not guaranteed to have
@@ -136,11 +136,11 @@ def weak_laplacian_2_div_grad(
             raise ValueError()
 
 
-def weak_laplacian_2_curl_curl(
+def weak_laplacian_2_div_grad(
     tet_mesh: SimplicialComplex,
 ) -> Float[SparseOperator, "tri tri"]:
     """
-    Compute the curl curl component of the weak 1-Laplacian
+    Compute the div grad component of the weak 1-Laplacian
     d_2.T @ M_3 @ d_2
     """
     d2 = tet_mesh.coboundary_2
@@ -169,8 +169,8 @@ def weak_laplacian_2(
         raise NotImplementedError()
 
     elif method in ["dense", "inv_star"]:
-        curl_curl = weak_laplacian_2_curl_curl(tet_mesh)
-        div_grad = weak_laplacian_2_div_grad(tet_mesh, method)
+        curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
+        div_grad = weak_laplacian_2_div_grad(tet_mesh)
 
         match div_grad:
             case SparseOperator():

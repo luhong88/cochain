@@ -93,19 +93,24 @@ def test_mass_matrix_positive_definite(mass_matrix, two_tets_mesh: SimplicialCom
     assert eigs.min() >= 1e-6
 
 
-@pytest.mark.parametrize(
-    "mass_matrix",
-    [
-        tet_masses.mass_0,
-        tet_masses.mass_3,
-    ],
-)
-def test_mass_matrix_total_vol_partition(mass_matrix, two_tets_mesh: SimplicialComplex):
+def test_mass_0_matrix_total_vol_partition(two_tets_mesh: SimplicialComplex):
     """
-    The sum of the diagonal 0- and 3-form mass matrices should be equal to the
+    The sum of the diagonal 0-form mass matrices should be equal to the
     total volume of the tet.
     """
-    total_mass = mass_matrix(two_tets_mesh).tr
+    total_mass = tet_masses.mass_0(two_tets_mesh).tr
+    total_vol = t.sum(
+        t.abs(get_tet_signed_vols(two_tets_mesh.vert_coords, two_tets_mesh.tets))
+    )
+    t.testing.assert_close(total_mass, total_vol)
+
+
+def test_mass_3_matrix_total_vol_partition(two_tets_mesh: SimplicialComplex):
+    """
+    The sum of the inverse of the diagonal 3-form mass matrices should be equal
+    to the total volume of the tet.
+    """
+    total_mass = tet_masses.mass_3(two_tets_mesh).inv.tr
     total_vol = t.sum(
         t.abs(get_tet_signed_vols(two_tets_mesh.vert_coords, two_tets_mesh.tets))
     )

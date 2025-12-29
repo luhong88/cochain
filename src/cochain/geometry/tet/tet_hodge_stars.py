@@ -6,12 +6,7 @@ from ...sparse.operators import DiagOperator
 from ..tri.tri_geometry import compute_tri_areas
 from .tet_masses import mass_0, mass_3
 
-
-def star_3(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tet tet"]:
-    """
-    Compute the Hodge 3-star, which is the inverse of the mass-3 matrix.
-    """
-    return mass_3(tet_mesh).inv
+star_3 = mass_3
 
 
 def star_2(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:

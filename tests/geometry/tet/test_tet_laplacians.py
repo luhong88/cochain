@@ -126,13 +126,13 @@ def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialComplex):
             tet_masses.mass_1,
         ),
         (
-            partial(tet_laplacians.weak_laplacian_2_div_grad, method="dense"),
-            tet_laplacians.weak_laplacian_2_curl_curl,
+            tet_laplacians.weak_laplacian_2_div_grad,
+            partial(tet_laplacians.weak_laplacian_2_curl_curl, method="dense"),
             tet_masses.mass_2,
         ),
     ],
 )
-def test_laplacian_1_orthogonality(
+def test_laplacian_orthogonality(
     div_grad, curl_curl, mass, two_tets_mesh: SimplicialComplex
 ):
     dg = div_grad(two_tets_mesh).to_dense()
@@ -192,13 +192,18 @@ def test_laplacian_2_curl_free(two_tets_mesh: SimplicialComplex):
     The curl curl component of the 2-Laplacian acting on a curl-free 2-cochain/
     2-form produces 0.
     """
-    l2_curl_curl = tet_laplacians.weak_laplacian_2_curl_curl(two_tets_mesh)
+    l2_curl_curl = tet_laplacians.weak_laplacian_2_curl_curl(
+        two_tets_mesh, method="dense"
+    )
 
-    d1 = two_tets_mesh.coboundary_1
-    x1 = t.arange(two_tets_mesh.n_edges).to(
+    d2_T = two_tets_mesh.coboundary_2.T.to_dense()
+
+    m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
+
+    x3 = t.arange(two_tets_mesh.n_tets).to(
         dtype=t.float, device=two_tets_mesh.vert_coords.device
     )
-    x2_curl_free = d1 @ x1
+    x2_curl_free = t.linalg.solve(m2, d2_T) @ x3  # inv_m2 @ d2_T @ x3
 
     x2_zero = (l2_curl_curl @ x2_curl_free).to_dense()
 
@@ -211,18 +216,13 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialComplex):
     The div grad component of the 2-Laplacian acting on a div-free 2-cochain/
     2-form produces 0.
     """
-    l2_div_grad = tet_laplacians.weak_laplacian_2_div_grad(
-        two_tets_mesh, method="dense"
-    )
+    l2_div_grad = tet_laplacians.weak_laplacian_2_div_grad(two_tets_mesh)
 
-    d2_T = two_tets_mesh.coboundary_2.T.to_dense()
-
-    m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
-
-    x3 = t.arange(two_tets_mesh.n_tets).to(
+    d1 = two_tets_mesh.coboundary_1
+    x1 = t.arange(two_tets_mesh.n_edges).to(
         dtype=t.float, device=two_tets_mesh.vert_coords.device
     )
-    x2_div_free = t.linalg.solve(m2, d2_T) @ x3  # inv_m2 @ d2_T @ x3
+    x2_div_free = d1 @ x1
 
     x2_zero = (l2_div_grad @ x2_div_free).to_dense()
 

@@ -178,9 +178,10 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
 
 def mass_3(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tet tet"]:
     """
-    Compute the diagonal of the tet/3-form mass matrix, which is equivalent to
-    the inverse of 3-star.
+    Compute the diagonal of the tet/3-form mass matrix, which is a diagonal matrix
+    containing the inverse of the unsigned tet volumes, which is equivalent to
+    the 3-star.
     """
     return DiagOperator.from_tensor(
-        t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+        1.0 / t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
     )
