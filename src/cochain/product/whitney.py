@@ -8,7 +8,6 @@ from jaxtyping import Float, Integer
 from ..complex import SimplicialComplex
 from ..geometry.tet import tet_geometry
 from ..geometry.tri import tri_geometry
-from ..sparse.operators import SparseOperator
 from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import simplex_search
 
@@ -304,7 +303,7 @@ def _find_top_simp_faces(
 class WhitneyWedgeProjection(t.nn.Module):
     def __init__(self, k: int, l: int, mesh: SimplicialComplex):
         """
-        Compute the Whitney L2 wedge product.
+        Compute load vector required to compute the Whitney L2 wedge product.
         """
         super().__init__()
 
