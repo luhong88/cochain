@@ -276,21 +276,28 @@ def _find_top_simp_faces(
     k_faces_idx_flat = simplex_search(
         key_simps=simp_map[k],
         query_simps=k_faces_flat,
-        sort_key_simp=True,
-        sort_key_vert=True,
+        sort_key_simp=True if k == mesh.dim else False,
+        sort_key_vert=True if k == mesh.dim else False,
         sort_query_vert=True,
     )
     k_faces_idx = k_faces_idx_flat.view(*k_faces.shape[:-1])
 
     # Note that, in the implementation of the cup product, the parental simplices
     # are sorted before extracting their faces; as such, the faces automatically
-    # possesses the canonical orientation, and we only need to correct for the
+    # possesse the canonical orientation, and we only need to correct for the
     # permutation parity required to sort the parental simplices. Here, since the
     # parental simplices are not sorted first, we need two parity corrections, one
     # for the permutation parity of the unsorted faces (induced parity), and one
     # for the permutation parity of the unsorted parental (global parity).
+    if k == mesh.dim:
+        k_face_parity_global = compute_lex_rel_orient(simp_map[k][k_faces_idx_flat])
+    else:
+        k_face_parity_global = t.ones(
+            1, dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
+        ).expand_as(k_faces_idx_flat)
+
     k_face_parity_induced = compute_lex_rel_orient(k_faces_flat)
-    k_face_parity_global = compute_lex_rel_orient(simp_map[k][k_faces_idx_flat])
+
     k_face_parity = (
         (k_face_parity_induced * k_face_parity_global)
         .to(dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device)

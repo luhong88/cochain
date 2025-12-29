@@ -309,3 +309,6 @@ def test_cup_product_cohomology_class(hollow_tet_mesh, device):
             cup_kl(k_cochain, l_cochain).sum(),
             anti_cup_kl(k_cochain, l_cochain).sum(),
         )
+
+
+# TODO: test other pairing methods
