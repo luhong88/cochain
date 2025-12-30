@@ -7,7 +7,7 @@ from cochain.complex import SimplicialComplex
 from cochain.geometry.tet import tet_masses
 from cochain.geometry.tri import tri_hodge_stars, tri_masses
 from cochain.product.cup import AntisymmetricCupProduct
-from cochain.product.whitney import WhitneyWedgeProjection
+from cochain.product.whitney import WhitneyWedgeL2Projector
 
 
 def _compute_mass_matrix(mesh: SimplicialComplex, k: int):
@@ -41,7 +41,7 @@ def _compute_mass_matrix(mesh: SimplicialComplex, k: int):
 
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
-def test_const_0_form_whitney_wedge_product(mesh_name, request, device):
+def test_const_0_form_galerkin_wedge_product(mesh_name, request, device):
     """
     The wedge product between a constant 0-form and an arbitrary k-form should
     be identical to the k-form.
@@ -59,7 +59,7 @@ def test_const_0_form_whitney_wedge_product(mesh_name, request, device):
     for k in range(mesh.dim + 1):
         k_form = t.randn(n_simp_map[k]).to(device)
 
-        proj = WhitneyWedgeProjection(0, k, mesh)
+        proj = WhitneyWedgeL2Projector(0, k, mesh)
 
         b = proj(const_0_form, k_form)
 
@@ -71,7 +71,7 @@ def test_const_0_form_whitney_wedge_product(mesh_name, request, device):
 
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
-def test_whitney_wedge_product_graded_commutativity(mesh_name, request, device):
+def test_galerkin_wedge_product_graded_commutativity(mesh_name, request, device):
     mesh: SimplicialComplex = request.getfixturevalue(mesh_name)
 
     n_simp_map = {
@@ -86,8 +86,8 @@ def test_whitney_wedge_product_graded_commutativity(mesh_name, request, device):
             k_cochain = t.randn(n_simp_map[k]).to(device)
             l_cochain = t.randn(n_simp_map[l]).to(device)
 
-            proj_kl = WhitneyWedgeProjection(k, l, mesh).to(device)
-            proj_lk = WhitneyWedgeProjection(l, k, mesh).to(device)
+            proj_kl = WhitneyWedgeL2Projector(k, l, mesh).to(device)
+            proj_lk = WhitneyWedgeL2Projector(l, k, mesh).to(device)
 
             mass = _compute_mass_matrix(mesh, k + l).to_dense().to(device)
 
@@ -100,7 +100,7 @@ def test_whitney_wedge_product_graded_commutativity(mesh_name, request, device):
 
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
-def test_whitney_wedge_product_bilinearity(mesh_name, request, device):
+def test_galerkin_wedge_product_bilinearity(mesh_name, request, device):
     mesh: SimplicialComplex = request.getfixturevalue(mesh_name)
 
     n_simp_map = {
@@ -120,7 +120,7 @@ def test_whitney_wedge_product_bilinearity(mesh_name, request, device):
 
             c1, c2 = t.randn(2)
 
-            proj_kl = WhitneyWedgeProjection(k, l, mesh).to(device)
+            proj_kl = WhitneyWedgeL2Projector(k, l, mesh).to(device)
 
             lhs = t.linalg.solve(
                 mass, proj_kl(c1 * k1_cochain + c2 * k2_cochain, l_cochain)
@@ -147,9 +147,9 @@ def test_whitney_wedge_product_bilinearity(mesh_name, request, device):
             t.testing.assert_close(lhs, rhs)
 
 
-def test_whitney_wedge_product_cohomology_class(hollow_tet_mesh, device):
+def test_galerkin_wedge_product_cohomology_class(hollow_tet_mesh, device):
     """
-    The Whitney wedge product and the antisymmetric cup product should belong to
+    The Galerkin wedge product and the antisymmetric cup product should belong to
     the same cohomology class (i.e., differ by a coboundary). Therefore, on a
     closed mesh, the surface integral of the two products of exact forms should match.
     """
@@ -184,7 +184,7 @@ def test_whitney_wedge_product_cohomology_class(hollow_tet_mesh, device):
 
         anti_cup_kl = AntisymmetricCupProduct(k, l, hollow_tet_mesh).to(device)
 
-        proj_kl = WhitneyWedgeProjection(k, l, hollow_tet_mesh).to(device)
+        proj_kl = WhitneyWedgeL2Projector(k, l, hollow_tet_mesh).to(device)
         mass = _compute_mass_matrix(hollow_tet_mesh, k + l).to_dense().to(device)
         wedge_kl = t.linalg.solve(mass, proj_kl(k_cochain, l_cochain))
 

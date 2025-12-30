@@ -9,19 +9,20 @@ from ._whitney_m_form import triple_tensor_prod
 from ._whitney_utils import find_top_simp_faces
 
 
-class WhitneyWedgeProjection(t.nn.Module):
+class WhitneyWedgeL2Projector(t.nn.Module):
     def __init__(self, k: int, l: int, mesh: SimplicialComplex):
         """
-        Compute the load vector required to compute the Whitney L2 wedge product.
+        Compute the load vector required to compute the L^2-projected wedge product
+        (or the Galerkin wedge product).
 
         To compute the wedge product between a k-form and an l-form, first use
         this class to compute the load vector `b`, then, solve the linear system
         `M@w=b` to find the wedge product (k+l)-form `w`; here, `M` is the (k+l)-
         form mass matrix.
 
-        The Whitney edge product satisfies graded commutativity, but not associativity
+        The Galerkin wedge product satisfies graded commutativity, but not associativity
         or Leibniz rule. However, compared the the cup product and anti-symmetric
-        cup product, the Whitney wedge product takes into account metric information.
+        cup product, the Galerkin wedge product takes into account metric information.
 
         """
         super().__init__()
