@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
 import torch as t
@@ -28,10 +29,15 @@ if TYPE_CHECKING:
 class SciPyEigshConfig:
     sigma: float | None = None
     which: Literal["LM", "SM", "LA", "SA", "BE"] = "LM"
+    v0: Float[t.Tensor | np.typing.NDArray, " c"] | None
     ncv: int | None = None
     maxiter: int | None = None
     tol: float | int = 0
     mode: Literal["normal", "buckling", "cayley"] = "normal"
+
+    def __post_init__(self):
+        if isinstance(self.v0, t.Tensor):
+            self.v0 = self.v0.detach().contiguous().cpu().numpy()
 
 
 def _compute_eig_vec_grad_proj(
@@ -69,8 +75,8 @@ def _compute_dLdA_val(
     eig_vecs: Float[t.Tensor, "c k"],
     dLdl: Float[t.Tensor, " k"],
     dLdv: Float[t.Tensor, "c k"] | None,
-    eig_vec_grad_proj: Float[t.Tensor, "k k"],
-    lorentz: Float[t.Tensor, "k k"],
+    eig_vec_grad_proj: Float[t.Tensor, "k k"] | None,
+    lorentz: Float[t.Tensor, "k k"] | None,
 ) -> Float[t.Tensor, " nnz"]:
     """
     The formula is the same for standard and generalized eigenvalue problems.
@@ -112,8 +118,8 @@ def _compute_dLdM_val(
     eig_vecs: Float[t.Tensor, "c k"],
     dLdl: Float[t.Tensor, " k"],
     dLdv: Float[t.Tensor, "c k"] | None,
-    eig_vec_grad_proj: Float[t.Tensor, "k k"],
-    lorentz: Float[t.Tensor, "k k"],
+    eig_vec_grad_proj: Float[t.Tensor, "k k"] | None,
+    lorentz: Float[t.Tensor, "k k"] | None,
 ) -> Float[t.Tensor, " nnz"]:
     eig_vecs_row = eig_vecs[M_sp_topo.idx_coo[0]]
     eig_vecs_col = eig_vecs[M_sp_topo.idx_coo[1]]
@@ -156,9 +162,8 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
         A_val: Float[t.Tensor, " nnz"],
         A_sp_topo: Integer[SparseTopology, "r c"],
         k: int,
-        v0: Float[t.Tensor, " c"] | None,
-        esp: float | int,
-        return_eig_vecs: bool,
+        eps: float | int,
+        compute_eig_vecs: bool,
         config: SciPyEigshConfig,
     ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"] | None]:
         # When solving the standard A@x=λx, the CSR format is preferred for
@@ -189,20 +194,14 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
                 shape=A_sp_topo.shape,
             )
 
-        if v0 is None:
-            v0_np = None
-        else:
-            v0_np = v0.detach().contiguous().cpu().numpy()
-
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
             k=k,
-            v0=v0_np,
-            return_eigenvectors=return_eig_vecs,
+            return_eigenvectors=compute_eig_vecs,
             **asdict(config),
         )
 
-        if return_eig_vecs:
+        if compute_eig_vecs:
             eig_vals_np, eig_vecs_np = results
 
             eig_vecs = t.from_numpy(eig_vecs_np).to(
@@ -219,20 +218,19 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, k, v0, esp, return_eig_vecs, config = inputs
+        A_val, A_sp_topo, k, eps, compute_eig_vecs, config = inputs
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
         ctx.A_sp_topo = A_sp_topo
         ctx.k = k
-        ctx.esp = esp
+        ctx.eps = eps
 
     @staticmethod
     def backward(
         ctx, dLdl: Float[t.Tensor, " k"], dLdv: Float[t.Tensor, "c k"] | None
     ) -> tuple[
         Float[t.Tensor, " nnz"] | None,
-        None,
         None,
         None,
         None,
@@ -254,14 +252,18 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
             if eig_vecs is None:
                 raise ValueError("Eigenvectors are required for backward().")
 
-            eig_vec_grad_proj = _compute_eig_vec_grad_proj(eig_vecs, dLdv)
-            lorentz = _compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
+            if dLdv is None:
+                eig_vec_grad_proj = None
+                lorentz = None
+            else:
+                eig_vec_grad_proj = _compute_eig_vec_grad_proj(eig_vecs, dLdv)
+                lorentz = _compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
 
             dLdA_val = _compute_dLdA_val(
                 A_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
             )
 
-        return dLdA_val, None, None, None, None, None, None
+        return dLdA_val, None, None, None, None, None
 
 
 class _SciPyEigshWrapperGeneralized(t.autograd.Function):
@@ -272,9 +274,8 @@ class _SciPyEigshWrapperGeneralized(t.autograd.Function):
         M_val: Float[t.Tensor, " M_nnz"],
         M_sp_topo: Integer[SparseTopology, "r c"],
         k: int,
-        v0: Float[t.Tensor, " c"] | None,
-        esp: float | int,
-        return_eig_vecs: bool,
+        eps: float | int,
+        compute_eig_vecs: bool,
         config: SciPyEigshConfig,
     ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"] | None]:
         # When solving the standard A@x=λx, the CSR format is preferred for
@@ -315,21 +316,15 @@ class _SciPyEigshWrapperGeneralized(t.autograd.Function):
             shape=M_sp_topo.shape,
         )
 
-        if v0 is None:
-            v0_np = None
-        else:
-            v0_np = v0.detach().contiguous().cpu().numpy()
-
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
             k=k,
             M=M_scipy,
-            v0=v0_np,
-            return_eigenvectors=return_eig_vecs,
+            return_eigenvectors=compute_eig_vecs,
             **asdict(config),
         )
 
-        if return_eig_vecs:
+        if compute_eig_vecs:
             eig_vals_np, eig_vecs_np = results
 
             eig_vecs = t.from_numpy(eig_vecs_np).to(
@@ -346,14 +341,14 @@ class _SciPyEigshWrapperGeneralized(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, M_val, M_sp_topo, k, v0, esp, return_eig_vecs, config = inputs
+        A_val, A_sp_topo, M_val, M_sp_topo, k, eps, compute_eig_vecs, config = inputs
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
         ctx.A_sp_topo = A_sp_topo
         ctx.M_sp_topo = M_sp_topo
         ctx.k = k
-        ctx.esp = esp
+        ctx.eps = eps
 
     @staticmethod
     def backward(
@@ -362,7 +357,6 @@ class _SciPyEigshWrapperGeneralized(t.autograd.Function):
         Float[t.Tensor, " A_nnz"] | None,
         None,
         Float[t.Tensor, " M_nnz"] | None,
-        None,
         None,
         None,
         None,
@@ -387,8 +381,12 @@ class _SciPyEigshWrapperGeneralized(t.autograd.Function):
             if eig_vecs is None:
                 raise ValueError("Eigenvectors are required for backward().")
 
-            eig_vec_grad_proj = _compute_eig_vec_grad_proj(eig_vecs, dLdv)
-            lorentz = _compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
+            if dLdv is None:
+                eig_vec_grad_proj = None
+                lorentz = None
+            else:
+                eig_vec_grad_proj = _compute_eig_vec_grad_proj(eig_vecs, dLdv)
+                lorentz = _compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
 
         if needs_grad_A_val:
             dLdA_val = _compute_dLdA_val(
@@ -400,4 +398,69 @@ class _SciPyEigshWrapperGeneralized(t.autograd.Function):
                 M_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
             )
 
-        return dLdA_val, None, dLdM_val, None, None, None, None, None, None
+        return dLdA_val, None, dLdM_val, None, None, None, None, None
+
+
+def scipy_eigsh(
+    A: Float[SparseOperator, "r c"],
+    M: Float[SparseOperator, "r c"] | None = None,
+    block_diag_batch: bool = False,
+    k: int = 6,
+    eps: float | int = 1e-6,
+    return_eigenvectors: bool = True,
+    config: SciPyEigshConfig | None = None,
+) -> tuple[Float[t.Tensor, "*b k"], Float[t.Tensor, "b*c k"] | None]:
+    """
+    This function provides a differentiable wrapper for the CPU-based
+    `scipy.sparse.linalg.eigsh()` method.
+
+    The API for `eigsh()` is almost reproduced one-to-one, with the following
+    exceptions:
+
+    * The arguments `sigma`, `which`, `v0`, `ncv`, `maxiter`, `tol`, and `mode`
+      are collected in a `ScipyEigshConfig` dataclass object, whilc the rest of
+      the arguments are exposed as direct arguments to this function.
+    * The `A` and `M` matrices must be `SparseOperator` objects and will be
+      converted to SciPy CSR/CSC arrays and copied to CPU. The `v0` argument
+      can be a torch tensor, but will be converted to a numpy array and copied
+      to CPU. The use of SciPy `LinearOperator` objects for `A` and `M` is not
+      supported.
+    * The `Minv` and `OPinv` arguments are not supported.
+    * The `eps` argument is used for Lorentzian broadening/regularization in the
+      gradient calculation to prevent gradient explosion when the eigenvalues are
+      (near) degenerate.
+
+    Note on performance:
+
+    * If either `A` or `M` requires gradient tracking, eigenvectors will be
+      computed and the `return_eigenvectors` argument will be ignored.
+    * TODO: The `eigsh()` function does not natively support batching. if
+      `block_diag_batch` is True, the `A` `SparseOperator` (and `M` if not `None`)
+      will be split into individual sparse matrices and solved sequentially. The
+      resulting eigenvalue tensor will contain a leading batch dimension, but the
+      resulting eigenvector tensor will respect the original concatenated/packed
+      format.
+    """
+    # Eigenvectors are required for backward().
+    compute_eig_vecs = return_eigenvectors
+    if A.requires_grad:
+        compute_eig_vecs = True
+    if (M is not None) and M.requires_grad:
+        compute_eig_vecs = True
+
+    if config is None:
+        config = SciPyEigshConfig()
+
+    if M is None:
+        eig_vals, eig_vecs = _SciPyEigshWrapperStandard.apply(
+            A.val, A.sp_topo, k, eps, compute_eig_vecs, config
+        )
+    else:
+        eig_vals, eig_vecs = _SciPyEigshWrapperGeneralized.apply(
+            A.val, A.sp_topo, M.val, M.sp_topo, k, eps, compute_eig_vecs, config
+        )
+
+    if return_eigenvectors:
+        return eig_vals, eig_vecs
+    else:
+        return eig_vals
