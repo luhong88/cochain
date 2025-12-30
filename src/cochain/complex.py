@@ -25,10 +25,10 @@ class SimplicialComplex:
             Integer[t.LongTensor, "tet 4"],
         ],
         cochains: tuple[
-            Float[t.Tensor, " vert *vert_feat"] | None,
-            Float[t.Tensor, " edge *edge_feat"] | None,
-            Float[t.Tensor, " tri *tri_feat"] | None,
-            Float[t.Tensor, " tet *tet_feat"] | None,
+            Float[t.Tensor, " vert *vert_ch"] | None,
+            Float[t.Tensor, " edge *edge_ch"] | None,
+            Float[t.Tensor, " tri *tri_ch"] | None,
+            Float[t.Tensor, " tet *tet_ch"] | None,
         ],
         vert_coords: Float[t.Tensor, "vert 3"] | None,
     ):
@@ -62,6 +62,11 @@ class SimplicialComplex:
         return self.coboundary_0.shape[1]
 
     @property
+    def verts(self) -> Integer[t.LongTensor, "vert 1"]:
+        # This is mostly redundant information; so compute only when needed.
+        return t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
+
+    @property
     def n_edges(self) -> int:
         return self.coboundary_0.shape[0]
 
@@ -80,9 +85,10 @@ class SimplicialComplex:
         )
 
     # TODO: check that the tet topo properties work for non-tet meshes
+    # TODO: these should use canonical face orientations
     @cached_property
     def tet_edge_idx(self) -> Integer[t.LongTensor, "tet 6"]:
-        return tet_topology.get_edge_face_idx(self.tets, self.edges, self.n_verts)
+        return tet_topology.get_edge_face_idx(self.tets, self.edges)
 
     @cached_property
     def tet_edge_orientations(self) -> Float[t.Tensor, "tet 6"]:
@@ -90,11 +96,15 @@ class SimplicialComplex:
 
     @cached_property
     def tet_tri_idx(self) -> Integer[t.LongTensor, "tet 4"]:
-        return tet_topology.get_tri_face_idx(self.tets, self.tris, self.n_verts)
+        return tet_topology.get_tri_face_idx(self.tets, self.tris)
+
+    @cached_property
+    def tet_tri_orientations(self) -> Float[t.Tensor, "tet 4"]:
+        return tet_topology.get_tri_face_orientations(self.tets)
 
     @cached_property
     def tri_edge_idx(self) -> Integer[t.LongTensor, "tri 3"]:
-        return tri_topology.get_edge_face_idx(self.tris, self.edges, self.n_verts)
+        return tri_topology.get_edge_face_idx(self.tris, self.edges)
 
     @cached_property
     def tri_edge_orientations(self) -> Float[t.Tensor, "tri 3"]:
@@ -107,9 +117,9 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],
         cochains: tuple[
-            Float[t.Tensor, " vert *vert_feat"] | None,
-            Float[t.Tensor, " edge *edge_feat"] | None,
-            Float[t.Tensor, " tri *tri_feat"] | None,
+            Float[t.Tensor, " vert *vert_ch"] | None,
+            Float[t.Tensor, " edge *edge_ch"] | None,
+            Float[t.Tensor, " tri *tri_ch"] | None,
         ]
         | None = None,
     ):
@@ -152,10 +162,10 @@ class SimplicialComplex:
         vert_coords: Float[t.Tensor, "vert 3"],
         tets: Integer[t.LongTensor, "tet 4"],
         cochains: tuple[
-            Float[t.Tensor, " vert *vert_feat"] | None,
-            Float[t.Tensor, " edge *edge_feat"] | None,
-            Float[t.Tensor, " tri *tri_feat"] | None,
-            Float[t.Tensor, " tet *tet_feat"] | None,
+            Float[t.Tensor, " vert *vert_ch"] | None,
+            Float[t.Tensor, " edge *edge_ch"] | None,
+            Float[t.Tensor, " tri *tri_ch"] | None,
+            Float[t.Tensor, " tet *tet_ch"] | None,
         ]
         | None = None,
     ):

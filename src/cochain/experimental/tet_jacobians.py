@@ -3,11 +3,11 @@ from jaxtyping import Float, Integer
 
 from ..complex import SimplicialComplex
 from ..geometry.tet.tet_geometry import (
-    _bary_coord_grad_inner_prods,
-    _d_tet_signed_vols_d_vert_coords,
-    _tet_face_vector_areas,
-    _tet_signed_vols,
-    _whitney_2_form_inner_prods,
+    bary_coord_grad_inner_prods,
+    d_tet_signed_vols_d_vert_coords,
+    get_tet_signed_vols,
+    tet_face_vector_areas,
+    whitney_2_form_inner_prods,
 )
 
 
@@ -79,10 +79,10 @@ def d_mass_1_d_vert_coords(
     # its Jacobian wrt vertex p is given by
     #     grad_p[D_xy] = (hess_xp[V]*grad_y[V] + hess_yp[V]*grad_x[V])/V**2
     #                    - 2*D_xy*grad_p[V])/V
-    tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
+    tet_signed_vols: Float[t.Tensor, " tet"] = get_tet_signed_vols(vert_coords, tets)
     tet_signs = tet_signed_vols.sign()
     d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"] = (
-        _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+        d_tet_signed_vols_d_vert_coords(vert_coords, tets)
     )
 
     tet_vol_vhp: Float[t.Tensor, "tet x=4 y=4 p=4 3"] = (
@@ -91,7 +91,7 @@ def d_mass_1_d_vert_coords(
         )
     )
 
-    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = _bary_coord_grad_inner_prods(
+    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = bary_coord_grad_inner_prods(
         tet_signed_vols, d_signed_vols_d_vert_coords
     )
 
@@ -230,20 +230,20 @@ def d_mass_2_d_vert_coords(
     # where "c" is the centroid of the tet.
 
     # First, collect all the constituent terms required to compute the Jacobian.
-    tet_signed_vols: Float[t.Tensor, "tet 1 1 1 1"] = _tet_signed_vols(
+    tet_signed_vols: Float[t.Tensor, "tet 1 1 1 1"] = get_tet_signed_vols(
         vert_coords, tets
     ).view(-1, 1, 1, 1, 1)
 
     tet_vols = t.abs(tet_signed_vols)
 
     d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 1 1 4 3"] = (
-        _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+        d_tet_signed_vols_d_vert_coords(vert_coords, tets)
     ).view(-1, 1, 1, 4, 3)
 
     identity = t.eye(4, dtype=dtype, device=device)
 
-    sign_corrections, whitney_inner_prods = _whitney_2_form_inner_prods(
-        tet_mesh.vert_coords, tet_mesh.tets
+    sign_corrections, whitney_inner_prods = whitney_2_form_inner_prods(
+        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.tet_tri_orientations
     )
     sign_corrections_shaped: Float[t.Tensor, "tet 4 4 1 1"] = (
         sign_corrections.view(-1, 1, 4) * sign_corrections.view(-1, 4, 1)
@@ -315,13 +315,13 @@ def _d_cotan_weights_d_vert_coords(
     # grad_p(w_o) = (grad_p(<th x o, hh x o>)/36 - w_o*grad_p(vol_ijkl))/vol_ijkl
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    norm_tri_to, norm_tri_ho, weight_o = _tet_face_vector_areas(vert_coords, tets)
+    norm_tri_to, norm_tri_ho, weight_o = tet_face_vector_areas(vert_coords, tets)
 
     norm_tri_to_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_to.view(-1, 6, 1, 3)
     norm_tri_ho_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_ho.view(-1, 6, 1, 3)
     weight_o_shaped: Float[t.Tensor, "tet 6 1 1"] = weight_o.view(-1, 6, 1, 1)
 
-    tet_signed_vols: Float[t.Tensor, "tet"] = _tet_signed_vols(vert_coords, tets)
+    tet_signed_vols: Float[t.Tensor, " tet"] = get_tet_signed_vols(vert_coords, tets)
     tet_signs = tet_signed_vols.sign()
 
     vols_shaped: Float[t.Tensor, "tet 1 1 1"] = t.abs(tet_signed_vols).view(-1, 1, 1, 1)
@@ -329,7 +329,7 @@ def _d_cotan_weights_d_vert_coords(
     # Multiply the gradient of the signed volumes with the signs of the volumes
     # to get the gradient of the unsigned/absolute volumes.
     vol_grad: Float[t.Tensor, "tet 1 4 3"] = (
-        _d_tet_signed_vols_d_vert_coords(vert_coords, tets) * tet_signs.view(-1, 1, 1)
+        d_tet_signed_vols_d_vert_coords(vert_coords, tets) * tet_signs.view(-1, 1, 1)
     ).view(-1, 1, 4, 3)
 
     # Compute the "Jacobian" of the th x o normal vector wrt each vertex in the
