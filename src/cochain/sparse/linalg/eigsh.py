@@ -34,6 +34,7 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
         ncv: int | None,
         maxiter: int | None,
         tol: float,
+        esp: float,
         return_eigenvectors: bool,
     ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"] | None]:
         val = A_val[A_sp_topo.coo_to_csc_perm].detach().contiguous().cpu().numpy()
@@ -78,23 +79,35 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, k, which, v0, ncv, maxiter, tol, return_eigenvectors = inputs
+        A_val, A_sp_topo, k, which, v0, ncv, maxiter, tol, esp, return_eigenvectors = (
+            inputs
+        )
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
         ctx.A_sp_topo = A_sp_topo
         ctx.k = k
+        ctx.esp = esp
 
     @staticmethod
     def backward(
         ctx, dLdl: Float[t.Tensor, " k"], dLdv: Float[t.Tensor, "c k"] | None
     ) -> tuple[
-        Float[t.Tensor, " nnz"] | None, None, None, None, None, None, None, None, None
+        Float[t.Tensor, " nnz"] | None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
 
         if not needs_grad_A_val:
-            return (None,) * 9
+            return (None,) * 10
 
         # The eigenvectors need to be length-normalized for the following
         # calculation; scipy eigsh() by default returns orthonormal eigenvectors.
@@ -124,14 +137,23 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
             grad_proj = 0.5 * (eig_vecs.T @ dLdv - dLdv.T @ eig_vecs)
 
             # Compute the matrix F, where F_ij = 1/(λ_j - λ_i) and F_ii = 0.
-            lorentz_diag = 1.0 / (
-                t.eye(ctx.k, dtype=eig_vals.dtype, device=eig_vals.device)
-                + eig_vals.view(1, -1).expand(ctx.k, ctx.k)
-                - eig_vals.view(-1, 1).expand(ctx.k, ctx.k)
-            )
-            lorentz = lorentz_diag - t.eye(
-                ctx.k, dtype=eig_vals.dtype, device=eig_vals.device
-            )
+            eig_val_diffs = eig_vals.view(1, -1) - eig_vals.view(-1, 1)
+
+            if ctx.eps > 0:
+                # If eps > 0, compute a regularized version where
+                # F_ij = Δ_ji / (Δ_ji^2 + ϵ), where Δ_ji = λ_j - λ_i.
+                # When Δ >> 0, this recovers the true definition; when Δ is close
+                # to 0, this prevents the gradient from exploding by decaying to 0.
+                lorentz = eig_val_diffs / (eig_val_diffs.pow(2) + ctx.eps)
+
+            else:
+                lorentz_diag = 1.0 / (
+                    t.eye(ctx.k, dtype=eig_vals.dtype, device=eig_vals.device)
+                    + eig_val_diffs
+                )
+                lorentz = lorentz_diag - t.eye(
+                    ctx.k, dtype=eig_vals.dtype, device=eig_vals.device
+                )
 
             # Compute the Hadamard product K = F * P
             kernel: Float[t.Tensor, "k k"] = lorentz * grad_proj
@@ -146,4 +168,4 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
             # gradient.
             dLdA_val = dLdA_eig_vals + dLdA_eig_vecs
 
-        return (dLdA_val,) + (None,) * 8
+        return (dLdA_val,) + (None,) * 9
