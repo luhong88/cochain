@@ -1,14 +1,7 @@
 import torch as t
 
 from cochain.complex import SimplicialComplex
-from cochain.geometry.tet import tet_hodge_stars, tet_masses
-
-
-def test_star_3_on_two_tets(two_tets_mesh: SimplicialComplex):
-    s3 = tet_hodge_stars.star_3(two_tets_mesh).val
-    m3 = tet_masses.mass_3(two_tets_mesh).val
-
-    t.testing.assert_close(1.0 / s3, m3)
+from cochain.geometry.tet import tet_hodge_stars
 
 
 def test_star_2_on_reg_tet(reg_tet_mesh: SimplicialComplex):

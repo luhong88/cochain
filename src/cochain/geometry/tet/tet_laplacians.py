@@ -88,7 +88,8 @@ def weak_laplacian_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge
     )
 
 
-def weak_laplacian_2_div_grad(
+# TODO: update docstring to remove reference to cholesky
+def weak_laplacian_2_curl_curl(
     tet_mesh: SimplicialComplex,
     method: Literal[
         "dense",
@@ -97,7 +98,7 @@ def weak_laplacian_2_div_grad(
     ],
 ) -> Float[SparseOperator, "tri tri"] | Float[t.Tensor, "tri tri"]:
     """
-    Compute the div grad component of the weak 2-Laplacian
+    Compute the curl curl component of the weak 2-Laplacian
     M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
 
     In general, the inverse of the sparse mass-1 matrix is not guaranteed to have
@@ -115,12 +116,10 @@ def weak_laplacian_2_div_grad(
 
     match method:
         case "dense":
-            m_1 = mass_1(tet_mesh).to_dense()
-            m_1_cho = t.linalg.cholesky(m_1)
-            inv_m_1 = t.cholesky_inverse(m_1_cho)
+            m_1 = mass_1(tet_mesh)
             m_2 = mass_2(tet_mesh)
 
-            return (m_2 @ d1) @ inv_m_1 @ (d1_T @ m_2)
+            return (m_2 @ d1) @ t.linalg.solve(m_1.to_dense(), (d1_T @ m_2).to_dense())
 
         case "inv_star":
             m_1 = mass_1(tet_mesh)
@@ -136,11 +135,11 @@ def weak_laplacian_2_div_grad(
             raise ValueError()
 
 
-def weak_laplacian_2_curl_curl(
+def weak_laplacian_2_div_grad(
     tet_mesh: SimplicialComplex,
 ) -> Float[SparseOperator, "tri tri"]:
     """
-    Compute the curl curl component of the weak 1-Laplacian
+    Compute the div grad component of the weak 1-Laplacian
     d_2.T @ M_3 @ d_2
     """
     d2 = tet_mesh.coboundary_2
@@ -169,8 +168,8 @@ def weak_laplacian_2(
         raise NotImplementedError()
 
     elif method in ["dense", "inv_star"]:
-        curl_curl = weak_laplacian_2_curl_curl(tet_mesh)
-        div_grad = weak_laplacian_2_div_grad(tet_mesh, method)
+        curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
+        div_grad = weak_laplacian_2_div_grad(tet_mesh)
 
         match div_grad:
             case SparseOperator():
@@ -184,6 +183,7 @@ def weak_laplacian_2(
         raise ValueError()
 
 
+# TODO: update docstring to remove reference to cholesky
 def weak_laplacian_3(
     tet_mesh: SimplicialComplex,
     method: Literal[
@@ -213,11 +213,10 @@ def weak_laplacian_3(
 
     match method:
         case "dense":
-            m_2 = mass_2(tet_mesh).to_dense()
-            inv_m_2 = t.cholesky_inverse(m_2)
+            m_2 = mass_2(tet_mesh)
             m_3 = mass_3(tet_mesh)
 
-            return (m_3 @ d2) @ inv_m_2 @ (d2_T @ m_3)
+            return (m_3 @ d2) @ t.linalg.solve(m_2.to_dense(), (d2_T @ m_3).to_dense())
 
         case "solver":
             raise NotImplementedError()

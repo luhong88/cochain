@@ -4,11 +4,36 @@ from jaxtyping import Float, Integer
 from ...complex import SimplicialComplex
 from ...sparse.operators import DiagOperator, SparseOperator
 from .tet_geometry import (
-    _bary_coord_grad_inner_prods,
-    _d_tet_signed_vols_d_vert_coords,
-    _tet_signed_vols,
-    _whitney_2_form_inner_prods,
+    bary_coord_grad_inner_prods,
+    d_tet_signed_vols_d_vert_coords,
+    get_tet_signed_vols,
+    whitney_2_form_inner_prods,
 )
+
+
+def mass_0_consistent(tet_mesh) -> Float[SparseOperator, "vert vert"]:
+    """
+    Compute the "consistent" Galerkin vertex/0-form mass matrix.
+    """
+    tet_vols = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+
+    ref_local_mass_0 = ((t.ones(4, 4) + t.eye(4)) / 20.0).to(
+        dtype=tet_mesh.vert_coords.dtype, device=tet_mesh.vert_coords.device
+    )
+    local_mass_0: Float[t.Tensor, "tet 4 4"] = tet_vols.view(
+        -1, 1, 1
+    ) * ref_local_mass_0.view(1, 4, 4)
+
+    r_idx = tet_mesh.tets.view(-1, 4, 1).expand(-1, 4, 4)
+    c_idx = tet_mesh.tets.view(-1, 1, 4).expand(-1, 4, 4)
+
+    mass = t.sparse_coo_tensor(
+        indices=t.vstack((r_idx.flatten(), c_idx.flatten())),
+        values=local_mass_0.flatten(),
+        size=(tet_mesh.n_verts, tet_mesh.n_verts),
+    ).coalesce()
+
+    return SparseOperator.from_tensor(mass)
 
 
 def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
@@ -22,7 +47,7 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
     """
     n_verts = tet_mesh.n_verts
 
-    tet_vol = t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    tet_vol = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
     diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
     diag.scatter_add_(
@@ -56,12 +81,12 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
     n_tets = tet_mesh.n_tets
     n_edges = tet_mesh.n_edges
 
-    tet_signed_vols = _tet_signed_vols(vert_coords, tets).view(-1, 1, 1)
-    d_signed_vols_d_vert_coords = _d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+    tet_signed_vols = get_tet_signed_vols(vert_coords, tets).view(-1, 1, 1)
+    d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(vert_coords, tets)
 
     # For each tet ijkl, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
-    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = _bary_coord_grad_inner_prods(
+    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = bary_coord_grad_inner_prods(
         tet_signed_vols, d_signed_vols_d_vert_coords
     )
 
@@ -154,8 +179,8 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
     n_tris = tet_mesh.n_tris
 
     # First, compute the inner products of the Whitney 2-form basis functions.
-    _, whitney_inner_prod_signed = _whitney_2_form_inner_prods(
-        tet_mesh.vert_coords, tet_mesh.tets
+    _, whitney_inner_prod_signed = whitney_2_form_inner_prods(
+        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.tet_tri_orientations
     )
 
     # Then, find the indices of the tet triangle faces associated with the basis
@@ -178,9 +203,10 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
 
 def mass_3(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tet tet"]:
     """
-    Compute the diagonal of the tet/3-form mass matrix, which is equivalent to
-    the inverse of 3-star.
+    Compute the diagonal of the tet/3-form mass matrix, which is a diagonal matrix
+    containing the inverse of the unsigned tet volumes, which is equivalent to
+    the 3-star.
     """
     return DiagOperator.from_tensor(
-        t.abs(_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+        1.0 / t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
     )

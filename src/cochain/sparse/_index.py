@@ -163,9 +163,6 @@ def project_and_extract_cnz_vals(
     at these index pair locations.
 
     This function is most performant if the source has more nnz than the target.
-
-    B source: with fill in
-    A target: no fill in
     """
     target_nnz = target_coo.size(1)
     src_nnz = src_coo.size(1)
