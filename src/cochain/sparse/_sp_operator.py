@@ -12,17 +12,9 @@ from ._sp_topo import SparseTopology, check_topo_equality
 
 
 @dataclass
-class BlockDiagConfig:
-    batch_perm: Integer[t.LongTensor, " nnz"]
-    nnzs: list[int]
-    sp_topo_shapes: list[t.Size]
-
-
-@dataclass
 class SparseOperator(BaseOperator):
     sp_topo: Integer[SparseTopology, "*b r c"]
     val: Float[t.Tensor, " nnz *d"]
-    block_diag_config: BlockDiagConfig | None = None
 
     # TODO: optimized intake paths for csc/csr formats
     # TODO: allow additional kwargs, e.g., copy=True
@@ -36,7 +28,7 @@ class SparseOperator(BaseOperator):
         )
 
     @classmethod
-    def to_block_diag(cls, blocks: Sequence[t.Tensor | BaseOperator]) -> SparseOperator:
+    def batch_diag(cls, blocks: Sequence[t.Tensor | BaseOperator]) -> SparseOperator:
         """
         Construct a block diagonal matrix as a SparseOperator from a list of tensor,
         SparseOperator, and DiagOperator objects.
@@ -52,130 +44,37 @@ class SparseOperator(BaseOperator):
                 case _:
                     raise TypeError()
 
-        # Pick a representative SparseOperator and use it to determine device,
-        # dtype, and batch/dense dimension information.
+        # Pick a representative SparseOperator and use it to determine device and
+        # dtype information.
         rep_sp_op = sp_op_list[0]
-
         device = rep_sp_op.device
         val_dtype = rep_sp_op.dtype
-        idx_dtype = rep_sp_op.sp_topo.dtype
 
-        # Determine the input SparseOperator sparse row/column shapes.
-        r_sizes_cum = t.tensor(
-            [0] + [sp_op.sp_topo.size(-2) for sp_op in sp_op_list],
-            dtype=idx_dtype,
-            device=device,
-        ).cumsum(dim=0)
-
-        c_sizes_cum = t.tensor(
-            [0] + [sp_op.sp_topo.size(-1) for sp_op in sp_op_list],
-            dtype=idx_dtype,
-            device=device,
-        ).cumsum(dim=0)
-
-        # Compute block offsets and apply to concatenated coo index.
-        nnzs = [sp_op.sp_topo._nnz() for sp_op in sp_op_list]
-        nnz_concat = t.tensor(nnzs, dtype=idx_dtype, device=device)
-
-        r_offset = t.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
-        c_offset = t.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
-
-        idx_coo_concat = t.hstack(
-            [
-                sp_op.sp_topo.idx_coo.to(device=device, dtype=idx_dtype)
-                for sp_op in sp_op_list
-            ]
-        )
-        idx_coo_concat[-2] += r_offset
-        idx_coo_concat[-1] += c_offset
-
-        # If there is a batch dimension, the coo index needs to be sorted first
-        # by batch item order; find the permutation for this sort. If there is no
-        # batch dim, this sort does nothing.
-        batch_perm = t.sort(idx_coo_concat[0], stable=True).indices
-
-        # Determine the concatenated SparseTopology shape.
-        if rep_sp_op.sp_topo.n_batch_dim > 0:
-            sp_topo_shape_concat = t.Size(
-                [rep_sp_op.sp_topo.size(0), r_sizes_cum[-1], c_sizes_cum[-1]]
-            )
-        else:
-            sp_topo_shape_concat = t.Size([r_sizes_cum[-1], c_sizes_cum[-1]])
-
-        # Construct concatenated coo index.
-        sp_topo_concat = SparseTopology(
-            idx_coo_concat[:, batch_perm], shape=sp_topo_shape_concat
-        )
+        # Construct concatenated sparse topology.
+        sp_topo_list = [sp_op.sp_topo for sp_op in sp_op_list]
+        sp_topo_concat = SparseTopology.batch_diag(sp_topo_list)
 
         # Construct concatenated values tensor.
         val_list = [
             sp_op.val.to(device=device, dtype=val_dtype) for sp_op in sp_op_list
         ]
 
+        batch_perm = sp_topo_concat.block_diag_config.batch_perm
+
         if rep_sp_op.n_dense_dim == 0:
             val_concat = t.hstack(val_list)[batch_perm]
         else:
             val_concat = t.vstack(val_list)[batch_perm]
 
-        # Record block diag construction information for disassembly
-        # block_ptr = t.repeat_interleave(t.arange(len(sp_ops)), nnz_concat)
-        sp_topo_shapes = [sp_op.sp_topo.shape for sp_op in sp_op_list]
-        config = BlockDiagConfig(batch_perm, nnz_concat, sp_topo_shapes)
+        return SparseOperator(sp_topo_concat, val_concat)
 
-        return SparseOperator(sp_topo_concat, val_concat, config)
-
-    def from_block_diag(self, preserve_cache: bool = True) -> list[BaseOperator]:
-        if not isinstance(self.block_diag_config, BlockDiagConfig):
-            raise ValueError("A valid 'block_diag_config' is required for disassembly.")
-
-        device = self.device
-        val_dtype = self.dtype
-        idx_dtype = self.sp_topo.dtype
-
-        block_perm_inv = t.argsort(self.block_diag_config.batch_perm)
-
-        # Undo the batch dim sort, so that the idx_coo is back in a per-block
-        # ordering. Fancy indexing guarantees copying.
-        idx_coo_concat = self.sp_topo.idx_coo[:, block_perm_inv]
-
-        # Undo the per-block, cumulative index offsets.
-        r_sizes_cum = t.tensor(
-            [0] + [shape[-2] for shape in self.block_diag_config.sp_topo_shapes],
-            dtype=idx_dtype,
-            device=device,
-        ).cumsum(dim=0)
-
-        c_sizes_cum = t.tensor(
-            [0] + [shape[-1] for shape in self.block_diag_config.sp_topo_shapes],
-            dtype=idx_dtype,
-            device=device,
-        ).cumsum(dim=0)
-
-        nnz_concat = t.tensor(
-            self.block_diag_config.nnzs, dtype=idx_dtype, device=device
-        )
-
-        r_offset = t.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
-        c_offset = t.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
-
-        idx_coo_concat[-2] -= r_offset
-        idx_coo_concat[-1] -= c_offset
-
-        # Split the concatenated idx_coo into constituent parts. Note that
-        # t.split() creates a view without copying; this is okay because the
-        # SparseTopology constructor enforces copying.
-        idx_coo_list = t.split(idx_coo_concat, self.block_diag_config.nnzs, dim=-1)
-
-        sp_topo_list = [
-            SparseTopology(idx_coo, shape)
-            for idx_coo, shape in zip(
-                idx_coo_list, self.block_diag_config.sp_topo_shapes, strict=True
-            )
-        ]
+    def unbatch_diag(self, preserve_cache: bool = True) -> list[BaseOperator]:
+        # Reconstruct the constituent SparseTopology.
+        sp_topo_list, block_perm_inv = self.sp_topo.unbatch_diag(preserve_cache)
 
         # Perform similar reconstruction on the values
         val_concat = self.val[:, block_perm_inv]
-        val_list = t.split(val_concat, self.block_diag_config.nnzs, dim=0)
+        val_list = t.split(val_concat, self.sp_topo.block_diag_config.nnzs, dim=0)
 
         sp_op_list = [
             SparseOperator(sp_topo, val) for sp_topo, val in zip(sp_topo_list, val_list)

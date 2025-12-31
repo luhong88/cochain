@@ -25,28 +25,6 @@ class DiagOperator(BaseOperator):
     def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
         return cls(tensor)
 
-    @classmethod
-    def to_block_diag(cls, blocks: Sequence[t.Tensor | DiagOperator]) -> DiagOperator:
-        """
-        Construct a diagonal matrix as a DiagOperator from tensor or DiagOperator
-        objects.
-
-        If a block diagonal matrix is desired, please use SparseOperator.to_block_diag().
-        """
-        val_list = []
-        for block in blocks:
-            match block:
-                case t.Tensor():
-                    val_list.append(block)
-                case DiagOperator():
-                    val_list.append(block.val)
-                case _:
-                    raise TypeError()
-
-        val_concat = t.hstack(val_list)
-
-        return DiagOperator(val_concat)
-
     def __post_init__(self):
         if self.val.layout != t.strided:
             raise TypeError(

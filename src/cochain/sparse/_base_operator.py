@@ -54,12 +54,6 @@ class BaseOperator(ABC):
     @abstractmethod
     def from_tensor(cls, tensor: t.Tensor) -> BaseOperator: ...
 
-    @classmethod
-    @abstractmethod
-    def to_block_diag(
-        cls, blocks: Sequence[t.Tensor | BaseOperator]
-    ) -> BaseOperator: ...
-
     @abstractmethod
     def apply(self, fn: Callable, **kwargs) -> BaseOperator: ...
 
