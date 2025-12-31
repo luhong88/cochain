@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import numpy as np
 import scipy.sparse
@@ -10,19 +8,12 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..operators import SparseOperator, SparseTopology
-
-try:
-    import cupy as cp
-    import cupyx.scipy.sparse as cp_sp
-    import cupyx.scipy.sparse.linalg as cp_sp_linalg
-
-    _HAS_CUPY = True
-except ImportError:
-    _HAS_CUPY = False
-
-if TYPE_CHECKING:
-    import cupyx.scipy.sparse as cp_sp
-    import cupyx.scipy.sparse.linalg as cp_sp_linalg
+from ._eigsh_utils import (
+    compute_dLdA_val,
+    compute_dLdM_val,
+    compute_eig_vec_grad_proj,
+    compute_lorentz_matrix,
+)
 
 
 @dataclass
@@ -38,122 +29,6 @@ class SciPyEigshConfig:
     def __post_init__(self):
         if isinstance(self.v0, t.Tensor):
             self.v0 = self.v0.detach().contiguous().cpu().numpy()
-
-
-def _compute_eig_vec_grad_proj(
-    eig_vecs: Float[t.Tensor, "c k"],
-    dLdv: Float[t.Tensor, "c k"],
-) -> Float[t.Tensor, "k k"]:
-    # Compute the projection of eigenvector gradients onto the eigensapce.
-    return eig_vecs.T @ dLdv
-
-
-def _compute_lorentz_matrix(
-    eig_vals: Float[t.Tensor, " k"], k: int, eps: float | int
-) -> Float[t.Tensor, "k k"]:
-    # Compute the matrix F, where F_ij = 1/(λ_j - λ_i) and F_ii = 0.
-    eig_val_diffs = eig_vals.view(1, -1) - eig_vals.view(-1, 1)
-
-    if eps > 0:
-        # If eps > 0, compute a regularized version where
-        # F_ij = Δ_ji / (Δ_ji^2 + ϵ), where Δ_ji = λ_j - λ_i.
-        # When Δ >> 0, this recovers the true definition; when Δ is close
-        # to 0, this prevents the gradient from exploding by decaying to 0.
-        lorentz = eig_val_diffs / (eig_val_diffs.pow(2) + eps)
-
-    else:
-        lorentz_diag = 1.0 / (
-            t.eye(k, dtype=eig_vals.dtype, device=eig_vals.device) + eig_val_diffs
-        )
-        lorentz = lorentz_diag - t.eye(k, dtype=eig_vals.dtype, device=eig_vals.device)
-
-    return lorentz
-
-
-def _compute_dLdA_val(
-    A_sp_topo: Integer[SparseTopology, "r c"],
-    eig_vecs: Float[t.Tensor, "c k"],
-    dLdl: Float[t.Tensor, " k"],
-    dLdv: Float[t.Tensor, "c k"] | None,
-    eig_vec_grad_proj: Float[t.Tensor, "k k"] | None,
-    lorentz: Float[t.Tensor, "k k"] | None,
-) -> Float[t.Tensor, " nnz"]:
-    """
-    The formula is the same for standard and generalized eigenvalue problems.
-    """
-    eig_vecs_row = eig_vecs[A_sp_topo.idx_coo[0]]
-    eig_vecs_col = eig_vecs[A_sp_topo.idx_coo[1]]
-
-    # If the loss does not depend on the eigenvectors, then the "eigenvalue"
-    # component of the gradient is given by sum_i[dLdλ_i * v_i @ v_i.T]
-    dLdA_eig_vals = t.sum(
-        dLdl.view(1, -1) * eig_vecs_row * eig_vecs_col,
-        dim=1,
-    )
-
-    if dLdv is None:
-        dLdA_val = dLdA_eig_vals
-
-    else:
-        anti_symmetric_proj = 0.5 * (eig_vec_grad_proj - eig_vec_grad_proj.T)
-
-        # Compute the Hadamard product K = F * P
-        kernel: Float[t.Tensor, "k k"] = lorentz * anti_symmetric_proj
-
-        # The "eigenvector" component is given by V @ K @ V.T
-        dLdA_eig_vecs = t.sum(
-            (eig_vecs_row @ kernel) * eig_vecs_col,
-            dim=1,
-        )
-
-        # Sum together the "eigenvalue" and "eigenvector" components of the gradient.
-        dLdA_val = dLdA_eig_vals + dLdA_eig_vecs
-
-    return dLdA_val
-
-
-def _compute_dLdM_val(
-    M_sp_topo: Integer[SparseTopology, "r c"],
-    eig_vals: Float[t.Tensor, " k"],
-    eig_vecs: Float[t.Tensor, "c k"],
-    dLdl: Float[t.Tensor, " k"],
-    dLdv: Float[t.Tensor, "c k"] | None,
-    eig_vec_grad_proj: Float[t.Tensor, "k k"] | None,
-    lorentz: Float[t.Tensor, "k k"] | None,
-) -> Float[t.Tensor, " nnz"]:
-    eig_vecs_row = eig_vecs[M_sp_topo.idx_coo[0]]
-    eig_vecs_col = eig_vecs[M_sp_topo.idx_coo[1]]
-
-    # If the loss does not depend on the eigenvectors, then the "eigenvalue"
-    # component of the gradient is given by -sum_i[λ_i * dLdλ_i * v_i @ v_i.T]
-    dLdM_eig_vals = -t.sum(
-        eig_vals.view(1, -1) * dLdl.view(1, -1) * eig_vecs_row * eig_vecs_col,
-        dim=1,
-    )
-
-    if dLdv is None:
-        dLdM_val = dLdM_eig_vals
-
-    else:
-        # The elements of the kernel is given by
-        # off-diagonal: K_ij = F_ij * (λ_i*P_ij - λ_j*P_ji)
-        # diagonal: K_ii = - P_ii/2
-        lP = eig_vals.view(-1, 1) * eig_vec_grad_proj
-        kernel_off_diag = lorentz * (lP - lP.T)
-        kernel_diag = -0.5 * t.diag(eig_vec_grad_proj)
-        kernel: Float[t.Tensor, "k k"] = t.diagflat(kernel_diag) + kernel_off_diag
-
-        # The "eigenvector" component is given by V @ K @ V.T
-        dLdM_eig_vecs = t.sum(
-            (eig_vecs_row @ kernel) * eig_vecs_col,
-            dim=1,
-        )
-
-        # Sum together the "eigenvalue" and "eigenvector" components of the
-        # gradient.
-        dLdM_val = dLdM_eig_vals + dLdM_eig_vecs
-
-    return dLdM_val
 
 
 class _SciPyEigshWrapperStandard(t.autograd.Function):
@@ -256,10 +131,10 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
                 eig_vec_grad_proj = None
                 lorentz = None
             else:
-                eig_vec_grad_proj = _compute_eig_vec_grad_proj(eig_vecs, dLdv)
-                lorentz = _compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
+                eig_vec_grad_proj = compute_eig_vec_grad_proj(eig_vecs, dLdv)
+                lorentz = compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
 
-            dLdA_val = _compute_dLdA_val(
+            dLdA_val = compute_dLdA_val(
                 A_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
             )
 
@@ -385,20 +260,57 @@ class _SciPyEigshWrapperGeneralized(t.autograd.Function):
                 eig_vec_grad_proj = None
                 lorentz = None
             else:
-                eig_vec_grad_proj = _compute_eig_vec_grad_proj(eig_vecs, dLdv)
-                lorentz = _compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
+                eig_vec_grad_proj = compute_eig_vec_grad_proj(eig_vecs, dLdv)
+                lorentz = compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
 
         if needs_grad_A_val:
-            dLdA_val = _compute_dLdA_val(
+            dLdA_val = compute_dLdA_val(
                 A_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
             )
 
         if needs_grad_M_val:
-            dLdM_val = _compute_dLdM_val(
+            dLdM_val = compute_dLdM_val(
                 M_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
             )
 
         return dLdA_val, None, dLdM_val, None, None, None, None, None
+
+
+def _scipy_eigsh_no_batch(
+    A: Float[SparseOperator, "r c"],
+    M: Float[SparseOperator, "r c"] | None,
+    kwargs: dict[str, Any],
+) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
+    if M is None:
+        eig_vals, eig_vecs = _SciPyEigshWrapperStandard.apply(
+            A.val, A.sp_topo, **kwargs
+        )
+    else:
+        eig_vals, eig_vecs = _SciPyEigshWrapperGeneralized.apply(
+            A.val, A.sp_topo, M.val, M.sp_topo, **kwargs
+        )
+
+    return eig_vals, eig_vecs
+
+
+def _scipy_eigsh_batch(
+    A_batched: Float[SparseOperator, "r c"],
+    M_batched: Float[SparseOperator, "r c"] | None,
+    kwargs: dict[str, Any],
+) -> tuple[Float[t.Tensor, "b k"], Float[t.Tensor, "c k"]]:
+    A_list = A_batched.unpack_block_diag()
+    if M_batched is None:
+        M_list = [None] * len(A_list)
+    else:
+        M_list = M_batched.unpack_block_diag()
+
+    for A, M in zip(A_list, M_list, strict=True):
+        eig_val_list, eig_vec_list = _scipy_eigsh_no_batch(A, M, kwargs)
+
+    eig_vals = t.vstack(eig_val_list)
+    eig_vecs = t.vstack(eig_vec_list)
+
+    return eig_vals, eig_vecs
 
 
 def scipy_eigsh(
@@ -409,7 +321,7 @@ def scipy_eigsh(
     eps: float | int = 1e-6,
     return_eigenvectors: bool = True,
     config: SciPyEigshConfig | None = None,
-) -> tuple[Float[t.Tensor, "*b k"], Float[t.Tensor, "b*c k"] | None]:
+) -> tuple[Float[t.Tensor, "*b k"], Float[t.Tensor, "c k"] | None]:
     """
     This function provides a differentiable wrapper for the CPU-based
     `scipy.sparse.linalg.eigsh()` method.
@@ -434,12 +346,13 @@ def scipy_eigsh(
 
     * If either `A` or `M` requires gradient tracking, eigenvectors will be
       computed and the `return_eigenvectors` argument will be ignored.
-    * TODO: The `eigsh()` function does not natively support batching. if
+    * The `eigsh()` function does not natively support batching. if
       `block_diag_batch` is True, the `A` `SparseOperator` (and `M` if not `None`)
       will be split into individual sparse matrices and solved sequentially. The
       resulting eigenvalue tensor will contain a leading batch dimension, but the
       resulting eigenvector tensor will respect the original concatenated/packed
-      format.
+      format. This requires that `A` (and `M` if not `None`) has a valid
+      `BlockDiagConfig` for unpacking the block diagonal batch structure.
     """
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors
@@ -451,14 +364,17 @@ def scipy_eigsh(
     if config is None:
         config = SciPyEigshConfig()
 
-    if M is None:
-        eig_vals, eig_vecs = _SciPyEigshWrapperStandard.apply(
-            A.val, A.sp_topo, k, eps, compute_eig_vecs, config
-        )
+    kwargs = {
+        "k": k,
+        "eps": eps,
+        "compute_eig_vecs": compute_eig_vecs,
+        "config": config,
+    }
+
+    if block_diag_batch:
+        eig_vals, eig_vecs = _scipy_eigsh_batch(A, M, kwargs)
     else:
-        eig_vals, eig_vecs = _SciPyEigshWrapperGeneralized.apply(
-            A.val, A.sp_topo, M.val, M.sp_topo, k, eps, compute_eig_vecs, config
-        )
+        eig_vals, eig_vecs = _scipy_eigsh_no_batch(A, M, kwargs)
 
     if return_eigenvectors:
         return eig_vals, eig_vecs
