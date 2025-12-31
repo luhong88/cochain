@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 class SciPyEigshConfig:
     sigma: float | None = None
     which: Literal["LM", "SM", "LA", "SA", "BE"] = "LM"
-    v0: Float[t.Tensor | np.typing.NDArray, " c"] | None
+    v0: Float[t.Tensor | np.typing.NDArray, " c"] | None = None
     ncv: int | None = None
     maxiter: int | None = None
     tol: float | int = 0
