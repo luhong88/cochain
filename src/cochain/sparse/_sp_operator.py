@@ -16,7 +16,6 @@ class SparseOperator(BaseOperator):
     sp_topo: Integer[SparseTopology, "*b r c"]
     val: Float[t.Tensor, " nnz *d"]
 
-    # TODO: optimized intake paths for csc/csr formats
     # TODO: allow additional kwargs, e.g., copy=True
     @classmethod
     def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
@@ -30,8 +29,8 @@ class SparseOperator(BaseOperator):
     @classmethod
     def batch_diag(cls, blocks: Sequence[t.Tensor | BaseOperator]) -> SparseOperator:
         """
-        Construct a block diagonal matrix as a SparseOperator from a list of tensor,
-        SparseOperator, and DiagOperator objects.
+        Construct a block diagonal matrix as a `SparseOperator` from a list of tensor,
+        `SparseOperator`, and `DiagOperator` objects.
         """
         # Convert all input elements to SparseOperator.
         sp_op_list: list[SparseOperator] = []
@@ -68,7 +67,11 @@ class SparseOperator(BaseOperator):
 
         return SparseOperator(sp_topo_concat, val_concat)
 
-    def unbatch_diag(self) -> list[BaseOperator]:
+    def unbatch_diag(self) -> list[SparseOperator]:
+        """
+        Deconstruct a block diagonal `SparseOperator` into a list of constituent
+        `SparseOperator`s.
+        """
         # Reconstruct the constituent SparseTopology.
         sp_topo_list, block_perm_inv = self.sp_topo.unbatch_diag()
 
@@ -82,147 +85,61 @@ class SparseOperator(BaseOperator):
 
         return sp_op_list
 
-    # TODO: optimize to avoid multiple index tensor copies
-    # TODO: preserve cached indices
     @classmethod
     def to_block(cls, blocks: Sequence[Sequence[t.Tensor | BaseOperator | None]]):
         """
-        Construct a block matrix as a SparseOperator from a 2D grid of existing
-        tensor, SparseOperator, or DiagOperator. None is allowed to represent
+        Construct a block matrix as a `SparseOperator` from a 2D grid of existing
+        tensor, `SparseOperator`, or `DiagOperator`. `None` is allowed to represent
         empty/zero blocks.
         """
-        # Convert all input blocks except for None to SparseOperator.
-        sp_ops: list[list[SparseOperator]] = []
+        # Convert all input blocks except for None to SparseOperator, and produce
+        # two lists: one flattened list of sp_op.val (excluding None), and a nested
+        # list of sp_op.sp_topo (including None).
+        sp_topo_list = []
+        val_list = []
+        rep_sp_op = None
         for block_row in blocks:
-            sp_op_row = []
+            sp_topo_row = []
             for block in block_row:
                 match block:
                     case t.Tensor():
-                        sp_op_row.append(SparseOperator.from_tensor(block))
+                        sp_op = SparseOperator.from_tensor(block)
                     case BaseOperator():
-                        sp_op_row.append(block.to_sparse_operator())
+                        sp_op = block.to_sparse_operator()
                     case None:
-                        sp_op_row.append(None)
+                        sp_topo_row.append(None)
                     case _:
                         raise TypeError()
-            sp_ops.append(sp_op_row)
 
-        # Pick a representative SparseOperator and use it to determine device,
-        # dtype, and batch/dense dimension information.
-        rep_sp_op = None
-        for sp_op_row in sp_ops:
-            for sp_op in sp_op_row:
-                if sp_op is not None:
-                    rep_sp_op = sp_op
+                if sp_op is None:
+                    sp_topo_row.append(None)
+                else:
+                    sp_topo_row.append(sp_op.sp_topo)
+                    val_list.append(sp_op.val)
+
+                    # Pick a representative SparseOperator and use it to determine
+                    # device, dtype, and dense dimension information.
+                    if rep_sp_op is None:
+                        rep_sp_op = sp_op
+
+            sp_topo_list.append(sp_topo_row)
 
         if rep_sp_op is None:
             raise ValueError("At least one block in 'blocks' must be non-null value.")
 
         device = rep_sp_op.device
         val_dtype = rep_sp_op.dtype
-        idx_dtype = rep_sp_op.sp_topo.dtype
 
-        # Determine the input SparseOperator sparse row/column shapes. The row
-        # sizes and col sizes are each represented as a 2D tensor; None is assigned
-        # a shape of 0.
-        r_sizes = []
-        c_sizes = []
-        for sp_op_row in sp_ops:
-            row_r_sizes = []
-            row_c_sizes = []
-
-            for sp_op in sp_op_row:
-                if sp_op is None:
-                    row_r_sizes.append(0)
-                    row_c_sizes.append(0)
-                else:
-                    row_r_sizes.append(sp_op.sp_topo.size(-2))
-                    row_c_sizes.append(sp_op.sp_topo.size(-1))
-
-            r_sizes.append(row_r_sizes)
-            c_sizes.append(row_c_sizes)
-
-        r_sizes = t.tensor(r_sizes, dtype=idx_dtype, device=device)
-        c_sizes = t.tensor(c_sizes, dtype=idx_dtype, device=device)
-
-        # Sanity checks on the row/col shape tensors.
-        for sp_op_dims in [r_sizes, c_sizes]:
-            for block_dim in [0, 1]:
-                if not (sp_op_dims.sum(dim=block_dim) > 0).any():
-                    raise ValueError(
-                        "Rows/columns with all None or degenerate blocks are not allowed."
-                    )
-
-        r_max_size_per_row = r_sizes.max(dim=-1, keepdim=True).values
-        r_min_size_per_row = t.zeros_like(r_max_size_per_row)
-        if not (
-            (r_sizes == r_max_size_per_row) | (r_sizes == r_min_size_per_row)
-        ).all():
-            raise ValueError(
-                "The blocks in each row (except for None) must have the same number of rows."
-            )
-
-        c_max_size_per_col = c_sizes.max(dim=0, keepdim=True).values
-        c_min_size_per_col = t.zeros_like(c_max_size_per_col)
-        if not (
-            (c_sizes == c_max_size_per_col) | (c_sizes == c_min_size_per_col)
-        ).all():
-            raise ValueError(
-                "The blocks in each col (except for None) must have the same number of cols."
-            )
-
-        # Construct the concatenated coo index by iterating over the block coo indices.
-        idx_coo_list = []
-        r_offset = 0
-        c_offset = 0
-        for r_idx, sp_op_row in enumerate(sp_ops):
-            for c_idx, sp_op in enumerate(sp_op_row):
-                if sp_op is not None:
-                    idx_coo = (
-                        sp_op.sp_topo.idx_coo.detach()
-                        .clone()
-                        .to(device=device, dtype=idx_dtype)
-                    )
-                    idx_coo[-2] += r_offset
-                    idx_coo[-1] += c_offset
-                    idx_coo_list.append(idx_coo)
-
-                c_offset += c_sizes[r_idx, c_idx]
-
-            r_offset += r_sizes[r_idx, c_idx]
-            c_offset = 0
-
-        idx_coo_concat = t.hstack(idx_coo_list)
-
-        # If there is a batch dimension, the coo index needs to be sorted first
-        # by batch item order; find the permutation for this sort.
-        perm = t.sort(idx_coo_concat[0], stable=True).indices
-
-        # Determine the concatenated SparseTopology shape.
-        n_row = r_sizes.sum(dim=0).max().item()
-        n_col = c_sizes.sum(dim=-1).max().item()
-        if rep_sp_op.sp_topo.n_batch_dim > 0:
-            sp_topo_shape_concat = t.Size([rep_sp_op.sp_topo.size(0), n_row, n_col])
-        else:
-            sp_topo_shape_concat = t.Size([n_row, n_col])
-
-        # Construct concatenated coo index.
-        sp_topo_concat = SparseTopology(
-            idx_coo_concat[:, perm], shape=sp_topo_shape_concat
-        )
+        # Construct concatenated SparseTopology.
+        sp_topo_concat, batch_perm = SparseTopology.to_block()
 
         # Construct concatenated values tensor.
-        val_list = [
-            sp_op.val.to(device=device, dtype=val_dtype)
-            for sp_op_row in sp_ops
-            for sp_op in sp_op_row
-            if sp_op is not None
-        ]
+        val_list_uniform = [val.to(device=device, dtype=val_dtype) for val in val_list]
 
         if rep_sp_op.n_dense_dim == 0:
-            val_concat = t.hstack(val_list)[perm]
+            val_concat = t.hstack(val_list_uniform)[batch_perm]
         else:
-            val_concat = t.vstack(val_list)[perm]
+            val_concat = t.vstack(val_list_uniform)[batch_perm]
 
         return SparseOperator(sp_topo_concat, val_concat)
 
