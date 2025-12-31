@@ -68,9 +68,9 @@ class SparseOperator(BaseOperator):
 
         return SparseOperator(sp_topo_concat, val_concat)
 
-    def unbatch_diag(self, preserve_cache: bool = True) -> list[BaseOperator]:
+    def unbatch_diag(self) -> list[BaseOperator]:
         # Reconstruct the constituent SparseTopology.
-        sp_topo_list, block_perm_inv = self.sp_topo.unbatch_diag(preserve_cache)
+        sp_topo_list, block_perm_inv = self.sp_topo.unbatch_diag()
 
         # Perform similar reconstruction on the values
         val_concat = self.val[:, block_perm_inv]
@@ -80,10 +80,7 @@ class SparseOperator(BaseOperator):
             SparseOperator(sp_topo, val) for sp_topo, val in zip(sp_topo_list, val_list)
         ]
 
-        if not preserve_cache:
-            return sp_op_list
-        else:
-            raise NotImplementedError()
+        return sp_op_list
 
     # TODO: optimize to avoid multiple index tensor copies
     # TODO: preserve cached indices

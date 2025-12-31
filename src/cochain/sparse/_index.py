@@ -46,7 +46,7 @@ def coalesced_coo_to_compressed_idx(
             n_row = shape[target_idx]
             n_batch = shape[0]
             nnz = coo_idx.size(1)
-            nnz_per_batch = nnz_per_batch = nnz // n_batch
+            nnz_per_batch = nnz // n_batch
 
             row_idx_batched = (
                 coo_idx[target_idx].view(n_batch, nnz_per_batch).to(dtype=dtype)
@@ -150,6 +150,7 @@ def coalesced_coo_to_row_idx(
             return row_idx_sorted.contiguous()
 
 
+# TODO: force int64 for radix packing safety
 def project_and_extract_cnz_vals(
     src_coo: Integer[t.LongTensor, "2 src_nnz"],
     src_val: Float[t.Tensor, " source_nnz"],

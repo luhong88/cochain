@@ -93,6 +93,10 @@ class BlockDiagConfig:
     nnzs: list[int]
     sp_topo_shapes: list[t.Size]
 
+    def to(self, *args, **kwargs) -> BlockDiagConfig:
+        new_batch_perm = self.batch_perm.to(*args, **kwargs)
+        return BlockDiagConfig(new_batch_perm, self.nnzs, self.sp_topo_shapes)
+
 
 @dataclass(frozen=True)
 class SparseTopology:
@@ -205,7 +209,7 @@ class SparseTopology:
         return sp_topo_concat
 
     def unbatch_diag(
-        self, preserve_cache: bool = True
+        self,
     ) -> tuple[list[SparseTopology], Integer[t.LongTensor, " nnz"]]:
         if not isinstance(self.block_diag_config, BlockDiagConfig):
             raise ValueError("A valid 'block_diag_config' is required for disassembly.")
@@ -254,10 +258,7 @@ class SparseTopology:
             )
         ]
 
-        if not preserve_cache:
-            return sp_topo_list, block_perm_inv
-        else:
-            raise NotImplementedError()
+        return sp_topo_list, block_perm_inv
 
     def size(self, dim: int | None = None) -> int | t.Size:
         if dim is None:
@@ -334,7 +335,14 @@ class SparseTopology:
         # idx_coo respect all to() arguments, including dtype, device, non_blocking,
         # copy, and memory_format.
         new_idx_coo = self.idx_coo.to(*args, **kwargs)
-        new_sp_topo = SparseTopology(new_idx_coo, self.shape)
+
+        # block_diag_config repsect all to() arguments as well.
+        if self.block_diag_config is None:
+            new_block_diag_config = None
+        else:
+            new_block_diag_config = self.block_diag_config.to(*args, **kwargs)
+
+        new_sp_topo = SparseTopology(new_idx_coo, self.shape, new_block_diag_config)
 
         # Handle the cached index tensors. Extract the device and dtype arguments
         # from the new_idx_coo, and get the non_blocking and copy arguments from
