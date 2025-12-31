@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Sequence
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -16,17 +16,6 @@ class SparseOperator(BaseOperator):
     sp_topo: Integer[SparseTopology, "*b r c"]
     val: Float[t.Tensor, " nnz *d"]
 
-    # TODO: optimized intake paths for csc/csr formats
-    # TODO: allow additional kwargs, e.g., copy=True
-    @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
-        coalesced_tensor = tensor.to_sparse_coo().coalesce()
-
-        return cls(
-            sp_topo=SparseTopology(coalesced_tensor.indices(), coalesced_tensor.shape),
-            val=coalesced_tensor.values(),
-        )
-
     def __post_init__(self):
         if self.val.device != self.sp_topo.device:
             raise RuntimeError("'val' and 'sp_topo' must be on the same device.")
@@ -39,6 +28,148 @@ class SparseOperator(BaseOperator):
 
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
+
+    # TODO: allow additional kwargs, e.g., copy=True
+    @classmethod
+    def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
+        coalesced_tensor = tensor.to_sparse_coo().coalesce()
+
+        # If the input coo tensor has more than two dimensions (r, c), need to
+        # determine if the extra dimensions are batch or dense dimensions.
+        # SparseTopology does not need to see the dense dimensions.
+        n_dense_dim = coalesced_tensor.dense_dim()
+        if n_dense_dim > 0:
+            sp_topo_shape = coalesced_tensor.shape[:-n_dense_dim]
+        else:
+            sp_topo_shape = coalesced_tensor.shape
+
+        return cls(
+            sp_topo=SparseTopology(coalesced_tensor.indices(), sp_topo_shape),
+            val=coalesced_tensor.values(),
+        )
+
+    @classmethod
+    def pack_block_diag(
+        cls, blocks: Sequence[t.Tensor | BaseOperator]
+    ) -> SparseOperator:
+        """
+        Construct a block diagonal matrix as a `SparseOperator` from a list of tensor,
+        `SparseOperator`, and `DiagOperator` objects.
+        """
+        # Convert all input elements to SparseOperator.
+        sp_op_list: list[SparseOperator] = []
+        for block in blocks:
+            match block:
+                case t.Tensor():
+                    sp_op_list.append(SparseOperator.from_tensor(block))
+                case BaseOperator():
+                    sp_op_list.append(block.to_sparse_operator())
+                case _:
+                    raise TypeError()
+
+        # Pick a representative SparseOperator and use it to determine device and
+        # dtype information.
+        rep_sp_op = sp_op_list[0]
+        device = rep_sp_op.device
+        val_dtype = rep_sp_op.dtype
+
+        # Construct concatenated sparse topology.
+        sp_topo_list = [sp_op.sp_topo for sp_op in sp_op_list]
+        sp_topo_concat = SparseTopology.pack_block_diag(sp_topo_list)
+
+        # Construct concatenated values tensor.
+        val_list = [
+            sp_op.val.to(device=device, dtype=val_dtype) for sp_op in sp_op_list
+        ]
+
+        batch_perm = sp_topo_concat.block_diag_config.batch_perm
+
+        if rep_sp_op.n_dense_dim == 0:
+            val_concat = t.hstack(val_list)[batch_perm]
+        else:
+            val_concat = t.vstack(val_list)[batch_perm]
+
+        return SparseOperator(sp_topo_concat, val_concat)
+
+    def unpack_block_diag(self) -> list[SparseOperator]:
+        """
+        Deconstruct a block diagonal `SparseOperator` into a list of constituent
+        `SparseOperator`s.
+        """
+        # Reconstruct the constituent SparseTopology.
+        sp_topo_list, block_perm_inv = self.sp_topo.unpack_block_diag()
+
+        # Perform similar reconstruction on the values
+        val_concat = self.val[block_perm_inv]
+        val_list = t.split(val_concat, self.sp_topo.block_diag_config.nnzs, dim=0)
+
+        sp_op_list = [
+            SparseOperator(sp_topo, val) for sp_topo, val in zip(sp_topo_list, val_list)
+        ]
+
+        return sp_op_list
+
+    @classmethod
+    def bmat(cls, blocks: Sequence[Sequence[t.Tensor | BaseOperator | None]]):
+        """
+        Construct a block matrix as a `SparseOperator` from a 2D grid of existing
+        tensor, `SparseOperator`, or `DiagOperator`. `None` is allowed to represent
+        empty/zero blocks.
+        """
+        # Convert all input blocks except for None to SparseOperator, and produce
+        # two lists: one flattened list of sp_op.val (excluding None), and a nested
+        # list of sp_op.sp_topo (including None).
+        sp_topo_list = []
+        val_list = []
+        rep_sp_op = None
+        for block_row in blocks:
+            sp_topo_row = []
+            for block in block_row:
+                match block:
+                    case t.Tensor():
+                        sp_op = SparseOperator.from_tensor(block)
+                        sp_topo_row.append(sp_op.sp_topo)
+                        val_list.append(sp_op.val)
+
+                        # Pick a representative SparseOperator and use it to
+                        # determine device, dtype, and dense dimension information.
+                        if rep_sp_op is None:
+                            rep_sp_op = sp_op
+
+                    case BaseOperator():
+                        sp_op = block.to_sparse_operator()
+                        sp_topo_row.append(sp_op.sp_topo)
+                        val_list.append(sp_op.val)
+
+                        if rep_sp_op is None:
+                            rep_sp_op = sp_op
+
+                    case None:
+                        sp_topo_row.append(None)
+
+                    case _:
+                        raise TypeError()
+
+            sp_topo_list.append(sp_topo_row)
+
+        if rep_sp_op is None:
+            raise ValueError("At least one block in 'blocks' must be non-null value.")
+
+        device = rep_sp_op.device
+        val_dtype = rep_sp_op.dtype
+
+        # Construct concatenated SparseTopology.
+        sp_topo_concat, batch_perm = SparseTopology.bmat(sp_topo_list)
+
+        # Construct concatenated values tensor.
+        val_list_uniform = [val.to(device=device, dtype=val_dtype) for val in val_list]
+
+        if rep_sp_op.n_dense_dim == 0:
+            val_concat = t.hstack(val_list_uniform)[batch_perm]
+        else:
+            val_concat = t.vstack(val_list_uniform)[batch_perm]
+
+        return SparseOperator(sp_topo_concat, val_concat)
 
     def apply(self, fn: Callable, **kwargs) -> SparseOperator:
         """
@@ -231,6 +362,9 @@ class SparseOperator(BaseOperator):
 
     def to_dense(self) -> Float[t.Tensor, "*b r c *d"]:
         return self.to_sparse_coo().to_dense()
+
+    def to_sparse_operator(self) -> SparseOperator:
+        return self
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b r c *d"]:
         return t.sparse_coo_tensor(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
+from typing import Sequence
 
 import torch as t
 from jaxtyping import Integer
@@ -86,6 +87,18 @@ def check_topo_equality(
         raise ValueError(msg)
 
 
+# TODO: need a helper function to generate this from a simplicial batch
+@dataclass(frozen=True)
+class BlockDiagConfig:
+    batch_perm: Integer[t.LongTensor, " nnz"]
+    nnzs: list[int]
+    sp_topo_shapes: list[t.Size]
+
+    def to(self, *args, **kwargs) -> BlockDiagConfig:
+        new_batch_perm = self.batch_perm.to(*args, **kwargs)
+        return BlockDiagConfig(new_batch_perm, self.nnzs, self.sp_topo_shapes)
+
+
 @dataclass(frozen=True)
 class SparseTopology:
     """
@@ -95,6 +108,7 @@ class SparseTopology:
 
     _idx_coo: Integer[t.LongTensor, "sp nnz"]
     shape: t.tuple[int, ...] | t.Size
+    block_diag_config: BlockDiagConfig | None = None
 
     @property
     def idx_coo(self) -> Integer[t.LongTensor, "sp nnz"]:
@@ -126,6 +140,249 @@ class SparseTopology:
 
         # Coerse shape dtype.
         object.__setattr__(self, "shape", t.Size(self.shape))
+
+    @classmethod
+    def pack_block_diag(
+        cls, block_sp_topos: Sequence[SparseTopology]
+    ) -> SparseTopology:
+        """
+        Determine how to combine a list of `SparseTopology`s to form a block
+        diagonal operator.
+        """
+        # Pick a representative SparseTopology and use it to determine device,
+        # dtype, and batch/dense dimension information.
+        rep_sp_topo = block_sp_topos[0]
+
+        device = rep_sp_topo.device
+        idx_dtype = rep_sp_topo.dtype
+
+        # Determine the input SparseTopology sparse row/column shapes.
+        r_sizes_cum = t.tensor(
+            [0] + [sp_topo.size(-2) for sp_topo in block_sp_topos],
+            dtype=idx_dtype,
+            device=device,
+        ).cumsum(dim=0)
+
+        c_sizes_cum = t.tensor(
+            [0] + [sp_op.size(-1) for sp_op in block_sp_topos],
+            dtype=idx_dtype,
+            device=device,
+        ).cumsum(dim=0)
+
+        # Compute block offsets and apply to concatenated coo index.
+        nnzs = [sp_topo._nnz() for sp_topo in block_sp_topos]
+        nnz_concat = t.tensor(nnzs, dtype=idx_dtype, device=device)
+
+        r_offset = t.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
+        c_offset = t.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
+
+        idx_coo_concat = t.hstack(
+            [
+                sp_topo.idx_coo.to(device=device, dtype=idx_dtype)
+                for sp_topo in block_sp_topos
+            ]
+        )
+        idx_coo_concat[-2] += r_offset
+        idx_coo_concat[-1] += c_offset
+
+        # If there is a batch dimension, the coo index needs to be sorted first
+        # by batch item order; find the permutation for this sort. If there is no
+        # batch dim, this sort does nothing.
+        batch_perm = t.sort(idx_coo_concat[0], stable=True).indices
+
+        # Determine the concatenated SparseTopology shape.
+        if rep_sp_topo.n_batch_dim > 0:
+            sp_topo_shape_concat = t.Size(
+                [rep_sp_topo.size(0), r_sizes_cum[-1], c_sizes_cum[-1]]
+            )
+        else:
+            sp_topo_shape_concat = t.Size([r_sizes_cum[-1], c_sizes_cum[-1]])
+
+        # Record block diag construction information for disassembly
+        # block_ptr = t.repeat_interleave(t.arange(len(sp_ops)), nnz_concat)
+        sp_topo_shapes = [sp_topo.shape for sp_topo in block_sp_topos]
+        config = BlockDiagConfig(batch_perm, nnzs, sp_topo_shapes)
+
+        # Construct concatenated SparseTopology.
+        sp_topo_concat = SparseTopology(
+            idx_coo_concat[:, batch_perm],
+            shape=sp_topo_shape_concat,
+            block_diag_config=config,
+        )
+
+        return sp_topo_concat
+
+    def unpack_block_diag(
+        self,
+    ) -> tuple[list[SparseTopology], Integer[t.LongTensor, " nnz"]]:
+        """
+        Deconstruct a block diagonal `SparseTopology` into a list of constituent
+        `SparseTopology`s.
+        """
+        if not isinstance(self.block_diag_config, BlockDiagConfig):
+            raise ValueError("A valid 'block_diag_config' is required for disassembly.")
+
+        device = self.device
+        idx_dtype = self.dtype
+
+        block_perm_inv = t.argsort(self.block_diag_config.batch_perm)
+
+        # Undo the batch dim sort, so that the idx_coo is back in a per-block
+        # ordering. Fancy indexing guarantees copying.
+        idx_coo_concat = self.idx_coo[:, block_perm_inv]
+
+        # Undo the per-block, cumulative index offsets.
+        r_sizes_cum = t.tensor(
+            [0] + [shape[-2] for shape in self.block_diag_config.sp_topo_shapes],
+            dtype=idx_dtype,
+            device=device,
+        ).cumsum(dim=0)
+
+        c_sizes_cum = t.tensor(
+            [0] + [shape[-1] for shape in self.block_diag_config.sp_topo_shapes],
+            dtype=idx_dtype,
+            device=device,
+        ).cumsum(dim=0)
+
+        nnz_concat = t.tensor(
+            self.block_diag_config.nnzs, dtype=idx_dtype, device=device
+        )
+
+        r_offset = t.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
+        c_offset = t.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
+
+        idx_coo_concat[-2] -= r_offset
+        idx_coo_concat[-1] -= c_offset
+
+        # Split the concatenated idx_coo into constituent parts. Note that
+        # t.split() creates a view without copying; this is okay because the
+        # SparseTopology constructor enforces copying.
+        idx_coo_list = t.split(idx_coo_concat, self.block_diag_config.nnzs, dim=-1)
+
+        sp_topo_list = [
+            SparseTopology(idx_coo, shape)
+            for idx_coo, shape in zip(
+                idx_coo_list, self.block_diag_config.sp_topo_shapes, strict=True
+            )
+        ]
+
+        return sp_topo_list, block_perm_inv
+
+    # TODO: optimize to avoid multiple index tensor copies
+    @classmethod
+    def bmat(
+        cls, sp_topos: Sequence[Sequence[SparseTopology | None]]
+    ) -> tuple[SparseTopology, Integer[t.LongTensor, " nnz"]]:
+        """
+        Determine how to combine a 2D grid of `SparseTopology`s to construct a
+        block matrix operator. None is allowed to represent empty/zero blocks.
+        """
+        # Pick a representative SparseTopology and use it to determine device,
+        # dtype, and batch/dense dimension information.
+        rep_sp_topo = None
+        for sp_topo_row in sp_topos:
+            for sp_topo in sp_topo_row:
+                if sp_topo is not None:
+                    rep_sp_topo = sp_topo
+
+        if rep_sp_topo is None:
+            raise ValueError("At least one block in 'blocks' must be non-null value.")
+
+        device = rep_sp_topo.device
+        idx_dtype = rep_sp_topo.dtype
+
+        # Determine the input SparseTopology sparse row/column shapes. The row
+        # sizes and col sizes are each represented as a 2D tensor; None is assigned
+        # a shape of 0.
+        r_sizes = []
+        c_sizes = []
+        for sp_topo_row in sp_topos:
+            row_r_sizes = []
+            row_c_sizes = []
+
+            for sp_topo in sp_topo_row:
+                if sp_topo is None:
+                    row_r_sizes.append(0)
+                    row_c_sizes.append(0)
+                else:
+                    row_r_sizes.append(sp_topo.size(-2))
+                    row_c_sizes.append(sp_topo.size(-1))
+
+            r_sizes.append(row_r_sizes)
+            c_sizes.append(row_c_sizes)
+
+        r_sizes = t.tensor(r_sizes, dtype=idx_dtype, device=device)
+        c_sizes = t.tensor(c_sizes, dtype=idx_dtype, device=device)
+
+        # Sanity checks on the row/col shape tensors.
+        for sp_op_dims in [r_sizes, c_sizes]:
+            for block_dim in [0, 1]:
+                if not (sp_op_dims.sum(dim=block_dim) > 0).all():
+                    raise ValueError(
+                        "Rows/columns with all None or degenerate blocks are not allowed."
+                    )
+
+        r_max_size_per_row = r_sizes.max(dim=-1, keepdim=True).values
+        r_min_size_per_row = t.zeros_like(r_max_size_per_row)
+        if not (
+            (r_sizes == r_max_size_per_row) | (r_sizes == r_min_size_per_row)
+        ).all():
+            raise ValueError(
+                "The blocks in each row (except for None) must have the same number of rows."
+            )
+
+        c_max_size_per_col = c_sizes.max(dim=0, keepdim=True).values
+        c_min_size_per_col = t.zeros_like(c_max_size_per_col)
+        if not (
+            (c_sizes == c_max_size_per_col) | (c_sizes == c_min_size_per_col)
+        ).all():
+            raise ValueError(
+                "The blocks in each col (except for None) must have the same number of cols."
+            )
+
+        # Construct the concatenated coo index by iterating over the block coo indices.
+        idx_coo_list = []
+        r_offset = 0
+        c_offset = 0
+        for r_idx, sp_topo_row in enumerate(sp_topos):
+            for c_idx, sp_topo in enumerate(sp_topo_row):
+                if sp_topo is not None:
+                    idx_coo = (
+                        sp_topo.idx_coo.detach()
+                        .clone()
+                        .to(device=device, dtype=idx_dtype)
+                    )
+                    idx_coo[-2] += r_offset
+                    idx_coo[-1] += c_offset
+                    idx_coo_list.append(idx_coo)
+
+                # Use max() to account for the possible that a row starts in None
+                c_offset += c_sizes[:, c_idx].max().item()
+
+            # Use max() to account for the possibility that a row ends in None
+            r_offset += r_sizes[r_idx, :].max().item()
+            c_offset = 0
+
+        idx_coo_concat = t.hstack(idx_coo_list)
+
+        # If there is a batch dimension, the coo index needs to be sorted first
+        # by batch item order; find the permutation for this sort.
+        batch_perm = t.sort(idx_coo_concat[0], stable=True).indices
+
+        # Determine the concatenated SparseTopology shape.
+        n_row = r_sizes.max(dim=1).values.sum().item()
+        n_col = c_sizes.max(dim=0).values.sum().item()
+        if rep_sp_topo.n_batch_dim > 0:
+            sp_topo_shape_concat = t.Size([rep_sp_topo.size(0), n_row, n_col])
+        else:
+            sp_topo_shape_concat = t.Size([n_row, n_col])
+
+        # Construct concatenated coo index.
+        sp_topo_concat = SparseTopology(
+            idx_coo_concat[:, batch_perm], shape=sp_topo_shape_concat
+        )
+
+        return sp_topo_concat, batch_perm
 
     def size(self, dim: int | None = None) -> int | t.Size:
         if dim is None:
@@ -202,7 +459,14 @@ class SparseTopology:
         # idx_coo respect all to() arguments, including dtype, device, non_blocking,
         # copy, and memory_format.
         new_idx_coo = self.idx_coo.to(*args, **kwargs)
-        new_sp_topo = SparseTopology(new_idx_coo, self.shape)
+
+        # block_diag_config repsect all to() arguments as well.
+        if self.block_diag_config is None:
+            new_block_diag_config = None
+        else:
+            new_block_diag_config = self.block_diag_config.to(*args, **kwargs)
+
+        new_sp_topo = SparseTopology(new_idx_coo, self.shape, new_block_diag_config)
 
         # Handle the cached index tensors. Extract the device and dtype arguments
         # from the new_idx_coo, and get the non_blocking and copy arguments from
