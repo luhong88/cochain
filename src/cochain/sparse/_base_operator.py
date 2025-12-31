@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, Sequence
 
 import torch as t
 
@@ -143,6 +143,9 @@ class BaseOperator(ABC):
 
     @abstractmethod
     def to_dense(self) -> t.Tensor: ...
+
+    @abstractmethod
+    def to_sparse_operator(self) -> BaseOperator: ...
 
     @abstractmethod
     def to_sparse_coo(self) -> t.Tensor: ...

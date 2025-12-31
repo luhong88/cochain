@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Sequence
 
 import torch as t
-from jaxtyping import Float
+from jaxtyping import Float, Integer
 
 from ._base_operator import BaseOperator, is_scalar, validate_matmul_args
 from ._matmul import (
@@ -14,15 +14,12 @@ from ._matmul import (
     sp_diag_mm,
 )
 from ._sp_operator import SparseOperator
+from ._sp_topo import SparseTopology
 
 
 @dataclass
 class DiagOperator(BaseOperator):
     val: Float[t.Tensor, "*b diag"]
-
-    @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
-        return cls(tensor)
 
     def __post_init__(self):
         if self.val.layout != t.strided:
@@ -38,6 +35,10 @@ class DiagOperator(BaseOperator):
 
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
+
+    @classmethod
+    def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
+        return cls(tensor)
 
     def apply(self, fn: Callable, **kwargs) -> DiagOperator:
         new_val = fn(self.val, **kwargs)
@@ -190,7 +191,7 @@ class DiagOperator(BaseOperator):
         else:
             return t.diag_embed(self.val)
 
-    def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
+    def _get_idx_coo(self) -> Integer[t.Tensor, " sp nnz"]:
         if self.n_batch_dim == 0:
             idx_coo = t.tile(t.arange(self._nnz(), device=self.device), (2, 1))
 
@@ -204,6 +205,19 @@ class DiagOperator(BaseOperator):
                     t.tile(t.arange(d, device=self.device), (2, b)),
                 )
             )
+
+        return idx_coo
+
+    def to_sparse_operator(self) -> SparseOperator:
+        idx_coo = self._get_idx_coo()
+        sp_topo = SparseTopology(idx_coo, self.shape)
+
+        val = self.val.flatten()
+
+        return SparseOperator(sp_topo, val)
+
+    def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
+        idx_coo = self._get_idx_coo()
 
         return t.sparse_coo_tensor(
             idx_coo,

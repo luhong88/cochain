@@ -531,3 +531,140 @@ def test_trudiv(A, device):
         op_scaled = A_op / scalar
 
         t.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())
+
+
+def test_pack_block_diag(device):
+    a = t.randint(0, 3, (3, 3)).to_sparse_coo().to(dtype=t.float32, device=device)
+    b = SparseOperator.from_tensor(t.randint(0, 3, (2, 2))).to(
+        dtype=t.float32, device=device
+    )
+    c = DiagOperator.from_tensor(t.randint(0, 3, (4,))).to(
+        dtype=t.float32, device=device
+    )
+
+    true_block_diag = t.block_diag(a.to_dense(), b.to_dense(), c.to_dense())
+    block_diag = SparseOperator.pack_block_diag((a, b, c))
+
+    t.testing.assert_close(block_diag.to_dense(), true_block_diag)
+
+    sp_ops = block_diag.unpack_block_diag()
+
+    for sp_op, ori_op in zip(sp_ops, [a, b, c]):
+        t.testing.assert_close(sp_op.to_dense(), ori_op.to_dense())
+
+
+def test_pack_block_diag_with_batch_dim(A_batched, device):
+    block_diag = SparseOperator.pack_block_diag((A_batched, -A_batched)).to(device)
+
+    A_batched_dense = A_batched.to_dense().to(device)
+
+    block_diag_true = t.stack(
+        (
+            t.block_diag(A_batched_dense[0], -A_batched_dense[0]),
+            t.block_diag(A_batched_dense[1], -A_batched_dense[1]),
+        )
+    )
+
+    t.testing.assert_close(block_diag.to_dense(), block_diag_true)
+
+    sp_ops = block_diag.unpack_block_diag()
+
+    t.testing.assert_close(sp_ops[0].to_dense(), A_batched_dense)
+    t.testing.assert_close(sp_ops[1].to_dense(), -A_batched_dense)
+
+
+def test_pack_block_diag_with_dense_dim(device):
+    a = SparseOperator.from_tensor(
+        t.sparse_coo_tensor(
+            indices=t.randint(0, 4, (2, 5)), values=t.randn(5, 2), size=(4, 4, 2)
+        ).coalesce()
+    ).to(device)
+
+    b = SparseOperator.from_tensor(
+        t.sparse_coo_tensor(
+            indices=t.randint(0, 3, (2, 3)), values=t.randn(3, 2), size=(3, 3, 2)
+        ).coalesce()
+    ).to(device)
+
+    block_diag = SparseOperator.pack_block_diag((a, b))
+
+    block_diag_true = t.stack(
+        (
+            t.block_diag(a.to_dense()[:, :, 0], b.to_dense()[:, :, 0]),
+            t.block_diag(a.to_dense()[:, :, 1], b.to_dense()[:, :, 1]),
+        ),
+        dim=-1,
+    )
+
+    t.testing.assert_close(block_diag.to_dense(), block_diag_true)
+
+
+def test_bmat(device):
+    a = t.randn(2, 3).to(device)
+    b = t.randn(2, 4).to(device)
+    c = t.randn(4, 3).to(device)
+    d = t.zeros(4, 4).to(device)
+
+    bmat = SparseOperator.bmat([[a, b], [c, None]])
+    bmat_true = t.cat((t.cat((a, b), dim=-1), t.cat((c, d), dim=-1)), dim=0)
+
+    t.testing.assert_close(bmat.to_dense(), bmat_true)
+
+
+def test_bmat_with_batch_dim(device):
+    a = t.randn(2, 2, 3).to(device)
+    b = t.randn(2, 2, 4).to(device)
+    c = t.randn(2, 4, 3).to(device)
+    d = t.zeros(2, 4, 4).to(device)
+
+    bmat = SparseOperator.bmat([[a, b], [c, None]])
+    bmat_true = t.stack(
+        (
+            t.cat((t.cat((a[0], b[0]), dim=-1), t.cat((c[0], d[0]), dim=-1)), dim=0),
+            t.cat((t.cat((a[1], b[1]), dim=-1), t.cat((c[1], d[1]), dim=-1)), dim=0),
+        )
+    )
+
+    t.testing.assert_close(bmat.to_dense(), bmat_true)
+
+
+def test_bmat_with_dense_dim(device):
+    a = SparseOperator.from_tensor(
+        t.sparse_coo_tensor(
+            indices=t.randint(0, 4, (2, 5)), values=t.randn(5, 2), size=(4, 4, 2)
+        ).coalesce()
+    ).to(device)
+
+    b = SparseOperator.from_tensor(
+        t.sparse_coo_tensor(
+            indices=t.randint(0, 3, (2, 3)), values=t.randn(3, 2), size=(3, 3, 2)
+        ).coalesce()
+    ).to(device)
+
+    bmat = SparseOperator.bmat([[a, None], [None, b]])
+
+    bmat_true = t.stack(
+        (
+            t.block_diag(a.to_dense()[:, :, 0], b.to_dense()[:, :, 0]),
+            t.block_diag(a.to_dense()[:, :, 1], b.to_dense()[:, :, 1]),
+        ),
+        dim=-1,
+    )
+
+    t.testing.assert_close(bmat.to_dense(), bmat_true)
+
+
+def test_bmat_with_invalid_row_col(A, device):
+    a = A.to(device)
+
+    with pytest.raises(ValueError):
+        SparseOperator.bmat([[a, None], [a, None]])
+
+    with pytest.raises(ValueError):
+        SparseOperator.bmat([[None, a], [None, a]])
+
+    with pytest.raises(ValueError):
+        SparseOperator.bmat([[None, None], [None, None]])
+
+    with pytest.raises(TypeError):
+        SparseOperator.bmat([a, 3], [None, a])
