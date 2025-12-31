@@ -87,6 +87,7 @@ def check_topo_equality(
         raise ValueError(msg)
 
 
+# TODO: need a helper function to generate this from a simplicial batch
 @dataclass(frozen=True)
 class BlockDiagConfig:
     batch_perm: Integer[t.LongTensor, " nnz"]
@@ -141,9 +142,12 @@ class SparseTopology:
         object.__setattr__(self, "shape", t.Size(self.shape))
 
     @classmethod
-    def batch_diag(cls, block_sp_topos: Sequence[SparseTopology]) -> SparseTopology:
+    def pack_block_diag(
+        cls, block_sp_topos: Sequence[SparseTopology]
+    ) -> SparseTopology:
         """
-        Construct a block diagonal matrix using a list of `SparseTopology`.
+        Determine how to combine a list of `SparseTopology`s to form a block
+        diagonal operator.
         """
         # Pick a representative SparseTopology and use it to determine device,
         # dtype, and batch/dense dimension information.
@@ -197,7 +201,7 @@ class SparseTopology:
         # Record block diag construction information for disassembly
         # block_ptr = t.repeat_interleave(t.arange(len(sp_ops)), nnz_concat)
         sp_topo_shapes = [sp_topo.shape for sp_topo in block_sp_topos]
-        config = BlockDiagConfig(batch_perm, nnz_concat, sp_topo_shapes)
+        config = BlockDiagConfig(batch_perm, nnzs, sp_topo_shapes)
 
         # Construct concatenated SparseTopology.
         sp_topo_concat = SparseTopology(
@@ -208,7 +212,7 @@ class SparseTopology:
 
         return sp_topo_concat
 
-    def unbatch_diag(
+    def unpack_block_diag(
         self,
     ) -> tuple[list[SparseTopology], Integer[t.LongTensor, " nnz"]]:
         """
@@ -270,8 +274,8 @@ class SparseTopology:
         cls, sp_topos: Sequence[Sequence[SparseTopology | None]]
     ) -> tuple[SparseTopology, Integer[t.LongTensor, " nnz"]]:
         """
-        Construct a block matrix as a `SparseTopology` from a 2D grid of existing
-        `SparseTopology`s. None is allowed to represent empty/zero blocks.
+        Determine how to combine a 2D grid of `SparseTopology`s to construct a
+        block matrix operator. None is allowed to represent empty/zero blocks.
         """
         # Pick a representative SparseTopology and use it to determine device,
         # dtype, and batch/dense dimension information.

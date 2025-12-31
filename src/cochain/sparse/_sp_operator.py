@@ -16,18 +16,42 @@ class SparseOperator(BaseOperator):
     sp_topo: Integer[SparseTopology, "*b r c"]
     val: Float[t.Tensor, " nnz *d"]
 
+    def __post_init__(self):
+        if self.val.device != self.sp_topo.device:
+            raise RuntimeError("'val' and 'sp_topo' must be on the same device.")
+
+        if self.val.size(0) != self.sp_topo._nnz():
+            raise ValueError("nnz mismatch between 'val' and 'sp_topo'.")
+
+        if not t.isfinite(self.val).all():
+            raise ValueError("SparseOperator values contain NaN or Inf.")
+
+        # Enforce contiguous memory layout.
+        self.val = self.val.contiguous()
+
     # TODO: allow additional kwargs, e.g., copy=True
     @classmethod
     def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
         coalesced_tensor = tensor.to_sparse_coo().coalesce()
 
+        # If the input coo tensor has more than two dimensions (r, c), need to
+        # determine if the extra dimensions are batch or dense dimensions.
+        # SparseTopology does not need to see the dense dimensions.
+        n_dense_dim = coalesced_tensor.dense_dim()
+        if n_dense_dim > 0:
+            sp_topo_shape = coalesced_tensor.shape[:-n_dense_dim]
+        else:
+            sp_topo_shape = coalesced_tensor.shape
+
         return cls(
-            sp_topo=SparseTopology(coalesced_tensor.indices(), coalesced_tensor.shape),
+            sp_topo=SparseTopology(coalesced_tensor.indices(), sp_topo_shape),
             val=coalesced_tensor.values(),
         )
 
     @classmethod
-    def batch_diag(cls, blocks: Sequence[t.Tensor | BaseOperator]) -> SparseOperator:
+    def pack_block_diag(
+        cls, blocks: Sequence[t.Tensor | BaseOperator]
+    ) -> SparseOperator:
         """
         Construct a block diagonal matrix as a `SparseOperator` from a list of tensor,
         `SparseOperator`, and `DiagOperator` objects.
@@ -51,7 +75,7 @@ class SparseOperator(BaseOperator):
 
         # Construct concatenated sparse topology.
         sp_topo_list = [sp_op.sp_topo for sp_op in sp_op_list]
-        sp_topo_concat = SparseTopology.batch_diag(sp_topo_list)
+        sp_topo_concat = SparseTopology.pack_block_diag(sp_topo_list)
 
         # Construct concatenated values tensor.
         val_list = [
@@ -67,16 +91,16 @@ class SparseOperator(BaseOperator):
 
         return SparseOperator(sp_topo_concat, val_concat)
 
-    def unbatch_diag(self) -> list[SparseOperator]:
+    def unpack_block_diag(self) -> list[SparseOperator]:
         """
         Deconstruct a block diagonal `SparseOperator` into a list of constituent
         `SparseOperator`s.
         """
         # Reconstruct the constituent SparseTopology.
-        sp_topo_list, block_perm_inv = self.sp_topo.unbatch_diag()
+        sp_topo_list, block_perm_inv = self.sp_topo.unpack_block_diag()
 
         # Perform similar reconstruction on the values
-        val_concat = self.val[:, block_perm_inv]
+        val_concat = self.val[block_perm_inv]
         val_list = t.split(val_concat, self.sp_topo.block_diag_config.nnzs, dim=0)
 
         sp_op_list = [
@@ -86,7 +110,7 @@ class SparseOperator(BaseOperator):
         return sp_op_list
 
     @classmethod
-    def to_block(cls, blocks: Sequence[Sequence[t.Tensor | BaseOperator | None]]):
+    def bmat(cls, blocks: Sequence[Sequence[t.Tensor | BaseOperator | None]]):
         """
         Construct a block matrix as a `SparseOperator` from a 2D grid of existing
         tensor, `SparseOperator`, or `DiagOperator`. `None` is allowed to represent
@@ -142,19 +166,6 @@ class SparseOperator(BaseOperator):
             val_concat = t.vstack(val_list_uniform)[batch_perm]
 
         return SparseOperator(sp_topo_concat, val_concat)
-
-    def __post_init__(self):
-        if self.val.device != self.sp_topo.device:
-            raise RuntimeError("'val' and 'sp_topo' must be on the same device.")
-
-        if self.val.size(0) != self.sp_topo._nnz():
-            raise ValueError("nnz mismatch between 'val' and 'sp_topo'.")
-
-        if not t.isfinite(self.val).all():
-            raise ValueError("SparseOperator values contain NaN or Inf.")
-
-        # Enforce contiguous memory layout.
-        self.val = self.val.contiguous()
 
     def apply(self, fn: Callable, **kwargs) -> SparseOperator:
         """

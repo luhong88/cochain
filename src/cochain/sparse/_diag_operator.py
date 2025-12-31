@@ -21,10 +21,6 @@ from ._sp_topo import SparseTopology
 class DiagOperator(BaseOperator):
     val: Float[t.Tensor, "*b diag"]
 
-    @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
-        return cls(tensor)
-
     def __post_init__(self):
         if self.val.layout != t.strided:
             raise TypeError(
@@ -39,6 +35,10 @@ class DiagOperator(BaseOperator):
 
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
+
+    @classmethod
+    def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
+        return cls(tensor)
 
     def apply(self, fn: Callable, **kwargs) -> DiagOperator:
         new_val = fn(self.val, **kwargs)
