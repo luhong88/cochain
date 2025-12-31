@@ -270,7 +270,7 @@ class SparseTopology:
 
     # TODO: optimize to avoid multiple index tensor copies
     @classmethod
-    def to_block(
+    def bmat(
         cls, sp_topos: Sequence[Sequence[SparseTopology | None]]
     ) -> tuple[SparseTopology, Integer[t.LongTensor, " nnz"]]:
         """
@@ -317,7 +317,7 @@ class SparseTopology:
         # Sanity checks on the row/col shape tensors.
         for sp_op_dims in [r_sizes, c_sizes]:
             for block_dim in [0, 1]:
-                if not (sp_op_dims.sum(dim=block_dim) > 0).any():
+                if not (sp_op_dims.sum(dim=block_dim) > 0).all():
                     raise ValueError(
                         "Rows/columns with all None or degenerate blocks are not allowed."
                     )
@@ -356,9 +356,11 @@ class SparseTopology:
                     idx_coo[-1] += c_offset
                     idx_coo_list.append(idx_coo)
 
-                c_offset += c_sizes[r_idx, c_idx]
+                # Use max() to account for the possible that a row starts in None
+                c_offset += c_sizes[:, c_idx].max().item()
 
-            r_offset += r_sizes[r_idx, c_idx]
+            # Use max() to account for the possibility that a row ends in None
+            r_offset += r_sizes[r_idx, :].max().item()
             c_offset = 0
 
         idx_coo_concat = t.hstack(idx_coo_list)
@@ -368,8 +370,8 @@ class SparseTopology:
         batch_perm = t.sort(idx_coo_concat[0], stable=True).indices
 
         # Determine the concatenated SparseTopology shape.
-        n_row = r_sizes.sum(dim=0).max().item()
-        n_col = c_sizes.sum(dim=-1).max().item()
+        n_row = r_sizes.max(dim=1).values.sum().item()
+        n_col = c_sizes.max(dim=0).values.sum().item()
         if rep_sp_topo.n_batch_dim > 0:
             sp_topo_shape_concat = t.Size([rep_sp_topo.size(0), n_row, n_col])
         else:

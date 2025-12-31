@@ -128,23 +128,27 @@ class SparseOperator(BaseOperator):
                 match block:
                     case t.Tensor():
                         sp_op = SparseOperator.from_tensor(block)
+                        sp_topo_row.append(sp_op.sp_topo)
+                        val_list.append(sp_op.val)
+
+                        # Pick a representative SparseOperator and use it to
+                        # determine device, dtype, and dense dimension information.
+                        if rep_sp_op is None:
+                            rep_sp_op = sp_op
+
                     case BaseOperator():
                         sp_op = block.to_sparse_operator()
+                        sp_topo_row.append(sp_op.sp_topo)
+                        val_list.append(sp_op.val)
+
+                        if rep_sp_op is None:
+                            rep_sp_op = sp_op
+
                     case None:
                         sp_topo_row.append(None)
+
                     case _:
                         raise TypeError()
-
-                if sp_op is None:
-                    sp_topo_row.append(None)
-                else:
-                    sp_topo_row.append(sp_op.sp_topo)
-                    val_list.append(sp_op.val)
-
-                    # Pick a representative SparseOperator and use it to determine
-                    # device, dtype, and dense dimension information.
-                    if rep_sp_op is None:
-                        rep_sp_op = sp_op
 
             sp_topo_list.append(sp_topo_row)
 
@@ -155,7 +159,7 @@ class SparseOperator(BaseOperator):
         val_dtype = rep_sp_op.dtype
 
         # Construct concatenated SparseTopology.
-        sp_topo_concat, batch_perm = SparseTopology.to_block()
+        sp_topo_concat, batch_perm = SparseTopology.bmat(sp_topo_list)
 
         # Construct concatenated values tensor.
         val_list_uniform = [val.to(device=device, dtype=val_dtype) for val in val_list]
