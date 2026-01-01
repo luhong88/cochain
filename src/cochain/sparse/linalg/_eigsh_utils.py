@@ -118,3 +118,78 @@ def compute_dLdM_val(
         dLdM_val = dLdM_eig_vals + dLdM_eig_vecs
 
     return dLdM_val
+
+
+def dLdA_backward(
+    ctx, dLdl: Float[t.Tensor, " k"], dLdv: Float[t.Tensor, "c k"] | None
+):
+    """
+    A function that encapsulates the shared backward() gradient logic for eigenvalue
+    problems.
+    """
+    # The eigenvectors need to be length-normalized for the following calculation.
+    eig_vals, eig_vecs = ctx.saved_tensors
+    A_sp_topo: SparseTopology = ctx.A_sp_topo
+
+    # This error should never be triggered if the user-facing wrapper does
+    # its job.
+    if eig_vecs is None:
+        raise ValueError("Eigenvectors are required for backward().")
+
+    if dLdv is None:
+        eig_vec_grad_proj = None
+        lorentz = None
+    else:
+        eig_vec_grad_proj = compute_eig_vec_grad_proj(eig_vecs, dLdv)
+        lorentz = compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
+
+    dLdA_val = compute_dLdA_val(
+        A_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
+    )
+
+    return dLdA_val
+
+
+def dLdA_dLdM_backward(
+    ctx,
+    dLdl: Float[t.Tensor, " k"],
+    dLdv: Float[t.Tensor, "c k"] | None,
+    needs_grad_A_val: bool,
+    needs_grad_M_val: bool,
+):
+    """
+    A function encapsulates the shared backward() gradient logic for generalized
+    eigenvalue problems.
+    """
+    dLdA_val = None
+    dLdM_val = None
+
+    # The eigenvectors need to be orthonormal wrt M for the following calculation.
+    eig_vals, eig_vecs = ctx.saved_tensors
+    A_sp_topo: SparseTopology = ctx.A_sp_topo
+    M_sp_topo: SparseTopology = ctx.M_sp_topo
+
+    if needs_grad_A_val or needs_grad_M_val:
+        # This error should never be triggered if the user-facing wrapper does
+        # its job.
+        if eig_vecs is None:
+            raise ValueError("Eigenvectors are required for backward().")
+
+        if dLdv is None:
+            eig_vec_grad_proj = None
+            lorentz = None
+        else:
+            eig_vec_grad_proj = compute_eig_vec_grad_proj(eig_vecs, dLdv)
+            lorentz = compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
+
+    if needs_grad_A_val:
+        dLdA_val = compute_dLdA_val(
+            A_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
+        )
+
+    if needs_grad_M_val:
+        dLdM_val = compute_dLdM_val(
+            M_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
+        )
+
+    return dLdA_val, dLdM_val

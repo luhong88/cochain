@@ -7,11 +7,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ..operators import SparseOperator, SparseTopology
-from ._eigsh_utils import (
-    compute_dLdA_val,
-    compute_eig_vec_grad_proj,
-    compute_lorentz_matrix,
-)
+from ._eigsh_utils import dLdA_backward
 
 try:
     import cupy as cp
@@ -125,29 +121,7 @@ class _CuPyEigshWrapperStandard(t.autograd.Function):
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
 
-        dLdA_val = None
-
-        if needs_grad_A_val:
-            # The eigenvectors need to be length-normalized for the following
-            # calculation; cupy eigsh() by default returns orthonormal eigenvectors.
-            eig_vals, eig_vecs = ctx.saved_tensors
-            A_sp_topo: SparseTopology = ctx.A_sp_topo
-
-            # This error should never be triggered if the user-facing wrapper does
-            # its job.
-            if eig_vecs is None:
-                raise ValueError("Eigenvectors are required for backward().")
-
-            if dLdv is None:
-                eig_vec_grad_proj = None
-                lorentz = None
-            else:
-                eig_vec_grad_proj = compute_eig_vec_grad_proj(eig_vecs, dLdv)
-                lorentz = compute_lorentz_matrix(eig_vals, ctx.k, ctx.eps)
-
-            dLdA_val = compute_dLdA_val(
-                A_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, lorentz
-            )
+        dLdA_val = dLdA_backward(ctx, dLdl, dLdv) if needs_grad_A_val else None
 
         return dLdA_val, None, None, None, None, None, None
 
