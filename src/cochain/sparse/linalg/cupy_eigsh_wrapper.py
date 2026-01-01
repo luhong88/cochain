@@ -21,8 +21,6 @@ except ImportError:
 try:
     import nvmath.sparse.advanced as nvmath_sp
 
-    from .nvmath_wrapper import DirectSolverConfig
-
     _HAS_NVMATH = True
 
 except ImportError:
@@ -205,6 +203,8 @@ def scipy_eigsh(
     """
     if not (_HAS_CUPY and _HAS_NVMATH):
         raise ImportError("cupy and nvmath-python backends required.")
+
+    from .nvmath_wrapper import DirectSolverConfig
 
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors

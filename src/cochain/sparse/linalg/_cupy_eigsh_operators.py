@@ -106,3 +106,4 @@ class CuPyShiftInvSymOp(cp_sp_linalg.LinearOperator):
         if hasattr(self, "solver"):
             if hasattr(self.solver, "free"):
                 self.solver.free()
+                self.solver = None
