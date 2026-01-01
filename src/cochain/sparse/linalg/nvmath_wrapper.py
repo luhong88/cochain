@@ -14,6 +14,7 @@ try:
     from cuda.core.experimental import Device
 
     _HAS_NVMATH = True
+
 except ImportError:
     _HAS_NVMATH = False
 
