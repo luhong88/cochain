@@ -22,6 +22,10 @@ def _sp_op_to_cp_csr(sp_op: SparseOperator) -> cp_sp.csr_matrix:
 
 
 class _CuPySymOp:
+    """
+    A helper class for configuring nvmath DirectSolver and manage its gc.
+    """
+
     def __init__(
         self,
         a: cp_sp.csr_matrix,
@@ -35,6 +39,9 @@ class _CuPySymOp:
 
         b_dummy = cp.zeros(a.size(0), dtype=a.dtype, device=a.device)
 
+        # Do not give DirectSolver constructor the current stream to prevent
+        # possible stream mismatch in subsequent solver calls; instead, pass the
+        # torch/cupy stream to individual methods to ensure sync.
         self.solver = nvmath_sp.DirectSolver(
             a, b_dummy, options=config.options, execution=config.execution
         )

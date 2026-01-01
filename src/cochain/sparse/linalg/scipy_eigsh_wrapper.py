@@ -31,6 +31,36 @@ class SciPyEigshConfig:
             self.v0 = self.v0.detach().contiguous().cpu().numpy()
 
 
+def _sp_op_comps_to_scipy_csr(
+    val: Float[t.Tensor, " nnz"],
+    sp_topo: Integer[SparseTopology, "r c"],
+) -> Float[scipy.sparse.csr_array, "r c"]:
+    sp_op_scipy = scipy.sparse.csr_array(
+        (
+            val.detach().contiguous().cpu().numpy(),
+            sp_topo.idx_col_int32.detach().contiguous().cpu().numpy(),
+            sp_topo.idx_crow_int32.detach().contiguous().cpu().numpy(),
+        ),
+        shape=sp_topo.shape,
+    )
+    return sp_op_scipy
+
+
+def _sp_op_comps_to_scipy_csc(
+    val: Float[t.Tensor, " nnz"],
+    sp_topo: Integer[SparseTopology, "r c"],
+) -> Float[scipy.sparse.csc_array, "r c"]:
+    sp_op_scipy = scipy.sparse.csc_array(
+        (
+            val[sp_topo.coo_to_csc_perm].detach().contiguous().cpu().numpy(),
+            sp_topo.idx_row_csc_int32.detach().contiguous().cpu().numpy(),
+            sp_topo.idx_ccol_int32.detach().contiguous().cpu().numpy(),
+        ),
+        shape=sp_topo.shape,
+    )
+    return sp_op_scipy
+
+
 class _SciPyEigshWrapperStandard(t.autograd.Function):
     @staticmethod
     def forward(
@@ -44,30 +74,12 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = scipy.sparse.csr_array(
-                (
-                    A_val.detach().contiguous().cpu().numpy(),
-                    A_sp_topo.idx_col_int32.detach().contiguous().cpu().numpy(),
-                    A_sp_topo.idx_crow_int32.detach().contiguous().cpu().numpy(),
-                ),
-                shape=A_sp_topo.shape,
-            )
+            A_scipy = _sp_op_comps_to_scipy_csr(A_val, A_sp_topo)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = scipy.sparse.csc_array(
-                (
-                    A_val[A_sp_topo.coo_to_csc_perm]
-                    .detach()
-                    .contiguous()
-                    .cpu()
-                    .numpy(),
-                    A_sp_topo.idx_row_csc_int32.detach().contiguous().cpu().numpy(),
-                    A_sp_topo.idx_ccol_int32.detach().contiguous().cpu().numpy(),
-                ),
-                shape=A_sp_topo.shape,
-            )
+            A_scipy = _sp_op_comps_to_scipy_csc(A_val, A_sp_topo)
 
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
@@ -156,40 +168,15 @@ class _SciPyEigshWrapperGeneralized(t.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = scipy.sparse.csr_array(
-                (
-                    A_val.detach().contiguous().cpu().numpy(),
-                    A_sp_topo.idx_col_int32.detach().contiguous().cpu().numpy(),
-                    A_sp_topo.idx_crow_int32.detach().contiguous().cpu().numpy(),
-                ),
-                shape=A_sp_topo.shape,
-            )
+            A_scipy = _sp_op_comps_to_scipy_csr(A_val, A_sp_topo)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = scipy.sparse.csc_array(
-                (
-                    A_val[A_sp_topo.coo_to_csc_perm]
-                    .detach()
-                    .contiguous()
-                    .cpu()
-                    .numpy(),
-                    A_sp_topo.idx_row_csc_int32.detach().contiguous().cpu().numpy(),
-                    A_sp_topo.idx_ccol_int32.detach().contiguous().cpu().numpy(),
-                ),
-                shape=A_sp_topo.shape,
-            )
+            A_scipy = _sp_op_comps_to_scipy_csc(A_val, A_sp_topo)
 
         # M should always be in CSC format for LU factorization.
-        M_scipy = scipy.sparse.csc_array(
-            (
-                M_val[M_sp_topo.coo_to_csc_perm].detach().contiguous().cpu().numpy(),
-                M_sp_topo.idx_row_csc_int32.detach().contiguous().cpu().numpy(),
-                M_sp_topo.idx_ccol_int32.detach().contiguous().cpu().numpy(),
-            ),
-            shape=M_sp_topo.shape,
-        )
+        M_scipy = _sp_op_comps_to_scipy_csc(M_val, M_sp_topo)
 
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
