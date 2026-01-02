@@ -1,13 +1,13 @@
 import cupy as cp
 import cupyx.scipy.sparse as cp_sp
 import cupyx.scipy.sparse.linalg as cp_sp_linalg
-import nvmath.sparse.advanced as nvmath_sp
 import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float, Integer
 
 from ...operators import SparseTopology
-from ..solvers.nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
+from ..solvers.nvmath_wrapper import DirectSolverConfig
+from ._inv_operator import BaseInvSymSpOp
 
 
 def sp_op_comps_to_cp_csr(
@@ -24,7 +24,7 @@ def sp_op_comps_to_cp_csr(
     )
 
 
-class CuPyShiftInvSymOp(cp_sp_linalg.LinearOperator):
+class CuPyShiftInvSymOp(BaseInvSymSpOp, cp_sp_linalg.LinearOperator):
     """
     A CuPy LinearOperator object used to solve an eigenvalue problem in the
     shift inverse mode.
@@ -51,34 +51,8 @@ class CuPyShiftInvSymOp(cp_sp_linalg.LinearOperator):
 
             b_dummy = cp.zeros(A_cp.size(0), dtype=A_cp.dtype, device=A_cp.device)
 
-        # Prepare nvmath DirectSolver.
-        config.options.sparse_system_type = sp_literal_to_matrix_type["symmetric"]
-
-        # Do not give DirectSolver constructor the current stream to prevent
-        # possible stream mismatch in subsequent solver calls; instead, pass the
-        # torch/cupy stream to individual methods to ensure sync.
-        self.solver = nvmath_sp.DirectSolver(
-            A_shift_inv_cp, b_dummy, options=config.options, execution=config.execution
-        )
-
-        # force blocking operation to make it memory-safe to potentially call
-        # free() immediately after solve().
-        self.solver.options.blocking = True
-
-        # Amortize planning and factorization costs upfront in __init__()
-        for k, v in config.plan_kwargs.items():
-            setattr(self.solver.plan_config, k, v)
-        self.solver.plan(stream=t_stream)
-
-        for k, v in config.factorization_kwargs.items():
-            setattr(self.solver.factorization_config, k, v)
-        self.solver.factorize(stream=t_stream)
-
-        for k, v in config.solution_kwargs.items():
-            setattr(self.solver.solution_config, k, v)
-
-        # Call LinearOperator constructor.
-        super().__init__(dtype=A_cp.dtype, shape=A_cp.shape)
+        BaseInvSymSpOp.__init__(self, a=A_shift_inv_cp, b=b_dummy, config=config)
+        cp_sp_linalg.LinearOperator.__init__(self, dtype=A_cp.dtype, shape=A_cp.shape)
 
     def _matvec(self, x: Float[cp.ndarray, " c"]):
         """
@@ -100,10 +74,3 @@ class CuPyShiftInvSymOp(cp_sp_linalg.LinearOperator):
     def _adjoint(self):
         # The adjoint operator is self since self is symmetric.
         return self
-
-    def __del__(self):
-        # DirectSolver needs an explicit free() step to free up memory/resources.
-        if hasattr(self, "solver"):
-            if hasattr(self.solver, "free"):
-                self.solver.free()
-                self.solver = None

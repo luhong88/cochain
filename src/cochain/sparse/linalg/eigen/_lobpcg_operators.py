@@ -1,10 +1,10 @@
-import nvmath.sparse.advanced as nvmath_sp
 import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float
 
 from ...operators import SparseOperator
-from ..solvers.nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
+from ..solvers.nvmath_wrapper import DirectSolverConfig
+from ._inv_operator import BaseInvSymSpOp
 
 
 def _batched_csr_eye(
@@ -28,53 +28,7 @@ def _batched_csr_eye(
     return identity
 
 
-class _BaseSymSpOp:
-    def __init__(
-        self,
-        a: Float[t.Tensor, " m m"],
-        b: Float[t.Tensor, "m n"],
-        config: DirectSolverConfig,
-    ):
-        self.dtype = a.dtype
-        self.shape = a.shape
-
-        stream = t.cuda.current_stream()
-
-        # Prepare nvmath DirectSolver.
-        config.options.sparse_system_type = sp_literal_to_matrix_type["symmetric"]
-
-        # Do not give DirectSolver constructor the current stream to prevent
-        # possible stream mismatch in subsequent solver calls; instead, pass the
-        # torch/cupy stream to individual methods to ensure sync.
-        self.solver = nvmath_sp.DirectSolver(
-            a, b, options=config.options, execution=config.execution
-        )
-
-        # force blocking operation to make it memory-safe to potentially call
-        # free() immediately after solve().
-        self.solver.options.blocking = True
-
-        # Amortize planning and factorization costs upfront in __init__()
-        for k, v in config.plan_kwargs.items():
-            setattr(self.solver.plan_config, k, v)
-        self.solver.plan(stream=stream)
-
-        for k, v in config.factorization_kwargs.items():
-            setattr(self.solver.factorization_config, k, v)
-        self.solver.factorize(stream=stream)
-
-        for k, v in config.solution_kwargs.items():
-            setattr(self.solver.solution_config, k, v)
-
-    def __del__(self):
-        # DirectSolver needs an explicit free() step to free up memory/resources.
-        if hasattr(self, "solver"):
-            if hasattr(self.solver, "free"):
-                self.solver.free()
-                self.solver = None
-
-
-class SpPrecond(_BaseSymSpOp):
+class SpPrecond(BaseInvSymSpOp):
     """
     Exact preconditioner for solving a standard or generalized eigenvalue problem
     with LOBPCG.
@@ -117,7 +71,6 @@ class SpPrecond(_BaseSymSpOp):
 
     def __matmul__(self, res: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
         stream = t.cuda.current_stream()
-        t.cuda.set_device(res.device)
         Device(res.device.index).set_current()
 
         res_col_major = res.transpose(-1, -2).contiguous().transpose(-1, -2)
@@ -135,7 +88,7 @@ class IdentityPrecond:
         return res
 
 
-class ShiftInvSymSpOp(_BaseSymSpOp):
+class ShiftInvSymSpOp(BaseInvSymSpOp):
     """
     A linear operator used to solve an eigenvalue problem in the shift-invert mode.
 
@@ -179,7 +132,7 @@ class ShiftInvSymSpOp(_BaseSymSpOp):
         return b
 
 
-class ShiftInvSymGEPSpOp(_BaseSymSpOp):
+class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
     """
     A linear operator used to solve a generalized eigenvalue problem in the
     shift-invert mode.

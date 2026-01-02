@@ -175,7 +175,7 @@ def lobpcg(
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backends required.")
 
-    from .nvmath_wrapper import DirectSolverConfig
+    from ..solvers.nvmath_wrapper import DirectSolverConfig
 
     if lobpcg_config is None:
         lobpcg_config = LOBPCGConfig()
