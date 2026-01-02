@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 class LOBPCGConfig:
     sigma: float | int | None = None
     v0: Float[t.Tensor, "m n"] | Sequence[Float[t.Tensor, "m c"] | None] | None = None
-    diag_damp: float | int | None
+    diag_damp: float | int | None = None
     largest: bool = False
     tol: float | None = None
     maxiter: int | None = 1000
@@ -116,16 +116,18 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
 def _lobpcg_no_batch(
     A: Float[SparseOperator, "m m"],
     M: Float[SparseOperator, "m m"] | None,
+    k: int,
+    eps: float | int,
     lobpcg_config: LOBPCGConfig,
-    kwargs: dict[str, Any],
+    nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val, A.sp_topo, None, None, lobpcg_config=lobpcg_config, **kwargs
+            A.val, A.sp_topo, None, None, k, eps, lobpcg_config, nvmath_config
         )
     else:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val, A.sp_topo, M.val, M.sp_topo, lobpcg_config=lobpcg_config, **kwargs
+            A.val, A.sp_topo, M.val, M.sp_topo, k, eps, lobpcg_config, nvmath_config
         )
 
     return eig_vals, eig_vecs
@@ -134,8 +136,10 @@ def _lobpcg_no_batch(
 def _lobpcg_batch(
     A_batched: Float[SparseOperator, "m m"],
     M_batched: Float[SparseOperator, "m m"] | None,
+    k: int,
+    eps: float | int,
     lobpcg_config_batched: LOBPCGConfig,
-    kwargs: dict[str, Any],
+    nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
     A_list = A_batched.unpack_block_diag()
     if M_batched is None:
@@ -148,7 +152,7 @@ def _lobpcg_batch(
     eig_val_list = []
     eig_vec_list = []
     for A, M, lobpcg_config in zip(A_list, M_list, lobpcg_config_list, strict=True):
-        eig_val, eig_vec = _lobpcg_no_batch(A, M, lobpcg_config, kwargs)
+        eig_val, eig_vec = _lobpcg_no_batch(A, M, k, eps, lobpcg_config, nvmath_config)
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
 
@@ -226,15 +230,13 @@ def lobpcg(
 
     processed_lobpcg_config = replace(lobpcg_config, v0=v0, tol=tol)
 
-    kwargs = {
-        "k": k,
-        "eps": eps,
-        "nvmath_config": nvmath_config,
-    }
-
     if block_diag_batch:
-        eig_vals, eig_vecs = _lobpcg_batch(A, M, processed_lobpcg_config, kwargs)
+        eig_vals, eig_vecs = _lobpcg_batch(
+            A, M, k, eps, processed_lobpcg_config, nvmath_config
+        )
     else:
-        eig_vals, eig_vecs = _lobpcg_no_batch(A, M, processed_lobpcg_config, kwargs)
+        eig_vals, eig_vecs = _lobpcg_no_batch(
+            A, M, k, eps, processed_lobpcg_config, nvmath_config
+        )
 
     return eig_vals, eig_vecs

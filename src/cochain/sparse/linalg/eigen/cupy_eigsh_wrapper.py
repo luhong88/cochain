@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
-from typing import TYPE_CHECKING, Any, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -153,11 +154,14 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
 
 def _cupy_eigsh_no_batch(
     A: Float[SparseOperator, "r c"],
+    k: int,
+    eps: float | int,
+    compute_eig_vecs: bool,
     cp_config: CuPyEigshConfig,
-    kwargs: dict[str, Any],
+    nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
-        A.val, A.sp_topo, cp_config=cp_config, **kwargs
+        A.val, A.sp_topo, k, eps, compute_eig_vecs, cp_config, nvmath_config
     )
 
     return eig_vals, eig_vecs
@@ -165,8 +169,11 @@ def _cupy_eigsh_no_batch(
 
 def _cupy_eigsh_batch(
     A_batched: Float[SparseOperator, "r c"],
+    k: int,
+    eps: float | int,
+    compute_eig_vecs: bool,
     cp_config_batched: CuPyEigshConfig,
-    kwargs: dict[str, Any],
+    nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[t.Tensor, "b k"], Float[t.Tensor, "c k"]]:
     A_list = A_batched.unpack_block_diag()
 
@@ -175,7 +182,9 @@ def _cupy_eigsh_batch(
     eig_val_list = []
     eig_vec_list = []
     for A, cp_config in zip(A_list, cp_config_list):
-        eig_val, eig_vec = _cupy_eigsh_no_batch(A, cp_config, kwargs)
+        eig_val, eig_vec = _cupy_eigsh_no_batch(
+            A, k, eps, compute_eig_vecs, cp_config, nvmath_config
+        )
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
 
@@ -257,17 +266,14 @@ def cupy_eigsh(
     if nvmath_config is None:
         nvmath_config = DirectSolverConfig()
 
-    kwargs = {
-        "k": k,
-        "eps": eps,
-        "compute_eig_vecs": compute_eig_vecs,
-        "nvmath_config": nvmath_config,
-    }
-
     if block_diag_batch:
-        eig_vals, eig_vecs = _cupy_eigsh_batch(A, cp_config, kwargs)
+        eig_vals, eig_vecs = _cupy_eigsh_batch(
+            A, k, eps, compute_eig_vecs, cp_config, nvmath_config
+        )
     else:
-        eig_vals, eig_vecs = _cupy_eigsh_no_batch(A, cp_config, kwargs)
+        eig_vals, eig_vecs = _cupy_eigsh_no_batch(
+            A, k, eps, compute_eig_vecs, cp_config, nvmath_config
+        )
 
     if return_eigenvectors:
         return eig_vals, eig_vecs

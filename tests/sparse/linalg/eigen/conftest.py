@@ -46,3 +46,38 @@ def rand_sp_sym_matrix(
         mat = givens @ mat @ givens.T
 
     return mat.coalesce()
+
+
+def rand_sym_gep_matrices(
+    lambdas: Float[t.Tensor, " n"], rho: float
+) -> tuple[Float[t.Tensor, "n n"], Float[t.Tensor, "n n"]]:
+    n = lambdas.size(0)
+
+    # Construct the diagonal eigenvalue matrix.
+    diag = t.sparse_coo_tensor(
+        indices=t.tile(t.arange(n), (2, 1)), values=lambdas, size=(n, n)
+    ).coalesce()
+
+    # Construct the stencil matrix.
+    nnz = int(n * rho)
+
+    idx_off_diag = t.randint(0, n, (2, nnz))
+    idx_diag = t.tile(t.arange(n), (2, 1))
+    idx = t.hstack((idx_off_diag, idx_diag))
+
+    val = t.hstack((t.randn(nnz), n * t.ones(n)))
+
+    stencil = t.sparse_coo_tensor(idx, val, (n, n)).coalesce()
+
+    # Construct A, B, such that they satisfy the GEP with the given eigenvalues.
+    b = stencil.T @ stencil
+    a = stencil.T @ diag @ stencil
+
+    return a, b
+
+
+@pytest.fixture
+def rand_sp_spd_5x5() -> Float[t.Tensor, "5 5"]:
+    lambdas = t.tensor([0.5, 3.2, 20.0, 35.2])
+    mat = rand_sp_sym_matrix(lambdas, 4)
+    return mat

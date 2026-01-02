@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 import numpy as np
 import scipy.sparse
@@ -238,16 +239,18 @@ class _SciPyEigshGEPAutogradFunction(t.autograd.Function):
 def _scipy_eigsh_no_batch(
     A: Float[SparseOperator, "r c"],
     M: Float[SparseOperator, "r c"] | None,
+    k: int,
+    eps: float | int,
+    compute_eig_vecs: bool,
     config: SciPyEigshConfig,
-    kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _SciPyEigshStandardAutogradFunction.apply(
-            A.val, A.sp_topo, config=config, **kwargs
+            A.val, A.sp_topo, k, eps, compute_eig_vecs, config
         )
     else:
         eig_vals, eig_vecs = _SciPyEigshGEPAutogradFunction.apply(
-            A.val, A.sp_topo, M.val, M.sp_topo, config=config, **kwargs
+            A.val, A.sp_topo, M.val, M.sp_topo, k, eps, compute_eig_vecs, config
         )
 
     return eig_vals, eig_vecs
@@ -256,8 +259,10 @@ def _scipy_eigsh_no_batch(
 def _scipy_eigsh_batch(
     A_batched: Float[SparseOperator, "r c"],
     M_batched: Float[SparseOperator, "r c"] | None,
+    k: int,
+    eps: float | int,
+    compute_eig_vecs: bool,
     config_batched: SciPyEigshConfig,
-    kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, "b k"], Float[t.Tensor, "c k"]]:
     # Unpack the A, M (if not None), and v0 (if not None) for looping
     A_list = A_batched.unpack_block_diag()
@@ -271,7 +276,7 @@ def _scipy_eigsh_batch(
     eig_val_list = []
     eig_vec_list = []
     for A, M, config in zip(A_list, M_list, config_list, strict=True):
-        eig_val, eig_vec = _scipy_eigsh_no_batch(A, M, config, kwargs)
+        eig_val, eig_vec = _scipy_eigsh_no_batch(A, M, k, eps, compute_eig_vecs, config)
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
 
@@ -343,16 +348,12 @@ def scipy_eigsh(
     if config is None:
         config = SciPyEigshConfig()
 
-    kwargs = {
-        "k": k,
-        "eps": eps,
-        "compute_eig_vecs": compute_eig_vecs,
-    }
-
     if block_diag_batch:
-        eig_vals, eig_vecs = _scipy_eigsh_batch(A, M, config, kwargs)
+        eig_vals, eig_vecs = _scipy_eigsh_batch(A, M, k, eps, compute_eig_vecs, config)
     else:
-        eig_vals, eig_vecs = _scipy_eigsh_no_batch(A, M, config, kwargs)
+        eig_vals, eig_vecs = _scipy_eigsh_no_batch(
+            A, M, k, eps, compute_eig_vecs, config
+        )
 
     if return_eigenvectors:
         return eig_vals, eig_vecs

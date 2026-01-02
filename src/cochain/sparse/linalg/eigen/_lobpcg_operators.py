@@ -172,6 +172,3 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
         b = self.solver.solve(stream=stream)
 
         return b
-
-
-type SparseOperatorLike = SparseOperator | ShiftInvSymSpOp | ShiftInvSymGEPSpOp

@@ -9,8 +9,13 @@ from ._lobpcg_operators import (
     IdentityPrecond,
     ShiftInvSymGEPSpOp,
     ShiftInvSymSpOp,
-    SparseOperatorLike,
     SpPrecond,
+)
+
+type SparseOperatorLike = (
+    Float[SparseOperator, "m m"]
+    | Float[ShiftInvSymSpOp, "m m"]
+    | Float[ShiftInvSymGEPSpOp, "m m"]
 )
 
 
@@ -56,7 +61,7 @@ def _enforce_M_orthonormality(
 
 def _lobpcg_one_iter(
     iter_: int,
-    A_op: Float[SparseOperatorLike, "m m"],
+    A_op: SparseOperatorLike,
     M_op: Float[SparseOperator, "m m"] | None,
     R: Float[t.Tensor, "m n"],
     X_current: Float[t.Tensor, "m n"],
@@ -111,8 +116,8 @@ def _lobpcg_one_iter(
     n = X_current.size(-1)
     if largest:
         # if largest=True, sort eigenvalues in descending order
-        X_next = t.flip(X_next_all[-n:], dim=-1)
-        Lambda_next = t.flip(Lambda_next_all[-n:])
+        X_next = t.flip(X_next_all[-n:], dims=(-1,))
+        Lambda_next = t.flip(Lambda_next_all[-n:], dims=(0,))
     else:
         # if largest=False, keep eigenvalues in ascending order
         X_next = X_next_all[:n]
@@ -122,7 +127,7 @@ def _lobpcg_one_iter(
 
 
 def _lobpcg_loop(
-    A_op: Float[SparseOperatorLike, "m m"],
+    A_op: SparseOperatorLike,
     M_op: Float[SparseOperator, "m m"] | None,
     X_0: Float[t.Tensor, "m n"],
     precond: SpPrecond | IdentityPrecond,
@@ -157,7 +162,7 @@ def _lobpcg_loop(
 
 
 def lobpcg_forward(
-    A_op: Float[SparseOperatorLike, "m m"],
+    A_op: SparseOperatorLike,
     M_op: Float[SparseOperator, "m m"] | None,
     sigma: float | int | None,
     v0: Float[t.Tensor, "m n"],
