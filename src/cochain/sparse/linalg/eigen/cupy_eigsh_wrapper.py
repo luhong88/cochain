@@ -7,7 +7,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...operators import SparseOperator, SparseTopology
-from ._eigsh_utils import dLdA_backward
+from ._backward import dLdA_backward
 
 try:
     import cupy as cp
