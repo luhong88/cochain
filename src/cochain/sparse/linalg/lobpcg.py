@@ -151,37 +151,26 @@ def lobpcg(
     generator: t.Generator | None = None,
 ) -> tuple[Float[t.Tensor, "*b k"], Float[t.Tensor, "m k"]]:
     """
-    This function provides a differentiable wrapper for the CPU-based
-    `scipy.sparse.linalg.eigsh()` method.
+    A custom implementation of LOBPCG.
 
-    The API for `eigsh()` is almost reproduced one-to-one, with the following
-    exceptions:
+    Note that this function requires `nvmath-python` for its sparse linear solver
+    utilities.
 
-    * The arguments `sigma`, `which`, `v0`, `ncv`, `maxiter`, `tol`, and `mode`
-      are collected in a `ScipyEigshConfig` dataclass object, whilc the rest of
-      the arguments are exposed as direct arguments to this function.
-    * The `A` and `M` matrices must be `SparseOperator` objects and will be
-      converted to SciPy CSR/CSC arrays and copied to CPU. The `v0` argument
-      can be a torch tensor, but will be converted to a numpy array and copied
-      to CPU. The use of SciPy `LinearOperator` objects for `A` and `M` is not
-      supported.
-    * The `Minv` and `OPinv` arguments are not supported.
-    * The `eps` argument is used for Lorentzian broadening/regularization in the
-      gradient calculation to prevent gradient explosion when the eigenvalues are
-      (near) degenerate.
+    This function implements a version of LOBPCG that's roughly equivalent to
+    `torch.lobpcg(method='ortho')`, but with the following key differences:
 
-    Note on performance:
-
-    * If either `A` or `M` requires gradient tracking, eigenvectors will be
-      computed; in this case, if `return_eigenvectors=False`, the computed
-      eigenvectors are not returned.
-    * The `eigsh()` function does not natively support batching. if
-      `block_diag_batch` is True, the `A` `SparseOperator` (and `M` if not `None`)
-      will be split into individual sparse matrices and solved sequentially. The
-      resulting eigenvalue tensor will contain a leading batch dimension, but the
-      resulting eigenvector tensor will respect the original concatenated/packed
-      format. This requires that `A` (and `M` if not `None`) has a valid
-      `BlockDiagConfig` for unpacking the block diagonal batch structure.
+    * This implementation is differentiable with respect to the `SparseOperator`s
+      `A` and `M`. The `eps` argument is used for Lorentzian broadening/regularization
+      in the gradient calculation to prevent gradient explosion when the eigenvalues
+      are (near) degenerate.
+    * This implementation supports shift-invert mode for both standard and
+      generalized eigenvalue problems.
+    * This implementation employs a damped exact solver for preconditioning. The
+      diagonal damping is controlled by the `diag_damp` argument in `LOBPCGConfig`.
+    * This implementation does not support explicit batch dimensions in `A` or `M`.
+      If `block_diag_batch=True`, `A` and `M` will be split into individual sparse
+      matrices and solved sequentially. This requires that `A` (and `M` if not `None`)
+      has a valid `BlockDiagConfig` for unpacking the block diagonal batch structure.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backends required.")
