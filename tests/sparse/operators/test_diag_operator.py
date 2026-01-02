@@ -1,9 +1,7 @@
 import pytest
 import torch as t
 
-from cochain.sparse._diag_operator import DiagOperator
-from cochain.sparse._sp_operator import SparseOperator
-from cochain.sparse._sp_topo import SparseTopology
+from cochain.sparse.operators import DiagOperator, SparseOperator, SparseTopology
 
 
 @pytest.fixture

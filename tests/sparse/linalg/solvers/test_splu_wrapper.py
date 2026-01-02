@@ -1,7 +1,7 @@
 import pytest
 import torch as t
 
-from cochain.sparse.linalg import splu
+from cochain.sparse.linalg.solvers import splu
 from cochain.sparse.operators import SparseOperator
 
 itemize_backend = pytest.mark.parametrize(

@@ -1,6 +1,6 @@
 import torch as t
 
-from cochain.sparse._sp_operator import SparseOperator
+from cochain.sparse.operators import SparseOperator
 
 
 def test_sp_dense_mm_backward(A, device):

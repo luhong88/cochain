@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..operators import SparseOperator, SparseTopology
+from ...operators import SparseOperator, SparseTopology
 from ._eigsh_utils import dLdA_backward
 
 try:

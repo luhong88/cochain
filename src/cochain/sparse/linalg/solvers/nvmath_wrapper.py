@@ -7,7 +7,7 @@ import torch as t
 from jaxtyping import Float, Integer
 from torch.autograd.function import once_differentiable
 
-from ..operators import SparseOperator, SparseTopology
+from ...operators import SparseOperator, SparseTopology
 
 try:
     import nvmath.sparse.advanced as nvmath_sp

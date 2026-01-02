@@ -3,7 +3,8 @@ import functools
 import torch as t
 from jaxtyping import Float
 
-from ..operators import SparseOperator
+from ...operators import SparseOperator
+from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._lobpcg_operators import (
     IdentityPrecond,
     ShiftInvSymGEPSpOp,
@@ -11,7 +12,6 @@ from ._lobpcg_operators import (
     SparseOperatorLike,
     SpPrecond,
 )
-from .nvmath_wrapper import DirectSolverConfig
 
 
 def _enforce_M_orthonormality(

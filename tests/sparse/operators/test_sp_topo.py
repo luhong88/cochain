@@ -3,7 +3,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 import torch as t
 
-from cochain.sparse._sp_topo import SparseTopology
+from cochain.sparse.operators import SparseTopology
 
 
 @pytest.fixture

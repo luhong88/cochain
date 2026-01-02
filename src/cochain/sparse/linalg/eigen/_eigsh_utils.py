@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..operators import SparseTopology
+from ...operators import SparseTopology
 
 
 def compute_eig_vec_grad_proj(
@@ -26,10 +26,10 @@ def compute_lorentz_matrix(
         lorentz = eig_val_diffs / (eig_val_diffs.pow(2) + eps)
 
     else:
-        lorentz_diag = 1.0 / (
-            t.eye(k, dtype=eig_vals.dtype, device=eig_vals.device) + eig_val_diffs
+        lorentz = 1.0 / (
+            float("inf") * t.eye(k, dtype=eig_vals.dtype, device=eig_vals.device)
+            + eig_val_diffs
         )
-        lorentz = lorentz_diag - t.eye(k, dtype=eig_vals.dtype, device=eig_vals.device)
 
     return lorentz
 

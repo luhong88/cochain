@@ -6,8 +6,8 @@ import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float, Integer
 
-from ..operators import SparseTopology
-from .nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
+from ...operators import SparseTopology
+from ..solvers.nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
 
 
 def sp_op_comps_to_cp_csr(

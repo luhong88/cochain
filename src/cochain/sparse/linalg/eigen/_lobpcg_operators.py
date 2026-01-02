@@ -3,8 +3,8 @@ import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float
 
-from ..operators import SparseOperator
-from .nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
+from ...operators import SparseOperator
+from ..solvers.nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
 
 
 def _batched_csr_eye(

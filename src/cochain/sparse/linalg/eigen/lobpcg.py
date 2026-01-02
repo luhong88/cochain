@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..operators import SparseOperator, SparseTopology
+from ...operators import SparseOperator, SparseTopology
 from ._eigsh_utils import dLdA_backward, dLdA_dLdM_backward
 from ._lobpcg_routines import lobpcg_forward
 
@@ -19,7 +19,7 @@ except ImportError:
     _HAS_NVMATH = False
 
 if TYPE_CHECKING:
-    from .nvmath_wrapper import DirectSolverConfig
+    from ..solvers.nvmath_wrapper import DirectSolverConfig
 
 
 @dataclass

@@ -7,7 +7,7 @@ import scipy.sparse.linalg
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..operators import SparseOperator, SparseTopology
+from ...operators import SparseOperator, SparseTopology
 from ._eigsh_utils import dLdA_backward, dLdA_dLdM_backward
 
 
