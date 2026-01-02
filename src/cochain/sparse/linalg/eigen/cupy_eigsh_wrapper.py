@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from dataclasses import asdict, dataclass, replace
+from typing import TYPE_CHECKING, Any, Literal, Sequence
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -38,14 +38,41 @@ if _HAS_CUPY:
     class CuPyEigshConfig:
         sigma: float | None = None
         which: Literal["LM", "LA", "SA"] = "LM"
-        v0: Float[t.Tensor | cp.ndarray, " c"] | None = None
+        v0: (
+            Float[t.Tensor | cp.ndarray, " c"]
+            | Sequence[Float[t.Tensor | cp.ndarray, " c"] | None]
+            | None
+        ) = None
         ncv: int | None = None
         maxiter: int | None = None
         tol: float | int = 0
 
         def __post_init__(self):
-            if isinstance(self.v0, t.Tensor):
-                self.v0 = cp.from_dlpack(self.v0.detach().contiguous())
+            match self.v0:
+                case t.Tensor():
+                    self.v0 = cp.from_dlpack(self.v0.detach().contiguous())
+                case Sequence():
+                    v0_list = []
+                    for v0 in self.v0:
+                        match v0:
+                            case t.Tensor():
+                                v0_list.append(
+                                    cp.from_dlpack(self.v0.detach().contiguous())
+                                )
+                            case _:
+                                v0_list.append(v0)
+                    self.v0 = v0_list
+
+        def expand(self, n: int) -> list[CuPyEigshConfig]:
+            config_list = []
+            if isinstance(self.v0, list):
+                config_list.append(replace(self, v0=v0) for v0 in self.v0)
+                if len(config_list) != n:
+                    raise ValueError("Inconsistent v0 specification.")
+            else:
+                config_list = [self] * n
+
+            return config_list
 
 
 class _CuPyEigshAutogradFunction(t.autograd.Function):
@@ -126,24 +153,38 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
 
 def _cupy_eigsh_no_batch(
     A: Float[SparseOperator, "r c"],
+    cp_config: CuPyEigshConfig,
     kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
-    eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(A.val, A.sp_topo, **kwargs)
+    eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
+        A.val, A.sp_topo, cp_config=cp_config, **kwargs
+    )
 
     return eig_vals, eig_vecs
 
 
 def _cupy_eigsh_batch(
     A_batched: Float[SparseOperator, "r c"],
+    cp_config_batched: CuPyEigshConfig,
     kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, "b k"], Float[t.Tensor, "c k"]]:
     A_list = A_batched.unpack_block_diag()
 
-    for A in A_list:
-        eig_val_list, eig_vec_list = _cupy_eigsh_no_batch(A, kwargs)
+    cp_config_list = cp_config_batched.expand(n=len(A_list))
+
+    eig_val_list = []
+    eig_vec_list = []
+    for A, cp_config in zip(A_list, cp_config_list):
+        eig_val, eig_vec = _cupy_eigsh_no_batch(A, cp_config, kwargs)
+        eig_val_list.append(eig_val)
+        eig_vec_list.append(eig_vec)
 
     eig_vals = t.vstack(eig_val_list)
-    eig_vecs = t.vstack(eig_vec_list)
+
+    if eig_vec_list[0] is None:
+        eig_vecs = None
+    else:
+        eig_vecs = t.vstack(eig_vec_list)
 
     return eig_vals, eig_vecs
 
@@ -204,7 +245,7 @@ def cupy_eigsh(
     if not (_HAS_CUPY and _HAS_NVMATH):
         raise ImportError("cupy and nvmath-python backends required.")
 
-    from .nvmath_wrapper import DirectSolverConfig
+    from ..solvers.nvmath_wrapper import DirectSolverConfig
 
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors
@@ -220,14 +261,13 @@ def cupy_eigsh(
         "k": k,
         "eps": eps,
         "compute_eig_vecs": compute_eig_vecs,
-        "cp_config": cp_config,
         "nvmath_config": nvmath_config,
     }
 
     if block_diag_batch:
-        eig_vals, eig_vecs = _cupy_eigsh_batch(A, kwargs)
+        eig_vals, eig_vecs = _cupy_eigsh_batch(A, cp_config, kwargs)
     else:
-        eig_vals, eig_vecs = _cupy_eigsh_no_batch(A, kwargs)
+        eig_vals, eig_vecs = _cupy_eigsh_no_batch(A, cp_config, kwargs)
 
     if return_eigenvectors:
         return eig_vals, eig_vecs

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -25,11 +25,22 @@ if TYPE_CHECKING:
 @dataclass
 class LOBPCGConfig:
     sigma: float | int | None = None
-    v0: Float[t.Tensor, "m n"] | None = None
+    v0: Float[t.Tensor, "m n"] | Sequence[Float[t.Tensor, "m c"] | None] | None = None
     diag_damp: float | int | None
     largest: bool = False
     tol: float | None = None
     maxiter: int | None = 1000
+
+    def expand(self, n: int) -> list[LOBPCGConfig]:
+        config_list = []
+        if isinstance(self.v0, Sequence):
+            config_list.append(replace(self, v0=v0) for v0 in self.v0)
+            if len(config_list) != n:
+                raise ValueError("Inconsistent v0 specification.")
+        else:
+            config_list = [self] * n
+
+        return config_list
 
 
 class _LOBPCGAutogradFunction(t.autograd.Function):
@@ -105,15 +116,16 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
 def _lobpcg_no_batch(
     A: Float[SparseOperator, "m m"],
     M: Float[SparseOperator, "m m"] | None,
+    lobpcg_config: LOBPCGConfig,
     kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val, A.sp_topo, None, None, **kwargs
+            A.val, A.sp_topo, None, None, lobpcg_config=lobpcg_config, **kwargs
         )
     else:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val, A.sp_topo, M.val, M.sp_topo, **kwargs
+            A.val, A.sp_topo, M.val, M.sp_topo, lobpcg_config=lobpcg_config, **kwargs
         )
 
     return eig_vals, eig_vecs
@@ -122,6 +134,7 @@ def _lobpcg_no_batch(
 def _lobpcg_batch(
     A_batched: Float[SparseOperator, "m m"],
     M_batched: Float[SparseOperator, "m m"] | None,
+    lobpcg_config_batched: LOBPCGConfig,
     kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
     A_list = A_batched.unpack_block_diag()
@@ -130,11 +143,21 @@ def _lobpcg_batch(
     else:
         M_list = M_batched.unpack_block_diag()
 
-    for A, M in zip(A_list, M_list, strict=True):
-        eig_val_list, eig_vec_list = _lobpcg_no_batch(A, M, kwargs)
+    lobpcg_config_list = lobpcg_config_batched.expand(n=len(A_list))
+
+    eig_val_list = []
+    eig_vec_list = []
+    for A, M, lobpcg_config in zip(A_list, M_list, lobpcg_config_list, strict=True):
+        eig_val, eig_vec = _lobpcg_no_batch(A, M, lobpcg_config, kwargs)
+        eig_val_list.append(eig_val)
+        eig_vec_list.append(eig_vec)
 
     eig_vals = t.vstack(eig_val_list)
-    eig_vecs = t.vstack(eig_vec_list)
+
+    if eig_vec_list[0] is None:
+        eig_vecs = None
+    else:
+        eig_vecs = t.vstack(eig_vec_list)
 
     return eig_vals, eig_vecs
 
@@ -183,7 +206,6 @@ def lobpcg(
         nvmath_config = DirectSolverConfig()
 
     # Process raw LOBPCG config.
-
     if lobpcg_config.v0 is None:
         if n is None:
             n = k
@@ -207,13 +229,12 @@ def lobpcg(
     kwargs = {
         "k": k,
         "eps": eps,
-        "lobpcg_config": processed_lobpcg_config,
         "nvmath_config": nvmath_config,
     }
 
     if block_diag_batch:
-        eig_vals, eig_vecs = _lobpcg_batch(A, M, kwargs)
+        eig_vals, eig_vecs = _lobpcg_batch(A, M, processed_lobpcg_config, kwargs)
     else:
-        eig_vals, eig_vecs = _lobpcg_no_batch(A, M, kwargs)
+        eig_vals, eig_vecs = _lobpcg_no_batch(A, M, processed_lobpcg_config, kwargs)
 
     return eig_vals, eig_vecs

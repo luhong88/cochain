@@ -1,5 +1,7 @@
-from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, replace
+from typing import Any, Literal, Sequence
 
 import numpy as np
 import scipy.sparse
@@ -15,15 +17,40 @@ from ._backward import dLdA_backward, dLdA_dLdM_backward
 class SciPyEigshConfig:
     sigma: float | None = None
     which: Literal["LM", "SM", "LA", "SA", "BE"] = "LM"
-    v0: Float[t.Tensor | np.typing.NDArray, " c"] | None = None
+    v0: (
+        Float[t.Tensor | np.typing.NDArray, " c"]
+        | Sequence[Float[t.Tensor | np.typing.NDArray, " c"] | None]
+        | None
+    ) = None
     ncv: int | None = None
     maxiter: int | None = None
     tol: float | int = 0
     mode: Literal["normal", "buckling", "cayley"] = "normal"
 
     def __post_init__(self):
-        if isinstance(self.v0, t.Tensor):
-            self.v0 = self.v0.detach().contiguous().cpu().numpy()
+        match self.v0:
+            case t.Tensor():
+                self.v0 = self.v0.detach().contiguous().cpu().numpy()
+            case Sequence():
+                v0_list = []
+                for v0 in self.v0:
+                    match v0:
+                        case t.Tensor():
+                            v0_list.append(v0.detach().contiguous().cpu().numpy())
+                        case _:
+                            v0_list.append(v0)
+                self.v0 = v0_list
+
+    def expand(self, n: int) -> list[SciPyEigshConfig]:
+        config_list = []
+        if isinstance(self.v0, list):
+            config_list.append(replace(self, v0=v0) for v0 in self.v0)
+            if len(config_list) != n:
+                raise ValueError("Inconsistent v0 specification.")
+        else:
+            config_list = [self] * n
+
+        return config_list
 
 
 def _sp_op_comps_to_scipy_csr(
@@ -211,15 +238,16 @@ class _SciPyEigshGEPAutogradFunction(t.autograd.Function):
 def _scipy_eigsh_no_batch(
     A: Float[SparseOperator, "r c"],
     M: Float[SparseOperator, "r c"] | None,
+    config: SciPyEigshConfig,
     kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _SciPyEigshStandardAutogradFunction.apply(
-            A.val, A.sp_topo, **kwargs
+            A.val, A.sp_topo, config=config, **kwargs
         )
     else:
         eig_vals, eig_vecs = _SciPyEigshGEPAutogradFunction.apply(
-            A.val, A.sp_topo, M.val, M.sp_topo, **kwargs
+            A.val, A.sp_topo, M.val, M.sp_topo, config=config, **kwargs
         )
 
     return eig_vals, eig_vecs
@@ -228,19 +256,31 @@ def _scipy_eigsh_no_batch(
 def _scipy_eigsh_batch(
     A_batched: Float[SparseOperator, "r c"],
     M_batched: Float[SparseOperator, "r c"] | None,
+    config_batched: SciPyEigshConfig,
     kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, "b k"], Float[t.Tensor, "c k"]]:
+    # Unpack the A, M (if not None), and v0 (if not None) for looping
     A_list = A_batched.unpack_block_diag()
     if M_batched is None:
         M_list = [None] * len(A_list)
     else:
         M_list = M_batched.unpack_block_diag()
 
-    for A, M in zip(A_list, M_list, strict=True):
-        eig_val_list, eig_vec_list = _scipy_eigsh_no_batch(A, M, kwargs)
+    config_list = config_batched.expand(n=len(A_list))
+
+    eig_val_list = []
+    eig_vec_list = []
+    for A, M, config in zip(A_list, M_list, config_list, strict=True):
+        eig_val, eig_vec = _scipy_eigsh_no_batch(A, M, config, kwargs)
+        eig_val_list.append(eig_val)
+        eig_vec_list.append(eig_vec)
 
     eig_vals = t.vstack(eig_val_list)
-    eig_vecs = t.vstack(eig_vec_list)
+
+    if eig_vec_list[0] is None:
+        eig_vecs = None
+    else:
+        eig_vecs = t.vstack(eig_vec_list)
 
     return eig_vals, eig_vecs
 
@@ -286,6 +326,12 @@ def scipy_eigsh(
       resulting eigenvector tensor will respect the original concatenated/packed
       format. This requires that `A` (and `M` if not `None`) has a valid
       `BlockDiagConfig` for unpacking the block diagonal batch structure.
+
+    Note on shift-invert mode: for finding the lowest non-zero eigenvalues of a
+    positive semi-definite matrix, one can either use `which='SM'` or `which='LM'`
+    with a `sigma` close to zero. While the latter approach typically lead to
+    faster convergence, it has higher memory requirement due to the need to factorize
+    the matrix.
     """
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors
@@ -301,13 +347,12 @@ def scipy_eigsh(
         "k": k,
         "eps": eps,
         "compute_eig_vecs": compute_eig_vecs,
-        "config": config,
     }
 
     if block_diag_batch:
-        eig_vals, eig_vecs = _scipy_eigsh_batch(A, M, kwargs)
+        eig_vals, eig_vecs = _scipy_eigsh_batch(A, M, config, kwargs)
     else:
-        eig_vals, eig_vecs = _scipy_eigsh_no_batch(A, M, kwargs)
+        eig_vals, eig_vecs = _scipy_eigsh_no_batch(A, M, config, kwargs)
 
     if return_eigenvectors:
         return eig_vals, eig_vecs
