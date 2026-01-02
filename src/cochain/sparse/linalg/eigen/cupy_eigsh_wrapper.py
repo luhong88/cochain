@@ -148,7 +148,7 @@ def _cupy_eigsh_batch(
     return eig_vals, eig_vecs
 
 
-def scipy_eigsh(
+def cupy_eigsh(
     A: Float[SparseOperator, "r c"],
     block_diag_batch: bool = False,
     k: int = 6,
