@@ -35,6 +35,9 @@ class _BaseSymSpOp:
         b: Float[t.Tensor, "m n"],
         config: DirectSolverConfig,
     ):
+        self.dtype = a.dtype
+        self.shape = a.shape
+
         stream = t.cuda.current_stream()
 
         # Prepare nvmath DirectSolver.
@@ -161,6 +164,14 @@ class SpPrecond:
             if hasattr(self.solver, "free"):
                 self.solver.free()
                 self.solver = None
+
+
+class IdentityPrecond:
+    def __init__(self):
+        pass
+
+    def __matmal__(self, res):
+        return res
 
 
 class ShiftInvSymSpOp(_BaseSymSpOp):

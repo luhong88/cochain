@@ -1,15 +1,21 @@
-import nvmath.sparse.advanced as nvmath_sp
 import torch as t
-from cuda.core.experimental import Device
-from jaxtyping import Float, Integer
+from jaxtyping import Float
 
-from ..operators import SparseOperator, SparseTopology
-from ._lobpcg_operators import SpPrecond
-from .nvmath_wrapper import DirectSolverConfig
+from ..operators import SparseOperator
+from ._lobpcg_operators import (
+    IdentityPrecond,
+    ShiftInvSymGEPSpOp,
+    ShiftInvSymSpOp,
+    SpPrecond,
+)
+
+type SparseOperatorLike = SparseOperator | ShiftInvSymSpOp | ShiftInvSymGEPSpOp
 
 
 def _enforce_M_orthonormality(
-    V: Float[t.Tensor, "m 3*n"], M_op: Float[SparseOperator, "m m"], rtol: float | None
+    V: Float[t.Tensor, "m 3*n"],
+    M_op: Float[SparseOperator, "m m"] | None,
+    rtol: float | None,
 ) -> Float[t.Tensor, "m 3*n"]:
     """
     Convert the column vectors of V into M-orthonormal vectors using symmetric
@@ -18,6 +24,9 @@ def _enforce_M_orthonormality(
     Currently batched sparse-dense matrix operations are not well supported in
     torch; therefore, this function cannot support batch dimensions.
     """
+    if M_op is None:
+        return V
+
     if rtol is None:
         rtol = M_op.size(-1) * t.finfo(M_op.dtype).eps
 
@@ -45,17 +54,17 @@ def _enforce_M_orthonormality(
 
 def _lobpcg_one_iter(
     iter_: int,
-    A_op: Float[SparseOperator, "m m"],
-    M_op: Float[SparseOperator, "m m"],
+    A_op: Float[SparseOperatorLike, "m m"],
+    M_op: Float[SparseOperator, "m m"] | None,
     R: Float[t.Tensor, "m n"],
     X_current: Float[t.Tensor, "m n"],
     X_prev: Float[t.Tensor, "m n"],
-    preconditioner: SpPrecond,
+    precond: SpPrecond | IdentityPrecond,
     largest: bool,
     tol: float,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
     """
-    Perform one iteration of LOBPCG
+    Perform one iteration of LOBPCG.
     """
     # Perform soft locking/deflation to lock in converged eigenvectors by zeroing
     # out the corresponding residual vectors.
@@ -64,7 +73,7 @@ def _lobpcg_one_iter(
     R_masked = R * mask
 
     # Use the residual vectors R to compute the precondition directions W = inv(M)@R.
-    W = preconditioner @ R_masked
+    W = precond @ R_masked
 
     # Compute the momentum/conjugate directions P. During the first iteration,
     # X_current = X_prev so P = 0. Perform the same soft locking on the momentum.
@@ -111,10 +120,11 @@ def _lobpcg_one_iter(
 
 
 def lobpcg_loop(
-    A_op: Float[SparseOperator, "m m"],
-    M_op: Float[SparseOperator, "m m"],
+    A_op: Float[SparseOperatorLike, "m m"],
+    M_op: Float[SparseOperator, "m m"] | None,
     X_0: Float[t.Tensor, "m n"],
-    preconditioner: SpPrecond,
+    precond: SpPrecond | IdentityPrecond,
+    largest: bool,
     tol: float,
     niter: int,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
@@ -134,7 +144,7 @@ def lobpcg_loop(
             break
         else:
             Lambda_next, X_next = _lobpcg_one_iter(
-                iter_, A_op, M_op, R, X_current, X_prev, preconditioner, tol
+                iter_, A_op, M_op, R, X_current, X_prev, precond, largest, tol
             )
 
             X_prev = X_current
