@@ -7,7 +7,7 @@ from cochain.sparse.operators import SparseOperator
 itemize_backend = pytest.mark.parametrize(
     "backend",
     [
-        pytest.param("scipy", marks=[pytest.mark.cpu_only]),
+        pytest.param("scipy", marks=[]),
         pytest.param("cupy", marks=[pytest.mark.gpu_only]),
     ],
 )
