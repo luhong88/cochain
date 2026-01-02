@@ -7,7 +7,8 @@
 * Simplicial complexes:
     * Piecewise-linear triangular and tetrahedral meshes embedded in $\mathbb{R}^3$.
 * Topological operators:
-    * Coboundary operators and combinatorial Laplacians.
+    * Coboundary operators, aka discrete exterior derivatives.
+    * Combinatorial Laplacians.
     * Cup product and anti-symmetrized cup product.
 * Geometric operators:
     * Discrete Hodge stars for both circumcentric and barycentric duals.
