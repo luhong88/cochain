@@ -208,3 +208,9 @@ __marimo__/
 
 # Pytetwild artifacts
 *.stl
+
+# LaTeX compiler
+*.aux
+*.out
+*.pdf
+*.synctex.gz
