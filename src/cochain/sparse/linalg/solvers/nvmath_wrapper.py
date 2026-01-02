@@ -64,7 +64,7 @@ if _HAS_NVMATH:
         solution_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-class _NvmathDirectSolverWrapper(t.autograd.Function):
+class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
@@ -311,7 +311,7 @@ def nvmath_direct_solver(
             sparse_system_type
         ]
 
-    x, solver = _NvmathDirectSolverWrapper.apply(
+    x, solver = _NvmathDirectSolverAutogradFunction.apply(
         A.val,
         A.sp_topo,
         b,

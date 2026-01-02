@@ -56,7 +56,7 @@ def _sp_op_comps_to_scipy_csc(
     return sp_op_scipy
 
 
-class _SciPyEigshWrapperStandard(t.autograd.Function):
+class _SciPyEigshStandardAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
@@ -126,7 +126,7 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
         return dLdA_val, None, None, None, None, None
 
 
-class _SciPyEigshWrapperGEP(t.autograd.Function):
+class _SciPyEigshGEPAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " A_nnz"],
@@ -214,11 +214,11 @@ def _scipy_eigsh_no_batch(
     kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     if M is None:
-        eig_vals, eig_vecs = _SciPyEigshWrapperStandard.apply(
+        eig_vals, eig_vecs = _SciPyEigshStandardAutogradFunction.apply(
             A.val, A.sp_topo, **kwargs
         )
     else:
-        eig_vals, eig_vecs = _SciPyEigshWrapperGEP.apply(
+        eig_vals, eig_vecs = _SciPyEigshGEPAutogradFunction.apply(
             A.val, A.sp_topo, M.val, M.sp_topo, **kwargs
         )
 
