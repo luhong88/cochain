@@ -60,6 +60,10 @@ class BaseOperator(ABC):
     @abstractmethod
     def __neg__(self) -> BaseOperator: ...
 
+    @property
+    @abstractmethod
+    def tr(self): ...
+
     @abstractmethod
     def __add__(self, other) -> BaseOperator: ...
 

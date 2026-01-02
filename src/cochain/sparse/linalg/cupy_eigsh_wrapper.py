@@ -48,7 +48,7 @@ if _HAS_CUPY:
                 self.v0 = cp.from_dlpack(self.v0.detach().contiguous())
 
 
-class _CuPyEigshWrapperStandard(t.autograd.Function):
+class _CuPyEigshWrapper(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
@@ -128,7 +128,7 @@ def _cupy_eigsh_no_batch(
     A: Float[SparseOperator, "r c"],
     kwargs: dict[str, Any],
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
-    eig_vals, eig_vecs = _CuPyEigshWrapperStandard.apply(A.val, A.sp_topo, **kwargs)
+    eig_vals, eig_vecs = _CuPyEigshWrapper.apply(A.val, A.sp_topo, **kwargs)
 
     return eig_vals, eig_vecs
 

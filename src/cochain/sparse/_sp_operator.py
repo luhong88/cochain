@@ -185,6 +185,17 @@ class SparseOperator(BaseOperator):
     def __neg__(self) -> SparseOperator:
         return SparseOperator(self.sp_topo, -self.val)
 
+    # TODO: implement trace for batched operators
+    # TODO: write tests fot tr()
+    @property
+    def tr(self) -> Float[t.Tensor, "*b"]:
+        if self.n_batch_dim is None:
+            return self.val[
+                t.argwhere(self.idx_coo[0] == self.idx_coo[1]).flatten()
+            ].sum(dim=0)
+        else:
+            raise NotImplementedError()
+
     def __add__(self, other) -> SparseOperator:
         """
         Elementwise-addition of two SparseOperators that share the same topology/

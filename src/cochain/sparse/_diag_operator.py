@@ -63,7 +63,7 @@ class DiagOperator(BaseOperator):
         return DiagOperator(1.0 / self.val)
 
     @property
-    def tr(self) -> t.Tensor:
+    def tr(self) -> Float[t.Tensor, "*b"]:
         if self.n_batch_dim == 0:
             return self.val.sum()
         else:

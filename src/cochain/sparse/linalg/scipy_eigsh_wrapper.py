@@ -126,7 +126,7 @@ class _SciPyEigshWrapperStandard(t.autograd.Function):
         return dLdA_val, None, None, None, None, None
 
 
-class _SciPyEigshWrapperGeneralized(t.autograd.Function):
+class _SciPyEigshWrapperGEP(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " A_nnz"],
@@ -218,7 +218,7 @@ def _scipy_eigsh_no_batch(
             A.val, A.sp_topo, **kwargs
         )
     else:
-        eig_vals, eig_vecs = _SciPyEigshWrapperGeneralized.apply(
+        eig_vals, eig_vecs = _SciPyEigshWrapperGEP.apply(
             A.val, A.sp_topo, M.val, M.sp_topo, **kwargs
         )
 

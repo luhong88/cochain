@@ -1,3 +1,5 @@
+import functools
+
 import torch as t
 from jaxtyping import Float
 
@@ -6,10 +8,10 @@ from ._lobpcg_operators import (
     IdentityPrecond,
     ShiftInvSymGEPSpOp,
     ShiftInvSymSpOp,
+    SparseOperatorLike,
     SpPrecond,
 )
-
-type SparseOperatorLike = SparseOperator | ShiftInvSymSpOp | ShiftInvSymGEPSpOp
+from .nvmath_wrapper import DirectSolverConfig
 
 
 def _enforce_M_orthonormality(
@@ -119,7 +121,7 @@ def _lobpcg_one_iter(
     return Lambda_next, X_next
 
 
-def lobpcg_loop(
+def _lobpcg_loop(
     A_op: Float[SparseOperatorLike, "m m"],
     M_op: Float[SparseOperator, "m m"] | None,
     X_0: Float[t.Tensor, "m n"],
@@ -152,3 +154,57 @@ def lobpcg_loop(
             Lambda_current = Lambda_next
 
     return Lambda_current, X_current
+
+
+def lobpcg_forward(
+    A_op: Float[SparseOperatorLike, "m m"],
+    M_op: Float[SparseOperator, "m m"] | None,
+    sigma: float | int | None,
+    v0: Float[t.Tensor, "m n"],
+    diag_damp: float | int | None,
+    largest: bool,
+    tol: float,
+    maxiter: int,
+    nvmath_config: DirectSolverConfig,
+) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
+    lobpcg_loop_partial = functools.partial(
+        _lobpcg_loop, X_0=v0, largest=largest, tol=tol, niter=maxiter
+    )
+
+    n = v0.size(-1)
+
+    match (M_op, sigma):
+        case (None, None):
+            return lobpcg_loop_partial(
+                A_op=A_op,
+                M_op=None,
+                precond=IdentityPrecond(),
+            )
+
+        case (M_op, None):
+            return lobpcg_loop_partial(
+                A_op=A_op,
+                M_op=M_op,
+                precond=SpPrecond(
+                    A_op=A_op, n=n, diag_damp=diag_damp, convig=nvmath_config
+                ),
+            )
+
+        case (None, sigma):
+            return lobpcg_loop_partial(
+                A_op=ShiftInvSymSpOp(A_op=A_op, sigma=sigma, n=n, config=nvmath_config),
+                M_op=None,
+                precond=IdentityPrecond(),
+            )
+
+        case (M_op, sigma):
+            return lobpcg_loop_partial(
+                A_op=ShiftInvSymGEPSpOp(
+                    A_op=A_op, M_op=M_op, sigma=sigma, n=n, config=nvmath_config
+                ),
+                M_op=M_op,
+                precond=IdentityPrecond(),
+            )
+
+        case _:
+            raise ValueError()
