@@ -214,3 +214,6 @@ __marimo__/
 *.out
 *.pdf
 *.synctex.gz
+*.bib
+*.bbl
+*.blg

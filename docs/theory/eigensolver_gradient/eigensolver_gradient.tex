@@ -1,0 +1,277 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[T1]{fontenc} 
+\usepackage{cmbright}
+
+% --- Essential Math Packages ---
+\usepackage{amsmath}    % Core math environments
+\usepackage{amssymb}    % Math symbols
+\usepackage{mathtools}  % Improvements to amsmath (fixes spacing)
+\usepackage{bm}         % Bold math (better than \mathbf for greek letters)
+
+% --- Formatting & Utilities ---
+\usepackage[margin=1in]{geometry} % Standard margins
+\usepackage{microtype}            % Subliminally improves spacing/kerning
+\usepackage{hyperref}             % Clickable links in PDF
+\usepackage{cleveref}             % Smart referencing (use \cref instead of \ref)
+\usepackage{url}
+
+\begin{filecontents}[overwrite]{references.bib}
+@misc{jackd_complex_eigs,
+  author={Jack Dominic},
+  title={Generalized Eigenvalue Problem Derivatives},
+  howpublished={\url{https://jackd.github.io/posts/generalized-eig-jvp/}},
+  month=jan,
+  year={2021},
+  note={Accessed: 2026-01-04}}
+
+@misc{gh_issue,
+  author={ehermes},
+  title={Issue \#4646: {{grad(lambda M, i, j: eigh(M)[1][i, j], argnums=0)}} returns all NaNs when M has degenerate eigenvalues},
+  howpublished={\url{https://github.com/jax-ml/jax/issues/4646}},
+  month=oct,
+  year={2020},
+  note={Accessed: 2026-01-03}}
+
+@article{liao2019,
+   title={Differentiable Programming Tensor Networks},
+   volume={9},
+   ISSN={2160-3308},
+   url={http://dx.doi.org/10.1103/PhysRevX.9.031041},
+   DOI={10.1103/physrevx.9.031041},
+   number={3},
+   journal={Physical Review X},
+   publisher={American Physical Society (APS)},
+   author={Liao, Hai-Jun and Liu, Jin-Guo and Wang, Lei and Xiang, Tao},
+   year={2019},
+   month=sep }
+
+@misc{seeger2019autodifferentiatinglinearalgebra,
+      title={Auto-Differentiating Linear Algebra}, 
+      author={Matthias Seeger and Asmus Hetzel and Zhenwen Dai and Eric Meissner and Neil D. Lawrence},
+      year={2019},
+      eprint={1710.08717},
+      archivePrefix={arXiv},
+      primaryClass={cs.MS},
+      url={https://arxiv.org/abs/1710.08717}, 
+}
+
+@misc{kasim2020derivativespartialeigendecompositionreal,
+      title={Derivatives of partial eigendecomposition of a real symmetric matrix for degenerate cases}, 
+      author={Muhammad Firmansyah Kasim},
+      year={2020},
+      eprint={2011.04366},
+      archivePrefix={arXiv},
+      primaryClass={math.NA},
+      url={https://arxiv.org/abs/2011.04366}, 
+}
+
+@article{giles8extended,
+  title={An extended collection of matrix derivative results for forward and reverse mode algorithmic differentiation, 2008},
+  author={Giles, M},
+  journal={URL: https://people.maths.ox.ac.uk/gilesm/files/NA-08-01.pdf}
+}
+
+@misc{boeddeker2019computationcomplexvaluedgradientsapplication,
+      title={On the Computation of Complex-valued Gradients with Application to Statistically Optimum Beamforming}, 
+      author={Christoph Boeddeker and Patrick Hanebrink and Lukas Drude and Jahn Heymann and Reinhold Haeb-Umbach},
+      year={2019},
+      eprint={1701.00392},
+      archivePrefix={arXiv},
+      primaryClass={cs.NA},
+      url={https://arxiv.org/abs/1701.00392}, 
+}
+\end{filecontents}
+
+% --- Settings ---
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=green,
+    urlcolor=cyan
+}
+
+\title{Note on reverse-mode eigensolver gradients}
+\author{Lu Hong}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+This note derives the reverse-mode gradients for the standard and generalized eigenvalue problems involving real-valued, symmetric matrices using component-wise differentiation and basis expansion. For a derivation using matrix differentials, see \cite{giles8extended}; for a derivation on complex-valued matrices, see \cite{boeddeker2019computationcomplexvaluedgradientsapplication,jackd_complex_eigs}.
+
+\section{Standard eigenvalue problem}
+
+Let $A\in\mathbb R^{N\times N}$ be a symmetric matrix. Consider the eigenvalue problem
+\begin{equation}
+    Av_k=\lambda_k v_k
+    \label{eig}
+\end{equation}
+subject to the orthonormality constraint that $v_k^Tv_l=\delta_{kl}$, where $\delta_{kl}$ is the Kronecker delta function. For any loss $L$ that is a function of $A$, its derivative with respect to any matrix element $A_{ij}$ is given by
+\begin{equation}
+    \overline{A}_{ij} = \frac{\partial L}{\partial A_{ij}} = \sum_k\frac{\partial L}{\partial\lambda_k}\frac{\partial\lambda_k}{\partial A_{ij}} + \sum_k\frac{\partial L}{\partial v_k}\frac{\partial v_k}{\partial A_{ij}} = \sum_k \overline{\lambda}_k\frac{\partial\lambda_k}{\partial A_{ij}} + \sum_k \overline{v}_k^T\frac{\partial v_k}{\partial A_{ij}}
+    \label{eig_der_expansion}
+\end{equation}
+Here, we use the bar to indicate the derivative/sensitivity of $L$ with respect to that term. Note that, in the second term, consistent with the definition of Jacobian matrices, we interpret $\partial L/\partial v_k$ as a row vector and $\partial v_k/\partial A_{ij}$ as a column vector to form an inner product.
+
+\paragraph{Eigenvalue component}
+Let us consider the first term in \eqref{eig_der_expansion}, which accounts for contributions from eigenvalues. Multiply \eqref{eig} on the left with $v_k^T$ gives
+\begin{equation}
+    v_k^T Av_k = \lambda_k
+\end{equation}
+Therefore,
+\begin{equation}
+    \frac{\partial \lambda_k}{\partial A_{ij}}=\frac{\partial}{\partial A_{ij}}\sum_{m,n}v_{k,m}A_{mn}v_{k,n}=v_{k,i}v_{k,j}
+\end{equation}
+and the eigenvalue contribution is
+\begin{equation}
+    \sum_k \overline{\lambda}_k v_{k,i}v_{k,j}
+\end{equation}
+This equation can be expressed more compactly if we define the following matrices,
+\begin{itemize}
+    \item The gradient matrix $\partial L/\partial A$ such that $[\partial L/\partial A]_{ij} = \partial L/\partial A_{ij}$,
+    \item The diagonal matrix $\overline\Lambda$ such that $\overline{\Lambda}_{ii}=\overline{\lambda}_i$, and
+    \item The eigenvector matrix $V$ whose columns are the $v_k$'s.
+\end{itemize}
+Using these definitions, the eigenvalue contribution is
+\begin{equation}
+    \overline A_\Lambda = V\overline\Lambda V^T
+\end{equation}
+
+\paragraph{Eigenvector component}
+Next, let us consider the second term in \eqref{eig_der_expansion}, which accounts for contributions from the eigenvectors. We start by taking the derivative of \eqref{eig} with respect to $A_{ij}$,
+\begin{align}
+    \frac{\partial A}{\partial A_{ij}}v_k + A\frac{\partial v_k}{\partial A_{ij}} & = \frac{\partial \lambda_k}{\partial A_{ij}}v_k + \lambda_k\frac{\partial v_k}{\partial A_{ij}} \\ (A - \lambda_k I)\frac{\partial v_{k}}{\partial A_{ij}} & = \frac{\partial\lambda_k}{\partial A_{ij}}v_{k} - E_{ij}v_k \label{eig_vec_der_mat_form}
+\end{align} 
+Here, we define $E_{ij}\in\mathbb R^{N\times N}$ such that $[E_{ij}]_{kl}=\delta_{ik}\delta_{jl}$; i.e., $E_{ij}$ is everywhere zero except for the entry at the $i$th row and $j$th column, which is one.
+
+In general, the matrix $A-\lambda_kI$ is not invertible, and \eqref{eig_vec_der_mat_form} cannot be solved through matrix inversion. Since $A$ is symmetric, its eigenvectors form a complete orthonormal basis set of $\mathbb R^N$. Therefore, we instead expand $\partial v_k/\partial A_{ij}$ in this basis set and write
+\begin{equation}
+    \frac{\partial v_{k}}{\partial A_{ij}}= \sum_l C_{lk}v_{l} \label{eig_vec_dir_c_coeff}
+\end{equation}
+for some coefficient matrix $C\in\mathbb R^{N\times N}$, where the $n$th column of $C$ gives the coefficients required to express $\partial v_n/\partial A_{ij}$ as a linear combination of the eigenvector $v_k$'s. Substituting this expression in \eqref{eig_vec_der_mat_form} gives
+\begin{align}
+    (A - \lambda_k I)\sum_l C_{lk}v_{l} & = \frac{\partial\lambda_k}{\partial A_{ij}}v_{k} - E_{ij}v_k \\
+    \sum_l (\lambda_l - \lambda_k) C_{lk}v_l & = \frac{\partial\lambda_k}{\partial A_{ij}}v_{k} - E_{ij}v_k \label{eig_vec_der_basis_expanded}
+\end{align}
+To find the $n$th column of $C$, we project this equation onto the subspace spanned by $v_n$. When $n\ne k$,
+\begin{align}
+    \sum_l (\lambda_l - \lambda_k) C_{lk} v_n^Tv_l & = \frac{\partial\lambda_k}{\partial A_{ij}}v_n^Tv_{k} - v_n^TE_{ij}v_k \\
+    C_{nk} & = \frac{v_n^TE_{ij}v_k}{\lambda_k - \lambda_n}
+\end{align}
+When $n = k$, \eqref{eig_vec_der_basis_expanded} does not actually provide any information on $C_{kk}$, since the left hand side is zero. Instead, taking the derivative of the orthonormality condition $v_k^Tv_k=0$ with respect to $A_{ij}$ gives
+\begin{align}
+    \frac{\partial v_k^Tv_k}{\partial A_{ij}} & = 2v_k^T\frac{\partial v_k}{\partial A_{ij}} \\
+    0 & = 2v_k^T\sum_l C_{lk}v_{l} \\
+    0 & = C_{kk}
+\end{align}
+Using these expressions for the $C_{nk}$ coefficients, we can write \eqref{eig_vec_dir_c_coeff} as
+\begin{equation}
+    \frac{\partial v_k}{\partial A_{ij}} = \sum_{l\ne k} \frac{v_l^TE_{ij}v_k}{\lambda_k - \lambda_l}v_{l} = \sum_l F_{lk }(v_l^TE_{ij}v_k)v_l \label{eig_vec_der_asym}
+\end{equation}
+where we have defined the inverse spectral gap matrix $F$ as $F_{ij}=1/(\lambda_j - \lambda_i)$ for $i\ne j$ and $F_{ii}=0$. Substituting this result back to \eqref{eig_der_expansion} gives the eigenvector contribution as
+\begin{equation}
+    \sum_k \overline{v}_k^T \frac{\partial v_k}{\partial A_{ij}} = \sum_{k,l} F_{lk} (v_l^TE_{ij}v_k) \overline{v}_k^Tv_l = \sum_{k,l} v_{l,i} (F_{lk}\overline{v}_k^Tv_l) v_{k,j} \label{eig_vec_der_pre_matrix_form}
+\end{equation}
+
+As before, this equation can be expressed more compactly if we define the rojection matrix $P$ such that $P_{kl}= v_k^T\overline{v}_l=\overline{v}_l^Tv_k$ (i.e., $P_{kl}$ takes the gradient of $L$ with respect $v_l$ and projects it onto the subspace of $v_k$). Using this matrix, the term $F_{lk}\overline{v}_k^Tv_l$ in \eqref{eig_vec_der_pre_matrix_form} is simply $[F\odot P]_{lk}$, where $\odot$ is the elementwise Hadamard product, and the bilinear form $\sum_{kl}v_{l,i}[F\odot P]_{lk}v_{k,j}$ can be written as $V_{i\cdot}(F\odot P)V_{j\cdot}^T$, where $V_{i\cdot}$ is a row vector representing the $i$th row of the eigenvector matrix $V$. Taken together, the eigenvector contribution is
+\begin{equation}
+    \overline{A}_V = V(F\odot P)V^T \label{eig_vec_der_asym_final}
+\end{equation}
+One can check that this indeed reproduces the elementwise expression,
+\begin{equation}
+    \frac{\partial L}{\partial A_{ij}} = \sum_{k,l} V_{il}[F\odot P]_{lk}V_{jk} = \sum_{k,l} v_{l,i}(F_{lk}\overline{v}_k^Tv_l)v_{k,j} 
+\end{equation}
+
+\paragraph{Symmetry condition}
+Note that, although $A$ is symmetric, \eqref{eig_vec_der_asym_final} is not guaranteed to be symmetric, since, in general, $v_{l,i} \ne v_{l,j}$ and $v_{k,j}\ne v_{k,i}$. A simple way to enforce the symmetry condition is use 
+\begin{align}
+    \frac 1 2 \left(\frac{\partial L}{\partial A_{ij}} + \frac{\partial L}{\partial A_{ji}}\right) & = \frac 1 2 \sum_{k,l} v_{l,i}(F_{lk}\overline{v}_k^Tv_l)v_{k,j} + \frac 1 2 \sum_{k,l} v_{l,j}(F_{lk}\overline{v}_k^Tv_l)v_{k,i} \\ & \overset{(1)}{=} \frac 1 2 \sum_{k,l}v_{l,i}(F_{lk}\overline{v}_k^Tv_l + F_{kl}\overline{v}_l^Tv_k)v_{k,j} \\ & \overset{(2)}{=} \frac 1 2 \sum_{k,l}v_{l,i}F_{lk}(\overline{v}_k^Tv_l - \overline{v}_l^Tv_k)v_{k,j}
+\end{align}
+in place of $\partial L/\partial A_{ij}$. Here, equality (1) follows by switching the dummy index variables $k$ and $l$, and equality (2) follows by the antisymmetry of $F$. Therefore, instead of \eqref{eig_vec_der_asym_final}, the symmetry corrected eigenvector contribution is
+\begin{equation}
+    \overline{A}_V = \frac 1 2 V\left[F \odot (P - P^T)\right]V^T
+\end{equation}
+
+\paragraph{Degenerate eigenvalues}
+A key assumption of the preceeding derivation is that $A$ does not contain degenerate eigenvalues; i.e., every eigenvalue of $A$ has an algebraic and geometric multiplicity of one. Algebraically, this assumption is reflected in the fact that $F$ contains elements of the form \begin{equation}\Delta_{ji}^{-1} = 1/(\lambda_j - \lambda_i)\end{equation} which goes to infinity as two eigenvalues collide.
+
+The singularity in $F$ is not a numerical artifact; instead, it reflects the fact that $\partial v_k/\partial A_{ij}$ is not well defined when $\lambda_k$ is degenerate. For a nondegenerate eigenvalue $\lambda_i$, there is a unique mapping from $A$ to the orthonormal basis (up to a +/- sign) of $E_i$, the eigenspace spanned by $v_i$. However, for a degenerate eigenvalue $\lambda_k$ with algebraic multiplicity $n$, the mapping from $A$ to $E_k$ is not uniquely defined, since there are infinitely many unit-length vectors in $E_k$ and infinitely many choices of orthonormal basis vectors. Furthermore, this mapping is discontinuous, since any perturbations to $A$ that "breaks the symmetry" by creating new pertured eigenvalues from $\lambda_k$ will split $E_k$ into distinct new eigenspaces, causing the vectors in the unperturbed $E_k$ to snap onto the perturbed eigenspace basis vectors.
+
+One way to remove the singularity in $F$ is to replace it with
+\begin{equation}
+    F'_{ij} = \frac{\Delta_{ji}}{\Delta_{ji}^2 + \epsilon} 
+\end{equation}
+where $\epsilon>0$ is a small regularization constant. When $\Delta_{ij} \gg \epsilon$, $F'_{ij}\approx F_{ij}$, but unlike $F_{ij}$, $F'_{ij} \to 0$ as $\Delta_{ij}\to 0$. This technique is called Lorentzian broadening \cite{liao2019}, because it is analogous to the process of homogeneous lineshape broadening in spectroscopy, which gives the spectral lines their Lorentzian profile. Some alternative approaches to dealing with degenerate eigenvalues include masking out all $F_{ij}$ where the $1/\Delta_{ij}$ term that are exactly zero and set such $F_{ij}$ to zero \cite{gh_issue}, or clipping $1/\Delta_{ij}$ if its magnitude is above a threshold \cite{seeger2019autodifferentiatinglinearalgebra}.
+
+While Lorentzian broadening ensures numerical stability, it artificially dampens the physically real coupling between near-degenerate modes, which should theoretically be large (scaling as $1/\Delta$). In an optimization problem where modeling such interactions is important, this bias can be mitigated by annealing $\epsilon$ from a large value to near-zero over the course of the optimization.
+
+\paragraph{Partial decomposition}
+For large or sparse matrix eigenvalue problems, one often relies on iterative numerical methods to approximate a subset of the full eigenvalue spectrum. This is problematic for computing the sensitivity of the eigenvectors, since, according to \eqref{eig_vec_der_asym}, the derivative $\partial v_k/\partial A_{ij}$ depends on all eigenvectors; in other words, perturbations to $A_{ij}$ rotates $v_k$ into all other eigenvector $v_l$'s, and the degree of this ``mixing'' depends on the strength of the coupling between the modes $v_l^TE_{ij}v_k$ and the size of the spectral gap $\lambda_k - \lambda_l$. Typically, when there is a sufficient spectral gap between the solved $k$ eigenvalues and the rest $N-k$ unresolved eigenvalues, it is an acceptable approximation to simply ignore the contributions in \eqref{eig_vec_der_asym} orthogonal to the known eigenvectors; however, see \cite{kasim2020derivativespartialeigendecompositionreal} for a method that recovers the contributions from the missing $N-k$ eigenvectors.
+
+\section{Generalized eigenvalue problem}
+
+Let $A\in\mathbb R^{N\times N}$ be a symmetric matrix and let $M\in\mathbb R^{N\times N}$ be a symmetric positive definite matrix. Consider the generalized eigenvalue problem
+\begin{equation}
+    Av_k=\lambda_k Mv_k
+    \label{gen_eig}
+\end{equation}
+subject to the $M$-orthonormality constraint that $v_k^TMv_l=\delta_{kl}$. Retracing the derivations in the previous section, one can see that the inclusion of $M$ has no effect on the expressions for $\overline A$; therefore, for the following analysis, we will focus on deriving the eigenvalue and eigenvector contributions to $\overline M$.
+
+\paragraph{Eigenvalue component}
+First, differentiate \eqref{gen_eig} with respect to $M_{ij}$ and multiply it on the left with $v_k^T$,
+\begin{align}
+    v_k^TA\frac{\partial v_k}{\partial M_{ij}} & = \frac{\partial \lambda_k}{\partial M_{ij}}v_k^TMv_k + \lambda_kv_k^T\frac{\partial M}{\partial M_{ij}}v_k + \lambda_kv_k^TM\frac{\partial v_k}{\partial M_{ij}} \\
+    \lambda_k v_k^TM\frac{\partial v_k}{\partial M_{ij}} & = \frac{\partial \lambda_k}{\partial M_{ij}} + \lambda_k v_k^TE_{ij}v_k + \lambda_kv_k^TM\frac{\partial v_k}{\partial M_{ij}} \\
+    \frac{\partial \lambda_k}{\partial M_{ij}} & = -\lambda_kv_k^TE_{ij}v_k
+\end{align}
+Writing in matrix form, this gives the eigenvalue contribution
+\begin{equation}
+    \overline{M}_\Lambda = -V\overline\Lambda\Lambda V^T
+\end{equation}
+
+\paragraph{Eigenvector component}
+As before, we take the derivative of \eqref{gen_eig} with respect to $M_{ij}$, multiply it on the left with $v_n^T$ for $n\ne k$, and expand the $\partial v_k/\partial M_{ij}$ in the basis of the eigenvectors as per \eqref{eig_vec_dir_c_coeff}. This gives
+\begin{align}
+    v_n^TA\frac{\partial v_k}{\partial M_{ij}} & = \frac{\partial \lambda_k}{\partial M_{ij}}v_n^TMv_k + \lambda_kv_n^T\frac{\partial M}{\partial M_{ij}}v_k + \lambda_kv_n^TM\frac{\partial v_k}{\partial M_{ij}} \\
+    (\lambda_n - \lambda_k)v_n^TM \sum_l C_{lk}v_l  & = \lambda_kv_n^TE_{ij}v_k \\
+    C_{nk} & = -\frac{\lambda_kv_n^TE_{ij}v_k}{\lambda_k - \lambda_n}
+\end{align}
+For $n = k$, take the $M$-orthonormality condition and differentiate the equation with respect to $M_{ij}$ and expand in the eigenvector basis set,
+\begin{align}
+    \frac{\partial}{\partial M_{ij}} v_k^TMv_k & = 0 \\
+    2v_k^TM\sum_l C_{lk}v_l & = -v_k^TE_{ij}v_k \\
+    C_{kk} & = -\frac 1 2 v_k^T E_{ij} v_k
+\end{align}
+Note that, unlike the standard eigenvalue problem, the diagonal elements of $C$ for the generalized eigenvalue problem are not zero. With these coefficients, we can write the eigenvector contribution as
+\begin{equation}
+    \sum_k\overline{v}_k^T\frac{\partial v_k}{\partial M_{ij}} = -\sum_{k,l\ne k} v_{l,i}(\lambda_kF_{lk}\overline{v}_k^Tv_l)v_{k,j} -\frac 1 2 \sum_k v_{k,i}(\overline{v}_k^Tv_k)v_{k,j}
+\end{equation}
+To simplify this expression, let us define a "kernel" matrix $K$, such that
+\begin{equation}
+    K_{lk} = \begin{cases}
+        \lambda_kF_{lk}P_{lk}, & l\ne k \\
+        P_{kk}/2, & l = k
+    \end{cases}
+\end{equation}
+With this kernel definition, the unsymmetrized eigenvector contribution is
+\begin{equation}
+    \sum_k\overline{v}_k^T\frac{\partial v_k}{\partial M_{ij}} = -\sum_{k,l}v_{l,i}K_{lk}v_{k,j}
+\end{equation}
+or, in matrix form, $\overline{M}_V=-VKV^T$. To account for the symmetry condition, we define the symmetrized kernel $S = K + K^T$
+\begin{equation}
+    S_{lk} = \begin{cases}
+        F_{lk}(\lambda_kP_{lk} - \lambda_lP_{kl}), & l\ne k \\
+        P_{kk}, & l = k
+    \end{cases}
+\end{equation}
+So that the symmetrized eigenvector contribution is
+\begin{equation}
+    \overline{M}_V = -\frac 1 2 VSV^T
+\end{equation}
+
+\bibliographystyle{plain} % or alpha, unsrt, etc.
+\bibliography{references} % Note: Do not add .bib extension here
+
+\end{document}
