@@ -81,3 +81,10 @@ def rand_sp_spd_5x5() -> Float[t.Tensor, "5 5"]:
     lambdas = t.tensor([0.5, 3.2, 20.0, 35.2])
     mat = rand_sp_sym_matrix(lambdas, 4)
     return mat
+
+
+@pytest.fixture
+def rand_sp_gep_5x5() -> tuple[Float[t.Tensor, "5 5"], Float[t.Tensor, "5 5"]]:
+    lambdas = t.tensor([0.5, 3.2, 20.0, 35.2])
+    a, b = rand_sym_gep_matrices(lambdas, 0.4)
+    return a, b

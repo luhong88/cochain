@@ -6,6 +6,46 @@ from jaxtyping import Float
 from ...operators import SparseOperator
 
 
+def M_orthonormalize(
+    V: Float[t.Tensor, "m 3*n"],
+    M_op: Float[SparseOperator, "m m"] | None,
+    rtol: float | None,
+) -> Float[t.Tensor, "m 3*n"]:
+    """
+    Convert the column vectors of V into M-orthonormal vectors using symmetric
+    orthogonalization.
+
+    Currently batched sparse-dense matrix operations are not well supported in
+    torch; therefore, this function cannot support batch dimensions.
+    """
+    if M_op is None:
+        return V
+
+    if rtol is None:
+        rtol = M_op.size(-1) * t.finfo(M_op.dtype).eps
+
+    # Compute the M-orthogonal gram matrix.
+    G: Float[t.Tensor, "3*n 3*n"] = V.T @ (M_op @ V)
+
+    # Perform an eigendecomposition of G = Q@Λ@Q.T.
+    eig_vals, eig_vecs = t.linalg.eigh(G)
+
+    # Clamp very small eigenvalues.
+    eps = rtol * eig_vals.max()
+    eig_vals_clamped = t.clip(eig_vals, min=eps)
+    inv_eig_vals = 1.0 / t.sqrt(eig_vals_clamped)
+
+    # Compute the whitening matrix W = Q@Λ^(-1/2)@Q.T as the inverse square root
+    # of G.
+    W = (eig_vecs * inv_eig_vals.view(1, -1)) @ eig_vecs.T
+
+    # Find V_ortho = V@W, the M-orthonormal version of V. With some algebra,
+    # one can check that V_ortho@M@V_ortho = I.
+    V_ortho = eig_vecs @ W
+
+    return V_ortho
+
+
 def canonicalize_eig_vec_signs(
     eig_vecs: Float[t.Tensor, "m k"],
 ) -> Float[t.Tensor, "m k"]:

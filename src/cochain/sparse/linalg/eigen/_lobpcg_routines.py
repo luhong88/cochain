@@ -11,52 +11,13 @@ from ._lobpcg_operators import (
     ShiftInvSymSpOp,
     SpPrecond,
 )
+from .utils import M_orthonormalize
 
 type SparseOperatorLike = (
     Float[SparseOperator, "m m"]
     | Float[ShiftInvSymSpOp, "m m"]
     | Float[ShiftInvSymGEPSpOp, "m m"]
 )
-
-
-def _enforce_M_orthonormality(
-    V: Float[t.Tensor, "m 3*n"],
-    M_op: Float[SparseOperator, "m m"] | None,
-    rtol: float | None,
-) -> Float[t.Tensor, "m 3*n"]:
-    """
-    Convert the column vectors of V into M-orthonormal vectors using symmetric
-    orthogonalization.
-
-    Currently batched sparse-dense matrix operations are not well supported in
-    torch; therefore, this function cannot support batch dimensions.
-    """
-    if M_op is None:
-        return V
-
-    if rtol is None:
-        rtol = M_op.size(-1) * t.finfo(M_op.dtype).eps
-
-    # Compute the M-orthogonal gram matrix.
-    G: Float[t.Tensor, "3*n 3*n"] = V.T @ (M_op @ V)
-
-    # Perform an eigendecomposition of G = Q@Λ@Q.T.
-    eig_vals, eig_vecs = t.linalg.eigh(G)
-
-    # Clamp very small eigenvalues.
-    eps = rtol * eig_vals.max()
-    eig_vals_clamped = t.clip(eig_vals, min=eps)
-    inv_eig_vals = 1.0 / t.sqrt(eig_vals_clamped)
-
-    # Compute the whitening matrix W = Q@Λ^(-1/2)@Q.T as the inverse square root
-    # of G.
-    W = (eig_vecs * inv_eig_vals.view(1, -1)) @ eig_vecs.T
-
-    # Find V_ortho = V@W, the M-orthonormal version of V. With some algebra,
-    # one can check that V_ortho@M@V_ortho = I.
-    V_ortho = eig_vecs @ W
-
-    return V_ortho
 
 
 def _lobpcg_one_iter(
@@ -94,7 +55,7 @@ def _lobpcg_one_iter(
     else:
         V = t.hstack((X_current, W, P))
 
-    V_ortho = _enforce_M_orthonormality(_enforce_M_orthonormality(V, M_op), M_op)
+    V_ortho = M_orthonormalize(M_orthonormalize(V, M_op), M_op)
 
     # Rayleigh-Ritz projection
     # Let us approximate the eigenvectors using the subspace basis vectors; i.e.,
@@ -135,7 +96,7 @@ def _lobpcg_loop(
     tol: float,
     niter: int,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
-    X_current = _enforce_M_orthonormality(X_0, M_op)
+    X_current = M_orthonormalize(X_0, M_op)
     X_prev = X_current
 
     # Compute the eigenvalues using the Rayleigh quotient
