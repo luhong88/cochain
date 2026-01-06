@@ -7,8 +7,11 @@ from cochain.sparse.linalg.eigen import SciPyEigshConfig, scipy_eigsh
 from cochain.sparse.linalg.eigen.utils import (
     M_orthonormalize,
     canonicalize_eig_vec_signs,
+    grassmann_proj_dists,
 )
 from cochain.sparse.operators import SparseOperator
+
+# TODO: test handling of degenerate eigenvalues
 
 
 def _dense_gep(
@@ -25,7 +28,7 @@ def _dense_gep(
     return eig_vals_true, eig_vecs_true
 
 
-def test_standard(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
+def test_standard_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
     A_op = SparseOperator.from_tensor(rand_sp_spd_5x5).to(device)
     A_dense = rand_sp_spd_5x5.to_dense().to(device)
 
@@ -54,6 +57,54 @@ def test_standard(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, :k]),
     )
+
+
+def test_standard_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
+    k = 3
+
+    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op.requires_grad_()
+
+    A_dense = rand_sp_spd_9x9.to_dense().to(device)
+    A_dense.requires_grad_()
+
+    eig_vals_true, eig_vecs_true = t.lobpcg(A_dense, k=k)
+
+    # Turn off Lorentzian broadening for exact eigenvector gradient comparison.
+    eig_vals, eig_vecs = scipy_eigsh(
+        A=A_op, M=None, k=k, eps=0, config=SciPyEigshConfig(which="LM")
+    )
+
+    # Compare eigenvalue gradient
+    eig_vals_rand = t.randn_like(eig_vals_true)
+    eig_vals_loss_true = t.sum(eig_vals_true * eig_vals_rand)
+    eig_vals_loss = t.sum(eig_vals * eig_vals_rand)
+
+    eig_vals_loss_true.backward()
+    eig_vals_loss.backward()
+
+    eig_vals_grad_true = A_dense.grad[t.unbind(A_op.sp_topo.idx_coo, dim=0)]
+    eig_vals_grad = A_op.val.grad
+
+    t.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
+
+    # Compare eigenvector gradient
+    A_dense.grad = None
+    A_op.val.grad = None
+
+    eig_vecs_rand = t.randn_like(eig_vecs_true)
+    eig_vecs_loss_true = t.trace(
+        eig_vecs_rand.T @ canonicalize_eig_vec_signs(eig_vecs_true)
+    )
+    eig_vecs_loss = t.trace(eig_vecs_rand.T @ canonicalize_eig_vec_signs(eig_vecs))
+
+    eig_vecs_loss_true.backward()
+    eig_vecs_loss.backward()
+
+    eig_vecs_grad_true = A_dense.grad[t.unbind(A_op.sp_topo.idx_coo, dim=0)]
+    eig_vecs_grad = A_op.val.grad
+
+    t.testing.assert_close(eig_vecs_grad, eig_vecs_grad_true)
 
 
 def test_gep_forward(rand_sp_gep_5x5: Float[t.Tensor, "5 5"], device):
