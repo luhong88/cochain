@@ -8,14 +8,14 @@ def compute_eig_vec_grad_proj(
     eig_vecs: Float[t.Tensor, "c k"],
     dLdv: Float[t.Tensor, "c k"],
 ) -> Float[t.Tensor, "k k"]:
-    # Compute the projection of eigenvector gradients onto the eigensapce.
+    # Compute the projection of eigenvector gradients onto the eigenspace.
     return eig_vecs.T @ dLdv
 
 
 def compute_cauchy_matrix(
     eig_vals: Float[t.Tensor, " k"], k: int, eps: float | int
 ) -> Float[t.Tensor, "k k"]:
-    # Compute the matrix F, where F_ij = 1/(λ_j - λ_i) and F_ii = 0.
+    """Compute the matrix F, where F_ij = 1/(λ_j - λ_i) and F_ii = 0."""
     eig_val_diffs = eig_vals.view(1, -1) - eig_vals.view(-1, 1)
 
     if eps > 0:
@@ -47,7 +47,7 @@ def compute_dLdA_val(
     eig_vecs_col = eig_vecs[A_sp_topo.idx_coo[1]]
 
     # If the loss does not depend on the eigenvectors, then the "eigenvalue"
-    # component of the gradient is given by sum_i[dLdλ_i * v_i @ v_i.T]
+    # component of the gradient is given by dLdA_ij = sum_k[dLdλ_k * V_ik * V_jk]
     dLdA_eig_vals = t.sum(
         dLdl.view(1, -1) * eig_vecs_row * eig_vecs_col,
         dim=1,
@@ -87,7 +87,8 @@ def compute_dLdM_val(
     eig_vecs_col = eig_vecs[M_sp_topo.idx_coo[1]]
 
     # If the loss does not depend on the eigenvectors, then the "eigenvalue"
-    # component of the gradient is given by -sum_i[λ_i * dLdλ_i * v_i @ v_i.T]
+    # component of the gradient is given by
+    # dLdM_ij = -sum_k[λ_k * dLdλ_k * V_ik * V_jk]
     dLdM_eig_vals = -t.sum(
         eig_vals.view(1, -1) * dLdl.view(1, -1) * eig_vecs_row * eig_vecs_col,
         dim=1,

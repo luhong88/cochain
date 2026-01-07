@@ -85,7 +85,7 @@ def rand_sp_spd_5x5() -> Float[t.Tensor, "5 5"]:
 
 @pytest.fixture
 def rand_sp_spd_9x9() -> Float[t.Tensor, "9 9"]:
-    lambdas = t.tensor([0.5, 1.7, 3.2, 20.0, 35.2, 36.0, 41.9, 44.0, 45.0])
+    lambdas = t.tensor([0.1, 0.15, 0.2, 0.25, 0.28, 0.3, 41.9, 44.0, 45.0])
     mat = rand_sp_sym_matrix(lambdas, 5)
     return mat
 

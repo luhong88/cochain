@@ -59,7 +59,7 @@ def test_standard_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
     )
 
 
-def test_standard_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
+def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     k = 3
 
     A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
@@ -68,11 +68,11 @@ def test_standard_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
     A_dense.requires_grad_()
 
-    eig_vals_true, eig_vecs_true = t.lobpcg(A_dense, k=k)
+    eig_vals_true_all, eig_vecs_true_all = t.linalg.eigh(A_dense)
+    eig_vals_true = eig_vals_true_all[-k:]
 
-    # Turn off Lorentzian broadening for exact eigenvector gradient comparison.
     eig_vals, eig_vecs = scipy_eigsh(
-        A=A_op, M=None, k=k, eps=0, config=SciPyEigshConfig(which="LM")
+        A=A_op, M=None, k=k, config=SciPyEigshConfig(which="LM")
     )
 
     # Compare eigenvalue gradient
@@ -88,15 +88,35 @@ def test_standard_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
 
     t.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
 
-    # Compare eigenvector gradient
-    A_dense.grad = None
-    A_op.val.grad = None
 
-    eig_vecs_rand = t.randn_like(eig_vecs_true)
-    eig_vecs_loss_true = t.trace(
-        eig_vecs_rand.T @ canonicalize_eig_vec_signs(eig_vecs_true)
+def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
+    k = 3
+
+    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op.requires_grad_()
+
+    A_dense = rand_sp_spd_9x9.to_dense().to(device)
+    A_dense.requires_grad_()
+
+    eig_vals_true_all, eig_vecs_true_all = t.linalg.eigh(A_dense)
+    eig_vecs_true = eig_vecs_true_all[:, -k:]
+
+    # Turn off Lorentzian broadening for exact eigenvector gradient comparison.
+    # SciPy eigsh returns the eigenvalues in ascending order.
+    # By construction of the test fixture, all but its top three eigenvalues are
+    # tiny, so the contribution from unresolved eigenvalues should be small, and
+    # the custom backward (which ignores the unresolved eigenvectors) should agree
+    # with the lobpcg backward (which accounts for the unresolved eigenvectors).
+    eig_vals, eig_vecs = scipy_eigsh(
+        A=A_op, M=None, k=k, eps=0, config=SciPyEigshConfig(which="LM")
     )
-    eig_vecs_loss = t.trace(eig_vecs_rand.T @ canonicalize_eig_vec_signs(eig_vecs))
+
+    # Compare eigenvector gradient; here, we compute the Frobenius matrix inner
+    # product between a random matrix and the eigenspace project matrix (V@V.T)
+    # to make the loss invariant to eigenvector sign flips.
+    eig_vecs_rand = t.randn_like(eig_vecs_true)
+    eig_vecs_loss_true = t.trace(eig_vecs_rand.T @ eig_vecs_true @ eig_vecs_true.T)
+    eig_vecs_loss = t.trace(eig_vecs_rand.T @ eig_vecs @ eig_vecs.T)
 
     eig_vecs_loss_true.backward()
     eig_vecs_loss.backward()
