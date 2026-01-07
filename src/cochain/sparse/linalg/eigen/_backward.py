@@ -26,10 +26,8 @@ def compute_cauchy_matrix(
         cauchy = eig_val_diffs / (eig_val_diffs.pow(2) + eps)
 
     else:
-        cauchy = 1.0 / (
-            float("inf") * t.eye(k, dtype=eig_vals.dtype, device=eig_vals.device)
-            + eig_val_diffs
-        )
+        eig_val_diffs.fill_diagonal_(float("inf"))
+        cauchy = 1.0 / eig_val_diffs
 
     return cauchy
 
