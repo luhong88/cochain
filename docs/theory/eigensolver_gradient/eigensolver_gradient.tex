@@ -181,7 +181,7 @@ As before, this equation can be expressed more compactly if we define the roject
 \end{equation}
 One can check that this indeed reproduces the elementwise expression,
 \begin{equation}
-    \frac{\partial L}{\partial A_{ij}} = \sum_{k,l} V_{il}[F\odot P]_{lk}V_{jk} = \sum_{k,l} v_{l,i}(F_{lk}\overline{v}_k^Tv_l)v_{k,j} 
+    \overline{A}_{ij} = \sum_{k,l} V_{il}[F\odot P]_{lk}V_{jk} = \sum_{k,l} v_{l,i}(F_{lk}\overline{v}_k^Tv_l)v_{k,j} 
 \end{equation}
 
 \paragraph{Symmetry condition}
@@ -209,6 +209,20 @@ While Lorentzian broadening ensures numerical stability, it artificially dampens
 
 \paragraph{Partial decomposition}
 For large or sparse matrix eigenvalue problems, one often relies on iterative numerical methods to approximate a subset of the full eigenvalue spectrum. This is problematic for computing the sensitivity of the eigenvectors, since, according to \eqref{eig_vec_der_asym}, the derivative $\partial v_k/\partial A_{ij}$ depends on all eigenvectors; in other words, perturbations to $A_{ij}$ rotates $v_k$ into all other eigenvector $v_l$'s, and the degree of this ``mixing'' depends on the strength of the coupling between the modes $v_l^TE_{ij}v_k$ and the size of the spectral gap $\lambda_k - \lambda_l$. Typically, when there is a sufficient spectral gap between the solved $k$ eigenvalues and the rest $N-k$ unresolved eigenvalues, it is an acceptable approximation to simply ignore the contributions in \eqref{eig_vec_der_asym} orthogonal to the known eigenvectors; however, see \cite{kasim2020derivativespartialeigendecompositionreal} for a method that recovers the contributions from the missing $N-k$ eigenvectors.
+
+When implementing a sparse eigensolver autograd function using this subspace approximation, one might wish to compare the truncated gradient against the gradient from a dense eigensolver, such as \texttt{torch.linalg.eigh()}, which performs a full eigendecomposition. To make this numerical comparison exact, the contribution from the reunsolved eigenvectors need to be projected out from the dense eigensolver gradient. To do so, define the subspace projection matrix $P'=UU^T$, where $U\in\mathbb R^{N\times k}$ is the eigenvector matrix containing only $k$ resolved eigenvectors. Then the truncated sensitivity, $\overline{A}_{V,\text{trunc}}$ is related to the full sensitivity, $\overline{A}_{V,\text{full}}$, by
+\begin{equation}
+    \overline{A}_{V,\text{trunc}} = P'\overline{A}_{V,\text{full}}P'^T
+\end{equation}
+To see why this is true, first note that
+\begin{equation}
+    [P'V]_{ij} = \sum_{l<k}\sum_m U_{il}U_{ml}V_{mj} = \sum_{l<k}v_{l,i}\sum_m v_{l,m}v_{j,m} = \sum_{l<k} v_{l,i}\delta_{lj}
+\end{equation}
+Then, substituting this into \eqref{eig_vec_der_asym_final} gives
+\begin{align}
+    [P'\overline{A}_{V,\text{full}}P'^T]_{ij} & = \sum_{m,n}[P'V]_{im}[F\odot P]_{mn}[P'V]_{jn} \\ & = \sum_{m,n}\sum_{l<k}\sum_{p<k}v_{l,i}\delta_{lm}F_{mn}(\overline{v}_n^Tv_m)v_{p,j}\delta_{pn} \\ &=\sum_{l<k}\sum_{p<k} v_{l,i}(F_{lp}\overline{v}_p^Tv_l)v_{p,j}
+\end{align}
+which is the truncated version of \eqref{eig_vec_der_pre_matrix_form}.
 
 \section{Generalized eigenvalue problem}
 
@@ -259,7 +273,9 @@ With this kernel definition, the unsymmetrized eigenvector contribution is
 \begin{equation}
     \sum_k\overline{v}_k^T\frac{\partial v_k}{\partial M_{ij}} = -\sum_{k,l}v_{l,i}K_{lk}v_{k,j}
 \end{equation}
-or, in matrix form, $\overline{M}_V=-VKV^T$. To account for the symmetry condition, we define the symmetrized kernel $S = K + K^T$
+or, in matrix form, $\overline{M}_V=-VKV^T$.
+
+To account for the symmetry condition, we define the symmetrized kernel $S = K + K^T$
 \begin{equation}
     S_{lk} = \begin{cases}
         F_{lk}(\lambda_kP_{lk} - \lambda_lP_{kl}), & l\ne k \\
@@ -270,6 +286,7 @@ So that the symmetrized eigenvector contribution is
 \begin{equation}
     \overline{M}_V = -\frac 1 2 VSV^T
 \end{equation}
+To remove gradient contributions from unresolved eigenvectors, we define the oblique subspace projection matrix $P'=UU^TM$, and it follows as before that $\overline{A}_{V,\text{trunc}} = P'\overline{A}_{V,\text{full}}P'^T$ and $\overline{M}_{V,\text{trunc}} = P'\overline{M}_{V,\text{full}}P'^T$.
 
 \bibliographystyle{plain} % or alpha, unsrt, etc.
 \bibliography{references} % Note: Do not add .bib extension here
