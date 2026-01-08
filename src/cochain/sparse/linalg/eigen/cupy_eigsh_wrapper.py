@@ -99,11 +99,14 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
                     A_val, A_sp_topo, cp_config.sigma, nvmath_config
                 )
 
+            cp_config_dict = asdict(cp_config)
+            del cp_config_dict["sigma"]
+
             results = cp_sp_linalg.eigsh(
                 a=A_cp,
                 k=k,
                 return_eigenvectors=compute_eig_vecs,
-                **asdict(cp_config),
+                **cp_config_dict,
             )
 
             if compute_eig_vecs:

@@ -18,7 +18,12 @@ class BaseInvSymSpOp:
         stream = t.cuda.current_stream()
 
         # Prepare nvmath DirectSolver.
-        config.options.sparse_system_type = sp_literal_to_matrix_type["symmetric"]
+        if config.options is None:
+            config.options = nvmath_sp.DirectSolverOptions(
+                sparse_system_type=sp_literal_to_matrix_type["symmetric"]
+            )
+        else:
+            config.options.sparse_system_type = sp_literal_to_matrix_type["symmetric"]
 
         # Do not give DirectSolver constructor the current stream to prevent
         # possible stream mismatch in subsequent solver calls; instead, pass the

@@ -49,7 +49,7 @@ class CuPyShiftInvSymOp(BaseInvSymSpOp, cp_sp_linalg.LinearOperator):
 
             A_shift_inv_cp = A_cp - diag_cp
 
-            b_dummy = cp.zeros(A_cp.size(0), dtype=A_cp.dtype, device=A_cp.device)
+            b_dummy = cp.zeros(A_cp.shape[0], dtype=A_cp.dtype)
 
         BaseInvSymSpOp.__init__(self, a=A_shift_inv_cp, b=b_dummy, config=config)
         cp_sp_linalg.LinearOperator.__init__(self, dtype=A_cp.dtype, shape=A_cp.shape)

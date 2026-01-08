@@ -1,20 +1,15 @@
-import pytest
-import scipy.linalg
 import torch as t
 from jaxtyping import Float
 
 from cochain.sparse.linalg.eigen import SciPyEigshConfig, scipy_eigsh
-from cochain.sparse.linalg.eigen.utils import (
-    M_orthonormalize,
-    canonicalize_eig_vec_signs,
-    grassmann_proj_dists,
-)
+from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
 from cochain.sparse.operators import SparseOperator
 
 # TODO: test handling of degenerate eigenvalues
+# TODO: test handling of batching
 
 
-def _dense_gep(
+def dense_gep(
     A: Float[t.Tensor, "m m"], M: Float[t.Tensor, "m m"]
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
     # Since t.linalg.eigh() does not support GEP, need to perform Cholesky
@@ -176,7 +171,7 @@ def test_gep_forward(rand_sp_gep_5x5: Float[t.Tensor, "5 5"], device):
     A_dense = A.to_dense().to(device)
     M_dense = M.to_dense().to(device)
 
-    eig_vals_true, eig_vecs_true = _dense_gep(A_dense, M_dense)
+    eig_vals_true, eig_vecs_true = dense_gep(A_dense, M_dense)
 
     A_op = SparseOperator.from_tensor(A).to(device)
     M_op = SparseOperator.from_tensor(M).to(device)
@@ -217,7 +212,7 @@ def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     M_dense = M.to_dense().to(device)
     M_dense.requires_grad_()
 
-    eig_vals_true_all, eig_vecs_true_all = _dense_gep(A_dense, M_dense)
+    eig_vals_true_all, eig_vecs_true_all = dense_gep(A_dense, M_dense)
     eig_vals_true = eig_vals_true_all[-k:]
 
     A_op = SparseOperator.from_tensor(A).to(device)
@@ -259,7 +254,7 @@ def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     M_dense = M.to_dense().to(device)
     M_dense.requires_grad_()
 
-    eig_vals_true_all, eig_vecs_true_all = _dense_gep(A_dense, M_dense)
+    eig_vals_true_all, eig_vecs_true_all = dense_gep(A_dense, M_dense)
     eig_vecs_true = eig_vecs_true_all[:, -k:]
     subspace_projector = eig_vecs_true @ eig_vecs_true.T @ M_dense
 
@@ -327,7 +322,7 @@ def test_gep_shift_invert_forward(rand_sp_gep_5x5, device):
     A_dense = A.to_dense().to(device)
     M_dense = M.to_dense().to(device)
 
-    eig_vals_true, eig_vecs_true = _dense_gep(A_dense, M_dense)
+    eig_vals_true, eig_vecs_true = dense_gep(A_dense, M_dense)
 
     k = 1
     target_eig_val = 18.5

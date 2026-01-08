@@ -18,16 +18,16 @@ def compute_cauchy_matrix(
     """Compute the matrix F, where F_ij = 1/(λ_j - λ_i) and F_ii = 0."""
     eig_val_diffs = eig_vals.view(1, -1) - eig_vals.view(-1, 1)
 
-    if eps > 0:
+    if eps == 0:
+        eig_val_diffs.fill_diagonal_(float("inf"))
+        cauchy = 1.0 / eig_val_diffs
+
+    else:
         # If eps > 0, compute a regularized version where
         # F_ij = Δ_ji / (Δ_ji^2 + ϵ), where Δ_ji = λ_j - λ_i.
         # When Δ >> 0, this recovers the true definition; when Δ is close
         # to 0, this prevents the gradient from exploding by decaying to 0.
         cauchy = eig_val_diffs / (eig_val_diffs.pow(2) + eps)
-
-    else:
-        eig_val_diffs.fill_diagonal_(float("inf"))
-        cauchy = 1.0 / eig_val_diffs
 
     return cauchy
 
