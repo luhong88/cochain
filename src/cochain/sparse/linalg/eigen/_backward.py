@@ -101,8 +101,8 @@ def compute_dLdM_val(
         # The elements of the kernel is given by
         # off-diagonal: K_ij = F_ij * (λ_i*P_ji - λ_j*P_ij)/2
         # diagonal: K_ii = - P_ii/2
-        lP_T = eig_vals.view(-1, 1) * eig_vec_grad_proj.T
-        kernel_off_diag = 0.5 * cauchy * (lP_T - lP_T.T)
+        lP = eig_vals.view(1, -1) * eig_vec_grad_proj
+        kernel_off_diag = 0.5 * cauchy * (lP.T - lP)
         kernel_diag = -0.5 * t.diag(eig_vec_grad_proj)
         kernel: Float[t.Tensor, "k k"] = t.diagflat(kernel_diag) + kernel_off_diag
 
@@ -188,7 +188,7 @@ def dLdA_dLdM_backward(
 
     if needs_grad_M_val:
         dLdM_val = compute_dLdM_val(
-            M_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+            M_sp_topo, eig_vals, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
         )
 
     return dLdA_val, dLdM_val

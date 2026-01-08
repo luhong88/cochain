@@ -72,7 +72,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     eig_vals_true = eig_vals_true_all[-k:]
 
     eig_vals, eig_vecs = scipy_eigsh(
-        A=A_op, M=None, k=k, config=SciPyEigshConfig(which="LM")
+        A=A_op, M=None, k=k, eps=0, config=SciPyEigshConfig(which="LM")
     )
 
     # Compare eigenvalue gradient
@@ -100,6 +100,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
 
     eig_vals_true_all, eig_vecs_true_all = t.linalg.eigh(A_dense)
     eig_vecs_true = eig_vecs_true_all[:, -k:]
+    subspace_projector = eig_vecs_true @ eig_vecs_true.T
 
     # Turn off Lorentzian broadening for exact eigenvector gradient comparison.
     # SciPy eigsh returns the eigenvalues in ascending order.
@@ -115,16 +116,58 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     # product between a random matrix and the eigenspace project matrix (V@V.T)
     # to make the loss invariant to eigenvector sign flips.
     eig_vecs_rand = t.randn_like(eig_vecs_true)
-    eig_vecs_loss_true = t.trace(eig_vecs_rand.T @ eig_vecs_true @ eig_vecs_true.T)
-    eig_vecs_loss = t.trace(eig_vecs_rand.T @ eig_vecs @ eig_vecs.T)
+    eig_vecs_loss_true = t.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
+    eig_vecs_loss = t.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
 
     eig_vecs_loss_true.backward()
     eig_vecs_loss.backward()
 
-    eig_vecs_grad_true = A_dense.grad[t.unbind(A_op.sp_topo.idx_coo, dim=0)]
+    eig_vecs_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
+        t.unbind(A_op.sp_topo.idx_coo, dim=0)
+    ]
     eig_vecs_grad = A_op.val.grad
 
     t.testing.assert_close(eig_vecs_grad, eig_vecs_grad_true)
+
+
+def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
+    k = 3
+
+    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op.requires_grad_()
+
+    A_dense = rand_sp_spd_9x9.to_dense().to(device)
+    A_dense.requires_grad_()
+
+    eig_vals_true_all, eig_vecs_true_all = t.linalg.eigh(A_dense)
+    eig_vals_true = eig_vals_true_all[-k:]
+    eig_vecs_true = eig_vecs_true_all[:, -k:]
+    subspace_projector = eig_vecs_true @ eig_vecs_true.T
+
+    eig_vals, eig_vecs = scipy_eigsh(
+        A=A_op, M=None, k=k, eps=0, config=SciPyEigshConfig(which="LM")
+    )
+
+    eig_vals_rand = t.randn_like(eig_vals_true)
+    eig_vals_loss_true = t.sum(eig_vals_true * eig_vals_rand)
+    eig_vals_loss = t.sum(eig_vals * eig_vals_rand)
+
+    eig_vecs_rand = t.randn_like(eig_vecs_true)
+    eig_vecs_loss_true = t.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
+    eig_vecs_loss = t.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
+
+    combined_loss_true = eig_vals_loss_true + eig_vecs_loss_true
+    combined_loss = eig_vals_loss + eig_vecs_loss
+
+    combined_loss_true.backward()
+    combined_loss.backward()
+
+    combined_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
+        t.unbind(A_op.sp_topo.idx_coo, dim=0)
+    ]
+    combined_grad = A_op.val.grad
+
+    t.testing.assert_close(combined_grad, combined_grad_true)
 
 
 def test_gep_forward(rand_sp_gep_5x5: Float[t.Tensor, "5 5"], device):
@@ -161,6 +204,95 @@ def test_gep_forward(rand_sp_gep_5x5: Float[t.Tensor, "5 5"], device):
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, :k]),
     )
+
+
+def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
+    k = 3
+
+    A, M = rand_sp_gep_9x9
+
+    A_dense = A.to_dense().to(device)
+    A_dense.requires_grad_()
+
+    M_dense = M.to_dense().to(device)
+    M_dense.requires_grad_()
+
+    eig_vals_true_all, eig_vecs_true_all = _dense_gep(A_dense, M_dense)
+    eig_vals_true = eig_vals_true_all[-k:]
+
+    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op.requires_grad_()
+
+    M_op = SparseOperator.from_tensor(M).to(device)
+    M_op.requires_grad_()
+
+    eig_vals, eig_vecs = scipy_eigsh(
+        A=A_op, M=M_op, k=k, eps=0, config=SciPyEigshConfig(which="LM")
+    )
+
+    eig_vals_rand = t.randn_like(eig_vals_true)
+    eig_vals_loss_true = t.sum(eig_vals_true * eig_vals_rand)
+    eig_vals_loss = t.sum(eig_vals * eig_vals_rand)
+
+    eig_vals_loss_true.backward()
+    eig_vals_loss.backward()
+
+    A_grad_true = A_dense.grad[t.unbind(A_op.sp_topo.idx_coo, dim=0)]
+    A_grad = A_op.val.grad
+
+    t.testing.assert_close(A_grad, A_grad_true)
+
+    M_grad_true = M_dense.grad[t.unbind(M_op.sp_topo.idx_coo, dim=0)]
+    M_grad = M_op.val.grad
+
+    t.testing.assert_close(M_grad, M_grad_true)
+
+
+def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
+    k = 3
+
+    A, M = rand_sp_gep_9x9
+
+    A_dense = A.to_dense().to(device)
+    A_dense.requires_grad_()
+
+    M_dense = M.to_dense().to(device)
+    M_dense.requires_grad_()
+
+    eig_vals_true_all, eig_vecs_true_all = _dense_gep(A_dense, M_dense)
+    eig_vecs_true = eig_vecs_true_all[:, -k:]
+    subspace_projector = eig_vecs_true @ eig_vecs_true.T @ M_dense
+
+    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op.requires_grad_()
+
+    M_op = SparseOperator.from_tensor(M).to(device)
+    M_op.requires_grad_()
+
+    eig_vals, eig_vecs = scipy_eigsh(
+        A=A_op, M=M_op, k=k, eps=0, config=SciPyEigshConfig(which="LM")
+    )
+
+    eig_vecs_rand = t.randn_like(eig_vecs_true)
+    eig_vecs_loss_true = t.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
+    eig_vecs_loss = t.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
+
+    eig_vecs_loss_true.backward()
+    eig_vecs_loss.backward()
+
+    A_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector.T)[
+        t.unbind(A_op.sp_topo.idx_coo, dim=0)
+    ]
+    A_grad = A_op.val.grad
+
+    t.testing.assert_close(A_grad, A_grad_true)
+
+    M_grad_true = (subspace_projector @ M_dense.grad @ subspace_projector.T)[
+        t.unbind(M_op.sp_topo.idx_coo, dim=0)
+    ]
+    M_grad = M_op.val.grad
+
+    t.testing.assert_close(M_grad, M_grad_true)
 
 
 def test_shift_invert_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
