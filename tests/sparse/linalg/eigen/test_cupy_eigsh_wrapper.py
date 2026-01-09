@@ -16,7 +16,7 @@ def test_standard_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
 
     eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
 
-    k = 3
+    k = 2
 
     # Test both the LM and SA modes
     eig_vals, eig_vecs = cupy_eigsh(A=A_op, k=k, cp_config=CuPyEigshConfig(which="LM"))

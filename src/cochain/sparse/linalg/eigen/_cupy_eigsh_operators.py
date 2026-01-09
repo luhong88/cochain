@@ -43,7 +43,7 @@ class CuPyShiftInvSymOp(BaseInvSymSpOp, cp_sp_linalg.LinearOperator):
         with cp.cuda.ExternalStream(t_stream.cuda_stream, t_stream.device_index):
             A_cp = sp_op_comps_to_cp_csr(A_val, A_sp_topo)
 
-            diag_cp = -sigma * cp_sp.identity(
+            diag_cp = sigma * cp_sp.identity(
                 A_cp.shape[0], dtype=A_cp.dtype, format="csr"
             )
 
