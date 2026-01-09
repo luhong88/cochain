@@ -6,7 +6,7 @@ from jaxtyping import Float
 from ...operators import SparseOperator
 from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._lobpcg_operators import (
-    IdentityPrecond,
+    IdentityOperator,
     ShiftInvSymGEPSpOp,
     ShiftInvSymSpOp,
     SpPrecond,
@@ -23,11 +23,11 @@ type SparseOperatorLike = (
 def _lobpcg_one_iter(
     iter_: int,
     A_op: SparseOperatorLike,
-    M_op: Float[SparseOperator, "m m"] | None,
+    M_op: Float[SparseOperator, "m m"] | IdentityOperator,
     R: Float[t.Tensor, "m n"],
     X_current: Float[t.Tensor, "m n"],
     X_prev: Float[t.Tensor, "m n"],
-    precond: SpPrecond | IdentityPrecond,
+    precond: SpPrecond | IdentityOperator,
     largest: bool,
     tol: float,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
@@ -77,11 +77,11 @@ def _lobpcg_one_iter(
     n = X_current.size(-1)
     if largest:
         # if largest=True, sort eigenvalues in descending order
-        X_next = t.flip(X_next_all[-n:], dims=(-1,))
+        X_next = t.flip(X_next_all[:, -n:], dims=(-1,))
         Lambda_next = t.flip(Lambda_next_all[-n:], dims=(0,))
     else:
         # if largest=False, keep eigenvalues in ascending order
-        X_next = X_next_all[:n]
+        X_next = X_next_all[:, :n]
         Lambda_next = Lambda_next[:n]
 
     return Lambda_next, X_next
@@ -89,9 +89,9 @@ def _lobpcg_one_iter(
 
 def _lobpcg_loop(
     A_op: SparseOperatorLike,
-    M_op: Float[SparseOperator, "m m"] | None,
+    M_op: Float[SparseOperator, "m m"] | IdentityOperator,
     X_0: Float[t.Tensor, "m n"],
-    precond: SpPrecond | IdentityPrecond,
+    precond: SpPrecond | IdentityOperator,
     largest: bool,
     tol: float,
     niter: int,
@@ -143,8 +143,8 @@ def lobpcg_forward(
         case (None, None):
             return lobpcg_loop_partial(
                 A_op=A_op,
-                M_op=None,
-                precond=IdentityPrecond(),
+                M_op=IdentityOperator(),
+                precond=IdentityOperator(),
             )
 
         case (M_op, None):
@@ -152,15 +152,15 @@ def lobpcg_forward(
                 A_op=A_op,
                 M_op=M_op,
                 precond=SpPrecond(
-                    A_op=A_op, n=n, diag_damp=diag_damp, convig=nvmath_config
+                    A_op=A_op, n=n, diag_damp=diag_damp, config=nvmath_config
                 ),
             )
 
         case (None, sigma):
             return lobpcg_loop_partial(
                 A_op=ShiftInvSymSpOp(A_op=A_op, sigma=sigma, n=n, config=nvmath_config),
-                M_op=None,
-                precond=IdentityPrecond(),
+                M_op=IdentityOperator(),
+                precond=IdentityOperator(),
             )
 
         case (M_op, sigma):
@@ -169,7 +169,7 @@ def lobpcg_forward(
                     A_op=A_op, M_op=M_op, sigma=sigma, n=n, config=nvmath_config
                 ),
                 M_op=M_op,
-                precond=IdentityPrecond(),
+                precond=IdentityOperator(),
             )
 
         case _:

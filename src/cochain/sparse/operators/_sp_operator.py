@@ -189,7 +189,7 @@ class SparseOperator(BaseOperator):
     # TODO: write tests fot tr()
     @property
     def tr(self) -> Float[t.Tensor, "*b"]:
-        if self.n_batch_dim is None:
+        if self.n_batch_dim == 0:
             return self.val[
                 t.argwhere(self.idx_coo[0] == self.idx_coo[1]).flatten()
             ].sum(dim=0)
@@ -238,9 +238,9 @@ class SparseOperator(BaseOperator):
         all_idx = t.hstack([coo.indices() for coo in coo_tensors])
         all_val = t.hstack([coo.values() for coo in coo_tensors])
 
-        return t.sparse_coo_tensor(
-            all_idx, all_val, size=coo_tensors[0].size()
-        ).coalesce()
+        return SparseOperator.from_tensor(
+            t.sparse_coo_tensor(all_idx, all_val, size=coo_tensors[0].size())
+        )
 
     def __mul__(self, other) -> SparseOperator:
         """

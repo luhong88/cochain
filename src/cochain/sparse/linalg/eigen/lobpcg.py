@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -27,7 +27,7 @@ class LOBPCGConfig:
     sigma: float | int | None = None
     v0: Float[t.Tensor, "m n"] | Sequence[Float[t.Tensor, "m c"] | None] | None = None
     diag_damp: float | int | None = None
-    largest: bool = False
+    largest: bool = True
     tol: float | None = None
     maxiter: int | None = 1000
 
@@ -170,7 +170,7 @@ def lobpcg(
     A: Float[SparseOperator, "m m"],
     M: Float[SparseOperator, "m m"] | None = None,
     block_diag_batch: bool = False,
-    n: int | None = 10,
+    n: int | None = None,
     k: int = 6,
     eps: float | int = 1e-6,
     lobpcg_config: LOBPCGConfig | None = None,

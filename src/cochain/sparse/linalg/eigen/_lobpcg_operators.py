@@ -2,30 +2,9 @@ import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float
 
-from ...operators import SparseOperator
+from ...operators import DiagOperator, SparseOperator
 from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._inv_operator import BaseInvSymSpOp
-
-
-def _batched_csr_eye(
-    n: int, b: int, val_dtype: t.dtype, idx_dtype: t.dtype, device: t.device
-) -> Float[t.Tensor, "*b n n"]:
-    if b == 0:
-        identity = t.sparse_csr_tensor(
-            crow_indices=t.arange(n + 1, dtype=idx_dtype, device=device),
-            col_indices=t.arange(n, dtype=idx_dtype, device=device),
-            values=t.ones(n, dtype=val_dtype, device=device),
-        )
-    else:
-        identity = t.sparse_csr_tensor(
-            crow_indices=t.tile(
-                t.arange(n + 1, dtype=idx_dtype, device=device), (b, 1)
-            ),
-            col_indices=t.tile(t.arange(n, dtype=idx_dtype, device=device), (b, 1)),
-            values=t.tile(t.ones(n, dtype=val_dtype, device=device), (b, 1)),
-        )
-
-    return identity
 
 
 class SpPrecond(BaseInvSymSpOp):
@@ -46,28 +25,23 @@ class SpPrecond(BaseInvSymSpOp):
         diag_damp: float | int | None,
         config: DirectSolverConfig,
     ):
-        A_csr = A_op.to_sparse_csr(int32=True)
-
-        b_dummy = t.zeros((A_csr.size(-1), n), dtype=A_csr.dtype, device=A_csr.device)
+        b_dummy = t.zeros((A_op.size(-1), n), dtype=A_op.dtype, device=A_op.device)
 
         if diag_damp == 0:
-            op = A_csr
+            op = A_op.to_sparse_csr(int32=True)
         else:
             if diag_damp is None:
                 eps = 1e-4 * A_op.tr / A_op.size(0)
             else:
                 eps = diag_damp
 
-            eye = _batched_csr_eye(
-                n=A_csr.size(-1),
-                b=0,
-                val_dtype=A_csr.dtype,
-                idx_dtype=t.int32,
-                device=A_csr.device,
-            )
-            op = A_csr + eps * eye
+            # Pytorch currently does not support operations like A - I on sparse
+            # CSR tensors.
+            eye = DiagOperator.eye(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
 
-        super().__init__(op, b_dummy, config, t.cuda.curent_stream())
+            op = SparseOperator.assemble(A_op, eps * eye).to_sparse_csr(int32=True)
+
+        super().__init__(op, b_dummy, config, t.cuda.current_stream())
 
     def __matmul__(self, res: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
         stream = t.cuda.current_stream()
@@ -80,11 +54,11 @@ class SpPrecond(BaseInvSymSpOp):
         return self.solver.solve(stream=stream)
 
 
-class IdentityPrecond:
+class IdentityOperator:
     def __init__(self):
         pass
 
-    def __matmal__(self, res):
+    def __matmul__(self, res):
         return res
 
 
@@ -105,19 +79,20 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
         n: int,
         config: DirectSolverConfig,
     ):
-        A_csr = A_op.to_sparse_csr(int32=True)
-        eye = _batched_csr_eye(
-            n=A_csr.size(-1),
-            b=0,
-            val_dtype=A_csr.dtype,
-            idx_dtype=t.int32,
-            device=A_csr.device,
+        # Pytorch currently does not support operations like A - I on sparse CSR
+        # tensors.
+        eye = DiagOperator.eye(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
+        A_shift_inv = SparseOperator.assemble(A_op, -sigma * eye).to_sparse_csr(
+            int32=True
         )
-        A_shift_inv = A_csr - sigma * eye
 
-        b_dummy = t.zeros((A_csr.size(-1), n), dtype=A_csr.dtype, device=A_csr.device)
+        b_dummy = t.zeros(
+            (A_shift_inv.size(-1), n),
+            dtype=A_shift_inv.dtype,
+            device=A_shift_inv.device,
+        )
 
-        super().__init__(A_shift_inv, b_dummy, config, t.cuda.curent_stream())
+        super().__init__(A_shift_inv, b_dummy, config, t.cuda.current_stream())
 
     def __matmul__(self, x: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
         stream = t.cuda.current_stream()
@@ -151,14 +126,18 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
         n: int,
         config: DirectSolverConfig,
     ):
-        A_csr = A_op.to_sparse_csr(int32=True)
+        # Pytorch currently does not support operations like A - M on sparse CSR
+        # tensors.
+        A_shift_inv = SparseOperator.assemble(A_op, -sigma * M_op).to_sparse_csr(
+            int32=True
+        )
         self.M_csr = M_op.to_sparse_csr(int32=True)
 
-        A_shift_inv = A_csr - sigma * self.M_csr
+        b_dummy = t.zeros(
+            (self.M_csr.size(-1), n), dtype=self.M_csr.dtype, device=self.M_csr.device
+        )
 
-        b_dummy = t.zeros((A_csr.size(-1), n), dtype=A_csr.dtype, device=A_csr.device)
-
-        super().__init__(A_shift_inv, b_dummy, config, t.cuda.curent_stream())
+        super().__init__(A_shift_inv, b_dummy, config, t.cuda.current_stream())
 
     def __matmul__(self, x: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
         stream = t.cuda.current_stream()

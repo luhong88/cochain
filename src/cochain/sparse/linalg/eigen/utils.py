@@ -7,25 +7,25 @@ from ...operators import SparseOperator
 
 
 def M_orthonormalize(
-    V: Float[t.Tensor, "m 3*n"],
+    V: Float[t.Tensor, "m n"],
     M_op: Float[SparseOperator, "m m"] | None,
-    rtol: float | None,
-) -> Float[t.Tensor, "m 3*n"]:
+    rtol: float | None = None,
+) -> Float[t.Tensor, "m n"]:
     """
     Convert the column vectors of V into M-orthonormal vectors using symmetric
-    orthogonalization.
+    orthogonalization. If M is None, then it is assumed to be the identity matrix.
 
     Currently batched sparse-dense matrix operations are not well supported in
     torch; therefore, this function cannot support batch dimensions.
     """
-    if M_op is None:
-        return V
-
     if rtol is None:
-        rtol = M_op.size(-1) * t.finfo(M_op.dtype).eps
+        rtol = V.size(0) * t.finfo(V.dtype).eps
 
     # Compute the M-orthogonal gram matrix.
-    G: Float[t.Tensor, "3*n 3*n"] = V.T @ (M_op @ V)
+    if M_op is None:
+        G: Float[t.Tensor, "n n"] = V.T @ V
+    else:
+        G: Float[t.Tensor, "n n"] = V.T @ (M_op @ V)
 
     # Perform an eigendecomposition of G = Q@Λ@Q.T.
     eig_vals, eig_vecs = t.linalg.eigh(G)
@@ -41,7 +41,7 @@ def M_orthonormalize(
 
     # Find V_ortho = V@W, the M-orthonormal version of V. With some algebra,
     # one can check that V_ortho@M@V_ortho = I.
-    V_ortho = eig_vecs @ W
+    V_ortho = V @ W
 
     return V_ortho
 
