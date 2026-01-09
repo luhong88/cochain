@@ -51,7 +51,14 @@ class CuPyShiftInvSymOp(BaseInvSymSpOp, cp_sp_linalg.LinearOperator):
 
             b_dummy = cp.zeros(A_cp.shape[0], dtype=A_cp.dtype)
 
-        BaseInvSymSpOp.__init__(self, a=A_shift_inv_cp, b=b_dummy, config=config)
+            BaseInvSymSpOp.__init__(
+                self,
+                a=A_shift_inv_cp,
+                b=b_dummy,
+                config=config,
+                stream=cp.cuda.get_current_stream(),
+            )
+
         cp_sp_linalg.LinearOperator.__init__(self, dtype=A_cp.dtype, shape=A_cp.shape)
 
     def _matvec(self, x: Float[cp.ndarray, " c"]):

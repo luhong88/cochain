@@ -67,7 +67,7 @@ class SpPrecond(BaseInvSymSpOp):
             )
             op = A_csr + eps * eye
 
-        super().__init__(op, b_dummy, config)
+        super().__init__(op, b_dummy, config, t.cuda.curent_stream())
 
     def __matmul__(self, res: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
         stream = t.cuda.current_stream()
@@ -117,7 +117,7 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
 
         b_dummy = t.zeros((A_csr.size(-1), n), dtype=A_csr.dtype, device=A_csr.device)
 
-        super().__init__(A_shift_inv, b_dummy, config)
+        super().__init__(A_shift_inv, b_dummy, config, t.cuda.curent_stream())
 
     def __matmul__(self, x: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
         stream = t.cuda.current_stream()
@@ -158,7 +158,7 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
 
         b_dummy = t.zeros((A_csr.size(-1), n), dtype=A_csr.dtype, device=A_csr.device)
 
-        super().__init__(A_shift_inv, b_dummy, config)
+        super().__init__(A_shift_inv, b_dummy, config, t.cuda.curent_stream())
 
     def __matmul__(self, x: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
         stream = t.cuda.current_stream()

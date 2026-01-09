@@ -1,3 +1,4 @@
+import cupy as cp
 import nvmath.sparse.advanced as nvmath_sp
 import torch as t
 from jaxtyping import Float
@@ -11,11 +12,10 @@ class BaseInvSymSpOp:
         a: Float[t.Tensor, " m m"],
         b: Float[t.Tensor, "m n"],
         config: DirectSolverConfig,
+        stream: t.Stream | cp.cuda.Stream,
     ):
         self.dtype = a.dtype
         self.shape = a.shape
-
-        stream = t.cuda.current_stream()
 
         # Prepare nvmath DirectSolver.
         if config.options is None:
