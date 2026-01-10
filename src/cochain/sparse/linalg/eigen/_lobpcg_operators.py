@@ -11,8 +11,11 @@ class IdentityOperator:
     def __init__(self):
         pass
 
-    def __matmul__(self, res):
-        return res
+    def __matmul__(self, other):
+        return other
+
+    def __rmatmul__(self, other):
+        return other
 
 
 class SpPrecond(BaseInvSymSpOp):

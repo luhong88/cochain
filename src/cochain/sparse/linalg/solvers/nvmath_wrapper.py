@@ -171,7 +171,8 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
             # update both the LHS and RHS of the solver for the adjoint method.
             # Since the LHS is updated, we need to redo the plan() and factorize()
             # steps. Note that, currently, the DirectSolver class does not expose
-            # a transpose mode option.
+            # a transpose mode option, which would have been preferred over
+            # re-initializing the solver.
             A_T = SparseOperator(
                 A_sp_topo, solver.a.tensor.values().flatten()
             ).to_sparse_csr_transposed(int32=True)
