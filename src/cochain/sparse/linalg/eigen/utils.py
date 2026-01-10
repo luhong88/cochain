@@ -12,8 +12,11 @@ def M_orthonormalize(
     rtol: float | None = None,
 ) -> Float[t.Tensor, "m n"]:
     """
-    Convert the column vectors of V into M-orthonormal vectors using symmetric
+    Convert the column vectors of V into M-orthonormal vectors using canonical/PCA
     orthogonalization. If M is None, then it is assumed to be the identity matrix.
+
+    If not all column vectors of V are linearly independent, then the returned
+    matrix will contain fewer columns.
 
     Currently batched sparse-dense matrix operations are not well supported in
     torch; therefore, this function cannot support batch dimensions.
@@ -30,17 +33,23 @@ def M_orthonormalize(
     # Perform an eigendecomposition of G = Q@Λ@Q.T.
     eig_vals, eig_vecs = t.linalg.eigh(G)
 
-    # Clamp very small eigenvalues.
+    # Drop very small eigenvalues corresponding to linearly dependent columns.
     eps = rtol * eig_vals.max()
-    eig_vals_clamped = t.clip(eig_vals, min=eps)
-    inv_eig_vals = 1.0 / t.sqrt(eig_vals_clamped)
+    mask = eig_vals > eps
 
-    # Compute the whitening matrix W = Q@Λ^(-1/2)@Q.T as the inverse square root
+    # If V is basically zero, return a single zero vector.
+    if not mask.any():
+        return t.zeros_like(V[:, :1])
+
+    inv_eig_vals_masked = 1.0 / t.sqrt(eig_vals[mask])
+    eig_vecs_masked = eig_vecs[:, mask]
+
+    # Compute the whitening matrix W = Q@Λ^(-1/2) as the inverse square root
     # of G.
-    W = (eig_vecs * inv_eig_vals.view(1, -1)) @ eig_vecs.T
+    W = eig_vecs_masked * inv_eig_vals_masked.view(1, -1)
 
     # Find V_ortho = V@W, the M-orthonormal version of V. With some algebra,
-    # one can check that V_ortho@M@V_ortho = I.
+    # one can check that V_ortho.T@M@V_ortho = I.
     V_ortho = V @ W
 
     return V_ortho

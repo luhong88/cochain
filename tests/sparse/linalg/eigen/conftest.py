@@ -89,8 +89,8 @@ def rand_sym_gep_matrices(
 
 
 @pytest.fixture
-def rand_sp_spd_5x5() -> Float[t.Tensor, "5 5"]:
-    lambdas = t.tensor([0.5, 3.2, 20.0, 35.2, 36.0])
+def rand_sp_spd_6x6() -> Float[t.Tensor, "5 5"]:
+    lambdas = t.tensor([0.5, 0.9, 3.2, 20.0, 35.2, 36.0])
     mat = rand_sp_sym_matrix(lambdas, k=10)
     return mat
 
@@ -103,8 +103,8 @@ def rand_sp_spd_9x9() -> Float[t.Tensor, "9 9"]:
 
 
 @pytest.fixture
-def rand_sp_gep_5x5() -> tuple[Float[t.Tensor, "5 5"], Float[t.Tensor, "5 5"]]:
-    lambdas = t.tensor([0.5, 3.2, 20.0, 35.2, 36.0])
+def rand_sp_gep_6x6() -> tuple[Float[t.Tensor, "5 5"], Float[t.Tensor, "6 6"]]:
+    lambdas = t.tensor([0.5, 0.9, 3.2, 20.0, 35.2, 36.0])
     a, b = rand_sym_gep_matrices(lambdas, rho=0.4, k=10)
     return a, b
 

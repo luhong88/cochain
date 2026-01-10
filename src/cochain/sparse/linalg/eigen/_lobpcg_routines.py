@@ -21,7 +21,6 @@ type SparseOperatorLike = (
 
 
 def _lobpcg_one_iter(
-    iter_: int,
     A_op: SparseOperatorLike,
     M_op: Float[SparseOperator, "m m"] | IdentityOperator,
     R: Float[t.Tensor, "m n"],
@@ -49,11 +48,8 @@ def _lobpcg_one_iter(
 
     # Assemble the new trial subspace and enforce M-orthonormality condition on
     # the subspace basis vectors. We perform the orthonomalization twice to
-    # minimize numerical error. Since P = 0 during the first iteration, skip it.
-    if iter_ == 0:
-        V = t.hstack((X_current, W))
-    else:
-        V = t.hstack((X_current, W, P))
+    # minimize numerical error.
+    V = t.hstack((X_current, W, P))
 
     V_ortho = M_orthonormalize(M_orthonormalize(V, M_op), M_op)
 
@@ -82,7 +78,7 @@ def _lobpcg_one_iter(
     else:
         # if largest=False, keep eigenvalues in ascending order
         X_next = X_next_all[:, :n]
-        Lambda_next = Lambda_next[:n]
+        Lambda_next = Lambda_next_all[:n]
 
     return Lambda_next, X_next
 
@@ -101,7 +97,7 @@ def _lobpcg_loop(
 
     # Compute the eigenvalues using the Rayleigh quotient
     # X.T@A@X/X.T@M@X = X.T@A@X = X.T@M@X@Λ = Λ
-    Lambda_current = t.diag(X_current.T @ (M_op @ X_current))
+    Lambda_current = t.diag(X_current.T @ (A_op @ X_current))
 
     for iter_ in range(niter):
         # Compute the residual vectors R = A@X - M@X@Λ
@@ -112,7 +108,7 @@ def _lobpcg_loop(
             break
         else:
             Lambda_next, X_next = _lobpcg_one_iter(
-                iter_, A_op, M_op, R, X_current, X_prev, precond, largest, tol
+                A_op, M_op, R, X_current, X_prev, precond, largest, tol
             )
 
             X_prev = X_current
@@ -144,7 +140,9 @@ def lobpcg_forward(
             return lobpcg_loop_partial(
                 A_op=A_op,
                 M_op=IdentityOperator(),
-                precond=IdentityOperator(),
+                precond=SpPrecond(
+                    A_op=A_op, n=n, diag_damp=diag_damp, config=nvmath_config
+                ),
             )
 
         case (M_op, None):

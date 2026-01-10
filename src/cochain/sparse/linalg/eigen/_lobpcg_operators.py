@@ -9,13 +9,13 @@ from ._inv_operator import BaseInvSymSpOp
 
 class SpPrecond(BaseInvSymSpOp):
     """
-    Exact preconditioner for solving a standard or generalized eigenvalue problem
-    with LOBPCG.
+    Diagonally damped preconditioner for solving a standard or generalized
+    eigenvalue problem with LOBPCG.
 
     For the standard eigenvalue problem A@x = λ*x and the generalized eigenvalue
-    problem A@x = λ*M@x, this exact preconditioner is inv(A). If r is a residual
+    problem A@x = λ*M@x, this preconditioner is inv(A + ϵI). If r is a residual
     vector, applying the preconditioner to r is equivalent to solving a sparse
-    linear system A@w = r for w.
+    linear system (A + ϵI)@w = r for w.
     """
 
     def __init__(
@@ -25,7 +25,17 @@ class SpPrecond(BaseInvSymSpOp):
         diag_damp: float | int | None,
         config: DirectSolverConfig,
     ):
-        b_dummy = t.zeros((A_op.size(-1), n), dtype=A_op.dtype, device=A_op.device)
+        self.n = n
+
+        if self.n > 1:
+            b_dummy = (
+                t.zeros((A_op.size(-1), n), dtype=A_op.dtype, device=A_op.device)
+                .transpose(-1, -2)
+                .contiguous()
+                .transpose(-1, -2)
+            )
+        else:
+            b_dummy = t.zeros(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
 
         if diag_damp == 0:
             op = A_op.to_sparse_csr(int32=True)
@@ -47,7 +57,10 @@ class SpPrecond(BaseInvSymSpOp):
         stream = t.cuda.current_stream()
         Device(res.device.index).set_current()
 
-        res_col_major = res.transpose(-1, -2).contiguous().transpose(-1, -2)
+        if self.n > 1:
+            res_col_major = res.transpose(-1, -2).contiguous().transpose(-1, -2)
+        else:
+            res_col_major = res.squeeze()
 
         self.solver.reset_operands(b=res_col_major, stream=stream)
 
@@ -79,6 +92,8 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
         n: int,
         config: DirectSolverConfig,
     ):
+        self.n = n
+
         # Pytorch currently does not support operations like A - I on sparse CSR
         # tensors.
         eye = DiagOperator.eye(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
@@ -86,11 +101,23 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
             int32=True
         )
 
-        b_dummy = t.zeros(
-            (A_shift_inv.size(-1), n),
-            dtype=A_shift_inv.dtype,
-            device=A_shift_inv.device,
-        )
+        if n > 1:
+            b_dummy = (
+                t.zeros(
+                    (A_shift_inv.size(-1), n),
+                    dtype=A_shift_inv.dtype,
+                    device=A_shift_inv.device,
+                )
+                .transpose(-1, -2)
+                .contiguous()
+                .transpose(-1, -2)
+            )
+        else:
+            b_dummy = t.zeros(
+                A_shift_inv.size(-1),
+                dtype=A_shift_inv.dtype,
+                device=A_shift_inv.device,
+            )
 
         super().__init__(A_shift_inv, b_dummy, config, t.cuda.current_stream())
 
@@ -99,7 +126,10 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
         t.cuda.set_device(x.device)
         Device(x.device.index).set_current()
 
-        x_col_major = x.transpose(-1, -2).contiguous().transpose(-1, -2)
+        if self.n > 1:
+            x_col_major = x.transpose(-1, -2).contiguous().transpose(-1, -2)
+        else:
+            x_col_major = x.squeeze()
 
         self.solver.reset_operands(b=x_col_major, stream=stream)
         b = self.solver.solve(stream=stream)
@@ -126,6 +156,8 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
         n: int,
         config: DirectSolverConfig,
     ):
+        self.n = n
+
         # Pytorch currently does not support operations like A - M on sparse CSR
         # tensors.
         A_shift_inv = SparseOperator.assemble(A_op, -sigma * M_op).to_sparse_csr(
@@ -133,9 +165,23 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
         )
         self.M_csr = M_op.to_sparse_csr(int32=True)
 
-        b_dummy = t.zeros(
-            (self.M_csr.size(-1), n), dtype=self.M_csr.dtype, device=self.M_csr.device
-        )
+        if self.n > 1:
+            b_dummy = (
+                t.zeros(
+                    (self.M_csr.size(-1), n),
+                    dtype=self.M_csr.dtype,
+                    device=self.M_csr.device,
+                )
+                .transpose(-1, -2)
+                .contiguous()
+                .transpose(-1, -2)
+            )
+        else:
+            b_dummy = t.zeros(
+                self.M_csr.size(-1),
+                dtype=self.M_csr.dtype,
+                device=self.M_csr.device,
+            )
 
         super().__init__(A_shift_inv, b_dummy, config, t.cuda.current_stream())
 
@@ -145,7 +191,11 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
         Device(x.device.index).set_current()
 
         Mx = self.M_csr @ x
-        Mx_col_major = Mx.transpose(-1, -2).contiguous().transpose(-1, -2)
+
+        if self.n > 1:
+            Mx_col_major = Mx.transpose(-1, -2).contiguous().transpose(-1, -2)
+        else:
+            Mx_col_major = Mx.squeeze()
 
         self.solver.reset_operands(b=Mx_col_major, stream=stream)
         b = self.solver.solve(stream=stream)

@@ -23,9 +23,9 @@ def dense_gep(
     return eig_vals_true, eig_vecs_true
 
 
-def test_standard_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
-    A_op = SparseOperator.from_tensor(rand_sp_spd_5x5).to(device)
-    A_dense = rand_sp_spd_5x5.to_dense().to(device)
+def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
+    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
     eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
 
@@ -165,8 +165,8 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     t.testing.assert_close(combined_grad, combined_grad_true)
 
 
-def test_gep_forward(rand_sp_gep_5x5: Float[t.Tensor, "5 5"], device):
-    A, M = rand_sp_gep_5x5
+def test_gep_forward(rand_sp_gep_6x6: Float[t.Tensor, "6 6"], device):
+    A, M = rand_sp_gep_6x6
 
     A_dense = A.to_dense().to(device)
     M_dense = M.to_dense().to(device)
@@ -290,9 +290,9 @@ def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     t.testing.assert_close(M_grad, M_grad_true)
 
 
-def test_shift_invert_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
-    A_op = SparseOperator.from_tensor(rand_sp_spd_5x5).to(device)
-    A_dense = rand_sp_spd_5x5.to_dense().to(device)
+def test_shift_invert_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
+    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
     # Since t.linalg.eigh does not support shift-invert mode, need to manually
     # extract the target eigenvalue/eigenvector
@@ -316,8 +316,8 @@ def test_shift_invert_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
     )
 
 
-def test_gep_shift_invert_forward(rand_sp_gep_5x5, device):
-    A, M = rand_sp_gep_5x5
+def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
+    A, M = rand_sp_gep_6x6
 
     A_dense = A.to_dense().to(device)
     M_dense = M.to_dense().to(device)

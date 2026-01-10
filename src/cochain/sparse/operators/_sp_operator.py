@@ -191,7 +191,7 @@ class SparseOperator(BaseOperator):
     def tr(self) -> Float[t.Tensor, "*b"]:
         if self.n_batch_dim == 0:
             return self.val[
-                t.argwhere(self.idx_coo[0] == self.idx_coo[1]).flatten()
+                t.argwhere(self.sp_topo.idx_coo[0] == self.sp_topo.idx_coo[1]).flatten()
             ].sum(dim=0)
         else:
             raise NotImplementedError()

@@ -10,9 +10,9 @@ from cochain.sparse.operators import SparseOperator
 
 
 @pytest.mark.gpu_only
-def test_standard_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
-    A_op = SparseOperator.from_tensor(rand_sp_spd_5x5).to(device)
-    A_dense = rand_sp_spd_5x5.to_dense().to(device)
+def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
+    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
     eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
 
@@ -152,9 +152,9 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
 
 
 @pytest.mark.gpu_only
-def test_shift_invert_foward(rand_sp_spd_5x5: Float[t.Tensor, "5 5"], device):
-    A_op = SparseOperator.from_tensor(rand_sp_spd_5x5).to(device)
-    A_dense = rand_sp_spd_5x5.to_dense().to(device)
+def test_shift_invert_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
+    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
     # Since t.linalg.eigh does not support shift-invert mode, need to manually
     # extract the target eigenvalue/eigenvector

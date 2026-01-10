@@ -32,9 +32,8 @@ class LOBPCGConfig:
     maxiter: int | None = 1000
 
     def expand(self, n: int) -> list[LOBPCGConfig]:
-        config_list = []
         if isinstance(self.v0, Sequence):
-            config_list.append(replace(self, v0=v0) for v0 in self.v0)
+            config_list = [replace(self, v0=v0) for v0 in self.v0]
             if len(config_list) != n:
                 raise ValueError("Inconsistent v0 specification.")
         else:
@@ -71,7 +70,7 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
             **asdict(lobpcg_config),
         )
 
-        return eig_vals[:k], eig_vecs[:k]
+        return eig_vals[:k], eig_vecs[:, :k]
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -217,6 +216,7 @@ def lobpcg(
             if n < k or n > A.size(-1):
                 raise ValueError("n must be in the range [k, m].")
 
+        # TODO: fix this logic for block diagonal batching
         v0 = t.randn(
             (A.size(0), n), generator=generator, dtype=A.dtype, device=A.device
         )
