@@ -33,6 +33,8 @@ class SpPrecond(BaseInvSymSpOp):
         diag_damp: float | int | None,
         config: DirectSolverConfig,
     ):
+        self.n = n
+
         # Solve a linear system with at most 3n channel dims
         b_dummy = (
             t.zeros((A_op.size(-1), 3 * n), dtype=A_op.dtype, device=A_op.device)
@@ -61,8 +63,10 @@ class SpPrecond(BaseInvSymSpOp):
         stream = t.cuda.current_stream()
         Device(res.device.index).set_current()
 
-        # Pad up to n channel dims
-        pad = 3 * self.n - res.size(-1)
+        # Pad up to 3n channel dims
+        k = res.size(-1)
+        pad = 3 * self.n - k
+
         res_padded_col_major = (
             t.nn.functional.pad(res, (0, pad, 0, 0))
             .transpose(-1, -2)
@@ -73,7 +77,7 @@ class SpPrecond(BaseInvSymSpOp):
         self.solver.reset_operands(b=res_padded_col_major, stream=stream)
         sol = self.solver.solve(stream=stream)
 
-        return sol[:, :-pad]
+        return sol[:, :k]
 
 
 class ShiftInvSymSpOp(BaseInvSymSpOp):
@@ -121,8 +125,10 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
         t.cuda.set_device(x.device)
         Device(x.device.index).set_current()
 
-        # Pad up to n channel dims
-        pad = 3 * self.n - x.size(-1)
+        # Pad up to 3n channel dims
+        k = x.size(-1)
+        pad = 3 * self.n - k
+
         x_padded_col_major = (
             t.nn.functional.pad(x, (0, pad, 0, 0))
             .transpose(-1, -2)
@@ -133,7 +139,7 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
         self.solver.reset_operands(b=x_padded_col_major, stream=stream)
         b = self.solver.solve(stream=stream)
 
-        return b[:, :-pad]
+        return b[:, :k]
 
 
 class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
@@ -185,8 +191,10 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
 
         Mx = self.M_csr @ x
 
-        # Pad up to n channel dims
-        pad = 3 * self.n - Mx.size(-1)
+        # Pad up to 3n channel dims
+        k = Mx.size(-1)
+        pad = 3 * self.n - k
+
         Mx_padded_col_major = (
             t.nn.functional.pad(Mx, (0, pad, 0, 0))
             .transpose(-1, -2)
@@ -197,4 +205,4 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
         self.solver.reset_operands(b=Mx_padded_col_major, stream=stream)
         b = self.solver.solve(stream=stream)
 
-        return b[:, :-pad]
+        return b[:, :k]
