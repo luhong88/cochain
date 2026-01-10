@@ -59,6 +59,51 @@ def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
 
 
 @pytest.mark.gpu_only
+def test_batched_standard_forward(
+    rand_sp_spd_6x6: Float[t.Tensor, "6 6"],
+    rand_sp_spd_9x9: Float[t.Tensor, "9 9"],
+    device,
+):
+    A1_dense = rand_sp_spd_6x6.to_dense().to(device)
+    eig_vals_1_true, eig_vecs_1_true = t.linalg.eigh(A1_dense)
+
+    A2_dense = rand_sp_spd_9x9.to_dense().to(device)
+    eig_vals_2_true, eig_vecs_2_true = t.linalg.eigh(A2_dense)
+
+    k = 2
+
+    A1_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A2_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseOperator.pack_block_diag((A1_op, A2_op))
+
+    eig_vals_rev, eig_vecs_rev = lobpcg(
+        A=A_op,
+        M=None,
+        block_diag_batch=True,
+        k=k,
+        lobpcg_config=LOBPCGConfig(largest=True),
+    )
+    eig_vals = t.flip(eig_vals_rev, dims=(-1,))
+    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+
+    eig_vals_1, eig_vals_2 = eig_vals.unbind(0)
+    eig_vecs_1 = eig_vecs[:6]
+    eig_vecs_2 = eig_vecs[6:]
+
+    t.testing.assert_close(eig_vals_1, eig_vals_1_true[-k:])
+    t.testing.assert_close(eig_vals_2, eig_vals_2_true[-k:])
+
+    t.testing.assert_close(
+        canonicalize_eig_vec_signs(eig_vecs_1),
+        canonicalize_eig_vec_signs(eig_vecs_1_true[:, -k:]),
+    )
+    t.testing.assert_close(
+        canonicalize_eig_vec_signs(eig_vecs_2),
+        canonicalize_eig_vec_signs(eig_vecs_2_true[:, -k:]),
+    )
+
+
+@pytest.mark.gpu_only
 def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     k = 3
 

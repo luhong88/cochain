@@ -227,7 +227,12 @@ def lobpcg(
                 raise ValueError("n must be in the range [k, m].")
 
         if block_diag_batch:
-            v0 = [t.randn(a.size(0), n) for a in A_list]
+            v0 = [
+                t.randn(
+                    (a.size(0), n), generator=generator, dtype=A.dtype, device=A.device
+                )
+                for a in A_list
+            ]
         else:
             v0 = t.randn(
                 (A.size(0), n), generator=generator, dtype=A.dtype, device=A.device
