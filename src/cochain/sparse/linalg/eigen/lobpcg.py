@@ -139,14 +139,13 @@ def _lobpcg_no_batch(
 
 
 def _lobpcg_batch(
-    A_batched: Float[SparseOperator, "m m"],
+    A_list: list[Float[SparseOperator, "m m"]],
     M_batched: Float[SparseOperator, "m m"] | None,
     k: int,
     eps: float | int,
     lobpcg_config_batched: LOBPCGConfig,
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
-    A_list = A_batched.unpack_block_diag()
     if M_batched is None:
         M_list = [None] * len(A_list)
     else:
@@ -195,6 +194,8 @@ def lobpcg(
       `A` and `M`. The `eps` argument is used for Lorentzian broadening/regularization
       in the gradient calculation to prevent gradient explosion when the eigenvalues
       are (near) degenerate.
+    * The autograd through eigenvectors do not account for contributions from the
+      unresolved eigenvectors.
     * This implementation supports shift-invert mode for both standard and
       generalized eigenvalue problems.
     * This implementation employs a damped exact solver for preconditioning. The
@@ -214,6 +215,9 @@ def lobpcg(
     if nvmath_config is None:
         nvmath_config = DirectSolverConfig()
 
+    if block_diag_batch:
+        A_list = A.unpack_block_diag()
+
     # Process raw LOBPCG config.
     if lobpcg_config.v0 is None:
         if n is None:
@@ -222,10 +226,12 @@ def lobpcg(
             if n < k or n > A.size(-1):
                 raise ValueError("n must be in the range [k, m].")
 
-        # TODO: fix this logic for block diagonal batching
-        v0 = t.randn(
-            (A.size(0), n), generator=generator, dtype=A.dtype, device=A.device
-        )
+        if block_diag_batch:
+            v0 = [t.randn(a.size(0), n) for a in A_list]
+        else:
+            v0 = t.randn(
+                (A.size(0), n), generator=generator, dtype=A.dtype, device=A.device
+            )
 
     else:
         v0 = lobpcg_config.v0
@@ -238,7 +244,7 @@ def lobpcg(
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(
-            A, M, k, eps, processed_lobpcg_config, nvmath_config
+            A_list, M, k, eps, processed_lobpcg_config, nvmath_config
         )
     else:
         eig_vals, eig_vecs = _lobpcg_no_batch(

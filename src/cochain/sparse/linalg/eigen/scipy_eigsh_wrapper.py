@@ -324,6 +324,8 @@ def scipy_eigsh(
     * If either `A` or `M` requires gradient tracking, eigenvectors will be
       computed; in this case, if `return_eigenvectors=False`, the computed
       eigenvectors are not returned.
+    * The autograd through eigenvectors do not account for contributions from the
+      unresolved eigenvectors.
     * The `eigsh()` function does not natively support batching. if
       `block_diag_batch` is True, the `A` `SparseOperator` (and `M` if not `None`)
       will be split into individual sparse matrices and solved sequentially. The
