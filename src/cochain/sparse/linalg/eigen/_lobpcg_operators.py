@@ -7,6 +7,14 @@ from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._inv_operator import BaseInvSymSpOp
 
 
+class IdentityOperator:
+    def __init__(self):
+        pass
+
+    def __matmul__(self, res):
+        return res
+
+
 class SpPrecond(BaseInvSymSpOp):
     """
     Diagonally damped preconditioner for solving a standard or generalized
@@ -25,17 +33,13 @@ class SpPrecond(BaseInvSymSpOp):
         diag_damp: float | int | None,
         config: DirectSolverConfig,
     ):
-        self.n = n
-
-        if self.n > 1:
-            b_dummy = (
-                t.zeros((A_op.size(-1), n), dtype=A_op.dtype, device=A_op.device)
-                .transpose(-1, -2)
-                .contiguous()
-                .transpose(-1, -2)
-            )
-        else:
-            b_dummy = t.zeros(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
+        # Solve a linear system with at most 3n channel dims
+        b_dummy = (
+            t.zeros((A_op.size(-1), 3 * n), dtype=A_op.dtype, device=A_op.device)
+            .transpose(-1, -2)
+            .contiguous()
+            .transpose(-1, -2)
+        )
 
         if diag_damp == 0:
             op = A_op.to_sparse_csr(int32=True)
@@ -53,26 +57,23 @@ class SpPrecond(BaseInvSymSpOp):
 
         super().__init__(op, b_dummy, config, t.cuda.current_stream())
 
-    def __matmul__(self, res: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
+    def __matmul__(self, res: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
         stream = t.cuda.current_stream()
         Device(res.device.index).set_current()
 
-        if self.n > 1:
-            res_col_major = res.transpose(-1, -2).contiguous().transpose(-1, -2)
-        else:
-            res_col_major = res.squeeze()
+        # Pad up to n channel dims
+        pad = 3 * self.n - res.size(-1)
+        res_padded_col_major = (
+            t.nn.functional.pad(res, (0, pad, 0, 0))
+            .transpose(-1, -2)
+            .contiguous()
+            .transpose(-1, -2)
+        )
 
-        self.solver.reset_operands(b=res_col_major, stream=stream)
+        self.solver.reset_operands(b=res_padded_col_major, stream=stream)
+        sol = self.solver.solve(stream=stream)
 
-        return self.solver.solve(stream=stream)
-
-
-class IdentityOperator:
-    def __init__(self):
-        pass
-
-    def __matmul__(self, res):
-        return res
+        return sol[:, :-pad]
 
 
 class ShiftInvSymSpOp(BaseInvSymSpOp):
@@ -101,40 +102,38 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
             int32=True
         )
 
-        if n > 1:
-            b_dummy = (
-                t.zeros(
-                    (A_shift_inv.size(-1), n),
-                    dtype=A_shift_inv.dtype,
-                    device=A_shift_inv.device,
-                )
-                .transpose(-1, -2)
-                .contiguous()
-                .transpose(-1, -2)
-            )
-        else:
-            b_dummy = t.zeros(
-                A_shift_inv.size(-1),
+        # Solve a linear system with at most 3n channel dims
+        b_dummy = (
+            t.zeros(
+                (A_shift_inv.size(-1), 3 * n),
                 dtype=A_shift_inv.dtype,
                 device=A_shift_inv.device,
             )
+            .transpose(-1, -2)
+            .contiguous()
+            .transpose(-1, -2)
+        )
 
         super().__init__(A_shift_inv, b_dummy, config, t.cuda.current_stream())
 
-    def __matmul__(self, x: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
+    def __matmul__(self, x: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
         stream = t.cuda.current_stream()
         t.cuda.set_device(x.device)
         Device(x.device.index).set_current()
 
-        if self.n > 1:
-            x_col_major = x.transpose(-1, -2).contiguous().transpose(-1, -2)
-        else:
-            x_col_major = x.squeeze()
+        # Pad up to n channel dims
+        pad = 3 * self.n - x.size(-1)
+        x_padded_col_major = (
+            t.nn.functional.pad(x, (0, pad, 0, 0))
+            .transpose(-1, -2)
+            .contiguous()
+            .transpose(-1, -2)
+        )
 
-        self.solver.reset_operands(b=x_col_major, stream=stream)
+        self.solver.reset_operands(b=x_padded_col_major, stream=stream)
         b = self.solver.solve(stream=stream)
 
-        return b
+        return b[:, :-pad]
 
 
 class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
@@ -165,39 +164,37 @@ class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
         )
         self.M_csr = M_op.to_sparse_csr(int32=True)
 
-        if self.n > 1:
-            b_dummy = (
-                t.zeros(
-                    (self.M_csr.size(-1), n),
-                    dtype=self.M_csr.dtype,
-                    device=self.M_csr.device,
-                )
-                .transpose(-1, -2)
-                .contiguous()
-                .transpose(-1, -2)
-            )
-        else:
-            b_dummy = t.zeros(
-                self.M_csr.size(-1),
+        # Solve a linear system with at most 3n channel dims
+        b_dummy = (
+            t.zeros(
+                (self.M_csr.size(-1), 3 * n),
                 dtype=self.M_csr.dtype,
                 device=self.M_csr.device,
             )
+            .transpose(-1, -2)
+            .contiguous()
+            .transpose(-1, -2)
+        )
 
         super().__init__(A_shift_inv, b_dummy, config, t.cuda.current_stream())
 
-    def __matmul__(self, x: Float[t.Tensor, "m n"]) -> Float[t.Tensor, "m n"]:
+    def __matmul__(self, x: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
         stream = t.cuda.current_stream()
         t.cuda.set_device(x.device)
         Device(x.device.index).set_current()
 
         Mx = self.M_csr @ x
 
-        if self.n > 1:
-            Mx_col_major = Mx.transpose(-1, -2).contiguous().transpose(-1, -2)
-        else:
-            Mx_col_major = Mx.squeeze()
+        # Pad up to n channel dims
+        pad = 3 * self.n - Mx.size(-1)
+        Mx_padded_col_major = (
+            t.nn.functional.pad(Mx, (0, pad, 0, 0))
+            .transpose(-1, -2)
+            .contiguous()
+            .transpose(-1, -2)
+        )
 
-        self.solver.reset_operands(b=Mx_col_major, stream=stream)
+        self.solver.reset_operands(b=Mx_padded_col_major, stream=stream)
         b = self.solver.solve(stream=stream)
 
-        return b
+        return b[:, :-pad]
