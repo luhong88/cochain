@@ -70,7 +70,13 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
             **asdict(lobpcg_config),
         )
 
-        return eig_vals[:k], eig_vecs[:, :k]
+        if lobpcg_config.sigma is None:
+            eig_vals_true = eig_vals[:k]
+        else:
+            # In shift-invert mode, λ_returned = 1 / (λ_true - σ)
+            eig_vals_true = lobpcg_config.sigma + (1.0 / eig_vals[:k])
+
+        return eig_vals_true, eig_vecs[:, :k]
 
     @staticmethod
     def setup_context(ctx, inputs, output):
