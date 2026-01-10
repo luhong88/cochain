@@ -238,6 +238,7 @@ class SparseOperator(BaseOperator):
         all_idx = t.hstack([coo.indices() for coo in coo_tensors])
         all_val = t.hstack([coo.values() for coo in coo_tensors])
 
+        # from_tensor() handles coalesce.
         return SparseOperator.from_tensor(
             t.sparse_coo_tensor(all_idx, all_val, size=coo_tensors[0].size())
         )
