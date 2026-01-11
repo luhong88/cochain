@@ -1,4 +1,3 @@
-import functools
 import warnings
 
 import torch as t
@@ -21,7 +20,8 @@ from ._lobpcg_preconditioners import (
 from .utils import M_orthonormalize
 
 type SparseOperatorLike = (
-    Float[SparseOperator, "m m"]
+    IdentityOperator
+    | Float[SparseOperator, "m m"]
     | Float[ShiftInvSymSpOp, "m m"]
     | Float[ShiftInvSymGEPSpOp, "m m"]
 )
@@ -60,8 +60,7 @@ def _lobpcg_one_iter(
     P = (X_current - X_prev) * mask
 
     # Assemble the new trial subspace and enforce M-orthonormality condition on
-    # the subspace basis vectors. We perform the orthonomalization twice to
-    # minimize numerical error.
+    # the subspace basis vectors.
     V = t.hstack((X_current, W, P))
 
     V_ortho = M_orthonormalize(V, M_op, n_min=n, generator=generator, max_iter=3)
@@ -163,6 +162,79 @@ def _lobpcg_loop(
     return Lambda_current, X_current
 
 
+def _dispatch_operators(
+    n: int,
+    A_op: SparseOperatorLike,
+    M_op: Float[SparseOperator, "m m"] | None,
+    sigma: float | int | None,
+    nvmath_config: DirectSolverConfig,
+    precond_config: LOBPCGPrecondConfig,
+) -> tuple[
+    SparseOperatorLike,
+    SparseOperatorLike,
+    SparseOperatorLike,
+    SparseOperatorLike,
+    LOBPCGPreconditioner,
+]:
+    if sigma is not None:
+        # If doing shift-invert mode, always use the identity preconditioner and
+        # ignore the user inputs.
+        precond = IdentityPrecond()
+    else:
+        match precond_config.method:
+            case "identity":
+                precond = IdentityPrecond()
+            case "jacobi":
+                precond = JacobiPrecond(A_op=A_op)
+            case "ilu":
+                precond = ILUPrecond(
+                    A_op=A_op,
+                    diag_damp=precond_config.diag_damp,
+                    spilu_kwargs=precond_config.spilu_kwargs,
+                )
+            case "cholesky":
+                precond = ChoPrecond(
+                    A_op=A_op,
+                    n=n,
+                    diag_damp=precond_config.diag_damp,
+                    nvmath_config=precond_config.nvmath_config,
+                )
+            case _:
+                raise ValueError()
+
+    match (M_op, sigma):
+        case (None, None):
+            T_op = A_op
+            B_op = IdentityOperator()
+            M_op = IdentityOperator()
+            S_op = IdentityOperator()
+
+        case (M_op, None):
+            T_op = A_op
+            B_op = M_op
+            M_op = M_op
+            S_op = IdentityOperator()
+
+        case (None, sigma):
+            T_op = ShiftInvSymSpOp(A_op=A_op, sigma=sigma, n=n, config=nvmath_config)
+            B_op = IdentityOperator()
+            M_op = IdentityOperator()
+            S_op = IdentityOperator()
+
+        case (M_op, sigma):
+            T_op = ShiftInvSymGEPSpOp(
+                A_op=A_op, M_op=M_op, sigma=sigma, n=n, config=nvmath_config
+            )
+            B_op = IdentityOperator()
+            M_op = M_op
+            S_op = M_op
+
+        case _:
+            raise ValueError()
+
+    return T_op, B_op, M_op, S_op, precond
+
+
 def lobpcg_forward(
     A_op: SparseOperatorLike,
     M_op: Float[SparseOperator, "m m"] | None,
@@ -196,34 +268,15 @@ def lobpcg_forward(
     """
     n = v0.size(-1)
 
-    if sigma is not None:
-        # If doing shift-invert mode, always use the identity preconditioner and
-        # ignore the user inputs.
-        precond = IdentityPrecond()
-    else:
-        match precond_config.method:
-            case "identity":
-                precond = IdentityPrecond()
-            case "jacobi":
-                precond = JacobiPrecond(A_op=A_op)
-            case "ilu":
-                precond = ILUPrecond(
-                    A_op=A_op,
-                    diag_damp=precond_config.diag_damp,
-                    spilu_kwargs=precond_config.spilu_kwargs,
-                )
-            case "cholesky":
-                precond = ChoPrecond(
-                    A_op=A_op,
-                    n=n,
-                    diag_damp=precond_config.diag_damp,
-                    nvmath_config=precond_config.nvmath_config,
-                )
-            case _:
-                raise ValueError()
+    T_op, B_op, M_op, S_op, precond = _dispatch_operators(
+        n, A_op, M_op, sigma, nvmath_config, precond_config
+    )
 
-    lobpcg_loop_partial = functools.partial(
-        _lobpcg_loop,
+    return _lobpcg_loop(
+        T_op=T_op,
+        B_op=B_op,
+        M_op=M_op,
+        S_op=S_op,
         X_0=v0,
         largest=largest,
         tol=tol,
@@ -231,41 +284,3 @@ def lobpcg_forward(
         precond=precond,
         generator=generator,
     )
-
-    match (M_op, sigma):
-        case (None, None):
-            return lobpcg_loop_partial(
-                T_op=A_op,
-                B_op=IdentityOperator(),
-                M_op=IdentityOperator(),
-                S_op=IdentityOperator(),
-            )
-
-        case (M_op, None):
-            return lobpcg_loop_partial(
-                T_op=A_op,
-                B_op=M_op,
-                M_op=M_op,
-                S_op=IdentityOperator(),
-            )
-
-        case (None, sigma):
-            return lobpcg_loop_partial(
-                T_op=ShiftInvSymSpOp(A_op=A_op, sigma=sigma, n=n, config=nvmath_config),
-                B_op=IdentityOperator(),
-                M_op=IdentityOperator(),
-                S_op=IdentityOperator(),
-            )
-
-        case (M_op, sigma):
-            return lobpcg_loop_partial(
-                T_op=ShiftInvSymGEPSpOp(
-                    A_op=A_op, M_op=M_op, sigma=sigma, n=n, config=nvmath_config
-                ),
-                B_op=IdentityOperator(),
-                M_op=M_op,
-                S_op=M_op,
-            )
-
-        case _:
-            raise ValueError()
