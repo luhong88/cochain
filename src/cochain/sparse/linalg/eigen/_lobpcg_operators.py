@@ -17,6 +17,9 @@ class IdentityOperator:
     def __rmatmul__(self, other):
         return other
 
+    def to(self, *args, **kwargs):
+        return self
+
 
 class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
     """

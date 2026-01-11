@@ -61,8 +61,8 @@ def _lobpcg_one_iter(
     # minimize numerical error.
     V = t.hstack((X_current, W, P))
 
-    # TODO: add a check to avoid orthonormalize twice by default
-    V_ortho = M_orthonormalize(M_orthonormalize(V, M_op), M_op)
+    # TODO: if V_ortho has fewer than k columns, pad with random vectors to restart.
+    V_ortho = M_orthonormalize(V, M_op)
     TV_ortho = T_op @ V_ortho
 
     # Rayleigh-Ritz projection
