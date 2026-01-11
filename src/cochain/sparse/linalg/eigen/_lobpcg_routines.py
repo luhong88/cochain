@@ -1,4 +1,5 @@
 import functools
+import warnings
 
 import torch as t
 from jaxtyping import Float
@@ -128,13 +129,16 @@ def _lobpcg_loop(
     # correctly reduces to the shift-inverted eigenvalues Λ'.
     Lambda_current = t.diag(X_current.T @ (S_op @ TX_current))
 
+    converged = False
     for _ in range(niter):
         # Compute the residual vectors R = T@X - B@X@Λ
         R = TX_current - (B_op @ X_current) * Lambda_current.view(1, -1)
         R_norm = t.linalg.norm(R, dim=0)
 
         if (R_norm < tol).all():
+            converged = True
             break
+
         else:
             Lambda_next, X_next, TX_next = _lobpcg_one_iter(
                 T_op,
@@ -152,6 +156,13 @@ def _lobpcg_loop(
             X_current = X_next
             TX_current = TX_next
             Lambda_current = Lambda_next
+
+    if not converged:
+        warnings.warn(
+            f"LOBPCG did not converge after {niter} iterations. "
+            f"Max residual norm: {R_norm.max().item():.2e} (tol: {tol:.2e}).",
+            UserWarning,
+        )
 
     return Lambda_current, X_current
 

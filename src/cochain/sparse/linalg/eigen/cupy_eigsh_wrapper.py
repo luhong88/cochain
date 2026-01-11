@@ -201,6 +201,7 @@ def _cupy_eigsh_batch(
     return eig_vals, eig_vecs
 
 
+# TODO: relax nvmath requirement if not in shift-invert mode
 def cupy_eigsh(
     A: Float[SparseOperator, "r c"],
     block_diag_batch: bool = False,

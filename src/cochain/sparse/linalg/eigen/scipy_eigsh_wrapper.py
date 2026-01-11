@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 import scipy.sparse

@@ -86,9 +86,17 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, M_val, M_sp_topo, k, eps, lobpcg_config, nvmath_config = (
-            inputs
-        )
+        (
+            A_val,
+            A_sp_topo,
+            M_val,
+            M_sp_topo,
+            k,
+            eps,
+            lobpcg_config,
+            precond_config,
+            nvmath_config,
+        ) = inputs
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
@@ -109,6 +117,7 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
         None,
         None,
         None,
+        None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
         needs_grad_M_val = ctx.needs_input_grad[2]
@@ -121,7 +130,7 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
                 ctx, dLdl, dLdv, needs_grad_A_val, needs_grad_M_val
             )
 
-        return dLdA_val, None, dLdM_val, None, None, None, None, None
+        return dLdA_val, None, dLdM_val, None, None, None, None, None, None
 
 
 def _lobpcg_no_batch(
@@ -231,6 +240,19 @@ def lobpcg(
       If `block_diag_batch=True`, `A` and `M` will be split into individual sparse
       matrices and solved sequentially. This requires that `A` (and `M` if not `None`)
       has a valid `BlockDiagConfig` for unpacking the block diagonal batch structure.
+
+    Notes on the `k` and `n` arguments:
+    * in general, it is recommended to set the `n` argument somewhat higher than
+      `k`, to make the convergence of the `k` desired eigenvalues faster and to
+      account for possible degenerate eigenvalues.
+    * This implementation employs a rank-adaptive orthonormalization strategy for
+      the trial subspace. Unlike the standard PyTorch implementation, this allows
+      the solver to handle cases where the size of A (`m`) is smaller than 3x the
+      block size `n`. However, if the dimension of the trial subspace (which is
+      <= 3n) is equal to or larger than `m`, the Rayleigh-Ritz projection becomes
+      a full similarity transformation. In this limit, the algorithm effectively
+      performs an exact diagonalization similar to `torch.linalg.eigh()`, but less
+      efficiently due to the subspace construction and projection steps.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backends required.")
@@ -285,11 +307,11 @@ def lobpcg(
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(
-            A_list, M, k, eps, processed_lobpcg_config, nvmath_config, precond_config
+            A_list, M, k, eps, processed_lobpcg_config, precond_config, nvmath_config
         )
     else:
         eig_vals, eig_vecs = _lobpcg_no_batch(
-            A, M, k, eps, processed_lobpcg_config, nvmath_config, precond_config
+            A, M, k, eps, processed_lobpcg_config, precond_config, nvmath_config
         )
 
     return eig_vals, eig_vecs

@@ -2,7 +2,7 @@ import pytest
 import torch as t
 from jaxtyping import Float
 
-from cochain.sparse.linalg.eigen.lobpcg import LOBPCGConfig, lobpcg
+from cochain.sparse.linalg.eigen import LOBPCGConfig, LOBPCGPrecondConfig, lobpcg
 from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
 from cochain.sparse.operators import SparseOperator
 
@@ -35,7 +35,7 @@ def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
 
     # Test both largest=True and largest=False
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op, M=None, k=k, n=4, lobpcg_config=LOBPCGConfig(largest=True)
+        A=A_op, M=None, k=k, lobpcg_config=LOBPCGConfig(largest=True)
     )
     eig_vals = t.flip(eig_vals_rev, dims=(0,))
     eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
@@ -48,13 +48,46 @@ def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
     )
 
     eig_vals, eig_vecs = lobpcg(
-        A=A_op, M=None, k=k, n=4, lobpcg_config=LOBPCGConfig(largest=False)
+        A=A_op, M=None, k=k, lobpcg_config=LOBPCGConfig(largest=False)
     )
 
     t.testing.assert_close(eig_vals, eig_vals_true[:k])
     t.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, :k]),
+    )
+
+
+@pytest.mark.gpu_only
+@pytest.mark.parametrize(
+    "preconditioner",
+    ["identity", "jacobi", "ilu", "cholesky"],
+)
+def test_standard_forward_preconditioners(
+    rand_sp_spd_6x6: Float[t.Tensor, "6 6"], preconditioner, device
+):
+    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_dense = rand_sp_spd_6x6.to_dense().to(device)
+
+    eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
+
+    k = 2
+
+    eig_vals_rev, eig_vecs_rev = lobpcg(
+        A=A_op,
+        M=None,
+        k=k,
+        lobpcg_config=LOBPCGConfig(largest=True),
+        precond_config=LOBPCGPrecondConfig(method=preconditioner),
+    )
+    eig_vals = t.flip(eig_vals_rev, dims=(0,))
+    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+
+    # If largest=True, lobpcg returns eigenvalues in descending order.
+    t.testing.assert_close(eig_vals, eig_vals_true[-k:])
+    t.testing.assert_close(
+        canonicalize_eig_vec_signs(eig_vecs),
+        canonicalize_eig_vec_signs(eig_vecs_true[:, -k:]),
     )
 
 
