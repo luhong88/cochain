@@ -1,10 +1,7 @@
 from collections import ChainMap
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import cupy as cp
-import cupyx.scipy.sparse as cp_sp
-import cupyx.scipy.sparse.linalg as cp_sp_linalg
 import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float
@@ -14,10 +11,30 @@ from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._inv_operator import BaseNVMathInvSymSpOp
 from ._lobpcg_operators import IdentityOperator
 
+try:
+    import cupy as cp
+    import cupyx.scipy.sparse as cp_sp
+    import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
-# TODO: ensure safe import
+    _HAS_CUPY = True
+
+except ImportError:
+    _HAS_CUPY = False
+
+if TYPE_CHECKING:
+    import cupy as cp
+    import cupyx.scipy.sparse as cp_sp
+    import cupyx.scipy.sparse.linalg as cp_sp_linalg
+
+
 @dataclass
 class LOBPCGPrecondConfig:
+    """
+    diag_damp only applicable if method is ilu or cholesky.
+    nvmath_config only applicable if method is cholesky.
+    spilu_kwargs only applicable if method is ilu.
+    """
+
     method: Literal["identity", "jacobi", "ilu", "cholesky"] = "cholesky"
     diag_damp: float | int | None = None
     nvmath_config: DirectSolverConfig | None = None
@@ -71,6 +88,9 @@ class ILUPrecond:
         diag_damp: float | int | None,
         spilu_kwargs: dict[str, Any],
     ):
+        if not _HAS_CUPY:
+            raise ImportError("cupy backend required.")
+
         if diag_damp == 0:
             op = A_op.to_sparse_csc(int32=True)
         else:

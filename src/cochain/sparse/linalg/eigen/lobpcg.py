@@ -8,7 +8,6 @@ from jaxtyping import Float, Integer
 
 from ...operators import SparseOperator, SparseTopology
 from ._backward import dLdA_backward, dLdA_dLdM_backward
-from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 from ._lobpcg_routines import lobpcg_forward
 
 try:
@@ -21,6 +20,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from ..solvers.nvmath_wrapper import DirectSolverConfig
+    from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
 
 @dataclass
@@ -30,6 +30,7 @@ class LOBPCGConfig:
     largest: bool = True
     tol: float | None = None
     maxiter: int | None = 1000
+    generator: t.Generator | None = None
 
     def expand(self, n: int) -> list[LOBPCGConfig]:
         if isinstance(self.v0, Sequence):
@@ -64,12 +65,15 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
         else:
             raise ValueError()
 
+        lobpcg_config_dict = asdict(lobpcg_config)
+        del lobpcg_config_dict["generator"]
+
         eig_vals, eig_vecs = lobpcg_forward(
             A_op=A_op,
             M_op=M_op,
             nvmath_config=nvmath_config,
             precond_config=precond_config,
-            **asdict(lobpcg_config),
+            **lobpcg_config_dict,
         )
 
         if lobpcg_config.sigma is None:
@@ -192,6 +196,7 @@ def _lobpcg_batch(
     return eig_vals, eig_vecs
 
 
+# TODO: relax nvmath import if not doing shift invert mode
 def lobpcg(
     A: Float[SparseOperator, "m m"],
     M: Float[SparseOperator, "m m"] | None = None,
@@ -202,13 +207,12 @@ def lobpcg(
     lobpcg_config: LOBPCGConfig | None = None,
     nvmath_config: DirectSolverConfig | None = None,
     precond_config: LOBPCGPrecondConfig | None = None,
-    generator: t.Generator | None = None,
 ) -> tuple[Float[t.Tensor, "*b k"], Float[t.Tensor, "m k"]]:
     """
     A custom implementation of LOBPCG.
 
-    Note that this function requires `nvmath-python` for its sparse linear solver
-    utilities.
+    Note that this function requires `nvmath-python` for the shift-invert mode.
+    In addition, some preconditioners have `nvmath-python` or `cupy` dependencies.
 
     This function implements a version of LOBPCG that's roughly equivalent to
     `torch.lobpcg(method='ortho')`, but with the following key differences:
@@ -221,8 +225,8 @@ def lobpcg(
       unresolved eigenvectors.
     * This implementation supports shift-invert mode for both standard and
       generalized eigenvalue problems.
-    * This implementation employs a damped exact solver for preconditioning. The
-      diagonal damping is controlled by the `diag_damp` argument in `LOBPCGConfig`.
+    * This implementation accepts specific preconditioners, including: identity,
+      Jacobi, incomplete LU, and Cholesky; the latter two support diagonal dampling.
     * This implementation does not support explicit batch dimensions in `A` or `M`.
       If `block_diag_batch=True`, `A` and `M` will be split into individual sparse
       matrices and solved sequentially. This requires that `A` (and `M` if not `None`)
@@ -232,6 +236,7 @@ def lobpcg(
         raise ImportError("nvmath-python backends required.")
 
     from ..solvers.nvmath_wrapper import DirectSolverConfig
+    from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
     if lobpcg_config is None:
         lobpcg_config = LOBPCGConfig()
@@ -254,13 +259,19 @@ def lobpcg(
         if block_diag_batch:
             v0 = [
                 t.randn(
-                    (a.size(0), n), generator=generator, dtype=A.dtype, device=A.device
+                    (a.size(0), n),
+                    generator=lobpcg_config.generator,
+                    dtype=A.dtype,
+                    device=A.device,
                 )
                 for a in A_list
             ]
         else:
             v0 = t.randn(
-                (A.size(0), n), generator=generator, dtype=A.dtype, device=A.device
+                (A.size(0), n),
+                generator=lobpcg_config.generator,
+                dtype=A.dtype,
+                device=A.device,
             )
 
     else:
