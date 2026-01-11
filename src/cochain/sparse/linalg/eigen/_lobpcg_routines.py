@@ -9,8 +9,8 @@ from ._lobpcg_operators import (
     IdentityOperator,
     ShiftInvSymGEPSpOp,
     ShiftInvSymSpOp,
-    SpPrecond,
 )
+from .lobpcg_preconditioners import ChoPrecond
 from .utils import M_orthonormalize
 
 type SparseOperatorLike = (
@@ -27,7 +27,7 @@ def _lobpcg_one_iter(
     R: Float[t.Tensor, "m n"],
     X_current: Float[t.Tensor, "m n"],
     X_prev: Float[t.Tensor, "m n"],
-    precond: SpPrecond | IdentityOperator,
+    precond: ChoPrecond | IdentityOperator,
     largest: bool,
     tol: float,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"], Float[t.Tensor, "m n"]]:
@@ -104,7 +104,7 @@ def _lobpcg_loop(
     M_op: Float[SparseOperator, "m m"] | IdentityOperator,
     S_op: Float[SparseOperator, "m m"] | IdentityOperator,
     X_0: Float[t.Tensor, "m n"],
-    precond: SpPrecond | IdentityOperator,
+    precond: ChoPrecond | IdentityOperator,
     largest: bool,
     tol: float,
     niter: int,
@@ -195,8 +195,8 @@ def lobpcg_forward(
                 B_op=IdentityOperator(),
                 M_op=IdentityOperator(),
                 S_op=IdentityOperator(),
-                precond=SpPrecond(
-                    A_op=A_op, n=n, diag_damp=diag_damp, config=nvmath_config
+                precond=ChoPrecond(
+                    A_op=A_op, n=n, diag_damp=diag_damp, nvmath_config=nvmath_config
                 ),
             )
 
@@ -206,8 +206,8 @@ def lobpcg_forward(
                 B_op=M_op,
                 M_op=M_op,
                 S_op=IdentityOperator(),
-                precond=SpPrecond(
-                    A_op=A_op, n=n, diag_damp=diag_damp, config=nvmath_config
+                precond=ChoPrecond(
+                    A_op=A_op, n=n, diag_damp=diag_damp, nvmath_config=nvmath_config
                 ),
             )
 

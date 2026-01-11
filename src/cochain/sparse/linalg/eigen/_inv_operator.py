@@ -6,7 +6,7 @@ from jaxtyping import Float
 from ..solvers.nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
 
 
-class BaseInvSymSpOp:
+class BaseNVMathInvSymSpOp:
     def __init__(
         self,
         a: Float[t.Tensor, " m m"],

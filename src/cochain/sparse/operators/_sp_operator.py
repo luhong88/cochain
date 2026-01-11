@@ -185,14 +185,21 @@ class SparseOperator(BaseOperator):
     def __neg__(self) -> SparseOperator:
         return SparseOperator(self.sp_topo, -self.val)
 
-    # TODO: implement trace for batched operators
-    # TODO: write tests fot tr()
-    @property
-    def tr(self) -> Float[t.Tensor, "*b"]:
+    def diagonal(self) -> Float[t.Tensor, "*b diag"]:
         if self.n_batch_dim == 0:
             return self.val[
                 t.argwhere(self.sp_topo.idx_coo[0] == self.sp_topo.idx_coo[1]).flatten()
-            ].sum(dim=0)
+            ]
+        else:
+            raise NotImplementedError()
+
+    # TODO: implement trace for batched operators
+    # TODO: write tests fot tr()
+    # TODO: implement the same tr and diagonal() functions for DiagOperators
+    @property
+    def tr(self) -> Float[t.Tensor, "*b"]:
+        if self.n_batch_dim == 0:
+            return self.diagonal().sum(dim=0)
         else:
             raise NotImplementedError()
 

@@ -7,7 +7,7 @@ from jaxtyping import Float, Integer
 
 from ...operators import SparseTopology
 from ..solvers.nvmath_wrapper import DirectSolverConfig
-from ._inv_operator import BaseInvSymSpOp
+from ._inv_operator import BaseNVMathInvSymSpOp
 
 
 def sp_op_comps_to_cp_csr(
@@ -24,7 +24,7 @@ def sp_op_comps_to_cp_csr(
     )
 
 
-class CuPyShiftInvSymOp(BaseInvSymSpOp, cp_sp_linalg.LinearOperator):
+class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
     """
     A CuPy LinearOperator object used to solve an eigenvalue problem in the
     shift inverse mode.
@@ -51,7 +51,7 @@ class CuPyShiftInvSymOp(BaseInvSymSpOp, cp_sp_linalg.LinearOperator):
 
             b_dummy = cp.zeros(A_cp.shape[0], dtype=A_cp.dtype)
 
-            BaseInvSymSpOp.__init__(
+            BaseNVMathInvSymSpOp.__init__(
                 self,
                 a=A_shift_inv_cp,
                 b=b_dummy,

@@ -4,7 +4,7 @@ from jaxtyping import Float
 
 from ...operators import DiagOperator, SparseOperator
 from ..solvers.nvmath_wrapper import DirectSolverConfig
-from ._inv_operator import BaseInvSymSpOp
+from ._inv_operator import BaseNVMathInvSymSpOp
 
 
 class IdentityOperator:
@@ -18,72 +18,7 @@ class IdentityOperator:
         return other
 
 
-class SpPrecond(BaseInvSymSpOp):
-    """
-    Diagonally damped preconditioner for solving a standard or generalized
-    eigenvalue problem with LOBPCG.
-
-    For the standard eigenvalue problem A@x = λ*x and the generalized eigenvalue
-    problem A@x = λ*M@x, this preconditioner is inv(A + ϵI). If r is a residual
-    vector, applying the preconditioner to r is equivalent to solving a sparse
-    linear system (A + ϵI)@w = r for w.
-    """
-
-    def __init__(
-        self,
-        A_op: Float[SparseOperator, "m m"],
-        n: int,
-        diag_damp: float | int | None,
-        config: DirectSolverConfig,
-    ):
-        self.n = n
-
-        # Solve a linear system with at most 3n channel dims
-        b_dummy = (
-            t.zeros((A_op.size(-1), 3 * n), dtype=A_op.dtype, device=A_op.device)
-            .transpose(-1, -2)
-            .contiguous()
-            .transpose(-1, -2)
-        )
-
-        if diag_damp == 0:
-            op = A_op.to_sparse_csr(int32=True)
-        else:
-            if diag_damp is None:
-                eps = 1e-4 * A_op.tr / A_op.size(0)
-            else:
-                eps = diag_damp
-
-            # Pytorch currently does not support operations like A - I on sparse
-            # CSR tensors.
-            eye = DiagOperator.eye(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
-
-            op = SparseOperator.assemble(A_op, eps * eye).to_sparse_csr(int32=True)
-
-        super().__init__(op, b_dummy, config, t.cuda.current_stream())
-
-    def __matmul__(self, res: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
-        stream = t.cuda.current_stream()
-        Device(res.device.index).set_current()
-
-        # Pad up to 3n channel dims
-        k = res.size(-1)
-        pad = 3 * self.n - k
-
-        res_padded_col_major = (
-            t.nn.functional.pad(res, (0, pad, 0, 0))
-            .transpose(-1, -2)
-            .contiguous()
-            .transpose(-1, -2)
-        )
-
-        self.solver.reset_operands(b=res_padded_col_major, stream=stream)
-        sol = self.solver.solve(stream=stream)
-
-        return sol[:, :k]
-
-
-class ShiftInvSymSpOp(BaseInvSymSpOp):
+class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
     """
     A linear operator used to solve an eigenvalue problem in the shift-invert mode.
 
@@ -145,7 +80,7 @@ class ShiftInvSymSpOp(BaseInvSymSpOp):
         return b[:, :k]
 
 
-class ShiftInvSymGEPSpOp(BaseInvSymSpOp):
+class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
     """
     A linear operator used to solve a generalized eigenvalue problem in the
     shift-invert mode.
