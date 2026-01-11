@@ -1,5 +1,6 @@
 from collections import ChainMap
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import cupy as cp
 import cupyx.scipy.sparse as cp_sp
@@ -13,12 +14,32 @@ from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._inv_operator import BaseNVMathInvSymSpOp
 from ._lobpcg_operators import IdentityOperator
 
+
+# TODO: ensure safe import
+@dataclass
+class LOBPCGPrecondConfig:
+    method: Literal["identity", "jacobi", "ilu", "cholesky"] = "cholesky"
+    diag_damp: float | int | None = None
+    nvmath_config: DirectSolverConfig | None = None
+    spilu_kwargs: dict[str, Any] | None = None
+
+    def __post_init__(self):
+        if self.spilu_kwargs is None:
+            self.spilu_kwargs = {}
+        if self.nvmath_config is None:
+            self.nvmath_config = DirectSolverConfig()
+
+
 IdentityPrecond = IdentityOperator
 
 
 class JacobiPrecond:
     """
     Jacobi preconditioner for LOBPCG.
+
+    While the Jacobi preconditioner is computationally much cheaper than the ILU
+    and Cholesky preconditioner, it is only recommended when the initial guess
+    is already very good.
     """
 
     def __init__(self, A_op: Float[SparseOperator, "m m"]):
@@ -40,7 +61,8 @@ class ILUPrecond:
 
     This preconditioner uses CuPy to perform the incomplete LU factorization.
     By default, it uses the cusparse backend to perform the factorization with
-    zero fill-in and no pivoting.
+    zero fill-in and no pivoting. This default config tends to result in smaller
+    memory usage than the Cholesky preconditioner.
     """
 
     def __init__(

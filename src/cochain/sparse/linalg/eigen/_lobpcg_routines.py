@@ -10,7 +10,13 @@ from ._lobpcg_operators import (
     ShiftInvSymGEPSpOp,
     ShiftInvSymSpOp,
 )
-from .lobpcg_preconditioners import ChoPrecond
+from ._lobpcg_preconditioners import (
+    ChoPrecond,
+    IdentityPrecond,
+    ILUPrecond,
+    JacobiPrecond,
+    LOBPCGPrecondConfig,
+)
 from .utils import M_orthonormalize
 
 type SparseOperatorLike = (
@@ -18,6 +24,8 @@ type SparseOperatorLike = (
     | Float[ShiftInvSymSpOp, "m m"]
     | Float[ShiftInvSymGEPSpOp, "m m"]
 )
+
+type LOBPCGPreconditioner = IdentityPrecond | JacobiPrecond | ILUPrecond | ChoPrecond
 
 
 def _lobpcg_one_iter(
@@ -27,7 +35,7 @@ def _lobpcg_one_iter(
     R: Float[t.Tensor, "m n"],
     X_current: Float[t.Tensor, "m n"],
     X_prev: Float[t.Tensor, "m n"],
-    precond: ChoPrecond | IdentityOperator,
+    precond: LOBPCGPreconditioner,
     largest: bool,
     tol: float,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"], Float[t.Tensor, "m n"]]:
@@ -104,7 +112,7 @@ def _lobpcg_loop(
     M_op: Float[SparseOperator, "m m"] | IdentityOperator,
     S_op: Float[SparseOperator, "m m"] | IdentityOperator,
     X_0: Float[t.Tensor, "m n"],
-    precond: ChoPrecond | IdentityOperator,
+    precond: LOBPCGPreconditioner,
     largest: bool,
     tol: float,
     niter: int,
@@ -153,11 +161,11 @@ def lobpcg_forward(
     M_op: Float[SparseOperator, "m m"] | None,
     sigma: float | int | None,
     v0: Float[t.Tensor, "m n"],
-    diag_damp: float | int | None,
     largest: bool,
     tol: float,
     maxiter: int,
     nvmath_config: DirectSolverConfig,
+    precond_config: LOBPCGPrecondConfig,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
     """
     Solve a (generalized) eigenvalue problem of the form A@x = λ*M@x.
@@ -178,15 +186,37 @@ def lobpcg_forward(
     GEP + SI  inv(A - σM)@M@x = (λ - σ)^-1 * x  inv(A - σM)@M  I  M  M
     ------------------------------------------------------------------
     """
-    lobpcg_loop_partial = functools.partial(
-        _lobpcg_loop,
-        X_0=v0,
-        largest=largest,
-        tol=tol,
-        niter=maxiter,
-    )
-
     n = v0.size(-1)
+
+    if sigma is not None:
+        # If doing shift-invert mode, always use the identity preconditioner and
+        # ignore the user inputs.
+        precond = IdentityPrecond()
+    else:
+        match precond_config.method:
+            case "identity":
+                precond = IdentityPrecond()
+            case "jacobi":
+                precond = JacobiPrecond(A_op=A_op)
+            case "ilu":
+                precond = ILUPrecond(
+                    A_op=A_op,
+                    diag_damp=precond_config.diag_damp,
+                    spilu_kwargs=precond_config.spilu_kwargs,
+                )
+            case "cholesky":
+                precond = ChoPrecond(
+                    A_op=A_op,
+                    n=n,
+                    diag_damp=precond_config.diag_damp,
+                    nvmath_config=precond_config.nvmath_config,
+                )
+            case _:
+                raise ValueError()
+
+    lobpcg_loop_partial = functools.partial(
+        _lobpcg_loop, X_0=v0, largest=largest, tol=tol, niter=maxiter, precond=precond
+    )
 
     match (M_op, sigma):
         case (None, None):
@@ -195,9 +225,6 @@ def lobpcg_forward(
                 B_op=IdentityOperator(),
                 M_op=IdentityOperator(),
                 S_op=IdentityOperator(),
-                precond=ChoPrecond(
-                    A_op=A_op, n=n, diag_damp=diag_damp, nvmath_config=nvmath_config
-                ),
             )
 
         case (M_op, None):
@@ -206,9 +233,6 @@ def lobpcg_forward(
                 B_op=M_op,
                 M_op=M_op,
                 S_op=IdentityOperator(),
-                precond=ChoPrecond(
-                    A_op=A_op, n=n, diag_damp=diag_damp, nvmath_config=nvmath_config
-                ),
             )
 
         case (None, sigma):
@@ -217,7 +241,6 @@ def lobpcg_forward(
                 B_op=IdentityOperator(),
                 M_op=IdentityOperator(),
                 S_op=IdentityOperator(),
-                precond=IdentityOperator(),
             )
 
         case (M_op, sigma):
@@ -228,7 +251,6 @@ def lobpcg_forward(
                 B_op=IdentityOperator(),
                 M_op=M_op,
                 S_op=M_op,
-                precond=IdentityOperator(),
             )
 
         case _:

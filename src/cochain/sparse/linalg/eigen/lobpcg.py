@@ -8,6 +8,7 @@ from jaxtyping import Float, Integer
 
 from ...operators import SparseOperator, SparseTopology
 from ._backward import dLdA_backward, dLdA_dLdM_backward
+from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 from ._lobpcg_routines import lobpcg_forward
 
 try:
@@ -26,7 +27,6 @@ if TYPE_CHECKING:
 class LOBPCGConfig:
     sigma: float | int | None = None
     v0: Float[t.Tensor, "m n"] | Sequence[Float[t.Tensor, "m c"] | None] | None = None
-    diag_damp: float | int | None = None
     largest: bool = True
     tol: float | None = None
     maxiter: int | None = 1000
@@ -52,6 +52,7 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
         k: int,
         eps: float | int,
         lobpcg_config: LOBPCGConfig,
+        precond_config: LOBPCGPrecondConfig,
         nvmath_config: DirectSolverConfig,
     ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
         A_op = SparseOperator(A_sp_topo, A_val)
@@ -67,6 +68,7 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
             A_op=A_op,
             M_op=M_op,
             nvmath_config=nvmath_config,
+            precond_config=precond_config,
             **asdict(lobpcg_config),
         )
 
@@ -124,15 +126,32 @@ def _lobpcg_no_batch(
     k: int,
     eps: float | int,
     lobpcg_config: LOBPCGConfig,
+    precond_config: LOBPCGPrecondConfig,
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val, A.sp_topo, None, None, k, eps, lobpcg_config, nvmath_config
+            A.val,
+            A.sp_topo,
+            None,
+            None,
+            k,
+            eps,
+            lobpcg_config,
+            precond_config,
+            nvmath_config,
         )
     else:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val, A.sp_topo, M.val, M.sp_topo, k, eps, lobpcg_config, nvmath_config
+            A.val,
+            A.sp_topo,
+            M.val,
+            M.sp_topo,
+            k,
+            eps,
+            lobpcg_config,
+            precond_config,
+            nvmath_config,
         )
 
     return eig_vals, eig_vecs
@@ -144,6 +163,7 @@ def _lobpcg_batch(
     k: int,
     eps: float | int,
     lobpcg_config_batched: LOBPCGConfig,
+    precond_config: LOBPCGPrecondConfig,
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
     if M_batched is None:
@@ -156,7 +176,9 @@ def _lobpcg_batch(
     eig_val_list = []
     eig_vec_list = []
     for A, M, lobpcg_config in zip(A_list, M_list, lobpcg_config_list, strict=True):
-        eig_val, eig_vec = _lobpcg_no_batch(A, M, k, eps, lobpcg_config, nvmath_config)
+        eig_val, eig_vec = _lobpcg_no_batch(
+            A, M, k, eps, lobpcg_config, precond_config, nvmath_config
+        )
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
 
@@ -179,6 +201,7 @@ def lobpcg(
     eps: float | int = 1e-6,
     lobpcg_config: LOBPCGConfig | None = None,
     nvmath_config: DirectSolverConfig | None = None,
+    precond_config: LOBPCGPrecondConfig | None = None,
     generator: t.Generator | None = None,
 ) -> tuple[Float[t.Tensor, "*b k"], Float[t.Tensor, "m k"]]:
     """
@@ -212,6 +235,8 @@ def lobpcg(
 
     if lobpcg_config is None:
         lobpcg_config = LOBPCGConfig()
+    if precond_config is None:
+        precond_config = LOBPCGPrecondConfig()
     if nvmath_config is None:
         nvmath_config = DirectSolverConfig()
 
@@ -249,11 +274,11 @@ def lobpcg(
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(
-            A_list, M, k, eps, processed_lobpcg_config, nvmath_config
+            A_list, M, k, eps, processed_lobpcg_config, nvmath_config, precond_config
         )
     else:
         eig_vals, eig_vecs = _lobpcg_no_batch(
-            A, M, k, eps, processed_lobpcg_config, nvmath_config
+            A, M, k, eps, processed_lobpcg_config, nvmath_config, precond_config
         )
 
     return eig_vals, eig_vecs
