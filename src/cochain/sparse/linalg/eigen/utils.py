@@ -8,8 +8,12 @@ from ...operators import SparseOperator
 
 def M_orthonormalize(
     V: Float[t.Tensor, "m n"],
-    M_op: Float[SparseOperator, "m m"] | None,
+    M_op: Float[SparseOperator, "m m"],
+    *,
     rtol: float | None = None,
+    n_min: int | None = None,
+    generator: t.Generator | None = None,
+    max_iter: int = 3,
 ) -> Float[t.Tensor, "m n"]:
     """
     Convert the column vectors of V into M-orthonormal vectors using iterative
@@ -17,9 +21,12 @@ def M_orthonormalize(
 
     The method implemented in this function follows the SVQB method (Singular Value
     QR Blocking) from Stathopoulos & Wu., SIAM J. Sci. Comput. (2002). This function
-    differs from SVQB in that it is rank-adaptive; i.e., instead of claping, linearly
-    dependent columns of V are dropped and the function returns fewer orthonormalized
-    vectors.
+    differs from SVQB in that it is rank-adaptive; i.e., instead of clamping,
+    linearly dependent columns of V are dropped and the function returns fewer
+    orthonormalized vectors. If n_min is provided and the returned V matrix has
+    fewer columns than n_min, then a "soft restart" will be attempted where new,
+    random M-orthonormal vectors are appended to V to ensure that it has n_min
+    columns.
 
     An issue with the SVQB approach is that it requires a Gram matrix whose condition
     number is the square of the condition number of V. It is therefore recommended
@@ -27,39 +34,65 @@ def M_orthonormalize(
     further help with the issue, this function performs the orthonormalization
     in float64.
 
-    If M is None, then it is assumed to be the identity matrix.
-
     Currently batched sparse-dense matrix operations are not well supported in
     torch; therefore, this function cannot support batch dimensions.
     """
-    V_ortho = V
-    for _ in range(3):
-        V_ortho, cond = _M_orthonormalize_one_iter(V, M_op, rtol)
+    # Force double precision to further suppress the condition number issue.
+    V_dtype = V.dtype
+    V_double = V.to(t.float64)
+    M_op_double = M_op.to(t.float64)
+
+    V_current = V_double
+    for _ in range(max_iter):
+        V_ortho_double, cond = _M_orthonormalize_one_iter(V_current, M_op_double, rtol)
+
+        pad_cond = 0.0
+        # If the number of columns in V_ortho drops below the minimum, perform
+        # a "soft restart" by padding random vectors to V_ortho.
+        if (n_min is not None) and (V_ortho_double.size(-1) < n_min):
+            pad = t.randn(
+                (V_ortho_double.size(0), n_min - V_ortho_double.size(-1)),
+                generator=generator,
+                dtype=V_ortho_double.dtype,
+                device=V_ortho_double.device,
+            )
+
+            # The padded vectors need to form a subspace that is orthogonal to
+            # the current V_ortho column space
+            pad_overlap = V_ortho_double.T @ (M_op_double @ pad)
+            pad_proj = V_ortho_double @ pad_overlap
+            pad_res = pad - pad_proj
+
+            # The padded vectors need to be M-orthonormal
+            pad_res_ortho, pad_cond = _M_orthonormalize_one_iter(
+                pad_res, M_op_double, rtol
+            )
+
+            # Concat to form the new basis
+            V_ortho_double = t.hstack((V_ortho_double, pad_res_ortho))
+
+        V_current = V_ortho_double
+
         # If V is exactly M-orthonormal, then V.T@M@V = I and the condition number
         # is 1; here, we allow for small deviation up to 1e-3.
-        if cond <= 1.0 + 1e-3:
+        if (cond <= 1.0 + 1e-3) and (pad_cond <= 1.0 + 1e-3):
             break
+
+    V_ortho = V_current.to(V_dtype)
 
     return V_ortho
 
 
 def _M_orthonormalize_one_iter(
     V: Float[t.Tensor, "m n"],
-    M_op: Float[SparseOperator, "m m"] | None,
+    M_op: Float[SparseOperator, "m m"],
     rtol: float | None = None,
 ) -> tuple[Float[t.Tensor, "m n"], Float[t.Tensor, ""]]:
     if rtol is None:
         rtol = V.size(0) * t.finfo(V.dtype).eps
 
-    # Force double precision to further suppress the condition number issue.
-    V_dtype = V.dtype
-    V_double = V.to(t.float64)
-
     # Compute the M-orthogonal gram matrix.
-    if M_op is None:
-        G: Float[t.Tensor, "n n"] = V_double.T @ V_double
-    else:
-        G: Float[t.Tensor, "n n"] = V_double.T @ (M_op.to(t.float64) @ V_double)
+    G: Float[t.Tensor, "n n"] = V.T @ (M_op @ V)
 
     # Implicit normalization of G. Let D be a diagonal matrix whose diagonal
     # elements are the inverse square roots of the diagonal elements of G; then
@@ -100,8 +133,7 @@ def _M_orthonormalize_one_iter(
 
     # Find V_ortho = V@W, the M-orthonormal version of V. With some algebra,
     # one can check that V_ortho.T@M@V_ortho = I.
-    V_ortho_double = V @ W
-    V_ortho = V_ortho_double.to(V_dtype)
+    V_ortho = V @ W
 
     return V_ortho, cond
 

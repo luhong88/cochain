@@ -65,15 +65,12 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
         else:
             raise ValueError()
 
-        lobpcg_config_dict = asdict(lobpcg_config)
-        del lobpcg_config_dict["generator"]
-
         eig_vals, eig_vecs = lobpcg_forward(
             A_op=A_op,
             M_op=M_op,
             nvmath_config=nvmath_config,
             precond_config=precond_config,
-            **lobpcg_config_dict,
+            **asdict(lobpcg_config),
         )
 
         if lobpcg_config.sigma is None:
@@ -245,14 +242,15 @@ def lobpcg(
     * in general, it is recommended to set the `n` argument somewhat higher than
       `k`, to make the convergence of the `k` desired eigenvalues faster and to
       account for possible degenerate eigenvalues.
-    * This implementation employs a rank-adaptive, iterative canonical/PCA orthonormalization
-      strategy for the trial subspace. Unlike the standard PyTorch implementation,
-      this allows the solver to handle cases where the size of A (`m`) is smaller
-      than 3x the block size `n`. However, if the dimension of the trial subspace
-      (which is <= 3n) is equal to or larger than `m`, the Rayleigh-Ritz projection
-      becomes a full similarity transformation. In this limit, the algorithm effectively
-      performs an exact diagonalization similar to `torch.linalg.eigh()`, but less
-      efficiently due to the subspace construction and projection steps.
+    * This implementation employs a rank-adaptive, iterative canonical/PCA
+      orthonormalization strategy (with soft-restart) for the trial subspace.
+      Unlike the standard PyTorch implementation, this allows the solver to handle
+      cases where the size of A (`m`) is smaller than 3x the block size `n`. However,
+      if the dimension of the trial subspace (which is <= 3n) is equal to or larger
+      than `m`, the Rayleigh-Ritz projection becomes a full similarity transformation.
+      In this limit, the algorithm effectively performs an exact diagonalization
+      similar to `torch.linalg.eigh()`, but less efficiently due to the subspace
+      construction and projection steps.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backends required.")

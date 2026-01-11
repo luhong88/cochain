@@ -39,10 +39,13 @@ def _lobpcg_one_iter(
     precond: LOBPCGPreconditioner,
     largest: bool,
     tol: float,
+    generator: t.Generator | None,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"], Float[t.Tensor, "m n"]]:
     """
     Perform one iteration of LOBPCG.
     """
+    n = X_current.size(-1)
+
     # Perform soft locking/deflation to lock in converged eigenvectors by zeroing
     # out the corresponding residual vectors.
     R_norm = t.linalg.norm(R, dim=0, keepdim=True)
@@ -61,8 +64,7 @@ def _lobpcg_one_iter(
     # minimize numerical error.
     V = t.hstack((X_current, W, P))
 
-    # TODO: if V_ortho has fewer than k columns, pad with random vectors to restart.
-    V_ortho = M_orthonormalize(V, M_op)
+    V_ortho = M_orthonormalize(V, M_op, n_min=n, generator=generator, max_iter=3)
     TV_ortho = T_op @ V_ortho
 
     # Rayleigh-Ritz projection
@@ -90,7 +92,6 @@ def _lobpcg_one_iter(
 
     # Extract the n largest (or smallest) eigenvalue-eigenvector pairs.
     # Note that t.linalg.eigh() returns eigenvalues in ascending order
-    n = X_current.size(-1)
     if largest:
         # if largest=True, sort eigenvalues in descending order
         X_next_reduced = t.flip(X_next_reduced_all[:, -n:], dims=(-1,))
@@ -117,8 +118,11 @@ def _lobpcg_loop(
     largest: bool,
     tol: float,
     niter: int,
+    generator: t.Generator | None,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
-    X_current = M_orthonormalize(X_0, M_op)
+    X_current = M_orthonormalize(
+        X_0, M_op, n_min=X_0.size(-1), generator=generator, max_iter=3
+    )
     X_prev = X_current
 
     TX_current = T_op @ X_current
@@ -141,15 +145,7 @@ def _lobpcg_loop(
 
         else:
             Lambda_next, X_next, TX_next = _lobpcg_one_iter(
-                T_op,
-                M_op,
-                S_op,
-                R,
-                X_current,
-                X_prev,
-                precond,
-                largest,
-                tol,
+                T_op, M_op, S_op, R, X_current, X_prev, precond, largest, tol, generator
             )
 
             X_prev = X_current
@@ -177,6 +173,7 @@ def lobpcg_forward(
     maxiter: int,
     nvmath_config: DirectSolverConfig,
     precond_config: LOBPCGPrecondConfig,
+    generator: t.Generator | None,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
     """
     Solve a (generalized) eigenvalue problem of the form A@x = λ*M@x.
@@ -226,7 +223,13 @@ def lobpcg_forward(
                 raise ValueError()
 
     lobpcg_loop_partial = functools.partial(
-        _lobpcg_loop, X_0=v0, largest=largest, tol=tol, niter=maxiter, precond=precond
+        _lobpcg_loop,
+        X_0=v0,
+        largest=largest,
+        tol=tol,
+        niter=maxiter,
+        precond=precond,
+        generator=generator,
     )
 
     match (M_op, sigma):
