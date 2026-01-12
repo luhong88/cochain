@@ -38,7 +38,7 @@ def _lobpcg_one_iter(
     X_prev: Float[t.Tensor, "m n"],
     precond: LOBPCGPreconditioner,
     largest: bool,
-    tol: float,
+    rtol: float,
     generator: t.Generator | None,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"], Float[t.Tensor, "m n"]]:
     """
@@ -49,7 +49,7 @@ def _lobpcg_one_iter(
     # Perform soft locking/deflation to lock in converged eigenvectors by zeroing
     # out the corresponding residual vectors.
     R_norm = t.linalg.norm(R, dim=0, keepdim=True)
-    mask = (R_norm > tol).to(R_norm.dtype)
+    mask = (R_norm > rtol).to(R_norm.dtype)
     R_masked = R * mask
 
     # Use the residual vectors R to compute the precondition directions W.
@@ -115,7 +115,8 @@ def _lobpcg_loop(
     X_0: Float[t.Tensor, "m n"],
     precond: LOBPCGPreconditioner,
     largest: bool,
-    tol: float,
+    atol: float,
+    rtol: float,
     niter: int,
     generator: t.Generator | None,
 ) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
@@ -134,17 +135,29 @@ def _lobpcg_loop(
 
     converged = False
     for _ in range(niter):
-        # Compute the residual vectors R = T@X - B@X@Λ
+        # Compute the residual vectors R = T@X - B@X@Λ.
         R = TX_current - (B_op @ X_current) * Lambda_current.view(1, -1)
         R_norm = t.linalg.norm(R, dim=0)
 
-        if (R_norm < tol).all():
+        # Adjust the tolerance based on the eigenvalue magnitudes.
+        tol_current = atol + rtol * Lambda_current.abs()
+
+        if (R_norm <= tol_current).all():
             converged = True
             break
 
         else:
             Lambda_next, X_next, TX_next = _lobpcg_one_iter(
-                T_op, M_op, S_op, R, X_current, X_prev, precond, largest, tol, generator
+                T_op,
+                M_op,
+                S_op,
+                R,
+                X_current,
+                X_prev,
+                precond,
+                largest,
+                rtol,
+                generator,
             )
 
             X_prev = X_current
@@ -155,7 +168,7 @@ def _lobpcg_loop(
     if not converged:
         warnings.warn(
             f"LOBPCG did not converge after {niter} iterations. "
-            f"Max residual norm: {R_norm.max().item():.2e} (tol: {tol:.2e}).",
+            f"Max residual norm: {R_norm.max().item():.2e} (rtol: {rtol:.2e}).",
             UserWarning,
         )
 
@@ -241,7 +254,8 @@ def lobpcg_forward(
     sigma: float | int | None,
     v0: Float[t.Tensor, "m n"],
     largest: bool,
-    tol: float,
+    atol: float,
+    rtol: float,
     maxiter: int,
     nvmath_config: DirectSolverConfig,
     precond_config: LOBPCGPrecondConfig,
@@ -279,7 +293,8 @@ def lobpcg_forward(
         S_op=S_op,
         X_0=v0,
         largest=largest,
-        tol=tol,
+        atol=atol,
+        rtol=rtol,
         niter=maxiter,
         precond=precond,
         generator=generator,

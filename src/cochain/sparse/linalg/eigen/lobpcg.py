@@ -28,7 +28,8 @@ class LOBPCGConfig:
     sigma: float | int | None = None
     v0: Float[t.Tensor, "m n"] | Sequence[Float[t.Tensor, "m c"] | None] | None = None
     largest: bool = True
-    tol: float | None = None
+    atol: float | None = None
+    rtol: float | None = None
     maxiter: int | None = 1000
     generator: t.Generator | None = None
 
@@ -304,11 +305,14 @@ def lobpcg(
     else:
         v0 = lobpcg_config.v0
 
-    tol = (
-        t.finfo(A.dtype).eps ** 0.5 if lobpcg_config.tol is None else lobpcg_config.tol
+    atol = t.finfo(A.dtype).eps if lobpcg_config.rtol is None else lobpcg_config.rtol
+    rtol = (
+        t.finfo(A.dtype).eps ** 0.5
+        if lobpcg_config.rtol is None
+        else lobpcg_config.rtol
     )
 
-    processed_lobpcg_config = replace(lobpcg_config, v0=v0, tol=tol)
+    processed_lobpcg_config = replace(lobpcg_config, v0=v0, atol=atol, rtol=rtol)
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(

@@ -402,11 +402,14 @@ def test_shift_invert_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
     eig_val_true = eig_vals_true[target_idx]
     eig_vec_true = eig_vecs_true[:, target_idx]
 
+    # The algorithm will likely not be able to converge using the default atol/rtol
+    # because the large condition number of the shift-inverted matrix causes the
+    # sparse solver to lose precision.
     eig_val, eig_vec = lobpcg(
         A=A_op,
         M=None,
         k=k,
-        lobpcg_config=LOBPCGConfig(sigma=target_eig_val, largest=True),
+        lobpcg_config=LOBPCGConfig(sigma=target_eig_val, largest=True, maxiter=10),
     )
 
     t.testing.assert_close(eig_val, eig_val_true)
@@ -435,11 +438,14 @@ def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
     A_op = SparseOperator.from_tensor(A).to(device)
     M_op = SparseOperator.from_tensor(M).to(device)
 
+    # The algorithm will likely not be able to converge using the default atol/rtol
+    # because the large condition number of the shift-inverted matrix causes the
+    # sparse solver to lose precision.
     eig_val, eig_vec = lobpcg(
         A=A_op,
         M=M_op,
         k=k,
-        lobpcg_config=LOBPCGConfig(sigma=target_eig_val, largest=True),
+        lobpcg_config=LOBPCGConfig(sigma=target_eig_val, largest=True, maxiter=10),
     )
 
     t.testing.assert_close(eig_val, eig_val_true)
