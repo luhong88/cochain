@@ -1,7 +1,7 @@
 import pytest
 import torch as t
 
-from cochain.sparse.linalg import nvmath_direct_solver
+from cochain.sparse.linalg.solvers import nvmath_direct_solver
 from cochain.sparse.operators import SparseOperator
 
 

@@ -185,6 +185,24 @@ class SparseOperator(BaseOperator):
     def __neg__(self) -> SparseOperator:
         return SparseOperator(self.sp_topo, -self.val)
 
+    def diagonal(self) -> Float[t.Tensor, "*b diag"]:
+        if self.n_batch_dim == 0:
+            return self.val[
+                t.argwhere(self.sp_topo.idx_coo[0] == self.sp_topo.idx_coo[1]).flatten()
+            ]
+        else:
+            raise NotImplementedError()
+
+    # TODO: implement trace for batched operators
+    # TODO: write tests fot tr()
+    # TODO: implement the same tr and diagonal() functions for DiagOperators
+    @property
+    def tr(self) -> Float[t.Tensor, "*b"]:
+        if self.n_batch_dim == 0:
+            return self.diagonal().sum(dim=0)
+        else:
+            raise NotImplementedError()
+
     def __add__(self, other) -> SparseOperator:
         """
         Elementwise-addition of two SparseOperators that share the same topology/
@@ -227,9 +245,10 @@ class SparseOperator(BaseOperator):
         all_idx = t.hstack([coo.indices() for coo in coo_tensors])
         all_val = t.hstack([coo.values() for coo in coo_tensors])
 
-        return t.sparse_coo_tensor(
-            all_idx, all_val, size=coo_tensors[0].size()
-        ).coalesce()
+        # from_tensor() handles coalesce.
+        return SparseOperator.from_tensor(
+            t.sparse_coo_tensor(all_idx, all_val, size=coo_tensors[0].size())
+        )
 
     def __mul__(self, other) -> SparseOperator:
         """

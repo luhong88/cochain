@@ -8,7 +8,7 @@ import torch as t
 from jaxtyping import Float, Integer
 from torch.autograd.function import once_differentiable
 
-from ..operators import SparseOperator, SparseTopology
+from ...operators import SparseOperator, SparseTopology
 
 try:
     import cupy as cp
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
 
-class _CuPySuperLUWrapper(t.autograd.Function):
+class _CuPySuperLUAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
@@ -128,7 +128,7 @@ class _CuPySuperLUWrapper(t.autograd.Function):
             return (dLdA_val, None, lambda_, None)
 
 
-class _SciPySuperLUWrapper(t.autograd.Function):
+class _SciPySuperLUAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
@@ -278,12 +278,12 @@ def splu(
             if not _HAS_CUPY:
                 raise ImportError("CuPy backend required.")
 
-            x, solver = _CuPySuperLUWrapper.apply(
+            x, solver = _CuPySuperLUAutogradFunction.apply(
                 A.val, A.sp_topo, b_ready, splu_kwargs
             )
 
         case "scipy":
-            x, solver = _SciPySuperLUWrapper.apply(
+            x, solver = _SciPySuperLUAutogradFunction.apply(
                 A.val, A.sp_topo, b_ready, splu_kwargs
             )
 

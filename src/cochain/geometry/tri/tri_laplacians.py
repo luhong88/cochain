@@ -137,7 +137,7 @@ def laplacian_1(
     laplacian_1 = SparseOperator.assemble(
         laplacian_1_div_grad(tri_mesh, dual_complex, codiff_1),
         laplacian_1_curl_curl(tri_mesh, dual_complex, codiff_2),
-    ).coalesce()
+    )
 
     return laplacian_1
 

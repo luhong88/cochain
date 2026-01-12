@@ -40,6 +40,11 @@ class DiagOperator(BaseOperator):
     def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
         return cls(tensor)
 
+    @classmethod
+    def eye(cls, n: int, dtype: t.dtype, device: t.device) -> DiagOperator:
+        val = t.ones(n, dtype=dtype, device=device)
+        return DiagOperator(val)
+
     def apply(self, fn: Callable, **kwargs) -> DiagOperator:
         new_val = fn(self.val, **kwargs)
         return DiagOperator(new_val)
@@ -58,7 +63,7 @@ class DiagOperator(BaseOperator):
         return DiagOperator(1.0 / self.val)
 
     @property
-    def tr(self) -> t.Tensor:
+    def tr(self) -> Float[t.Tensor, "*b"]:
         if self.n_batch_dim == 0:
             return self.val.sum()
         else:

@@ -7,13 +7,14 @@ import torch as t
 from jaxtyping import Float, Integer
 from torch.autograd.function import once_differentiable
 
-from ..operators import SparseOperator, SparseTopology
+from ...operators import SparseOperator, SparseTopology
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
     from cuda.core.experimental import Device
 
     _HAS_NVMATH = True
+
 except ImportError:
     _HAS_NVMATH = False
 
@@ -63,7 +64,7 @@ if _HAS_NVMATH:
         solution_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-class _NvmathDirectSolverWrapper(t.autograd.Function):
+class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
@@ -170,7 +171,8 @@ class _NvmathDirectSolverWrapper(t.autograd.Function):
             # update both the LHS and RHS of the solver for the adjoint method.
             # Since the LHS is updated, we need to redo the plan() and factorize()
             # steps. Note that, currently, the DirectSolver class does not expose
-            # a transpose mode option.
+            # a transpose mode option, which would have been preferred over
+            # re-initializing the solver.
             A_T = SparseOperator(
                 A_sp_topo, solver.a.tensor.values().flatten()
             ).to_sparse_csr_transposed(int32=True)
@@ -310,7 +312,7 @@ def nvmath_direct_solver(
             sparse_system_type
         ]
 
-    x, solver = _NvmathDirectSolverWrapper.apply(
+    x, solver = _NvmathDirectSolverAutogradFunction.apply(
         A.val,
         A.sp_topo,
         b,

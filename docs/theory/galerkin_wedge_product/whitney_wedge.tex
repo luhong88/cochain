@@ -1,0 +1,117 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[T1]{fontenc} 
+\usepackage{cmbright}
+
+% --- Essential Math Packages ---
+\usepackage{amsmath}    % Core math environments
+\usepackage{amssymb}    % Math symbols
+\usepackage{mathtools}  % Improvements to amsmath (fixes spacing)
+\usepackage{bm}         % Bold math (better than \mathbf for greek letters)
+
+% --- Formatting & Utilities ---
+\usepackage[margin=1in]{geometry} % Standard margins
+\usepackage{microtype}            % Subliminally improves spacing/kerning
+\usepackage{hyperref}             % Clickable links in PDF
+\usepackage{cleveref}             % Smart referencing (use \cref instead of \ref)
+
+% --- Settings ---
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=green,
+    urlcolor=cyan
+}
+
+\title{Note on Whitney wedge product}
+\author{Lu Hong}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\paragraph{Whitney forms}
+Let $K$ be an n-dimensional simplex. Let $\lambda_i: \mathbb{R}^3\to[0,1]$ be the $i$th barycentric coordinate function. The Whitney $k$-form (of the lowest order) defined on a $k$-dimensional face $\sigma=01\cdots(k-1)k$ of $K$ is given as 
+\begin{equation}
+    \phi_k(\sigma) = k!\sum_{i=0}^{k} (-1)^i \lambda_i d{\lambda}_0 \wedge \cdots  \widehat{d\lambda_i} \cdots \wedge d\lambda_k
+\end{equation}
+where $\widehat{d\lambda_i}$ indicates that the term is omitted. As a concrete example, the Whitney $k$-forms for $k=0, 1, 2$ are defined as
+\begin{itemize}
+    \item $\phi_0=\lambda_0$
+    \item $\phi_1=\lambda_0 d\lambda_1 - \lambda_1 d\lambda_0$
+    \item $\phi_2= 2\left(\lambda_0 d\lambda_1 d\lambda_2 - \lambda_1 d\lambda_0 d\lambda_2 + \lambda_2 d\lambda_0 d\lambda_1 \right)$
+\end{itemize}
+
+Let $u$ be a $k$-form defined $K$. Using the Whitney $k$-forms as basis functions, we can approximate $u$ as
+\begin{equation}
+    u=\sum_{\sigma_i\in K_k} u^i \phi_k(\sigma_i)
+\end{equation}
+where the summation is over the set $K_k=\{\sigma_i\}$ of $k$-faces of $K$. For the sake of brevity, we will omit explicit enumeration over $\sigma$, and write $u=u^i\phi_{ki}$, where the summation is implied with Einstein's notation.
+
+Using this approximation, for any $k$-form $u$ and $l$-form $v$, we can expression their wedge product, a $(k+l)$-form, as
+\begin{equation}
+    w = u\wedge v = u^iv^j \phi_{ki} \wedge \phi_{lj}
+\end{equation}
+In general, this $(k+l)$-form is not expressible using linear combinations of the Whitney $(k+l)$-forms directly (i.e., $w$ is not an element of $W^{k+l}$), because the $u\wedge v$ expression contains quadratic terms of $\lambda_i$'s.
+
+To see a concrete example, let us consider the wedge product between two 1-forms $u$ and $v$ over a 2-simplex. In this case,
+\begin{equation}
+    u = u^i \phi_{1i} = u_{01}(\lambda_0 d\lambda_1 - \lambda_1 d\lambda_0) + u_{02}(\lambda_0 d\lambda_2 - \lambda_2 d\lambda_0) + u_{12}(\lambda_1 d\lambda_2 - \lambda_2 d\lambda_1)
+\end{equation}
+Without writing out the full product, it should be clear that $u\wedge v$ contains terms such as $u_{01}v_{01}\lambda_0\lambda_1 d\lambda_0\wedge d\lambda_1$ and $u_{02}v_{12}\lambda_2^2 d\lambda_0\wedge d\lambda_1$, which can not be expressed by linear combinations of terms like $\lambda_i d\lambda_j\wedge d\lambda_k$.
+
+\paragraph{Whitney edge product} To express the wedge product $u\wedge v$ using Whitney $(k+l)$-forms, we seek a $(k+l)$-form $w\in W^{k+l}$ that has the shortest $L^2$ distance to $u\wedge v$; i.e., $w$ minimizes the error
+\begin{equation}
+    e=\left\Vert u^iv^j \phi_{ki} \wedge \phi_{lj} - w^h \phi_{k+l,h}\right\Vert_{L^2}^2
+\end{equation}
+Let $w\in\mathbb R^{k+l}$ contains the coefficients $\{w_h\}$. If $w$ minimizes $e$, the derivative of $e$ with respect to each $w_h$ must be zero. With some algebra, this condition simplifies to the equation
+\begin{equation}
+    w^g \left< \phi_{k+l, h}, \phi_{k+l,g} \right> = \left< u^iv^j \phi_{ki}\phi_{lj}, \phi_{k+l,h} \right>
+\end{equation}
+or, more concisely,
+\begin{equation}
+    Mw=b
+\end{equation}
+Here, $M$ is the $(k+l)$-form mass matrix, where $M_{ij}=\left< \phi_{k+l,i}, \phi_{k+l,j} \right>$, and $b$ is the load vector defined as
+\begin{equation}
+    b_h= \left< u^iv^j \phi_{ki} \wedge \phi_{lj}, \phi_{k+l,h} \right>
+\end{equation}
+Each $b_h$ can be interpreted as the project of $u\wedge v$ onto the basis element $\phi_{k+l,h}$. Solving this linear system for $w$ gives the Whitney edge product.
+
+\paragraph{Example triple product tensor calculation} To determine the Whitney edge product requires computing the triple product tensor
+\begin{equation}
+    T_{ijh}=\left< \phi_{ki} \wedge \phi_{lj}, \phi_{k+l,h} \right>
+\end{equation}
+To make this more concrete, let us consider a simple case where $K$ is a 2-simplex $012$, $\sigma_k=01$, $\sigma_l=12$, and $\sigma_h=012$. Then,
+\begin{align}
+    T_{ijh} &= \left<(\lambda_1 d\lambda_0 - \lambda_0 d\lambda_1) \wedge (\lambda_1 d\lambda_2 - \lambda_2 d\lambda_1),\right. \\ & \qquad \left. 2\lambda_0 d\lambda_1 \wedge d\lambda_2 - 2\lambda_1 d\lambda_0 \wedge d\lambda_2 + 2\lambda_2 d\lambda_0 \wedge d\lambda_1 \right>_{L^2} \\
+    &= \int_K \left< \lambda_1^2d\lambda_0\wedge d\lambda_2 - \lambda_1\lambda_2 d\lambda_0\wedge d\lambda_1 - \lambda_0\lambda_1 d\lambda_1\wedge d\lambda_2,\right. \\ & \qquad \left. 2\lambda_0 d\lambda_1 \wedge d\lambda_2 - 2\lambda_1 d\lambda_0 \wedge d\lambda_2 + 2\lambda_2 d\lambda_0 \wedge d\lambda_1 \right>_g dA \\
+    &= \int_K (2\lambda_0\lambda_1^2 + 2\lambda_0\lambda_1^2) \left<d\lambda_0\wedge d\lambda_2, d\lambda_1 \wedge d\lambda_2\right>_g dA\, + \\
+    & \qquad \int_K (-2\lambda_1^3)\left<d\lambda_0\wedge d\lambda_2, d\lambda_0 \wedge d\lambda_2 \right>_g dA\, + \\
+    & \qquad \int_K (2\lambda_1^2\lambda_2 +2\lambda_1^2\lambda_2) \left< d\lambda_0 \wedge d\lambda_2, d\lambda_0 \wedge d\lambda_1 \right>_g dA\, + \\
+    & \qquad \int_K (-2\lambda_0\lambda_1\lambda_2 - 2\lambda_0\lambda_1\lambda_2) \left< d\lambda_0\wedge d\lambda_1, d\lambda_1 \wedge d\lambda_2 \right>_g dA\, + \\
+    & \qquad \int_K (-2\lambda_1\lambda_2^2) \left<d\lambda_0 \wedge d\lambda_1, d\lambda_0 \wedge d\lambda_1 \right>_g dA\, + \\
+    & \qquad \int_K (-2\lambda_0^2\lambda_1) \left< d\lambda_1 \wedge d\lambda_2, d\lambda_1 \wedge d\lambda_2 \right>_g dA
+\end{align}
+Here, $\left<\cdot, \cdot\right>_{L^2}$ is the standard inner product of $k$-forms, and $\left<\cdot, \cdot\right>_g$ is the scalar inner product evaluated at a given point.
+
+This set of integrals can be further simplified. In particular, The scalar inner products are constant, since the barycentric coordinate functions are piecewise-linear within each simplex. In addition, these inner products of forms can be expressed as in terms of the inner products of gradients; specificaly,
+\begin{equation}
+    \left<d\lambda_i, d\lambda_j\right>_g = \left<\nabla\lambda_i, \nabla\lambda_j\right>_g
+\end{equation}
+and
+\begin{equation}
+    \left<d\lambda_i \wedge d\lambda_j, d\lambda_k \wedge d\lambda_l\right>_g = \begin{vmatrix}
+        \nabla \lambda_i \cdot \nabla \lambda_k & \nabla \lambda_i \cdot \nabla \lambda_l \\
+        \nabla \lambda_j \cdot \nabla \lambda_k & \nabla \lambda_j \cdot \nabla \lambda_l 
+    \end{vmatrix}
+\end{equation}
+Lastly, the integral over the products of barycentric coordinate functions can be solved using the magic formula,
+\begin{equation}
+    \int_K \lambda_i^{m_i}\lambda_j^{m_j}\lambda_k^{m_k}d\Omega = \frac{n! m_i!m_j!m_k!}{(n + m_i + m_j + m_k)!}|K|
+\end{equation}
+where $n$ is the dimension of the simplex $K$ and $|K|$ is the area/volume of the simplex $K$. This gives the general formula for the third moments of the simplex $K$.
+
+
+\end{document}
