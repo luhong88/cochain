@@ -233,17 +233,24 @@ def lobpcg(
       generalized eigenvalue problems.
     * This implementation accepts specific preconditioners, including: identity,
       Jacobi, incomplete LU, and Cholesky; the latter two support diagonal dampling.
+      The preconditioner can be configured using LOBPCGPrecondConfig and will be
+      generated internally.
     * This implementation does not support explicit batch dimensions in `A` or `M`.
       If `block_diag_batch=True`, `A` and `M` will be split into individual sparse
       matrices and solved sequentially. This requires that `A` (and `M` if not `None`)
       has a valid `BlockDiagConfig` for unpacking the block diagonal batch structure.
+      While it is possible to solve the entire block diagonal system in parallel
+      without resorting to sequential processing, to do so robustly requires careful
+      handling of the batch orthonormalization step that's currently not implemented.
+      For use cases where a batched solver is preferred (e.g., for small meshes
+      that have the same size), please refer to `torch.lobpcg()`.
 
     Notes on the `k` and `n` arguments:
     * in general, it is recommended to set the `n` argument somewhat higher than
       `k`, to make the convergence of the `k` desired eigenvalues faster and to
       account for possible degenerate eigenvalues.
-    * This implementation employs a rank-adaptive, iterative canonical/PCA
-      orthonormalization strategy (with soft-restart) for the trial subspace.
+    * This implementation employs a rank-adaptive, iterative, canonical/PCA
+      orthonormalization strategy with soft-restart for constructing the trial subspace.
       Unlike the standard PyTorch implementation, this allows the solver to handle
       cases where the size of A (`m`) is smaller than 3x the block size `n`. However,
       if the dimension of the trial subspace (which is <= 3n) is equal to or larger

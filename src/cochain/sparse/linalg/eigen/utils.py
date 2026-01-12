@@ -14,7 +14,7 @@ def M_orthonormalize(
     n_min: int | None = None,
     generator: t.Generator | None = None,
     max_iter: int = 3,
-) -> Float[t.Tensor, "m n"]:
+) -> Float[t.Tensor, "m l"]:
     """
     Convert the column vectors of V into M-orthonormal vectors using iterative
     canonical/PCA orthonormalization.
@@ -23,9 +23,9 @@ def M_orthonormalize(
     QR Blocking) from Stathopoulos & Wu., SIAM J. Sci. Comput. (2002). This function
     differs from SVQB in that it is rank-adaptive; i.e., instead of clamping,
     linearly dependent columns of V are dropped and the function returns fewer
-    orthonormalized vectors. If n_min is provided and the returned V matrix has
-    fewer columns than n_min, then a "soft restart" will be attempted where new,
-    random M-orthonormal vectors are appended to V to ensure that it has n_min
+    orthonormalized vectors (l <= n). If n_min is provided and the returned V matrix
+    has fewer columns than n_min, then a "soft restart" will be attempted where
+    new, random M-orthonormal vectors are appended to V to ensure that it has n_min
     columns.
 
     An issue with the SVQB approach is that it requires a Gram matrix whose condition
@@ -33,9 +33,6 @@ def M_orthonormalize(
     to perform iterative refinment to suppress the condition number issue. To
     further help with the issue, this function performs the orthonormalization
     in float64.
-
-    Currently batched sparse-dense matrix operations are not well supported in
-    torch; therefore, this function cannot support batch dimensions.
     """
     # Force double precision to further suppress the condition number issue.
     V_dtype = V.dtype
@@ -87,7 +84,7 @@ def _M_orthonormalize_one_iter(
     V: Float[t.Tensor, "m n"],
     M_op: Float[SparseOperator, "m m"],
     rtol: float | None = None,
-) -> tuple[Float[t.Tensor, "m n"], Float[t.Tensor, ""]]:
+) -> tuple[Float[t.Tensor, "m l"], Float[t.Tensor, ""]]:
     if rtol is None:
         rtol = V.size(0) * t.finfo(V.dtype).eps
 
