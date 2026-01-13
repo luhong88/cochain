@@ -71,6 +71,9 @@ class BaseOperator(ABC):
     def __sub__(self, other) -> BaseOperator: ...
 
     @abstractmethod
+    def abs(self) -> BaseOperator: ...
+
+    @abstractmethod
     def __mul__(self, other) -> BaseOperator: ...
 
     def __rmul__(self, other) -> BaseOperator:

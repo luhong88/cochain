@@ -14,9 +14,7 @@ def detect_mesh_boundaries(
     The logic implemented in this function is only valid for pure simplicial
     complexes.
     """
-    coboundary_operators = [
-        getattr(mesh, f"coboundary_{dim}").to_sparse_coo() for dim in [2, 1, 0]
-    ]
+    coboundary_operators = [getattr(mesh, f"coboundary_{dim}") for dim in [2, 1, 0]]
 
     # The top-level simplies by definition cannot be boundaries.
     boundary_masks = [
@@ -40,7 +38,9 @@ def detect_mesh_boundaries(
             if is_top_level:
                 # A face of a top-level simplex is on the boundary if it is the face
                 # of exactly one top-level simplex.
-                face_relation_count = coboundary.abs().sum(dim=0).to_dense()
+                face_relation_count = (
+                    coboundary.to_sparse_coo().abs().sum(dim=0).to_dense()
+                )
                 face_is_boundary = t.isclose(
                     face_relation_count,
                     t.tensor(

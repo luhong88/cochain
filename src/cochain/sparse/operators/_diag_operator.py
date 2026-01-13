@@ -58,6 +58,9 @@ class DiagOperator(BaseOperator):
     def pow(self, exp: float | int) -> DiagOperator:
         return self.__pow__(exp)
 
+    def abs(self) -> DiagOperator:
+        return DiagOperator(self.val.abs())
+
     @property
     def inv(self) -> DiagOperator:
         return DiagOperator(1.0 / self.val)
