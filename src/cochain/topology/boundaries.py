@@ -1,9 +1,10 @@
 import torch as t
-from jaxtyping import Bool, Float, Integer
+from jaxtyping import Bool
 
 from cochain.complex import SimplicialComplex
 
 
+# TODO: attach the boundary masks to the SimplicialComplex class
 def detect_mesh_boundaries(
     mesh: SimplicialComplex,
 ) -> list[Bool[t.Tensor, " face"]]:

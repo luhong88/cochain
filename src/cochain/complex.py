@@ -3,7 +3,7 @@ from functools import cached_property
 import torch as t
 from jaxtyping import Float, Integer
 
-from .sparse.operators import SparseOperator
+from .sparse.operators import BaseOperator, SparseOperator
 from .topology import coboundaries, tet_topology, tri_topology
 
 
@@ -53,7 +53,7 @@ class SimplicialComplex:
 
     def to(self, device: str | t.device):
         for attr, value in self.__dict__.items():
-            if t.is_tensor(value):
+            if t.is_tensor(value) | isinstance(value, BaseOperator):
                 setattr(self, attr, value.to(device))
         return self
 
