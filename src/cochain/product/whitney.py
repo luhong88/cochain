@@ -27,12 +27,12 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         """
         super().__init__()
 
-        simp_map = dict(enumerate(mesh.simplices))
-
         m = k + l
 
         # Identify the k-faces of the top level simplices and their sign corrections.
-        k_face_idx, k_face_parity = find_top_simp_faces(k, mesh.dim, mesh, simp_map)
+        k_face_idx, k_face_parity = find_top_simp_faces(
+            k, mesh.dim, mesh, mesh.simplices
+        )
 
         self.k_face_idx: Integer[t.LongTensor, "top_simp k_face"]
         self.register_buffer("k_face_idx", k_face_idx)
@@ -41,7 +41,9 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         self.register_buffer("k_face_parity", k_face_parity)
 
         # Identify the l-faces of the top level simplices and their sign corrections.
-        l_face_idx, l_face_parity = find_top_simp_faces(l, mesh.dim, mesh, simp_map)
+        l_face_idx, l_face_parity = find_top_simp_faces(
+            l, mesh.dim, mesh, mesh.simplices
+        )
 
         self.l_face_idx: Integer[t.LongTensor, "top_simp l_face"]
         self.register_buffer("l_face_idx", l_face_idx)
@@ -50,7 +52,9 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         self.register_buffer("l_face_parity", l_face_parity)
 
         # Identify the (k+l)-faces of the top level simplices and their sign corrections.
-        m_face_idx, m_face_parity = find_top_simp_faces(m, mesh.dim, mesh, simp_map)
+        m_face_idx, m_face_parity = find_top_simp_faces(
+            m, mesh.dim, mesh, mesh.simplices
+        )
 
         self.m_face_idx: Integer[t.LongTensor, "top_simp m_face"]
         self.register_buffer("m_face_idx", m_face_idx)
@@ -58,7 +62,7 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         self.m_face_parity: Float[t.Tensor, "top_simp m_face"]
         self.register_buffer("m_face_parity", m_face_parity)
 
-        self.n_m_simp = simp_map[m].size(0)
+        self.n_m_simp = mesh.simplices[m].size(0)
 
         # Compute the triple tensor product. When k + l = 3, a special optimized
         # version of the method is applied that is more memory efficient.
