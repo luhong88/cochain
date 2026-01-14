@@ -19,8 +19,8 @@ def laplacian_k(
     operator, d_k.T is the k-boundary operator, and j = k - 1.
     """
     # Get the default dtype and device from d_0
-    dtype = getattr(sc, "coboundary_0").dtype
-    device = getattr(sc, "coboundary_0").device
+    dtype = sc.coboundary[0].dtype
+    device = sc.coboundary[0].device
 
     # Generate a dictionary that maps the kth-dimension to the number of k-simplices,
     # with default value set to 0.
@@ -31,27 +31,11 @@ def laplacian_k(
     # Get the k-th and (k-1)th- coboundary operator (or, generate an empty one with
     # the appropriate dimensions for "out-of-bound" values of k), and use them to
     # construct the Laplacian.
-    d_k = getattr(
-        sc,
-        f"coboundary_{k}",
-        t.sparse_coo_tensor(
-            indices=t.empty((2, 0), dtype=t.long, device=device),
-            values=t.empty((0,), dtype=dtype, device=device),
-            size=(dim_dict[k + 1], dim_dict[k]),
-        ),
-    )
+    d_k = sc.coboundary[k]
     d_k_T = d_k.transpose(0, 1).coalesce()
     up_laplacian = (d_k_T @ d_k).coalesce()
 
-    d_j = getattr(
-        sc,
-        f"coboundary_{k - 1}",
-        t.sparse_coo_tensor(
-            indices=t.empty((2, 0), dtype=t.long, device=device),
-            values=t.empty((0,), dtype=dtype, device=device),
-            size=(dim_dict[k], dim_dict[k - 1]),
-        ),
-    )
+    d_j = sc.coboundary[k - 1]
     d_j_T = d_j.transpose(0, 1).coalesce()
     down_laplacian = (d_j @ d_j_T).coalesce()
 

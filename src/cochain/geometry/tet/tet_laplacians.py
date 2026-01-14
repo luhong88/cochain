@@ -37,7 +37,7 @@ def weak_laplacian_0(
         case "cotan":
             return stiffness_matrix(tet_mesh)
         case "consistent":
-            d0 = tet_mesh.coboundary_0
+            d0 = tet_mesh.coboundary[0]
             d0_T = d0.T
 
             m_1 = mass_1(tet_mesh)
@@ -54,7 +54,7 @@ def weak_laplacian_1_div_grad(
     Compute the div grad component of the weak 1-Laplacian
     M_1 @ d_0 @ inv_M_0 @ d_0.T @ M_1
     """
-    d0 = tet_mesh.coboundary_0
+    d0 = tet_mesh.coboundary[0]
     d0_T = d0.T
 
     m_1 = mass_1(tet_mesh)
@@ -70,7 +70,7 @@ def weak_laplacian_1_curl_curl(
     Compute the curl curl component of the weak 1-Laplacian
     d_1.T @ M_2 @ d_1
     """
-    d1 = tet_mesh.coboundary_1
+    d1 = tet_mesh.coboundary[1]
     d1_T = d1.T
 
     m_2 = mass_2(tet_mesh)
@@ -111,7 +111,7 @@ def weak_laplacian_2_curl_curl(
     If method is `inv_star`, use the inverse of the barycentric 1-star in place
     of inv_M_1.
     """
-    d1 = tet_mesh.coboundary_1
+    d1 = tet_mesh.coboundary[1]
     d1_T = d1.T
 
     match method:
@@ -142,7 +142,7 @@ def weak_laplacian_2_div_grad(
     Compute the div grad component of the weak 1-Laplacian
     d_2.T @ M_3 @ d_2
     """
-    d2 = tet_mesh.coboundary_2
+    d2 = tet_mesh.coboundary[2]
     d2_T = d2.T
 
     m_3 = mass_3(tet_mesh)
@@ -208,7 +208,7 @@ def weak_laplacian_3(
     If method is `inv_star`, use the inverse of the barycentric 2-star in place
     of inv_M_2.
     """
-    d2 = tet_mesh.coboundary_2
+    d2 = tet_mesh.coboundary[2]
     d2_T = d2.T
 
     match method:

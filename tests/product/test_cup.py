@@ -15,7 +15,7 @@ def test_cup_product_patch(square_mesh: SimplicialComplex, device):
     But the absolute sum of the cup product 2-form over all 2-simplices should
     match the sum of the area form (i.e., the total area is invariant).
     """
-    d_0 = square_mesh.coboundary_0.to(device)
+    d_0 = square_mesh.coboundary[0].to(device)
 
     x = square_mesh.vert_coords[:, 0].to(device)
     y = square_mesh.vert_coords[:, 1].to(device)
@@ -38,7 +38,7 @@ def test_antisymmetric_cup_product_patch(square_mesh: SimplicialComplex, device)
     constant 1-forms dx and dy should exactly match the area 2-form dx ⋀ dy, up
     to a sign flip.
     """
-    d_0 = square_mesh.coboundary_0.to(device)
+    d_0 = square_mesh.coboundary[0].to(device)
 
     x = square_mesh.vert_coords[:, 0].to(device)
     y = square_mesh.vert_coords[:, 1].to(device)
@@ -240,7 +240,7 @@ def test_cup_product_leibniz(mesh_name, request, device):
 
         if m < mesh.dim:
             # LHS: d(ξ ⋀ η)
-            d_m = getattr(mesh, f"coboundary_{m}").to(device)
+            d_m = mesh.coboundary[m].to(device)
 
             k_cochain = t.randn(n_simp_map[k]).to(device)
             l_cochain = t.randn(n_simp_map[l]).to(device)
@@ -249,8 +249,8 @@ def test_cup_product_leibniz(mesh_name, request, device):
             lhs = d_m @ wedge_kl(k_cochain, l_cochain)
 
             # RHS: dξ ⋀ η + (-1)^k * (ξ ⋀ dη)
-            d_k = getattr(mesh, f"coboundary_{k}").to(device)
-            d_l = getattr(mesh, f"coboundary_{l}").to(device)
+            d_k = mesh.coboundary[k].to(device)
+            d_l = mesh.coboundary[l].to(device)
 
             k1_cochain = d_k @ k_cochain
             l1_cochain = d_l @ l_cochain
@@ -291,14 +291,14 @@ def test_cup_product_cohomology_class(hollow_tet_mesh, device):
         if k == 0:
             k_cochain = t.randn(1).expand(n_simp_map[k]).to(device)
         if k > 0:
-            d_k_1 = getattr(hollow_tet_mesh, f"coboundary_{k - 1}").to(device)
+            d_k_1 = hollow_tet_mesh.coboundary[k - 1].to(device)
             k_1_cochain = t.randn(n_simp_map[k - 1]).to(device)
             k_cochain = d_k_1 @ k_1_cochain
 
         if l == 0:
             l_cochain = t.randn(1).expand(n_simp_map[l]).to(device)
         if l > 0:
-            d_l_1 = getattr(hollow_tet_mesh, f"coboundary_{l - 1}").to(device)
+            d_l_1 = hollow_tet_mesh.coboundary[l - 1].to(device)
             l_1_cochain = t.randn(n_simp_map[l - 1]).to(device)
             l_cochain = d_l_1 @ l_1_cochain
 

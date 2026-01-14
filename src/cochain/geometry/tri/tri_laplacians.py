@@ -31,7 +31,7 @@ def codifferential_1(
     """
     Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
     """
-    d0_T = tri_mesh.coboundary_0.T
+    d0_T = tri_mesh.coboundary[0].T
 
     s0 = star_0(tri_mesh)
     s1 = star_1(tri_mesh, dual_complex)
@@ -48,7 +48,7 @@ def codifferential_2(
     """
     Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
     """
-    d1_T = tri_mesh.coboundary_1.T
+    d1_T = tri_mesh.coboundary[1].T
 
     s1 = star_1(tri_mesh, dual_complex)
     s2 = star_2(tri_mesh)
@@ -72,14 +72,14 @@ def laplacian_0(
     circumcentric, or the barycentric 1-star if 'dual_complex' is barycentric.
     """
     if codiff_1 is not None:
-        return codiff_1 @ tri_mesh.coboundary_0
+        return codiff_1 @ tri_mesh.coboundary[0]
 
     match dual_complex:
         case "circumcentric":
             return star_0(tri_mesh).inv @ stiffness_matrix(tri_mesh)
 
         case "barycentric":
-            return codifferential_1(tri_mesh, dual_complex) @ tri_mesh.coboundary_0
+            return codifferential_1(tri_mesh, dual_complex) @ tri_mesh.coboundary[0]
 
         case _:
             raise ValueError()
@@ -95,7 +95,7 @@ def laplacian_1_div_grad(
 
     If 'codiff_1' is not provided, construct it using 1-star specified by 'dual_complex'.
     """
-    d0 = tri_mesh.coboundary_0
+    d0 = tri_mesh.coboundary[0]
 
     if codiff_1 is None:
         codiff_1 = codifferential_1(tri_mesh, dual_complex)
@@ -113,7 +113,7 @@ def laplacian_1_curl_curl(
 
     If codiff_2 is not provided, construct it using 1-star specified by 'dual_complex'.
     """
-    d1 = tri_mesh.coboundary_1
+    d1 = tri_mesh.coboundary[1]
 
     if codiff_2 is None:
         codiff_2 = codifferential_2(tri_mesh, dual_complex)
@@ -153,7 +153,7 @@ def laplacian_2(
 
     If codiff_2 is not provided, construct it using 1-star specified by 'dual_complex'.
     """
-    d1 = tri_mesh.coboundary_1
+    d1 = tri_mesh.coboundary[1]
 
     if codiff_2 is None:
         codiff_2 = codifferential_2(tri_mesh, dual_complex)

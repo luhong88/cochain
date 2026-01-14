@@ -161,7 +161,7 @@ def test_laplacian_1_curl_free(two_tets_mesh: SimplicialComplex):
     """
     l1_curl_curl = tet_laplacians.weak_laplacian_1_curl_curl(two_tets_mesh)
 
-    d0 = two_tets_mesh.coboundary_0
+    d0 = two_tets_mesh.coboundary[0]
     x0 = t.arange(two_tets_mesh.n_verts).to(
         dtype=t.float, device=two_tets_mesh.vert_coords.device
     )
@@ -180,7 +180,7 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialComplex):
     """
     l1_div_grad = tet_laplacians.weak_laplacian_1_div_grad(two_tets_mesh)
 
-    d1_T = two_tets_mesh.coboundary_1.T.to_dense()
+    d1_T = two_tets_mesh.coboundary[1].T.to_dense()
 
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
 
@@ -203,7 +203,7 @@ def test_laplacian_2_curl_free(two_tets_mesh: SimplicialComplex):
         two_tets_mesh, method="dense"
     )
 
-    d2_T = two_tets_mesh.coboundary_2.T.to_dense()
+    d2_T = two_tets_mesh.coboundary[2].T.to_dense()
 
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
 
@@ -225,7 +225,7 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialComplex):
     """
     l2_div_grad = tet_laplacians.weak_laplacian_2_div_grad(two_tets_mesh)
 
-    d1 = two_tets_mesh.coboundary_1
+    d1 = two_tets_mesh.coboundary[1]
     x1 = t.arange(two_tets_mesh.n_edges).to(
         dtype=t.float, device=two_tets_mesh.vert_coords.device
     )
@@ -246,7 +246,7 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialComplex):
 
     m1 = tet_masses.mass_1(two_tets_mesh)
 
-    d0 = two_tets_mesh.coboundary_0
+    d0 = two_tets_mesh.coboundary[0]
     d0_T = d0.T
 
     codiff_1 = inv_m0 @ d0_T @ m1
@@ -273,7 +273,7 @@ def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialComplex):
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
 
-    d1 = two_tets_mesh.coboundary_1.to_dense()
+    d1 = two_tets_mesh.coboundary[1].to_dense()
     d1_T = d1.transpose(0, 1)
 
     codiff_2 = t.linalg.solve(m1, d1_T) @ m2  # inv_m1 @ d1_T @ m2
@@ -300,7 +300,7 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialComplex):
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
     m3 = tet_masses.mass_3(two_tets_mesh).to_dense()
 
-    d2 = two_tets_mesh.coboundary_2.to_dense()
+    d2 = two_tets_mesh.coboundary[2].to_dense()
     d2_T = d2.transpose(0, 1)
 
     codiff_3 = t.linalg.solve(m2, d2_T) @ m3  # inv_m2 @ d2_T @ m3
