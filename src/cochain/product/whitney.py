@@ -27,10 +27,7 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         """
         super().__init__()
 
-        simp_map = {
-            dim: simp
-            for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
-        }
+        simp_map = dict(enumerate(mesh.simplices))
 
         m = k + l
 

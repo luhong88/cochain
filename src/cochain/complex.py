@@ -21,7 +21,7 @@ class SimplicialComplex:
         Float[SparseOperator, "tri edge"],
         Float[SparseOperator, "tet tri"],
     ]
-    simplex: tuple[
+    simplices: tuple[
         Integer[t.LongTensor, "edge 2"],
         Integer[t.LongTensor, "tri 3"],
         Integer[t.LongTensor, "tet 4"],
@@ -29,6 +29,11 @@ class SimplicialComplex:
     vert_coords: Float[t.Tensor, "vert 3"] | None
 
     def __post_init__(self):
+        # The list of vertices contains only redundant information, but we
+        # materialize it anyways so that simplices[0] gives the list of 0-simplices.
+        verts = t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
+        self.simplices = (verts,) + self.simplices
+
         # Check for dim consistency in coboundary operators.
         assert self.coboundary[0].shape[0] == self.coboundary[1].shape[1]
         assert self.coboundary[1].shape[0] == self.coboundary[2].shape[1]
@@ -41,20 +46,19 @@ class SimplicialComplex:
 
     @property
     def verts(self) -> Integer[t.LongTensor, "vert 1"]:
-        # This is mostly redundant information; so compute only when needed.
-        return t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
+        return self.simplices[0]
 
     @property
     def edges(self) -> Integer[t.LongTensor, "edge 2"]:
-        return self.simplex[0]
+        return self.simplices[1]
 
     @property
     def tris(self) -> Integer[t.LongTensor, "tri 3"]:
-        return self.simplex[1]
+        return self.simplices[2]
 
     @property
     def tets(self) -> Integer[t.LongTensor, "tet 4"]:
-        return self.simplex[2]
+        return self.simplices[3]
 
     @property
     def n_verts(self) -> int:
@@ -171,7 +175,7 @@ class SimplicialComplex:
 
         return cls(
             coboundary=(coboundary_0, coboundary_1, coboundary_2),
-            simplex=(unique_canon_edges, tris, tets),
+            simplices=(unique_canon_edges, tris, tets),
             vert_coords=vert_coords,
         )
 
@@ -200,7 +204,7 @@ class SimplicialComplex:
 
         return cls(
             coboundary=(coboundary_0, coboundary_1, coboundary_2),
-            simplex=(unique_canon_edges, unique_canon_tris, tets),
+            simplices=(unique_canon_edges, unique_canon_tris, tets),
             vert_coords=vert_coords,
         )
 
@@ -248,7 +252,7 @@ class SimplicialBatch(SimplicialComplex):
 
 
 # TODO: update to use SparseOperator
-def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
+def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
     """
     This function takes in a list of `SimplicialComplex` objects and collate them
     into a single batched complex.
@@ -319,22 +323,6 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
         for simp_type in ["edges", "tris", "tets"]
     ]
 
-    # Collate the cochains
-    cochains_batch = []
-    for dim in range(4):
-        cochains = [getattr(sc, f"cochain_{dim}") for sc in sc_batch]
-
-        if None not in cochains:
-            cochains_batch.append(t.vstack(cochains))
-
-        elif all(cochain is None for cochain in cochains):
-            cochains_batch.append(None)
-
-        else:
-            raise ValueError(
-                f"All {dim}-cochains in a batch must all be either tensors or 'None's."
-            )
-
     # Collate the vertex coordinates
     vert_coords_list = [sc.vert_coords for sc in sc_batch]
 
@@ -353,7 +341,6 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
         **batch_tensor_dict,
         coboundary=tuple(coboundaries_batch),
         simplices=tuple(simplices_batch),
-        cochains=tuple(cochains_batch),
         vert_coords=vert_coords_batch,
     )
 

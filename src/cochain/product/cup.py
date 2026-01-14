@@ -33,10 +33,7 @@ class CupProduct(t.nn.Module):
 
         m = k + l
 
-        simp_map = {
-            dim: simp
-            for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
-        }
+        simp_map = dict(enumerate(mesh.simplices))
 
         # Note that, in algebraic topology, the orientation on the chain groups
         # is imposed globally by the lex order of the vertex indices. In the
@@ -191,10 +188,7 @@ class AntisymmetricCupProduct(t.nn.Module):
 
         m = k + l
 
-        simp_map = {
-            dim: simp
-            for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
-        }
+        simp_map = dict(enumerate(mesh.simplices))
 
         perm = compute_face_perm_lut(k, l)
 
