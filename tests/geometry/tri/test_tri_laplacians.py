@@ -32,7 +32,7 @@ def test_l0_direct_construction(two_tris_mesh: SimplicialComplex):
     codiff_1 = tri_laplacians.codifferential_1(
         two_tris_mesh, dual_complex="circumcentric"
     )
-    l0 = (codiff_1 @ two_tris_mesh.coboundary_0).to_dense()
+    l0 = (codiff_1 @ two_tris_mesh.coboundary[0]).to_dense()
 
     t.testing.assert_close(l0, l0_via_cotan)
 
@@ -220,7 +220,7 @@ def test_laplacian_1_curl_free(dual_complex, hollow_tet_mesh: SimplicialComplex)
     l1_curl_curl = tri_laplacians.laplacian_1_curl_curl(hollow_tet_mesh, dual_complex)
 
     x0 = hollow_tet_mesh.vert_coords.sum(axis=-1, keepdim=True)
-    x1_curl_free = hollow_tet_mesh.coboundary_0 @ x0
+    x1_curl_free = hollow_tet_mesh.coboundary[0] @ x0
 
     x1_zero = (l1_curl_curl @ x1_curl_free).to_dense()
 
@@ -261,7 +261,7 @@ def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComp
     s0 = tri_hodge_stars.star_0(hollow_tet_mesh)
     s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex)
 
-    d0 = hollow_tet_mesh.coboundary_0
+    d0 = hollow_tet_mesh.coboundary[0]
     codiff_1 = tri_laplacians.codifferential_1(hollow_tet_mesh, dual_complex)
 
     x0 = t.arange(hollow_tet_mesh.n_verts).to(
@@ -289,7 +289,7 @@ def test_codiff_2_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComp
     s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex)
     s2 = tri_hodge_stars.star_2(hollow_tet_mesh)
 
-    d1 = hollow_tet_mesh.coboundary_1
+    d1 = hollow_tet_mesh.coboundary[1]
     codiff_2 = tri_laplacians.codifferential_2(hollow_tet_mesh, dual_complex)
 
     x1 = t.arange(hollow_tet_mesh.n_edges).to(

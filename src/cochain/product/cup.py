@@ -33,11 +33,6 @@ class CupProduct(t.nn.Module):
 
         m = k + l
 
-        simp_map = {
-            dim: simp
-            for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
-        }
-
         # Note that, in algebraic topology, the orientation on the chain groups
         # is imposed globally by the lex order of the vertex indices. In the
         # SimplicialComplex class, this orientation is imposed on all but the top
@@ -63,14 +58,14 @@ class CupProduct(t.nn.Module):
 
         # Compute (k+l)-simplex sign correction
         if m == mesh.dim:
-            m_simps_sorted = simp_map[m].sort(dim=-1).values
-            m_simp_parity = compute_lex_rel_orient(simp_map[m]).to(
+            m_simps_sorted = mesh.simplices[m].sort(dim=-1).values
+            m_simp_parity = compute_lex_rel_orient(mesh.simplices[m]).to(
                 dtype=mesh.vert_coords.dtype
             )
         else:
-            m_simps_sorted = simp_map[m]
+            m_simps_sorted = mesh.simplices[m]
             m_simp_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
-                simp_map[m].size(0)
+                mesh.simplices[m].size(0)
             )
 
         self.m_simp_parity: Float[t.Tensor, " m_simp"]
@@ -78,7 +73,7 @@ class CupProduct(t.nn.Module):
 
         # Identify the k-front faces of (k+l)-simplices and their sign correction
         f_face_idx = simplex_search(
-            key_simps=simp_map[k],
+            key_simps=mesh.simplices[k],
             query_simps=m_simps_sorted[:, : k + 1],
             sort_key_simp=True if k == mesh.dim else False,
             sort_key_vert=True if k == mesh.dim else False,
@@ -89,7 +84,7 @@ class CupProduct(t.nn.Module):
         self.register_buffer("f_face_idx", f_face_idx)
 
         if k == mesh.dim:
-            f_face_parity = compute_lex_rel_orient(simp_map[k][self.f_face_idx])
+            f_face_parity = compute_lex_rel_orient(mesh.simplices[k][self.f_face_idx])
         else:
             f_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 self.f_face_idx.size(0)
@@ -100,7 +95,7 @@ class CupProduct(t.nn.Module):
 
         # Identify the k-back faces of (k+l)-simplices and their sign correction
         b_face_idx = simplex_search(
-            key_simps=simp_map[l],
+            key_simps=mesh.simplices[l],
             query_simps=m_simps_sorted[:, k:],
             sort_key_simp=True if l == mesh.dim else False,
             sort_key_vert=True if l == mesh.dim else False,
@@ -111,7 +106,7 @@ class CupProduct(t.nn.Module):
         self.register_buffer("b_face_idx", b_face_idx)
 
         if l == mesh.dim:
-            b_face_parity = compute_lex_rel_orient(simp_map[l][self.b_face_idx])
+            b_face_parity = compute_lex_rel_orient(mesh.simplices[l][self.b_face_idx])
         else:
             b_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 self.b_face_idx.size(0)
@@ -191,11 +186,6 @@ class AntisymmetricCupProduct(t.nn.Module):
 
         m = k + l
 
-        simp_map = {
-            dim: simp
-            for dim, simp in enumerate([mesh.verts, mesh.edges, mesh.tris, mesh.tets])
-        }
-
         perm = compute_face_perm_lut(k, l)
 
         self.perm_sign: Float[t.Tensor, "1 face 1"]
@@ -203,14 +193,14 @@ class AntisymmetricCupProduct(t.nn.Module):
 
         # Compute (k+l)-simplex sign correction.
         if m == mesh.dim:
-            m_simps_sorted = simp_map[m].sort(dim=-1).values
-            m_simp_parity = compute_lex_rel_orient(simp_map[m]).to(
+            m_simps_sorted = mesh.simplices[m].sort(dim=-1).values
+            m_simp_parity = compute_lex_rel_orient(mesh.simplices[m]).to(
                 dtype=mesh.vert_coords.dtype
             )
         else:
-            m_simps_sorted = simp_map[m]
+            m_simps_sorted = mesh.simplices[m]
             m_simp_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
-                simp_map[m].size(0)
+                mesh.simplices[m].size(0)
             )
 
         self.m_simp_parity: Float[t.Tensor, " m_simp"]
@@ -223,7 +213,7 @@ class AntisymmetricCupProduct(t.nn.Module):
         ]
         uf_face_flat = uf_face.view(-1, k + 1)
         uf_face_idx: Integer[t.LongTensor, " m_simp*uf_face"] = simplex_search(
-            key_simps=simp_map[k],
+            key_simps=mesh.simplices[k],
             query_simps=uf_face_flat,
             sort_key_simp=True if k == mesh.dim else False,
             sort_key_vert=True if k == mesh.dim else False,
@@ -236,7 +226,7 @@ class AntisymmetricCupProduct(t.nn.Module):
 
         if k == mesh.dim:
             f_face_parity = (
-                compute_lex_rel_orient(simp_map[k][uf_face_idx])
+                compute_lex_rel_orient(mesh.simplices[k][uf_face_idx])
                 .to(dtype=mesh.vert_coords.dtype)
                 .view(*uf_face.shape[:-1])[:, perm.front_idx]
             )
@@ -255,7 +245,7 @@ class AntisymmetricCupProduct(t.nn.Module):
         )
         ub_face_flat = ub_face.view(-1, l + 1)
         ub_face_idx: Integer[t.LongTensor, " m_simp*ub_face"] = simplex_search(
-            key_simps=simp_map[l],
+            key_simps=mesh.simplices[l],
             query_simps=ub_face_flat,
             sort_key_simp=True if l == mesh.dim else False,
             sort_key_vert=True if l == mesh.dim else False,
@@ -268,7 +258,7 @@ class AntisymmetricCupProduct(t.nn.Module):
 
         if l == mesh.dim:
             b_face_parity = (
-                compute_lex_rel_orient(simp_map[l][ub_face_idx])
+                compute_lex_rel_orient(mesh.simplices[l][ub_face_idx])
                 .to(dtype=mesh.vert_coords.dtype)
                 .view(*ub_face.shape[:-1])[:, perm.back_idx]
             )

@@ -1,4 +1,7 @@
+from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import cached_property
+from typing import Any
 
 import torch as t
 from jaxtyping import Float, Integer
@@ -7,82 +10,96 @@ from .sparse.operators import BaseOperator, SparseOperator
 from .topology import coboundaries, tet_topology, tri_topology
 
 
+def _is_tensor_like(obj: Any) -> bool:
+    return t.is_tensor(obj) | isinstance(obj, BaseOperator)
+
+
+@dataclass
 class SimplicialComplex:
-    """
-    A simplicial complex.
-    """
+    coboundary: tuple[
+        Float[SparseOperator, "edge vert"],
+        Float[SparseOperator, "tri edge"],
+        Float[SparseOperator, "tet tri"],
+    ]
+    simplices: tuple[
+        Integer[t.LongTensor, "edge 2"],
+        Integer[t.LongTensor, "tri 3"],
+        Integer[t.LongTensor, "tet 4"],
+    ]
+    vert_coords: Float[t.Tensor, "vert 3"] | None
 
-    def __init__(
-        self,
-        coboundaries: tuple[
-            Float[SparseOperator, "edge vert"],
-            Float[SparseOperator, "tri edge"],
-            Float[SparseOperator, "tet tri"],
-        ],
-        simplices: tuple[
-            Integer[t.LongTensor, "edge 2"],
-            Integer[t.LongTensor, "tri 3"],
-            Integer[t.LongTensor, "tet 4"],
-        ],
-        cochains: tuple[
-            Float[t.Tensor, " vert *vert_ch"] | None,
-            Float[t.Tensor, " edge *edge_ch"] | None,
-            Float[t.Tensor, " tri *tri_ch"] | None,
-            Float[t.Tensor, " tet *tet_ch"] | None,
-        ],
-        vert_coords: Float[t.Tensor, "vert 3"] | None,
-    ):
-        # Assign input data to class attributes.
-        self.coboundary_0, self.coboundary_1, self.coboundary_2 = coboundaries
-
-        self.edges, self.tris, self.tets = simplices
-
-        self.cochain_0, self.cochain_1, self.cochain_2, self.cochain_3 = cochains
-
-        self.vert_coords = vert_coords
+    def __post_init__(self):
+        # The list of vertices contains only redundant information, but we
+        # materialize it anyways so that simplices[0] gives the list of 0-simplices.
+        verts = t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
+        self.simplices = (verts,) + self.simplices
 
         # Check for dim consistency in coboundary operators.
-        assert self.coboundary_0.shape[0] == self.coboundary_1.shape[1]
-        assert self.coboundary_1.shape[0] == self.coboundary_2.shape[1]
+        assert self.coboundary[0].shape[0] == self.coboundary[1].shape[1]
+        assert self.coboundary[1].shape[0] == self.coboundary[2].shape[1]
 
         # Check for dim consistency between the coboundary operators and the simplex
         # definitions.
-        assert self.edges.shape[0] == self.coboundary_0.shape[0]
-        assert self.tris.shape[0] == self.coboundary_1.shape[0]
-        assert self.tets.shape[0] == self.coboundary_2.shape[0]
-
-    def to(self, device: str | t.device):
-        for attr, value in self.__dict__.items():
-            if t.is_tensor(value) | isinstance(value, BaseOperator):
-                setattr(self, attr, value.to(device))
-        return self
-
-    @property
-    def n_verts(self) -> int:
-        return self.coboundary_0.shape[1]
+        assert self.edges.shape[0] == self.coboundary[0].shape[0]
+        assert self.tris.shape[0] == self.coboundary[1].shape[0]
+        assert self.tets.shape[0] == self.coboundary[2].shape[0]
 
     @property
     def verts(self) -> Integer[t.LongTensor, "vert 1"]:
-        # This is mostly redundant information; so compute only when needed.
-        return t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
+        return self.simplices[0]
+
+    @property
+    def edges(self) -> Integer[t.LongTensor, "edge 2"]:
+        return self.simplices[1]
+
+    @property
+    def tris(self) -> Integer[t.LongTensor, "tri 3"]:
+        return self.simplices[2]
+
+    @property
+    def tets(self) -> Integer[t.LongTensor, "tet 4"]:
+        return self.simplices[3]
+
+    @property
+    def n_verts(self) -> int:
+        return self.coboundary[0].shape[1]
 
     @property
     def n_edges(self) -> int:
-        return self.coboundary_0.shape[0]
+        return self.coboundary[0].shape[0]
 
     @property
     def n_tris(self) -> int:
-        return self.coboundary_1.shape[0]
+        return self.coboundary[1].shape[0]
 
     @property
     def n_tets(self) -> int:
-        return self.coboundary_2.shape[0]
+        return self.coboundary[2].shape[0]
 
     @property
     def dim(self) -> int:
         return max(
             1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
         )
+
+    def _apply(self, func):
+        """
+        Apply a function (recursively) to all tensor-like attributes.
+        """
+        for key, value in self.__dict__.items():
+            if _is_tensor_like(value):
+                setattr(self, key, func(value))
+            elif isinstance(value, Sequence):
+                setattr(
+                    self,
+                    key,
+                    tuple(func(v) if _is_tensor_like(v) else v for v in value),
+                )
+        return self
+
+    # TODO: also implement .cuda() and .cpu()
+    def to(self, *args, **kwargs):
+        return self._apply(lambda x: x.to(*args, **kwargs))
 
     # TODO: check that the tet topo properties work for non-tet meshes
     # TODO: these should use canonical face orientations
@@ -110,18 +127,30 @@ class SimplicialComplex:
     def tri_edge_orientations(self) -> Float[t.Tensor, "tri 3"]:
         return tri_topology.get_edge_face_orientations(self.tris)
 
+    # TODO: write test for this method
+    def is_pure(self) -> bool:
+        # A simplicial complex is pure if every k-simplex is a face of at least
+        # one (k+1)-simplex, unless k is the top level.
+        coboundary_operators = [
+            self.coboundary[dim].to_sparse_coo() for dim in [2, 1, 0]
+        ]
+
+        for coboundary in coboundary_operators:
+            if coboundary._nnz() == 0:
+                continue
+            else:
+                face_relation_count = coboundary.abs().sum(dim=0)
+                if face_relation_count._nnz() > face_relation_count.size(-1):
+                    return False
+
+        return True
+
     # TODO: check for immersion
     @classmethod
     def from_tri_mesh(
         cls,
         vert_coords: Float[t.Tensor, "vert 3"],
         tris: Integer[t.LongTensor, "tri 3"],
-        cochains: tuple[
-            Float[t.Tensor, " vert *vert_ch"] | None,
-            Float[t.Tensor, " edge *edge_ch"] | None,
-            Float[t.Tensor, " tri *tri_ch"] | None,
-        ]
-        | None = None,
     ):
         """
         Construct a special geometric simplicial 2-complex as a triangulated 2D
@@ -144,16 +173,10 @@ class SimplicialComplex:
 
         tets = t.empty((0, 4), dtype=t.long, device=tris.device)
 
-        if cochains is None:
-            cochains = (None, None, None, None)
-        else:
-            cochains = cochains + (None,)
-
         return cls(
-            coboundaries=(coboundary_0, coboundary_1, coboundary_2),
+            coboundary=(coboundary_0, coboundary_1, coboundary_2),
             simplices=(unique_canon_edges, tris, tets),
             vert_coords=vert_coords,
-            cochains=cochains,
         )
 
     @classmethod
@@ -161,13 +184,6 @@ class SimplicialComplex:
         cls,
         vert_coords: Float[t.Tensor, "vert 3"],
         tets: Integer[t.LongTensor, "tet 4"],
-        cochains: tuple[
-            Float[t.Tensor, " vert *vert_ch"] | None,
-            Float[t.Tensor, " edge *edge_ch"] | None,
-            Float[t.Tensor, " tri *tri_ch"] | None,
-            Float[t.Tensor, " tet *tet_ch"] | None,
-        ]
-        | None = None,
     ):
         """
         Construct a special geometric simplicial 3-complex as a triangulated 3D
@@ -186,14 +202,10 @@ class SimplicialComplex:
             coboundary_2,
         ) = coboundaries.coboundaries_from_tet_mesh(tets)
 
-        if cochains is None:
-            cochains = (None, None, None, None)
-
         return cls(
-            coboundaries=(coboundary_0, coboundary_1, coboundary_2),
+            coboundary=(coboundary_0, coboundary_1, coboundary_2),
             simplices=(unique_canon_edges, unique_canon_tris, tets),
             vert_coords=vert_coords,
-            cochains=cochains,
         )
 
     @classmethod
@@ -207,24 +219,6 @@ class SimplicialComplex:
     @classmethod
     def from_simplex_lists(cls, n_verts: int, tris=None, edges=None, **kwargs):
         raise NotImplementedError()
-
-    # TODO: write test for this method
-    def is_pure(self) -> bool:
-        # A simplicial complex is pure if every k-simplex is a face of at least
-        # one (k+1)-simplex, unless k is the top level.
-        coboundary_operators = [
-            getattr(self, f"coboundary_{dim}").to_sparse_coo() for dim in [2, 1, 0]
-        ]
-
-        for coboundary in coboundary_operators:
-            if coboundary._nnz() == 0:
-                continue
-            else:
-                face_relation_count = coboundary.abs().sum(dim=0)
-                if face_relation_count._nnz() > face_relation_count.size(-1):
-                    return False
-
-        return True
 
 
 class SimplicialBatch(SimplicialComplex):
@@ -258,7 +252,7 @@ class SimplicialBatch(SimplicialComplex):
 
 
 # TODO: update to use SparseOperator
-def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
+def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
     """
     This function takes in a list of `SimplicialComplex` objects and collate them
     into a single batched complex.
@@ -273,8 +267,8 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
     """
     # Assume that all simplices and their tensors are on the same device and
     # all float tensors have the same dtype.
-    device = sc_batch[0].coboundary_0.device
-    dtype = sc_batch[0].coboundary_0.dtype
+    device = sc_batch[0].coboundary[0].device
+    dtype = sc_batch[0].coboundary[0].dtype
 
     # Generate a cumsum n_sc list for each simplex dimension
     n_simp_batch = t.tensor(
@@ -305,14 +299,12 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
         t.sparse_coo_tensor(
             indices=t.hstack(
                 [
-                    getattr(sc, f"coboundary_{dim}").indices()
+                    sc.coboundary[dim].indices()
                     + n_simp_cumsum_batch[[dim + 1, dim], idx][:, None]
                     for idx, sc in enumerate(sc_batch)
                 ]
             ),
-            values=t.hstack(
-                [getattr(sc, f"coboundary_{dim}").values() for sc in sc_batch]
-            ),
+            values=t.hstack([sc.coboundary[dim].values() for sc in sc_batch]),
             size=(n_simp_cumsum_batch[dim + 1, -1], n_simp_cumsum_batch[dim, -1]),
             dtype=dtype,
             device=device,
@@ -331,22 +323,6 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
         for simp_type in ["edges", "tris", "tets"]
     ]
 
-    # Collate the cochains
-    cochains_batch = []
-    for dim in range(4):
-        cochains = [getattr(sc, f"cochain_{dim}") for sc in sc_batch]
-
-        if None not in cochains:
-            cochains_batch.append(t.vstack(cochains))
-
-        elif all(cochain is None for cochain in cochains):
-            cochains_batch.append(None)
-
-        else:
-            raise ValueError(
-                f"All {dim}-cochains in a batch must all be either tensors or 'None's."
-            )
-
     # Collate the vertex coordinates
     vert_coords_list = [sc.vert_coords for sc in sc_batch]
 
@@ -363,9 +339,8 @@ def collate_fn(sc_batch: list[SimplicialComplex]) -> SimplicialBatch:
 
     return SimplicialBatch(
         **batch_tensor_dict,
-        coboundaries=tuple(coboundaries_batch),
+        coboundary=tuple(coboundaries_batch),
         simplices=tuple(simplices_batch),
-        cochains=tuple(cochains_batch),
         vert_coords=vert_coords_batch,
     )
 

@@ -171,14 +171,14 @@ def test_galerkin_wedge_product_cohomology_class(hollow_tet_mesh, device):
         if k == 0:
             k_cochain = t.randn(1).expand(n_simp_map[k]).to(device)
         if k > 0:
-            d_k_1 = getattr(hollow_tet_mesh, f"coboundary_{k - 1}").to(device)
+            d_k_1 = hollow_tet_mesh.coboundary[k - 1].to(device)
             k_1_cochain = t.randn(n_simp_map[k - 1]).to(device)
             k_cochain = d_k_1 @ k_1_cochain
 
         if l == 0:
             l_cochain = t.randn(1).expand(n_simp_map[l]).to(device)
         if l > 0:
-            d_l_1 = getattr(hollow_tet_mesh, f"coboundary_{l - 1}").to(device)
+            d_l_1 = hollow_tet_mesh.coboundary[l - 1].to(device)
             l_1_cochain = t.randn(n_simp_map[l - 1]).to(device)
             l_cochain = d_l_1 @ l_1_cochain
 
