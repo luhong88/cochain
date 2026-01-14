@@ -185,6 +185,9 @@ class SparseOperator(BaseOperator):
     def __neg__(self) -> SparseOperator:
         return SparseOperator(self.sp_topo, -self.val)
 
+    def abs(self) -> SparseOperator:
+        return SparseOperator(self.sp_topo, self.val.abs())
+
     def diagonal(self) -> Float[t.Tensor, "*b diag"]:
         if self.n_batch_dim == 0:
             return self.val[

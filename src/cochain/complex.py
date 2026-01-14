@@ -3,7 +3,7 @@ from functools import cached_property
 import torch as t
 from jaxtyping import Float, Integer
 
-from .sparse.operators import SparseOperator
+from .sparse.operators import BaseOperator, SparseOperator
 from .topology import coboundaries, tet_topology, tri_topology
 
 
@@ -53,7 +53,7 @@ class SimplicialComplex:
 
     def to(self, device: str | t.device):
         for attr, value in self.__dict__.items():
-            if t.is_tensor(value):
+            if t.is_tensor(value) | isinstance(value, BaseOperator):
                 setattr(self, attr, value.to(device))
         return self
 
@@ -207,6 +207,24 @@ class SimplicialComplex:
     @classmethod
     def from_simplex_lists(cls, n_verts: int, tris=None, edges=None, **kwargs):
         raise NotImplementedError()
+
+    # TODO: write test for this method
+    def is_pure(self) -> bool:
+        # A simplicial complex is pure if every k-simplex is a face of at least
+        # one (k+1)-simplex, unless k is the top level.
+        coboundary_operators = [
+            getattr(self, f"coboundary_{dim}").to_sparse_coo() for dim in [2, 1, 0]
+        ]
+
+        for coboundary in coboundary_operators:
+            if coboundary._nnz() == 0:
+                continue
+            else:
+                face_relation_count = coboundary.abs().sum(dim=0)
+                if face_relation_count._nnz() > face_relation_count.size(-1):
+                    return False
+
+        return True
 
 
 class SimplicialBatch(SimplicialComplex):
