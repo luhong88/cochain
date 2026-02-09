@@ -1,31 +1,42 @@
-from typing import Literal
-
 import numpy as np
 import torch as t
-from jaxtyping import Bool, Float
+from jaxtyping import Bool, Float, Integer
 from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
 
+from cochain.sparse.operators import SparseOperator
 
-def _build_minimum_spanning_tree(
-    adjacency: Float[coo_array, "node node"],
-    root_mask: Bool[np.ndarray, " node"] | None = None,
-    weights: Float[np.ndarray, " node"] | None = None,
-):
-    n_simps = adjacency.shape[0]
 
-    coo_idx_rows = adjacency.row
-    coo_idx_cols = adjacency.col
-    # If provided, the weights overwrite the adjacency matrix data
-    coo_data = adjacency.data if weights is None else weights
+def _minimum_spanning_tree(
+    adjacency: Float[SparseOperator, "node node"],
+    root_mask: Bool[t.Tensor, " node"] | None = None,
+    weights: Float[t.Tensor, " node"] | None = None,
+) -> Integer[t.LongTensor, "2 mst_node"]:
+    """
+    It is assumed that the nonzero elements in the input adjacency matrix are all
+    strictly positive.
+    """
+    n_nodes = adjacency.shape[0]
 
-    idx_dtype = adjacency._get_index_dtype()
-    data_dtype = adjacency.dtype
+    # int32 is required for scipy sparse array indices
+    idx_coo = adjacency.sp_topo.idx_coo.to(dtype=t.int32)
+    coo_idx_rows = idx_coo[0].detach().cpu().numpy()
+    coo_idx_cols = idx_coo[1].detach().cpu().numpy()
+
+    # If provided, the weights overwrite the adjacency matrix data.
+    coo_data = (
+        adjacency.val.detach().cpu().numpy()
+        if weights is None
+        else weights.detach().cpu().numpy()
+    )
 
     if (root_mask is not None) and (root_mask.any()):
+        idx_dtype = coo_idx_rows.dtype
+        data_dtype = coo_data.dtype
+
         # If the root(s) of the tree is specified, add a new "super node" to the
         # graph and connect the super node to all boundary nodes with a weight of 0.
-        super_node_idx = n_simps
+        super_node_idx = n_nodes
         root_idx = np.argwhere(root_mask).flatten().astype(idx_dtype)
 
         # Augment the adjacency matrix by adding in edges connecting the super node.
@@ -37,7 +48,7 @@ def _build_minimum_spanning_tree(
         aug_cols = np.concatenate([coo_idx_cols, new_cols, new_rows])
         aug_data = np.concatenate([coo_data, new_data, new_data])
 
-        aug_shape = (n_simps + 1, n_simps + 1)
+        aug_shape = (n_nodes + 1, n_nodes + 1)
         aug_adjacency = coo_array((aug_data, (aug_rows, aug_cols)), shape=aug_shape)
 
     else:
@@ -49,10 +60,14 @@ def _build_minimum_spanning_tree(
     mst_coo = mst.tocoo()
 
     # Filter out edges connected to the super node.
-    valid_mask = (mst_coo.row != super_node_idx) & (mst_coo.col != super_node_idx)
+    valid_mask = (mst_coo.row != n_nodes) & (mst_coo.col != n_nodes)
 
     # Extract and return the node index pairs corresponding to edges on the MST.
     tree_u = mst_coo.row[valid_mask]
     tree_v = mst_coo.col[valid_mask]
 
-    return tree_u, tree_v
+    tree_edges = t.from_numpy(np.stack((tree_u, tree_v))).to(
+        dtype=adjacency.sp_topo.dtype, device=adjacency.device
+    )
+
+    return tree_edges

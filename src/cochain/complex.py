@@ -82,6 +82,20 @@ class SimplicialComplex:
             1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
         )
 
+    @property
+    def dual_coboundary(
+        self,
+    ) -> tuple[
+        Float[SparseOperator, "dual_edge dual_vert"],
+        Float[SparseOperator, "dual_tri dual_edge"],
+        Float[SparseOperator, "dual_tet dual_tri"],
+    ]:
+        # the k-th coboundary operator d_k* on the dual complex is given by
+        # (-1)^k * d_{n-k-1}.T, where n is the dimension of the simplicial complex.
+        return tuple(
+            self.coboundary[self.dim - k - 1].T * ((-1.0) ** k) for k in range(3)
+        )
+
     def _apply(self, func):
         """
         Apply a function (recursively) to all tensor-like attributes.
