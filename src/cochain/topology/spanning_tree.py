@@ -1,10 +1,14 @@
+from typing import Literal
+
 import numpy as np
 import torch as t
 from jaxtyping import Bool, Float, Integer
 from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
 
+from cochain.complex import SimplicialComplex
 from cochain.sparse.operators import SparseOperator
+from cochain.utils.search import simplex_search
 
 
 def _minimum_spanning_tree(
@@ -89,3 +93,70 @@ def _minimum_spanning_tree(
     )
 
     return tree_edges
+
+
+def _l1_down_tree_gauge(
+    topo_laplacian_0: Float[SparseOperator, "vert vert"],
+    canon_edges: Integer[t.LongTensor, "edge 2"],
+    mass_1: Float[SparseOperator, "edge edge"] | None = None,
+    rel_bc_mask: Bool[t.Tensor, " vert"] | None = None,
+    cotree_mask: Bool[t.Tensor, " edge"] | None = None,
+) -> Bool[t.Tensor, " edge"]:
+    """
+    Down/grad-div L-1 Laplacian tree gauge fixing.
+    """
+    # Compute the vertex adjacency matrix from the (topological) 0-Laplacian
+    # Use the upper diagonal portion of the adjacency matrix since the scipy
+    # MinST function interprets the adjacency matrix as an undirected graph.
+    adjacency = topo_laplacian_0.triu(diagonal=1).abs()
+
+    # Find the indices of the adjacency edges on the canonical edge list, and
+    # use the indices to retrieve the edge weights from the provided mass (or hodge
+    # star) matrices.
+    edges = adjacency.sp_topo.idx_coo.T
+    edge_idx = simplex_search(
+        key_simps=canon_edges,
+        query_simps=edges,
+        sort_key_simp=False,
+        sort_key_vert=False,
+        sort_query_vert=True,
+    )
+
+    if mass_1 is None:
+        edge_weights = None
+    else:
+        # Perform a diagonal approximation for the edge mass (if the input is a
+        # Hodge star, then this is exact.)
+        diag_mass = mass_1.diagonal()
+        # Note that we take the negative mass so that the MinST function performs
+        # a MaxST calculation.
+        edge_weights = -diag_mass[edge_idx]
+
+    # Compute the MaxST and find the indices of the MaxST edges on the canonical
+    # edge list. If
+    mst = _minimum_spanning_tree(
+        adjacency=adjacency,
+        root_mask=rel_bc_mask,
+        exclusion_mask=cotree_mask,
+        weights=edge_weights,
+    ).T
+
+    mst_idx = simplex_search(
+        key_simps=canon_edges,
+        query_simps=mst,
+        sort_key_simp=False,
+        sort_key_vert=False,
+        sort_query_vert=True,
+    )
+
+    tree_mask = t.zeros(adjacency.shape[0], dtype=t.bool, device=adjacency.device)
+    tree_mask[mst_idx] = True
+
+    return mst_idx
+
+
+"""
+Construct spanning tree/forest for:
+* Cotree gauge fixing for up/curl-curl L-1 Laplacian
+* Tree-cotree gauge fixing for the full L-1 Laplacian
+"""

@@ -107,7 +107,7 @@ class SparseTopology:
     """
 
     _idx_coo: Integer[t.LongTensor, "sp nnz"]
-    shape: t.tuple[int, ...] | t.Size
+    shape: tuple[int, ...] | t.Size
     block_diag_config: BlockDiagConfig | None = None
 
     @property
