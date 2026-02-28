@@ -20,26 +20,26 @@ def laplacian_k(
     If dual = True, compute the topological k-Laplacian on the dual complex.
     """
     if dual:
-        coboundary = sc.coboundary
+        cbd = sc.cbd
     else:
-        coboundary = sc.dual_coboundary
+        cbd = sc.dual_cbd
 
     match component:
         case "up":
-            d_k = coboundary[k]
+            d_k = cbd[k]
             up_laplacian = d_k.T @ d_k
             return up_laplacian
 
         case "down":
-            d_j = coboundary[k - 1]
+            d_j = cbd[k - 1]
             down_laplacian = d_j @ d_j.T
             return down_laplacian
 
         case "full":
-            d_k = coboundary[k]
+            d_k = cbd[k]
             up_laplacian = d_k.T @ d_k
 
-            d_j = coboundary[k - 1]
+            d_j = cbd[k - 1]
             down_laplacian = d_j @ d_j.T
 
             full_laplacian = SparseOperator.assemble(up_laplacian, down_laplacian)

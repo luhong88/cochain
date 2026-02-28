@@ -16,7 +16,7 @@ def _is_tensor_like(obj: Any) -> bool:
 
 @dataclass
 class SimplicialComplex:
-    coboundary: tuple[
+    cbd: tuple[
         Float[SparseOperator, "edge vert"],
         Float[SparseOperator, "tri edge"],
         Float[SparseOperator, "tet tri"],
@@ -35,14 +35,14 @@ class SimplicialComplex:
         self.simplices = (verts,) + self.simplices
 
         # Check for dim consistency in coboundary operators.
-        assert self.coboundary[0].shape[0] == self.coboundary[1].shape[1]
-        assert self.coboundary[1].shape[0] == self.coboundary[2].shape[1]
+        assert self.cbd[0].shape[0] == self.cbd[1].shape[1]
+        assert self.cbd[1].shape[0] == self.cbd[2].shape[1]
 
         # Check for dim consistency between the coboundary operators and the simplex
         # definitions.
-        assert self.edges.shape[0] == self.coboundary[0].shape[0]
-        assert self.tris.shape[0] == self.coboundary[1].shape[0]
-        assert self.tets.shape[0] == self.coboundary[2].shape[0]
+        assert self.edges.shape[0] == self.cbd[0].shape[0]
+        assert self.tris.shape[0] == self.cbd[1].shape[0]
+        assert self.tets.shape[0] == self.cbd[2].shape[0]
 
     @property
     def verts(self) -> Integer[t.LongTensor, "vert 1"]:
@@ -62,19 +62,19 @@ class SimplicialComplex:
 
     @property
     def n_verts(self) -> int:
-        return self.coboundary[0].shape[1]
+        return self.cbd[0].shape[1]
 
     @property
     def n_edges(self) -> int:
-        return self.coboundary[0].shape[0]
+        return self.cbd[0].shape[0]
 
     @property
     def n_tris(self) -> int:
-        return self.coboundary[1].shape[0]
+        return self.cbd[1].shape[0]
 
     @property
     def n_tets(self) -> int:
-        return self.coboundary[2].shape[0]
+        return self.cbd[2].shape[0]
 
     @cached_property
     def bd_mask(
@@ -85,7 +85,7 @@ class SimplicialComplex:
         Bool[t.Tensor, " tri"],
         Bool[t.Tensor, " tet"],
     ]:
-        return boundaries.detect_mesh_boundaries(self.coboundary)
+        return boundaries.detect_mesh_boundaries(self.cbd)
 
     @property
     def bd_vert_mask(self) -> Bool[t.Tensor, " vert"]:
@@ -110,7 +110,7 @@ class SimplicialComplex:
         )
 
     @property
-    def dual_coboundary(
+    def dual_cbd(
         self,
     ) -> tuple[
         Float[SparseOperator, "dual_edge dual_vert"],
@@ -119,9 +119,7 @@ class SimplicialComplex:
     ]:
         # the k-th coboundary operator d_k* on the dual complex is given by
         # (-1)^k * d_{n-k-1}.T, where n is the dimension of the simplicial complex.
-        return tuple(
-            self.coboundary[self.dim - k - 1].T * ((-1.0) ** k) for k in range(3)
-        )
+        return tuple(self.cbd[self.dim - k - 1].T * ((-1.0) ** k) for k in range(3))
 
     def _apply(self, func):
         """
@@ -172,15 +170,13 @@ class SimplicialComplex:
     def is_pure(self) -> bool:
         # A simplicial complex is pure if every k-simplex is a face of at least
         # one (k+1)-simplex, unless k is the top level.
-        coboundary_operators = [
-            self.coboundary[dim].to_sparse_coo() for dim in [2, 1, 0]
-        ]
+        cbd_ops = [self.cbd[dim].to_sparse_coo() for dim in [2, 1, 0]]
 
-        for coboundary in coboundary_operators:
-            if coboundary._nnz() == 0:
+        for cbd in cbd_ops:
+            if cbd._nnz() == 0:
                 continue
             else:
-                face_relation_count = coboundary.abs().sum(dim=0)
+                face_relation_count = cbd.abs().sum(dim=0)
                 if face_relation_count._nnz() > face_relation_count.size(-1):
                     return False
 
@@ -201,21 +197,19 @@ class SimplicialComplex:
         Since no orientation is assigned to the edges using this constructor, we
         will assign a "canonical" orientation to each edge ij such that i < j.
         """
-        unique_canon_edges, coboundary_0, coboundary_1 = (
-            coboundaries.coboundaries_from_tri_mesh(tris)
-        )
+        unique_canon_edges, cbd_0, cbd_1 = coboundaries.cbd_from_tri_mesh(tris)
 
-        coboundary_2 = t.sparse_coo_tensor(
+        cbd_2 = t.sparse_coo_tensor(
             indices=t.empty((2, 0), dtype=t.long),
             values=t.empty((0,), dtype=vert_coords.dtype),
             size=(0, tris.shape[0]),
-            device=coboundary_0.device,
+            device=cbd_0.device,
         )
 
         tets = t.empty((0, 4), dtype=t.long, device=tris.device)
 
         return cls(
-            coboundary=(coboundary_0, coboundary_1, coboundary_2),
+            cbd=(cbd_0, cbd_1, cbd_2),
             simplices=(unique_canon_edges, tris, tets),
             vert_coords=vert_coords,
         )
@@ -238,13 +232,13 @@ class SimplicialComplex:
         (
             unique_canon_edges,
             unique_canon_tris,
-            coboundary_0,
-            coboundary_1,
-            coboundary_2,
-        ) = coboundaries.coboundaries_from_tet_mesh(tets)
+            cbd_0,
+            cbd_1,
+            cbd_2,
+        ) = coboundaries.cbd_from_tet_mesh(tets)
 
         return cls(
-            coboundary=(coboundary_0, coboundary_1, coboundary_2),
+            cbd=(cbd_0, cbd_1, cbd_2),
             simplices=(unique_canon_edges, unique_canon_tris, tets),
             vert_coords=vert_coords,
         )
@@ -308,8 +302,8 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
     """
     # Assume that all simplices and their tensors are on the same device and
     # all float tensors have the same dtype.
-    device = sc_batch[0].coboundary[0].device
-    dtype = sc_batch[0].coboundary[0].dtype
+    device = sc_batch[0].cbd[0].device
+    dtype = sc_batch[0].cbd[0].dtype
 
     # Generate a cumsum n_sc list for each simplex dimension
     n_simp_batch = t.tensor(
@@ -340,12 +334,12 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
         t.sparse_coo_tensor(
             indices=t.hstack(
                 [
-                    sc.coboundary[dim].indices()
+                    sc.cbd[dim].indices()
                     + n_simp_cumsum_batch[[dim + 1, dim], idx][:, None]
                     for idx, sc in enumerate(sc_batch)
                 ]
             ),
-            values=t.hstack([sc.coboundary[dim].values() for sc in sc_batch]),
+            values=t.hstack([sc.cbd[dim].values() for sc in sc_batch]),
             size=(n_simp_cumsum_batch[dim + 1, -1], n_simp_cumsum_batch[dim, -1]),
             dtype=dtype,
             device=device,
@@ -380,7 +374,7 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
 
     return SimplicialBatch(
         **batch_tensor_dict,
-        coboundary=tuple(coboundaries_batch),
+        cbd=tuple(coboundaries_batch),
         simplices=tuple(simplices_batch),
         vert_coords=vert_coords_batch,
     )
