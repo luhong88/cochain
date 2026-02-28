@@ -1,21 +1,29 @@
 import torch as t
-from jaxtyping import Bool
+from jaxtyping import Bool, Float
 
-from cochain.complex import SimplicialComplex
+from ..sparse.operators import SparseOperator
 
 
-# TODO: attach the boundary masks to the SimplicialComplex class
 def detect_mesh_boundaries(
-    mesh: SimplicialComplex,
-) -> list[Bool[t.Tensor, " face"]]:
+    coboundary: tuple[
+        Float[SparseOperator, "edge vert"],
+        Float[SparseOperator, "tri edge"],
+        Float[SparseOperator, "tet tri"],
+    ],
+) -> tuple[
+    Bool[t.Tensor, " vert"],
+    Bool[t.Tensor, " edge"],
+    Bool[t.Tensor, " tri"],
+    Bool[t.Tensor, " tet"],
+]:
     """
-    Return 4 tensor boolean masks that mark the tet, tri, edge, and vert that are
+    Return 4 tensor boolean masks that mark the vert, edge, tri, and tet that are
     at the boundary of the simplicial complex.
 
     The logic implemented in this function is only valid for pure simplicial
     complexes.
     """
-    coboundary_operators = [mesh.coboundary[dim] for dim in [2, 1, 0]]
+    coboundary_operators = [coboundary[dim] for dim in [2, 1, 0]]
 
     # The top-level simplies by definition cannot be boundaries.
     boundary_masks = [
@@ -70,5 +78,7 @@ def detect_mesh_boundaries(
                     ),
                 )
                 boundary_masks.append(face_is_boundary)
+
+    boundary_masks.reverse()
 
     return boundary_masks

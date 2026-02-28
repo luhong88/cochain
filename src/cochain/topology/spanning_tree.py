@@ -11,6 +11,7 @@ from cochain.sparse.operators import SparseOperator
 from cochain.utils.search import simplex_search
 
 
+# TODO: fix zero super node edge weights (ignored by scipy)
 def _minimum_spanning_tree(
     adjacency: Float[SparseOperator, "node node"],
     root_mask: Bool[t.Tensor, " node"] | None = None,
@@ -149,10 +150,10 @@ def _l1_down_tree_gauge(
         sort_query_vert=True,
     )
 
-    tree_mask = t.zeros(adjacency.shape[0], dtype=t.bool, device=adjacency.device)
+    tree_mask = t.zeros(canon_edges.shape[0], dtype=t.bool, device=adjacency.device)
     tree_mask[mst_idx] = True
 
-    return mst_idx
+    return tree_mask
 
 
 """

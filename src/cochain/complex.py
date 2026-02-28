@@ -4,10 +4,10 @@ from functools import cached_property
 from typing import Any
 
 import torch as t
-from jaxtyping import Float, Integer
+from jaxtyping import Bool, Float, Integer
 
 from .sparse.operators import BaseOperator, SparseOperator
-from .topology import coboundaries, tet_topology, tri_topology
+from .topology import boundaries, coboundaries, tet_topology, tri_topology
 
 
 def _is_tensor_like(obj: Any) -> bool:
@@ -75,6 +75,33 @@ class SimplicialComplex:
     @property
     def n_tets(self) -> int:
         return self.coboundary[2].shape[0]
+
+    @cached_property
+    def bd_mask(
+        self,
+    ) -> tuple[
+        Bool[t.Tensor, " vert"],
+        Bool[t.Tensor, " edge"],
+        Bool[t.Tensor, " tri"],
+        Bool[t.Tensor, " tet"],
+    ]:
+        return boundaries.detect_mesh_boundaries(self.coboundary)
+
+    @property
+    def bd_vert_mask(self) -> Bool[t.Tensor, " vert"]:
+        return self.bd_mask[0]
+
+    @property
+    def bd_edge_mask(self) -> Bool[t.Tensor, " edge"]:
+        return self.bd_mask[1]
+
+    @property
+    def bd_tri_mask(self) -> Bool[t.Tensor, " tri"]:
+        return self.bd_mask[2]
+
+    @property
+    def bd_tet_mask(self) -> Bool[t.Tensor, " tet"]:
+        return self.bd_mask[3]
 
     @property
     def dim(self) -> int:
