@@ -100,7 +100,7 @@ def _l1_down_tree_gauge(
     topo_laplacian_0: Float[SparseOperator, "vert vert"],
     canon_edges: Integer[t.LongTensor, "edge 2"],
     mass_1: Float[SparseOperator, "edge edge"] | None = None,
-    rel_bc_mask: Bool[t.Tensor, " vert"] | None = None,
+    vert_rel_bc_mask: Bool[t.Tensor, " vert"] | None = None,
     cotree_mask: Bool[t.Tensor, " edge"] | None = None,
 ) -> Bool[t.Tensor, " edge"]:
     """
@@ -137,7 +137,7 @@ def _l1_down_tree_gauge(
     # edge list. If
     mst = _minimum_spanning_tree(
         adjacency=adjacency,
-        root_mask=rel_bc_mask,
+        root_mask=vert_rel_bc_mask,
         exclusion_mask=cotree_mask,
         weights=edge_weights,
     ).T
@@ -158,6 +158,102 @@ def _l1_down_tree_gauge(
 
 """
 Construct spanning tree/forest for:
-* Cotree gauge fixing for up/curl-curl L-1 Laplacian
 * Tree-cotree gauge fixing for the full L-1 Laplacian
 """
+
+
+def _cbd_to_coface(
+    cbd, degree: int = 2
+) -> tuple[Integer[t.LongTensor, " face"], Integer[t.LongTensor, "face coface"]]:
+    """
+    For a given k-coboundary operator, find the indices of all k-simplices of
+    degree d (i.e., the number of cofaces of the k-simplices), and, for each
+    k-simplex of degree d, determine the indices of the d (k+1)-simplices that
+    share the k-simplex as a face.
+    """
+    idx_coo = cbd.sp_topo.idx_coo
+    # The row indices correspond to the (k+1)-simplex indices, and the col indices
+    # correspond to the k-simplex indices.
+    idx_coo_col = idx_coo[-1]
+
+    # Find how many times the index of each k-simplex shows up in the column index
+    # For example, if a k-simplex is the face of two (k+1)-simplices, then it
+    # will show up as two nonzero elements in the its column in cbd[k].
+    face_idx, face_degree = t.unique(idx_coo_col, return_counts=True)
+
+    # Filter for the indices of all k-simplices that have the desired degree, then
+    # turn this into a boolean mask for the coo indices.
+    shared_face_idx = face_idx[face_degree == degree]
+    shared_face_mask = t.isin(idx_coo_col, shared_face_idx)
+
+    # Get the subset of cbd coo indices corresponding to the k-simplices with the
+    # desired degree; by sorting the coo col indices (the k-simplex indices), the
+    # coface (k+1)-simplices (the coo row indices) for each k-simplex are re-ordered
+    # next to each other, which can then be reshaped to generate the coface list.
+    idx_coo_subset = idx_coo[:, shared_face_mask]
+    sort_idx = t.sort(idx_coo_subset[-1], stable=True).indices
+    coface_idx = idx_coo_subset[-2][sort_idx].reshape(-1, degree)
+
+    unique_face_idx = idx_coo_subset[-1, sort_idx][::degree]
+
+    return unique_face_idx, coface_idx
+
+
+def _l1_up_cotree_gauge(
+    dual_topo_int_laplacian_0: Float[SparseOperator, "vert vert"],
+    cbd_1: Float[SparseOperator, "tri edge"],
+    inv_mass_1: Float[SparseOperator, "edge edge"] | None = None,
+    edge_rel_bc_mask: Bool[t.Tensor, " edge"] | None = None,
+) -> Bool[t.Tensor, " edge"]:
+    adjacency = dual_topo_int_laplacian_0.triu(diagonal=1).abs()
+
+    # Here, the dual edges are indexed by the indices of the two primal triangles
+    # sharing the primal edge; need to convert this representation of the dual
+    # edges to the indices of the corresponding primal edges.
+    dual_edges = adjacency.sp_topo.idx_coo.T
+    edge_face_idx, edge_coface_idx = _cbd_to_coface(cbd_1, degree=2)
+    primal_edge_idx = edge_face_idx[
+        simplex_search(
+            key_simps=edge_coface_idx,
+            query_simps=dual_edges,
+            sort_key_simp=False,
+            sort_key_vert=False,
+            sort_query_vert=True,
+        )
+    ]
+
+    if inv_mass_1 is None:
+        edge_weights = None
+    else:
+        diag_mass = inv_mass_1.diagonal()
+        edge_weights = -diag_mass[primal_edge_idx]
+
+    # For the primal edges satisfying relative boundary conditions, the corresponding
+    # clipped dual edges corresponding need to connect its dual triangle coface
+    # to the super node. To do so, we check whether each row of the 1-coboundary
+    # operator contains edges marked with a relative boundary condition.
+    bd_dual_vert_mask = (cbd_1.abs() @ edge_rel_bc_mask.to(dtype=cbd_1.dtype)) > 0.0
+
+    mst = _minimum_spanning_tree(
+        adjacency=adjacency,
+        root_mask=bd_dual_vert_mask,
+        exclusion_mask=None,
+        weights=edge_weights,
+    ).T
+
+    # Again, need to convert the dual edge representation as a pair of dual vertices
+    # (primal triangles) to the corresponding primal edge indices.
+    mst_idx = edge_face_idx[
+        simplex_search(
+            key_simps=edge_coface_idx,
+            query_simps=mst,
+            sort_key_simp=False,
+            sort_key_vert=False,
+            sort_query_vert=True,
+        )
+    ]
+
+    cotree_mask = t.zeros(cbd_1.shape[-1], dtype=t.bool, device=adjacency.device)
+    cotree_mask[mst_idx] = True
+
+    return cotree_mask
