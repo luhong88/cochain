@@ -5,6 +5,7 @@ from .spanning_tree import _minimum_spanning_tree
 from .topo_laplacians import laplacian_k
 
 
+# TODO: fix handling of mesh with boundaries
 def tri_mesh_betti_numbers(tri_mesh: SimplicialComplex) -> tuple[int, int, int, int]:
     """
     Compute the first three Betti numbers (b_0, b_1, b_2) for a triangular

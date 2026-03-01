@@ -1,17 +1,13 @@
-from typing import Literal
-
 import numpy as np
 import torch as t
 from jaxtyping import Bool, Float, Integer
 from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
 
-from cochain.complex import SimplicialComplex
 from cochain.sparse.operators import SparseOperator
 from cochain.utils.search import simplex_search
 
 
-# TODO: fix zero super node edge weights (ignored by scipy)
 def _minimum_spanning_tree(
     adjacency: Float[SparseOperator, "node node"],
     root_mask: Bool[t.Tensor, " node"] | None = None,
@@ -19,9 +15,6 @@ def _minimum_spanning_tree(
     weights: Float[t.Tensor, " edge"] | None = None,
 ) -> Integer[t.LongTensor, "2 mst_node"]:
     """
-    It is assumed that the nonzero elements in the input adjacency matrix are all
-    strictly positive.
-
     the root_mask is a boolean mask that specifies the node(s) that will serve as
     the root(s) of the spanning tree/forest.
 
@@ -65,11 +58,17 @@ def _minimum_spanning_tree(
         # Augment the adjacency matrix by adding in edges connecting the super node.
         new_rows = np.full(len(root_idx), super_node_idx, dtype=idx_dtype)
         new_cols = root_idx
-        new_data = np.zeros(len(root_idx), dtype=data_dtype)
 
-        aug_rows = np.concatenate([idx_coo_rows, new_rows, new_cols])
-        aug_cols = np.concatenate([idx_coo_cols, new_cols, new_rows])
-        aug_data = np.concatenate([coo_data, new_data, new_data])
+        # Need to ensure that the edges connecting to the super node has a weight
+        # that is strictly smaller than all existing weights.
+        min_weight = coo_data.min()
+        super_weight = min_weight - np.abs(min_weight) - 1.0
+        new_data = np.full(len(root_idx), super_weight, dtype=data_dtype)
+
+        # The adjacency matrix does not need to be symmetric.
+        aug_rows = np.concatenate([idx_coo_rows, new_rows])
+        aug_cols = np.concatenate([idx_coo_cols, new_cols])
+        aug_data = np.concatenate([coo_data, new_data])
 
         aug_shape = (n_nodes + 1, n_nodes + 1)
         aug_adjacency = coo_array((aug_data, (aug_rows, aug_cols)), shape=aug_shape)
@@ -96,6 +95,7 @@ def _minimum_spanning_tree(
     return tree_edges
 
 
+# TODO: update to accommodate tet meshes
 def compute_tree_mask(
     topo_laplacian_0: Float[SparseOperator, "vert vert"],
     canon_edges: Integer[t.LongTensor, "edge 2"],
@@ -210,6 +210,7 @@ def _cbd_to_coface(
     return unique_face_idx, coface_idx
 
 
+# TODO: update to accommodate tet meshes
 def compute_cotree_mask(
     dual_topo_laplacian_0: Float[SparseOperator, "vert vert"],
     cbd_1: Float[SparseOperator, "tri edge"],
