@@ -96,7 +96,7 @@ def _minimum_spanning_tree(
     return tree_edges
 
 
-def _l1_down_tree_gauge(
+def compute_tree_mask(
     topo_laplacian_0: Float[SparseOperator, "vert vert"],
     canon_edges: Integer[t.LongTensor, "edge 2"],
     mass_1: Float[SparseOperator, "edge edge"] | None = None,
@@ -104,7 +104,24 @@ def _l1_down_tree_gauge(
     cotree_mask: Bool[t.Tensor, " edge"] | None = None,
 ) -> Bool[t.Tensor, " edge"]:
     """
-    Down/grad-div L-1 Laplacian tree gauge fixing.
+    Compute the spanning tree on the 1-skeleton of a triangular mesh, which
+    can be used to fix the gauge freedom of the down/grad-div component of the
+    1-Laplacian.
+
+    If the edge masses are provided using the `mass_1` argument (in the form of
+    either the Hodge star or the mass matrix), the function will compute a
+    maximum spanning tree using the edge masses as weights, which should result
+    in better condition number for the gauge fixed linear system.
+
+    If the triangular mesh contains boundaries subject to relative boundary
+    conditions, a mask of the boundary vertices should be passed to the
+    `vert_rel_bc_mask` argument.
+
+    Note that, if this function is used as part of the tree-cotree decomposition
+    for the full 1-Laplacian guage fixing, the `compute_cotree_mask()` function
+    needs to be called first, and its result should be passed to the `cotree_mask`
+    argument of this function. This order of operation ensures that the tree
+    and cotree remain disjoint.
     """
     # Compute the vertex adjacency matrix from the (topological) 0-Laplacian
     # Use the upper diagonal portion of the adjacency matrix since the scipy
@@ -156,12 +173,6 @@ def _l1_down_tree_gauge(
     return tree_mask
 
 
-"""
-Construct spanning tree/forest for:
-* Tree-cotree gauge fixing for the full L-1 Laplacian
-"""
-
-
 def _cbd_to_coface(
     cbd, degree: int = 2
 ) -> tuple[Integer[t.LongTensor, " face"], Integer[t.LongTensor, "face coface"]]:
@@ -199,13 +210,34 @@ def _cbd_to_coface(
     return unique_face_idx, coface_idx
 
 
-def _l1_up_cotree_gauge(
-    dual_topo_int_laplacian_0: Float[SparseOperator, "vert vert"],
+def compute_cotree_mask(
+    dual_topo_laplacian_0: Float[SparseOperator, "vert vert"],
     cbd_1: Float[SparseOperator, "tri edge"],
     inv_mass_1: Float[SparseOperator, "edge edge"] | None = None,
     edge_rel_bc_mask: Bool[t.Tensor, " edge"] | None = None,
 ) -> Bool[t.Tensor, " edge"]:
-    adjacency = dual_topo_int_laplacian_0.triu(diagonal=1).abs()
+    """
+    Compute the dual spanning tree (i.e., cotree) on the dual 1-skeleton of a
+    triangular mesh, which can be used to fix the gauge freedom of the up/curl-curl
+    component of the 1-Laplacian.
+
+    If the dual edge masses are provided using the `inv_mass_1` argument (in the
+    form of either the inverse Hodge star or the inverse mass matrix), the function
+    will compute a maximum dual spanning tree using the inverse edge masses as
+    weights, which should result in better condition number for the gauge fixed
+    linear system.
+
+    If the triangular mesh contains boundaries subject to relative boundary
+    conditions, a mask of the boundary edges should be passed to the
+    `edge_rel_bc_mask` argument.
+    """
+    # Technically speaking, we should use the dual topological 0-Laplacian restricted
+    # to the interior primal edges of the mesh. However, such dual meshes show up
+    # in the diagonal of the 0-Laplacian, which are disgarded when taking the upper
+    # triangular part of the matrix; thus, this procedure guarantees that the
+    # adjacency matrix only contains information on dual vertices and their connections
+    # by the interior dual edges.
+    adjacency = dual_topo_laplacian_0.triu(diagonal=1).abs()
 
     # Here, the dual edges are indexed by the indices of the two primal triangles
     # sharing the primal edge; need to convert this representation of the dual
