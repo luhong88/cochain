@@ -95,6 +95,11 @@ def two_tris_mesh() -> SimplicialComplex:
 
 
 @pytest.fixture
+def two_disjoint_tris_mesh() -> SimplicialComplex:
+    return synthetic_tri_meshes.load_two_disjoint_tris_mesh()
+
+
+@pytest.fixture
 def square_mesh() -> SimplicialComplex:
     return synthetic_tri_meshes.load_square_mesh()
 

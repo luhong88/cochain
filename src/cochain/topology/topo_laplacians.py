@@ -20,9 +20,9 @@ def laplacian_k(
     If dual = True, compute the topological k-Laplacian on the dual complex.
     """
     if dual:
-        cbd = sc.cbd
-    else:
         cbd = sc.dual_cbd
+    else:
+        cbd = sc.cbd
 
     match component:
         case "up":

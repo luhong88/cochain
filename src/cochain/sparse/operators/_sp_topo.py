@@ -118,17 +118,18 @@ class SparseTopology:
         _validate_coo_idx_shape(self.idx_coo, self.shape)
 
         # Manual out-of-bound index check
-        min_idx = self.idx_coo.amin(dim=1)
-        lower_ok = (min_idx >= 0).all()
+        if self.idx_coo.numel() > 0:
+            min_idx = self.idx_coo.amin(dim=1)
+            lower_ok = (min_idx >= 0).all()
 
-        max_idx = self.idx_coo.amax(dim=1)
-        bounds = t.tensor(
-            self.shape, device=self.idx_coo.device, dtype=self.idx_coo.dtype
-        )
-        upper_ok = (max_idx < bounds).all()
+            max_idx = self.idx_coo.amax(dim=1)
+            bounds = t.tensor(
+                self.shape, device=self.idx_coo.device, dtype=self.idx_coo.dtype
+            )
+            upper_ok = (max_idx < bounds).all()
 
-        if not (upper_ok and lower_ok):
-            raise ValueError("idx_coo contains out-of-bound indices.")
+            if not (upper_ok and lower_ok):
+                raise ValueError("idx_coo contains out-of-bound indices.")
 
         # Enforce ownership and contiguous memory layout. Use object.__setattr__()
         # to bypass frozen=True.

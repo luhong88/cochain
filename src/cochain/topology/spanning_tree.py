@@ -13,6 +13,7 @@ def _minimum_spanning_tree(
     root_mask: Bool[t.Tensor, " node"] | None = None,
     exclusion_mask: Bool[t.Tensor, " edge"] | None = None,
     weights: Float[t.Tensor, " edge"] | None = None,
+    keep_super_node: bool = False,
 ) -> Integer[t.LongTensor, "2 mst_node"]:
     """
     the root_mask is a boolean mask that specifies the node(s) that will serve as
@@ -42,18 +43,22 @@ def _minimum_spanning_tree(
         idx_coo_cols = idx_coo_cols_full
         coo_data = coo_data_full
     else:
-        idx_coo_rows = idx_coo_rows_full[~exclusion_mask]
-        idx_coo_cols = idx_coo_cols_full[~exclusion_mask]
-        coo_data = coo_data_full[~exclusion_mask]
+        exclusion_mask_np = exclusion_mask.detach().cpu().numpy()
+
+        idx_coo_rows = idx_coo_rows_full[~exclusion_mask_np]
+        idx_coo_cols = idx_coo_cols_full[~exclusion_mask_np]
+        coo_data = coo_data_full[~exclusion_mask_np]
 
     if (root_mask is not None) and (root_mask.any()):
+        root_mask_np = root_mask.detach().cpu().numpy()
+
         idx_dtype = idx_coo_rows.dtype
         data_dtype = coo_data.dtype
 
         # If the root(s) of the tree is specified, add a new "super node" to the
         # graph and connect the super node to all boundary nodes with a weight of 0.
         super_node_idx = n_nodes
-        root_idx = np.argwhere(root_mask).flatten().astype(idx_dtype)
+        root_idx = np.argwhere(root_mask_np).flatten().astype(idx_dtype)
 
         # Augment the adjacency matrix by adding in edges connecting the super node.
         new_rows = np.full(len(root_idx), super_node_idx, dtype=idx_dtype)
@@ -61,7 +66,7 @@ def _minimum_spanning_tree(
 
         # Need to ensure that the edges connecting to the super node has a weight
         # that is strictly smaller than all existing weights.
-        min_weight = coo_data.min()
+        min_weight = coo_data.min() if len(coo_data) > 0 else 0.0
         super_weight = min_weight - np.abs(min_weight) - 1.0
         new_data = np.full(len(root_idx), super_weight, dtype=data_dtype)
 
@@ -81,12 +86,16 @@ def _minimum_spanning_tree(
     mst = minimum_spanning_tree(aug_adjacency)
     mst_coo = mst.tocoo()
 
-    # Filter out edges connected to the super node.
-    valid_mask = (mst_coo.row != n_nodes) & (mst_coo.col != n_nodes)
+    if keep_super_node:
+        tree_u = mst_coo.row
+        tree_v = mst_coo.col
 
-    # Extract and return the node index pairs corresponding to edges on the MST.
-    tree_u = mst_coo.row[valid_mask]
-    tree_v = mst_coo.col[valid_mask]
+    else:
+        # Filter out edges connected to the super node.
+        valid_mask = (mst_coo.row != n_nodes) & (mst_coo.col != n_nodes)
+
+        tree_u = mst_coo.row[valid_mask]
+        tree_v = mst_coo.col[valid_mask]
 
     tree_edges = t.from_numpy(np.stack((tree_u, tree_v))).to(
         dtype=adjacency.sp_topo.dtype, device=adjacency.device
@@ -157,6 +166,7 @@ def compute_tree_mask(
         root_mask=vert_rel_bc_mask,
         exclusion_mask=cotree_mask,
         weights=edge_weights,
+        keep_super_node=False,
     ).T
 
     mst_idx = simplex_search(
@@ -272,6 +282,7 @@ def compute_cotree_mask(
         root_mask=bd_dual_vert_mask,
         exclusion_mask=None,
         weights=edge_weights,
+        keep_super_node=False,
     ).T
 
     # Again, need to convert the dual edge representation as a pair of dual vertices

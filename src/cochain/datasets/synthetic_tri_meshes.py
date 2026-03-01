@@ -17,6 +17,25 @@ def load_two_tris_mesh() -> SimplicialComplex:
     )
 
 
+def load_two_disjoint_tris_mesh() -> SimplicialComplex:
+    """
+    Similar to the two tris mesh, but the two triangles are disjoint.
+    """
+    return SimplicialComplex.from_tri_mesh(
+        vert_coords=t.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+            ]
+        ),
+        tris=t.tensor([[0, 1, 2], [3, 4, 5]], dtype=t.long),
+    )
+
+
 def load_square_mesh() -> SimplicialComplex:
     """
     A simple triangulated square consisting of 4 triangles in the z = 0 plane.
