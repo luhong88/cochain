@@ -115,7 +115,7 @@ def compute_tree_mask(
     """
     Compute the spanning tree on the 1-skeleton of a triangular mesh, which
     can be used to fix the gauge freedom of the down/grad-div component of the
-    1-Laplacian.
+    weak 1-Laplacian.
 
     If the edge masses are provided using the `mass_1` argument (in the form of
     either the Hodge star or the mass matrix), the function will compute a
@@ -144,7 +144,7 @@ def compute_tree_mask(
     edge_idx = simplex_search(
         key_simps=canon_edges,
         query_simps=edges,
-        sort_key_simp=False,
+        sort_key_simp=True,
         sort_key_vert=False,
         sort_query_vert=True,
     )
@@ -172,7 +172,7 @@ def compute_tree_mask(
     mst_idx = simplex_search(
         key_simps=canon_edges,
         query_simps=mst,
-        sort_key_simp=False,
+        sort_key_simp=True,
         sort_key_vert=False,
         sort_query_vert=True,
     )
@@ -191,6 +191,10 @@ def _cbd_to_coface(
     degree d (i.e., the number of cofaces of the k-simplices), and, for each
     k-simplex of degree d, determine the indices of the d (k+1)-simplices that
     share the k-simplex as a face.
+
+    Note that the returned list of k-simplex indices is in ascending order, and
+    the returned list of (k+1)-simplex index tuples are sorted in ascending order
+    within each tuple (but the list itself is not necessarily in lex order).
     """
     idx_coo = cbd.sp_topo.idx_coo
     # The row indices correspond to the (k+1)-simplex indices, and the col indices
@@ -230,7 +234,7 @@ def compute_cotree_mask(
     """
     Compute the dual spanning tree (i.e., cotree) on the dual 1-skeleton of a
     triangular mesh, which can be used to fix the gauge freedom of the up/curl-curl
-    component of the 1-Laplacian.
+    component of the weak 1-Laplacian.
 
     If the dual edge masses are provided using the `inv_mass_1` argument (in the
     form of either the inverse Hodge star or the inverse mass matrix), the function
@@ -259,7 +263,7 @@ def compute_cotree_mask(
         simplex_search(
             key_simps=edge_coface_idx,
             query_simps=dual_edges,
-            sort_key_simp=False,
+            sort_key_simp=True,
             sort_key_vert=False,
             sort_query_vert=True,
         )
@@ -275,7 +279,10 @@ def compute_cotree_mask(
     # clipped dual edges corresponding need to connect its dual triangle coface
     # to the super node. To do so, we check whether each row of the 1-coboundary
     # operator contains edges marked with a relative boundary condition.
-    bd_dual_vert_mask = (cbd_1.abs() @ edge_rel_bc_mask.to(dtype=cbd_1.dtype)) > 0.0
+    if edge_rel_bc_mask is None:
+        bd_dual_vert_mask = t.zeros(cbd_1.shape[0], dtype=t.bool, device=cbd_1.device)
+    else:
+        bd_dual_vert_mask = (cbd_1.abs() @ edge_rel_bc_mask.to(dtype=cbd_1.dtype)) > 0.0
 
     mst = _minimum_spanning_tree(
         adjacency=adjacency,
@@ -291,7 +298,7 @@ def compute_cotree_mask(
         simplex_search(
             key_simps=edge_coface_idx,
             query_simps=mst,
-            sort_key_simp=False,
+            sort_key_simp=True,
             sort_key_vert=False,
             sort_query_vert=True,
         )

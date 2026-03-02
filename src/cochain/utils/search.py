@@ -128,6 +128,9 @@ def simplex_search(
     index, with tie breaks based on the second vertex index, and so on. If this is
     not true, set `sort_key_simp=True`.
     """
+    if query_simps.size(0) == 0:
+        return query_simps[:, 0]
+
     if method == "auto":
         simp_dim = key_simps.size(-1) - 1
 

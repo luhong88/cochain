@@ -74,6 +74,9 @@ class BaseOperator(ABC):
     def abs(self) -> BaseOperator: ...
 
     @abstractmethod
+    def diagonal(self) -> t.Tensor: ...
+
+    @abstractmethod
     def __mul__(self, other) -> BaseOperator: ...
 
     def __rmul__(self, other) -> BaseOperator:

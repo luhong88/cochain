@@ -137,6 +137,16 @@ def flat_annulus_mesh() -> SimplicialComplex:
 
 
 @pytest.fixture
+def finer_flat_annulus_mesh() -> SimplicialComplex:
+    return synthetic_tri_meshes.load_finer_flat_annulus_mesh(
+        r_in=0.5,
+        r_out=1.0,
+        radial_res=3,
+        circum_res=20,
+    )
+
+
+@pytest.fixture
 def reg_tet_mesh() -> SimplicialComplex:
     return synthetic_tet_meshes.load_regular_tet_mesh()
 

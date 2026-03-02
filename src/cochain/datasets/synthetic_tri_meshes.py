@@ -1,4 +1,5 @@
 import numpy as np
+import pyvista as pv
 import torch as t
 from scipy.spatial import Delaunay
 
@@ -140,3 +141,30 @@ def load_flat_annulus_mesh(
     )
 
     return annulus_mesh
+
+
+def load_finer_flat_annulus_mesh(
+    r_in: float = 0.5,
+    r_out: float = 1.0,
+    radial_res: int = 3,
+    circum_res: int = 20,
+):
+    """
+    Compared to load_flat_annulus_mesh, this function creates a finer mesh with
+    interior triangles.
+    """
+    pv_mesh = pv.Disc(
+        center=(0.0, 0.0, 0.0),
+        inner=r_in,
+        outer=r_out,
+        normal=(0.0, 0.0, 1.0),
+        r_res=radial_res,
+        c_res=circum_res,
+    ).triangulate()
+
+    mesh = SimplicialComplex.from_tri_mesh(
+        t.from_numpy(np.array(pv_mesh.points)).to(dtype=t.float),
+        t.from_numpy(np.array(pv_mesh.regular_faces)).to(dtype=t.long),
+    )
+
+    return mesh

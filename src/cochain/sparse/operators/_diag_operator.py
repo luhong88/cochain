@@ -61,6 +61,9 @@ class DiagOperator(BaseOperator):
     def abs(self) -> DiagOperator:
         return DiagOperator(self.val.abs())
 
+    def diagonal(self) -> Float[t.Tensor, "*b diag"]:
+        return self.val
+
     @property
     def inv(self) -> DiagOperator:
         return DiagOperator(1.0 / self.val)
