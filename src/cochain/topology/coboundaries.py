@@ -4,7 +4,7 @@ from jaxtyping import Float, Integer
 from ..sparse.operators import SparseOperator
 
 
-def coboundaries_from_tri_mesh(
+def cbd_from_tri_mesh(
     tris: Integer[t.LongTensor, "tri 3"],
 ) -> tuple[
     Integer[t.LongTensor, "edge 2"],
@@ -44,7 +44,7 @@ def coboundaries_from_tri_mesh(
         ]
     ).to(device=device)
     d0_val = t.tile(t.tensor([-1.0, 1.0], device=device), (n_edges,))
-    coboundary_0 = (
+    cbd_0 = (
         t.sparse_coo_tensor(
             d0_idx,
             d0_val,
@@ -76,7 +76,7 @@ def coboundaries_from_tri_mesh(
     ).to(device)
     d1_val = edge_topo_signs * edge_orientation_signs
 
-    coboundary_1 = (
+    cbd_1 = (
         t.sparse_coo_tensor(
             d1_idx,
             d1_val,
@@ -88,12 +88,12 @@ def coboundaries_from_tri_mesh(
 
     return (
         unique_canon_edges,
-        SparseOperator.from_tensor(coboundary_0),
-        SparseOperator.from_tensor(coboundary_1),
+        SparseOperator.from_tensor(cbd_0),
+        SparseOperator.from_tensor(cbd_1),
     )
 
 
-def coboundaries_from_tet_mesh(
+def cbd_from_tet_mesh(
     tets: Integer[t.LongTensor, "tet 4"],
 ) -> tuple[
     Integer[t.LongTensor, "edge 2"],
@@ -147,20 +147,18 @@ def coboundaries_from_tet_mesh(
     d2_idx = t.stack([t.tile(t.arange(n_tets), (4,)), all_tri_idx]).to(device=device)
     d2_val = tri_topo_signs * tri_orientation_signs
 
-    coboundary_2 = t.sparse_coo_tensor(
+    cbd_2 = t.sparse_coo_tensor(
         d2_idx, d2_val, (n_tets, n_tris), device=device
     ).coalesce()
 
     # Generate the 1st- and 0th-coboundary operators. This can be done via
     # coboundaries_from_tri_mesh(), using unique_canon_tris as the triangle mesh.
-    unique_canon_edges, coboundary_0, coboundary_1 = coboundaries_from_tri_mesh(
-        unique_canon_tris
-    )
+    unique_canon_edges, cbd_0, cbd_1 = cbd_from_tri_mesh(unique_canon_tris)
 
     return (
         unique_canon_edges,
         unique_canon_tris,
-        coboundary_0,
-        coboundary_1,
-        SparseOperator.from_tensor(coboundary_2),
+        cbd_0,
+        cbd_1,
+        SparseOperator.from_tensor(cbd_2),
     )

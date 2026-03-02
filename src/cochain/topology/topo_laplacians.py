@@ -1,6 +1,5 @@
-from collections import defaultdict
+from typing import Literal
 
-import torch as t
 from jaxtyping import Float
 
 from ..complex import SimplicialComplex
@@ -8,41 +7,44 @@ from ..sparse.operators import SparseOperator
 
 
 def laplacian_k(
-    sc: SimplicialComplex, k: int
-) -> tuple[
-    Float[SparseOperator, "k_simp k_simp"],
-    Float[SparseOperator, "k_simp k_simp"],
-    Float[SparseOperator, "k_simp k_simp"],
-]:
+    sc: SimplicialComplex,
+    *,
+    k: int,
+    component: Literal["up", "down", "full"],
+    dual: bool = False,
+) -> Float[SparseOperator, "k_simp k_simp"]:
     """
     Laplacian_k = d_j @ d_j.T + d_k.T @ d_k, where d_k is the k-coboundary
     operator, d_k.T is the k-boundary operator, and j = k - 1.
+
+    If dual = True, compute the topological k-Laplacian on the dual complex.
     """
-    # Get the default dtype and device from d_0
-    dtype = sc.coboundary[0].dtype
-    device = sc.coboundary[0].device
+    if dual:
+        cbd = sc.dual_cbd
+    else:
+        cbd = sc.cbd
 
-    # Generate a dictionary that maps the kth-dimension to the number of k-simplices,
-    # with default value set to 0.
-    dim_dict = defaultdict(int)
-    for dim, n_simplices in enumerate([sc.n_verts, sc.n_edges, sc.n_tris, sc.n_tets]):
-        dim_dict[dim] = n_simplices
+    match component:
+        case "up":
+            d_k = cbd[k]
+            up_laplacian = d_k.T @ d_k
+            return up_laplacian
 
-    # Get the k-th and (k-1)th- coboundary operator (or, generate an empty one with
-    # the appropriate dimensions for "out-of-bound" values of k), and use them to
-    # construct the Laplacian.
-    d_k = sc.coboundary[k]
-    d_k_T = d_k.transpose(0, 1).coalesce()
-    up_laplacian = (d_k_T @ d_k).coalesce()
+        case "down":
+            d_j = cbd[k - 1]
+            down_laplacian = d_j @ d_j.T
+            return down_laplacian
 
-    d_j = sc.coboundary[k - 1]
-    d_j_T = d_j.transpose(0, 1).coalesce()
-    down_laplacian = (d_j @ d_j_T).coalesce()
+        case "full":
+            d_k = cbd[k]
+            up_laplacian = d_k.T @ d_k
 
-    laplacian_k = (up_laplacian + down_laplacian).coalesce()
+            d_j = cbd[k - 1]
+            down_laplacian = d_j @ d_j.T
 
-    return (
-        SparseOperator.from_tensor(down_laplacian),
-        SparseOperator.from_tensor(up_laplacian),
-        SparseOperator.from_tensor(laplacian_k),
-    )
+            full_laplacian = SparseOperator.assemble(up_laplacian, down_laplacian)
+
+            return full_laplacian
+
+        case _:
+            raise ValueError()

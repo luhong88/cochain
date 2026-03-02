@@ -196,6 +196,17 @@ class SparseOperator(BaseOperator):
         else:
             raise NotImplementedError()
 
+    # TODO: implement for batched operators
+    # TODO: write tests
+    def off_diagonal(self) -> SparseOperator:
+        if self.n_batch_dim == 0:
+            off_diag_mask = self.sp_topo.idx_coo[0] != self.sp_topo.idx_coo[1]
+            off_diag_sp_topo = SparseTopology(
+                self.sp_topo.idx_coo[:, off_diag_mask], self.sp_topo.shape
+            )
+            off_diag_val = self.val[off_diag_mask]
+            return SparseOperator(off_diag_sp_topo, off_diag_val)
+
     # TODO: implement trace for batched operators
     # TODO: write tests fot tr()
     # TODO: implement the same tr and diagonal() functions for DiagOperators
@@ -205,6 +216,17 @@ class SparseOperator(BaseOperator):
             return self.diagonal().sum(dim=0)
         else:
             raise NotImplementedError()
+
+    # TODO: implement for batched operators
+    # TODO: write tests
+    def triu(self, diagonal: int = 0) -> SparseOperator:
+        if self.n_batch_dim == 0:
+            triu_mask = self.sp_topo.idx_coo[0] <= self.sp_topo.idx_coo[1] - diagonal
+            triu_sp_topo = SparseTopology(
+                self.sp_topo.idx_coo[:, triu_mask], self.sp_topo.shape
+            )
+            triu_val = self.val[triu_mask]
+            return SparseOperator(triu_sp_topo, triu_val)
 
     def __add__(self, other) -> SparseOperator:
         """

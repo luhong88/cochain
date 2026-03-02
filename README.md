@@ -10,6 +10,7 @@
     * Coboundary operators, aka discrete exterior derivatives.
     * Combinatorial Laplacians.
     * Cup product and anti-symmetrized cup product.
+    * Tree-cotree decomposition for 1-Laplacians (on triangular meshes).
 * Geometric operators:
     * Discrete Hodge stars for both circumcentric and barycentric duals.
     * Mass matrices derived from Whitney basis functions (of the lowest order).

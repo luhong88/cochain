@@ -95,6 +95,11 @@ def two_tris_mesh() -> SimplicialComplex:
 
 
 @pytest.fixture
+def two_disjoint_tris_mesh() -> SimplicialComplex:
+    return synthetic_tri_meshes.load_two_disjoint_tris_mesh()
+
+
+@pytest.fixture
 def square_mesh() -> SimplicialComplex:
     return synthetic_tri_meshes.load_square_mesh()
 
@@ -128,6 +133,16 @@ def icosphere_mesh() -> SimplicialComplex:
 def flat_annulus_mesh() -> SimplicialComplex:
     return synthetic_tri_meshes.load_flat_annulus_mesh(
         r_in=0.5, r_out=1.0, n_segments_in=5, n_segments_out=10
+    )
+
+
+@pytest.fixture
+def finer_flat_annulus_mesh() -> SimplicialComplex:
+    return synthetic_tri_meshes.load_finer_flat_annulus_mesh(
+        r_in=0.5,
+        r_out=1.0,
+        radial_res=3,
+        circum_res=20,
     )
 
 
