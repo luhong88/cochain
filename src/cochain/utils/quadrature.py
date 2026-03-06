@@ -1,8 +1,70 @@
 from dataclasses import dataclass
 from functools import cached_property
+from math import sqrt
 
 import torch as t
 from jaxtyping import Float
+
+
+@dataclass
+class GaussLegendre:
+    dtype: t.dtype = t.float32
+    device: t.device = t.cpu
+
+    def get_rule(
+        self, degree: int
+    ) -> tuple[Float[t.Tensor, "point 2"], Float[t.Tensor, " point"]]:
+        # The n-point quadrature has a polynomial degree of exactness of 2n - 1.
+        match degree:
+            case 0:
+                return self.one_point
+            case 1:
+                return self.one_point
+            case 2:
+                return self.two_points
+            case 3:
+                return self.two_points
+            case 4:
+                return self.three_points
+            case 5:
+                return self.three_points
+            case _:
+                raise ValueError()
+
+    @cached_property
+    def one_point(self) -> tuple[Float[t.Tensor, "1 2"], Float[t.Tensor, "1"]]:
+        bary = t.tensor([[0.5, 0.5]], dtype=self.dtype, device=self.device)
+        weight = t.tensor([1.0], dtype=self.dtype, device=self.device)
+        return bary, weight
+
+    @cached_property
+    def two_points(self) -> tuple[Float[t.Tensor, "2 2"], Float[t.Tensor, "2"]]:
+        bary = t.tensor(
+            [
+                [0.5 - sqrt(3.0) / 6.0, 0.5 + sqrt(3.0) / 6.0],
+                [0.5 + sqrt(3.0) / 6.0, 0.5 - sqrt(3.0) / 6.0],
+            ],
+            dtype=self.dtype,
+            device=self.device,
+        )
+        weight = t.tensor([0.5, 0.5], dtype=self.dtype, device=self.device)
+        return bary, weight
+
+    @cached_property
+    def three_points(self) -> tuple[Float[t.Tensor, "3 2"], Float[t.Tensor, "3"]]:
+        bary = t.tensor(
+            [
+                [0.5 - sqrt(15.0) / 10.0, 0.5 + sqrt(15.0) / 10.0],
+                [0.5, 0.5],
+                [0.5 + sqrt(15.0) / 10.0, 0.5 - sqrt(15.0) / 10.0],
+            ],
+            dtype=self.dtype,
+            device=self.device,
+        )
+        weight = t.tensor(
+            [5.0 / 18.0, 8.0 / 18.0, 5.0 / 18.0], dtype=self.dtype, device=self.device
+        )
+        return bary, weight
 
 
 @dataclass
