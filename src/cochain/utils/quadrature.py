@@ -12,7 +12,7 @@ class GaussLegendre:
     device: t.device = t.cpu
 
     def get_rule(
-        self, degree: int
+        self, degree: int, *args, **kwargs
     ) -> tuple[Float[t.Tensor, "point 2"], Float[t.Tensor, " point"]]:
         # The n-point quadrature has a polynomial degree of exactness of 2n - 1.
         match degree:
@@ -84,7 +84,7 @@ class Dunavant:
     device: t.device = t.cpu
 
     def get_rule(
-        self, degree: int
+        self, degree: int, *args, **kwargs
     ) -> tuple[Float[t.Tensor, "point 3"], Float[t.Tensor, " point"]]:
         match degree:
             case 0:
@@ -224,7 +224,7 @@ class Keast:
     device: t.device = t.cpu
 
     def get_rule(
-        self, degree: int, allow_neg_weights: bool = True
+        self, degree: int, allow_neg_weights: bool = True, *args, **kwargs
     ) -> tuple[Float[t.Tensor, "point 4"], Float[t.Tensor, " point"]]:
         match degree:
             case 0:
