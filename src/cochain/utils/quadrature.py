@@ -10,6 +10,10 @@ class Dunavant:
     """
     Look up table for the Dunavant quadrature rule on a reference triangle.
 
+    In general, rule #k guarantees that the numerical integration of a polynomial
+    of degree up to k is exact. Currently, a polynomial degree of exactness up to
+    5 is supported. Note that rule #3 contains a negative weight.
+
     Reference: David Dunavant, High degree efficient symmetrical Gaussian quadrature
     rules for the triangle, Int. J. Numer. Methods Eng., 1985.
     """
@@ -21,6 +25,8 @@ class Dunavant:
         self, degree: int
     ) -> tuple[Float[t.Tensor, "point 3"], Float[t.Tensor, " point"]]:
         match degree:
+            case 0:
+                return self.rule_1
             case 1:
                 return self.rule_1
             case 2:
@@ -144,6 +150,10 @@ class Keast:
     """
     Look up table for the Keast quadrature rule on a reference tetrahedron.
 
+    Currently, a polynomial degree of exactness up to 5 is supported; note that,
+    for degree of exactness 3 and 4, two rules are provided that differ by whether
+    negative weights are allowed.
+
     Reference: Patrick Keast, Moderate Degree Tetrahedral Quadrature Formulas,
     Comput. Methods Appl. Mech. Eng., 1986.
     """
@@ -152,19 +162,27 @@ class Keast:
     device: t.device = t.cpu
 
     def get_rule(
-        self, rule_idx: int
+        self, degree: int, allow_neg_weights: bool = True
     ) -> tuple[Float[t.Tensor, "point 4"], Float[t.Tensor, " point"]]:
-        match rule_idx:
+        match degree:
+            case 0:
+                return self.rule_1
             case 1:
                 return self.rule_1
             case 2:
                 return self.rule_2
             case 3:
-                return self.rule_3
+                if allow_neg_weights:
+                    return self.rule_3
+                else:
+                    return self.rule_4
             case 4:
-                return self.rule_4
+                if allow_neg_weights:
+                    return self.rule_5
+                else:
+                    return self.rule_6
             case 5:
-                return self.rule_5
+                return self.rule_7
             case _:
                 raise ValueError()
 
@@ -273,6 +291,48 @@ class Keast:
             [-0.0131555555555555556]
             + [0.00762222222222222222] * 4
             + [0.0248888888888888889] * 6,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+        return bary, weight
+
+    @cached_property
+    def rule_6(self) -> tuple[Float[t.Tensor, "14 4"], Float[t.Tensor, "14"]]:
+        bary = t.vstack(
+            (
+                self._suborder_6(0.5, 0.0),
+                self._suborder_4(0.698419704324386603, 0.100526765225204467),
+                self._suborder_4(0.0568813795204234229, 0.314372873493192195),
+            )
+        )
+
+        weight = 6.0 * t.tensor(
+            [0.00317460317460317450] * 6
+            + [0.0147649707904967828] * 4
+            + [0.0221397911142651221] * 4,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+        return bary, weight
+
+    @cached_property
+    def rule_7(self) -> tuple[Float[t.Tensor, "15 4"], Float[t.Tensor, "15"]]:
+        bary = t.vstack(
+            (
+                self._suborder_1(0.25),
+                self._suborder_4(0.0, 1.0 / 3.0),
+                self._suborder_4(0.727272727272727273, 0.0909090909090909091),
+                self._suborder_6(0.0665501535736642813, 0.433449846426335728),
+            )
+        )
+
+        weight = 6.0 * t.tensor(
+            [0.0302836780970891856]
+            + [0.00602678571428571597] * 4
+            + [0.0116452490860289742] * 4
+            + [0.0109491415613864534] * 6,
             dtype=self.dtype,
             device=self.device,
         )
