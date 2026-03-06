@@ -1,22 +1,25 @@
 from dataclasses import dataclass
+from functools import cached_property
 
 import torch as t
 from jaxtyping import Float
 
 
-@dataclass(frozen=True)
+@dataclass
 class Dunavant:
     """
-    Look up table for the quadrature rule on a reference triangle.
+    Look up table for the Dunavant quadrature rule on a reference triangle.
 
     Reference: David Dunavant, High degree efficient symmetrical Gaussian quadrature
-    rules for the triangle, Int. J. Numer. Methods Eng., (1985).
+    rules for the triangle, Int. J. Numer. Methods Eng., 1985.
     """
 
-    dtype: t.dtype
-    device: t.device
+    dtype: t.dtype = t.float32
+    device: t.device = t.cpu
 
-    def get_rule(self, degree: int):
+    def get_rule(
+        self, degree: int
+    ) -> tuple[Float[t.Tensor, "point 3"], Float[t.Tensor, " point"]]:
         match degree:
             case 1:
                 return self.rule_1
@@ -31,13 +34,13 @@ class Dunavant:
             case _:
                 raise ValueError()
 
-    @property
+    @cached_property
     def rule_1(self) -> tuple[Float[t.Tensor, "1 3"], Float[t.Tensor, "1"]]:
         bary = t.tensor([[1.0 / 3.0] * 3], dtype=self.dtype, device=self.device)
         weight = t.tensor([1.0], dtype=self.dtype, device=self.device)
         return bary, weight
 
-    @property
+    @cached_property
     def rule_2(self) -> tuple[Float[t.Tensor, "3 3"], Float[t.Tensor, "3"]]:
         a = 2.0 / 3.0
         b = 1.0 / 6.0
@@ -55,7 +58,7 @@ class Dunavant:
 
         return bary, weight
 
-    @property
+    @cached_property
     def rule_3(self) -> tuple[Float[t.Tensor, "4 3"], Float[t.Tensor, "4"]]:
         a = 0.6
         b = 0.2
@@ -80,7 +83,7 @@ class Dunavant:
 
         return bary, weight
 
-    @property
+    @cached_property
     def rule_4(self) -> tuple[Float[t.Tensor, "6 3"], Float[t.Tensor, "6"]]:
         a1 = 0.108103018168070
         b1 = 0.445948490915965
@@ -107,7 +110,7 @@ class Dunavant:
 
         return bary, weight
 
-    @property
+    @cached_property
     def rule_5(self) -> tuple[Float[t.Tensor, "7 3"], Float[t.Tensor, "7"]]:
         a1 = 0.059715871789770
         b1 = 0.470142064105115
@@ -129,6 +132,147 @@ class Dunavant:
 
         weight = t.tensor(
             [0.225] + [0.132394152788506] * 3 + [0.125939180544827] * 3,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+        return bary, weight
+
+
+@dataclass
+class Keast:
+    """
+    Look up table for the Keast quadrature rule on a reference tetrahedron.
+
+    Reference: Patrick Keast, Moderate Degree Tetrahedral Quadrature Formulas,
+    Comput. Methods Appl. Mech. Eng., 1986.
+    """
+
+    dtype: t.dtype = t.float32
+    device: t.device = t.cpu
+
+    def get_rule(
+        self, rule_idx: int
+    ) -> tuple[Float[t.Tensor, "point 4"], Float[t.Tensor, " point"]]:
+        match rule_idx:
+            case 1:
+                return self.rule_1
+            case 2:
+                return self.rule_2
+            case 3:
+                return self.rule_3
+            case 4:
+                return self.rule_4
+            case 5:
+                return self.rule_5
+            case _:
+                raise ValueError()
+
+    def _suborder_1(self, a: float) -> Float[t.Tensor, "1 4"]:
+        return t.tensor([[a, a, a, a]], dtype=self.dtype, device=self.device)
+
+    def _suborder_4(self, a: float, b: float) -> Float[t.Tensor, "4 4"]:
+        return t.tensor(
+            [[a, b, b, b], [b, a, b, b], [b, b, a, b], [b, b, b, a]],
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+    def _suborder_6(self, a: float, b: float) -> Float[t.Tensor, "6 4"]:
+        return t.tensor(
+            [
+                [a, a, b, b],
+                [a, b, a, b],
+                [a, b, b, a],
+                [b, a, b, a],
+                [b, a, a, b],
+                [b, b, a, a],
+            ],
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+    @cached_property
+    def rule_1(self) -> tuple[Float[t.Tensor, "1 4"], Float[t.Tensor, "1"]]:
+        bary = self._suborder_1(0.25)
+
+        weight = t.tensor(
+            [1.0],
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+        return bary, weight
+
+    @cached_property
+    def rule_2(self) -> tuple[Float[t.Tensor, "4 4"], Float[t.Tensor, "4"]]:
+        bary = self._suborder_4(0.585410196624968500, 0.138196601125010500)
+
+        weight = 6.0 * t.tensor(
+            [0.0416666666666666667] * 4,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+        return bary, weight
+
+    @cached_property
+    def rule_3(self) -> tuple[Float[t.Tensor, "5 4"], Float[t.Tensor, "5"]]:
+        bary = t.vstack(
+            (
+                self._suborder_1(0.25),
+                self._suborder_4(
+                    0.5,
+                    0.166666666666666667,
+                ),
+            )
+        )
+
+        weight = 6.0 * t.tensor(
+            [-0.133333333333333333] + [0.075] * 4,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+        return bary, weight
+
+    @cached_property
+    def rule_4(self) -> tuple[Float[t.Tensor, "10 4"], Float[t.Tensor, "10"]]:
+        bary = t.vstack(
+            (
+                self._suborder_4(0.568430584196844400, 0.143856471934385200),
+                self._suborder_6(
+                    0.5,
+                    0.0,
+                ),
+            )
+        )
+
+        weight = 6.0 * t.tensor(
+            [0.0362941783134009000] * 4 + [0.00358165890217718333] * 6,
+            dtype=self.dtype,
+            device=self.device,
+        )
+
+        return bary, weight
+
+    @cached_property
+    def rule_5(self) -> tuple[Float[t.Tensor, "11 4"], Float[t.Tensor, "11"]]:
+        bary = t.vstack(
+            (
+                self._suborder_1(0.25),
+                self._suborder_4(0.785714285714285714, 0.0714285714285714285),
+                self._suborder_6(
+                    0.399403576166799219,
+                    0.100596423833200785,
+                ),
+            )
+        )
+
+        weight = 6.0 * t.tensor(
+            [-0.0131555555555555556]
+            + [0.00762222222222222222] * 4
+            + [0.0248888888888888889] * 6,
             dtype=self.dtype,
             device=self.device,
         )
