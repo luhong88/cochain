@@ -2,7 +2,6 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...utils import quadrature
-from ..tet.tet_geometry import get_tet_signed_vols
 
 
 class DeRhamMap:
@@ -75,19 +74,16 @@ class DeRhamMap:
         if not hasattr(self, "weights"):
             self._get_quad_rule(vert_coords)
 
-        # For discretizing 1-forms and 2-forms, we need to compute the
-        # Jacobian of the ref -> phys transformations (i.e., the pushforward
-        # map); for discretizing 3-forms, we simply need the unsigned determinant
-        # of the Jacobian (i.e., the tet volume).
-        if self.k in [1, 2]:
-            simp_vert_coords = vert_coords[k_simps]
+        # Compute the Jacobian of the ref -> phys transformations (i.e., the
+        # pushforward map).
+        simp_vert_coords = vert_coords[k_simps]
 
-            # Pick the first vertex of each simplex as the point of origin
-            # in the ref simplex and compute the jacobian as the matrix
-            # of the edge (column) vectors v_i - v_0.
-            jacs: Float[t.Tensor, "simp edge 3"] = (
-                simp_vert_coords[:, 1:, :] - simp_vert_coords[:, [0], :]
-            )
+        # Pick the first vertex of each simplex as the point of origin in the ref
+        # simplex and compute the jacobian as the matrix of the edge (column)
+        # vectors v_i - v_0.
+        jacs: Float[t.Tensor, "simp edge 3"] = (
+            simp_vert_coords[:, 1:, :] - simp_vert_coords[:, [0], :]
+        )
 
         match self.k:
             case 1:
@@ -117,11 +113,11 @@ class DeRhamMap:
 
             case 3:
                 # For 3-forms, the pullback consists of the scalar product between
-                # the 3-form (a scalar) and the scalar triple product of the Jacobian
-                # (or, equivalently, the signed tet volume).
-                signed_vol: Float[t.Tensor, "simp 1"] = get_tet_signed_vols(
-                    vert_coords, k_simps
-                ).view(-1, 1)
+                # the 3-form (a scalar) and the determinant of the Jacobian (scaled
+                # to the tet volume by the 1/6 factor)
+                signed_vol: Float[t.Tensor, "simp 1"] = (
+                    t.linalg.det(jacs).view(-1, 1) / 6.0
+                )
 
                 pullback = signed_vol * k_forms
                 density = t.sum(pullback * self.weights, dim=-1)
