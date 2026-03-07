@@ -8,7 +8,7 @@ from jaxtyping import Float
 
 @dataclass
 class GaussLegendre:
-    dtype: t.dtype = t.float32
+    dtype: t.dtype = t.float64
     device: t.device = t.cpu
 
     def get_rule(
@@ -80,7 +80,7 @@ class Dunavant:
     rules for the triangle, Int. J. Numer. Methods Eng., 1985.
     """
 
-    dtype: t.dtype = t.float32
+    dtype: t.dtype = t.float64
     device: t.device = t.cpu
 
     def get_rule(
@@ -220,7 +220,7 @@ class Keast:
     Comput. Methods Appl. Mech. Eng., 1986.
     """
 
-    dtype: t.dtype = t.float32
+    dtype: t.dtype = t.float64
     device: t.device = t.cpu
 
     def get_rule(
