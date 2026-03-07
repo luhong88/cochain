@@ -3,7 +3,6 @@ from jaxtyping import Float
 
 from ...complex import SimplicialComplex
 from ...utils import quadrature
-from ...utils.perm_parity import compute_lex_rel_orient
 from ..tet.tet_geometry import get_tet_signed_vols
 
 
@@ -37,13 +36,6 @@ class _DeRhamMapKForm:
                 self.quad = quadrature.Keast(dtype, device)
             case _:
                 raise ValueError()
-
-        # In the SimplicialComplex class, we assume that the vertex ordering
-        # is lex sorted for all but the top level n-simplices, where the vertex
-        # index ordering carries information on geometric orientation. Therefore,
-        # an orientation parity sign correction is needed to account for the
-        # orientation of such simplices relative to the mesh.
-        self.parity = compute_lex_rel_orient(mesh.simplices[self.dim])
 
     def sample_points(
         self, degree: int, allow_neg_weights: bool = True
@@ -92,7 +84,7 @@ class _DeRhamMapKForm:
                 pullback: Float[t.Tensor, "simp point"] = t.sum(
                     self.jacs * forms, dim=-1
                 )
-                circulation = self.parity * pullback * self.weights
+                circulation = t.sum(pullback * self.weights, dim=-1)
                 return circulation
 
             case 2:
@@ -102,30 +94,27 @@ class _DeRhamMapKForm:
                 # dy, dz}. The Jacobian for edge triangle consists of the edge column
                 # vectors {v1 - v0, v2 - v0}, and the pullback is the dot product
                 # between the proxy 1-form and the triangle normal vector (oriented
-                # to satisfy the right-hand rule).
-                area_normal: Float[t.Tensor, "simp 1 3"] = t.cross(
+                # to satisfy the right-hand rule and scaled to the triangle area).
+                area_normal: Float[t.Tensor, "simp 1 3"] = 0.5 * t.cross(
                     self.jacs[:, [0], :], self.jacs[:, [1], :], dim=-1
                 )
                 pullback: Float[t.Tensor, "simp point"] = t.sum(
                     area_normal * forms, dim=-1
                 )
-                # 0.5 scales the numerical quadrature with the area of the ref triangle.
-                flux = 0.5 * self.parity * pullback * self.weights
+                flux = 0.5 * t.sum(pullback * self.weights, dim=-1)
                 return flux
 
             case 3:
                 # For 3-forms, the pullback consists of the scalar product between
-                # the 3-form (a scalar) and the scalar triple product of the
-                # Jacobian (the signed tet volume).
+                # the 3-form (a scalar) and the scalar triple product of the Jacobian
+                # (or, equivalently, the signed tet volume).
                 pullback = self.signed_vol * forms
-                # 1/6 scales the numerical quadrature with the volume of the ref tet.
-                density = self.parity * pullback * self.weights / 6.0
+                density = t.sum(pullback * self.weights, dim=-1)
                 return density
 
 
-class DeRhamMap:
-    def __init__(self, mesh: SimplicialComplex, dim: int):
-        if dim == 0:
-            return _DeRhamMap0Form(mesh)
-        else:
-            return _DeRhamMapKForm(mesh, dim)
+def DeRhamMap(mesh: SimplicialComplex, dim: int) -> _DeRhamMap0Form | _DeRhamMapKForm:
+    if dim == 0:
+        return _DeRhamMap0Form(mesh)
+    else:
+        return _DeRhamMapKForm(mesh, dim)

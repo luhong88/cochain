@@ -9,8 +9,9 @@ def get_tet_signed_vols(
 ) -> Float[t.Tensor, " tet"]:
     """
     Compute the signed volume of each tetrahedron in a 3D mesh. A tet is assigned
-    a positive volume if it satisfies the right-hand rule (or, equivalently, its
-    vertex indices can be reordered into ascending order with an even permutation).
+    a positive volume if it satisfies the right-hand rule. Note that this volume
+    sign is not to be confused with the orientation sign of a tet (i.e., whether
+    its vertex indices can be reordered into ascending order with an even permutation).
     """
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
