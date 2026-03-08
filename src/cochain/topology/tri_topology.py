@@ -1,6 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
+from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import simplex_search
 
 
@@ -49,11 +50,6 @@ def get_edge_face_orientations(
         end_dim=-2
     )
 
-    # Same method as used in the construction of coboundary operators to use
-    # sort() to identify edge orientations.
-    canon_edge_orientations = all_edges.sort(dim=-1).indices
-    canon_edge_signs = t.where(
-        canon_edge_orientations[:, 1] > 0, canon_edge_orientations[:, 1], -1
-    ).view(-1, 3)
+    edge_signs = compute_lex_rel_orient(all_edges).view(-1, 3)
 
-    return canon_edge_signs
+    return edge_signs
