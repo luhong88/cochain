@@ -1,15 +1,12 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..geometry.tet.tet_geometry import d_tet_signed_vols_d_vert_coords
-from ..geometry.tri.tri_geometry import compute_d_tri_areas_d_vert_coords
 
-
-def _bary_whitney_tri_cochain_0(
+def bary_whitney_tri_cochain_0(
     tris: Integer[t.LongTensor, "tri 3"],
-    cochain_0: Float[t.Tensor, " edge"],
+    cochain_0: Float[t.Tensor, " vert"],
     bary_coords: Float[t.Tensor, "point 3"],
-) -> Float[t.Tensor, "tri point"]:
+) -> Float[t.Tensor, "tri point coord=1"]:
     # W_i = λ_i for i = 0, 1, 2.
     basis: Float[t.Tensor, "point vert=3"] = bary_coords
 
@@ -17,12 +14,12 @@ def _bary_whitney_tri_cochain_0(
 
     form_0: Float[t.Tensor, "tri point"] = t.einsum(
         "pv,tv->tp", basis, cochain_0_at_vert_faces
-    )
+    ).unsqueeze(-1)
 
     return form_0
 
 
-def _bary_whitney_tri_cochain_1(
+def bary_whitney_tri_cochain_1(
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
     tri_edge_idx: Integer[t.LongTensor, "tri 3"],
     tri_edge_orientations: Float[t.Tensor, "tri 3"],
@@ -59,7 +56,7 @@ def _bary_whitney_tri_cochain_1(
     return form_1
 
 
-def _bary_whitney_tri_cochain_2(
+def bary_whitney_tri_cochain_2(
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
     tri_orientations: Float[t.Tensor, " tri"],
     cochain_2: Float[t.Tensor, " tri"],
