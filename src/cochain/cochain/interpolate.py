@@ -74,7 +74,7 @@ def _bary_whitney_tri_cochain_2(
     # There is only one basis form W_012 = 2(∇λ_1 x ∇λ_2); note that this basis
     # function is a constant of barycentric coordinates, which means that the
     # interpolated 2-forms will be constant on each triangle.
-    basis: Float[t.Tensor, "tri coord=3"] = t.cross(
+    basis: Float[t.Tensor, "tri coord=3"] = 2.0 * t.cross(
         bary_coords_grad[:, 1, :], bary_coords_grad[:, 2, :], dim=-1
     )
 
@@ -123,8 +123,8 @@ def _bary_whitney_tet_cochain_1(
     # Note that i, j switch positions for the second term.
     basis: Float[t.Tensor, "tet point edge=6 coord=3"] = (
         bary_coords_shaped[:, :, [0, 0, 1, 1, 2, 0]]
-        * bary_coords_grad_shaped[:, :, [1, 2, 2, 3, 3, 0]]
-        - bary_coords_shaped[:, :, [1, 2, 2, 3, 3, 0]]
+        * bary_coords_grad_shaped[:, :, [1, 2, 2, 3, 3, 3]]
+        - bary_coords_shaped[:, :, [1, 2, 2, 3, 3, 3]]
         * bary_coords_grad_shaped[:, :, [0, 0, 1, 1, 2, 0]]
     )
 
@@ -161,7 +161,7 @@ def _bary_whitney_tet_cochain_2(
     perm_i = [1, 0, 0, 0]
     perm_j = [2, 3, 1, 2]
     perm_k = [3, 2, 3, 1]
-    basis: Float[t.Tensor, "tet point tri=4 coord=3"] = (
+    basis: Float[t.Tensor, "tet point tri=4 coord=3"] = 2.0 * (
         bary_coords_shaped[:, :, perm_i]
         * t.cross(
             bary_coords_grad_shaped[:, :, perm_j],
@@ -258,10 +258,12 @@ def _bary_whitney_tet(
     bary_coords: Float[t.Tensor, "point bary"],
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "tet point *ch coord"]:
-    if k in [1, 2]:
+    if k in [1, 2, 3]:
         tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets).view(
             -1, 1, 1
         )
+
+    if k in [1, 2]:
         d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
             mesh.vert_coords, mesh.tets
         )
