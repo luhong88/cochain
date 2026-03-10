@@ -308,6 +308,17 @@ def barycentric_whitney_map(
     bary_coords: Float[t.Tensor, "point bary"],
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "top_sim point *ch coord"]:
+    """
+    This function implements an "element-local" version of the Whitney map for
+    interpolating discrete k-cochains, in that it maps the k-cochains to k-forms
+    evaluated at a fixed set of local barycentric coordinates across all top-level
+    simplices, which is useful for numerical quadrature. Note that this function
+    does not perform global spatial interpolation (i.e., it cannot directly evaluate
+    the k-form at arbitrary cartesian coordinates on the mesh.
+
+    The input k-cochain is allowed to have an arbitrary number of trailing
+    channel/batch dimensions.
+    """
     match mesh.dim:
         case 2:
             return _bary_whitney_tri(k, k_cochain, bary_coords, mesh)
