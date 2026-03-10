@@ -13,29 +13,29 @@ from ..geometry.tri.tri_geometry import (
 
 
 def _bary_whitney_tri_cochain_0(
-    cochain_0: Float[t.Tensor, " vert"],
+    cochain_0: Float[t.Tensor, " vert *ch"],
     tris: Integer[t.LongTensor, "tri 3"],
     bary_coords: Float[t.Tensor, "point 3"],
-) -> Float[t.Tensor, "tri point coord=1"]:
+) -> Float[t.Tensor, "tri point *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2.
     basis: Float[t.Tensor, "point vert=3"] = bary_coords
 
-    cochain_0_at_vert_faces: Float[t.Tensor, "tri vert=3"] = cochain_0[tris]
+    cochain_0_at_vert_faces: Float[t.Tensor, "tri vert=3 *ch"] = cochain_0[tris]
 
-    form_0: Float[t.Tensor, "tri point"] = t.einsum(
-        "pv,tv->tp", basis, cochain_0_at_vert_faces
-    ).unsqueeze(-1)
+    form_0: Float[t.Tensor, "tri point *ch"] = t.einsum(
+        "pv,tv...->tp...", basis, cochain_0_at_vert_faces
+    )
 
-    return form_0
+    return form_0.unsqueeze(-1)
 
 
 def _bary_whitney_tri_cochain_1(
-    cochain_1: Float[t.Tensor, " edge"],
+    cochain_1: Float[t.Tensor, " edge *ch"],
     tri_edge_idx: Integer[t.LongTensor, "tri 3"],
     tri_edge_orientations: Float[t.Tensor, "tri 3"],
     bary_coords: Float[t.Tensor, "point 3"],
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
-) -> Float[t.Tensor, "tri point 3"]:
+) -> Float[t.Tensor, "tri point *ch coord=3"]:
     bary_coords_grad_shaped: Float[t.Tensor, "tri 1 vert=3 coord=3"] = (
         bary_coords_grad.view(-1, 1, 3, 3)
     )
@@ -55,22 +55,22 @@ def _bary_whitney_tri_cochain_1(
 
     # tri_edge_face_idx contains the index of edges 01, 02, and 12 in the list of
     # canonical edges of the triangular mesh.
-    cochain_1_at_edge_faces: Float[t.Tensor, "tri edge=3"] = cochain_1[tri_edge_idx]
+    cochain_1_at_edge_faces: Float[t.Tensor, "tri edge=3 *ch"] = cochain_1[tri_edge_idx]
 
     # If the edges 01, 02, and 12 are not in their canonical orientation, then
     # the corresponding basis form needs a sign correction given by tri_edge_orientations.
-    form_1: Float[t.Tensor, "tri point coord=3"] = t.einsum(
-        "tpec,te,te->tpc", basis, tri_edge_orientations, cochain_1_at_edge_faces
+    form_1 = t.einsum(
+        "tpec,te,te...->tp...c", basis, tri_edge_orientations, cochain_1_at_edge_faces
     )
 
     return form_1
 
 
 def _bary_whitney_tri_cochain_2(
-    cochain_2: Float[t.Tensor, " tri"],
+    cochain_2: Float[t.Tensor, " tri *ch"],
     tri_orientations: Float[t.Tensor, " tri"],
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
-) -> Float[t.Tensor, "tri point=1 3"]:
+) -> Float[t.Tensor, "tri point=1 *ch coord=3"]:
     # There is only one basis form W_012 = 2(∇λ_1 x ∇λ_2); note that this basis
     # function is a constant of barycentric coordinates, which means that the
     # interpolated 2-forms will be constant on each triangle.
@@ -80,37 +80,37 @@ def _bary_whitney_tri_cochain_2(
 
     # If the triangle is not in a canonical orientation, then the basis form
     # needs a sign correction given by tri_orientations.
-    form_2: Float[t.Tensor, "tri point=1 coord=3"] = t.einsum(
-        "tc,t,t->tc", basis, tri_orientations, cochain_2
+    form_2: Float[t.Tensor, "tri *ch coord=3"] = t.einsum(
+        "tc,t,t...->t...c", basis, tri_orientations, cochain_2
     ).view(-1, 1, 3)
 
-    return form_2
+    return form_2.unsqueeze(1)
 
 
 def _bary_whitney_tet_cochain_0(
-    cochain_0: Float[t.Tensor, " vert"],
+    cochain_0: Float[t.Tensor, " vert *ch"],
     tets: Integer[t.LongTensor, "tet 4"],
     bary_coords: Float[t.Tensor, "point 4"],
-) -> Float[t.Tensor, "tet point 1"]:
+) -> Float[t.Tensor, "tet point *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2, 3.
     basis: Float[t.Tensor, "point vert=4"] = bary_coords
 
-    cochain_0_at_vert_faces: Float[t.Tensor, "tet vert=4"] = cochain_0[tets]
+    cochain_0_at_vert_faces: Float[t.Tensor, "tet vert=4 *ch"] = cochain_0[tets]
 
-    form_0: Float[t.Tensor, "tet point 1"] = t.einsum(
-        "pv,tv->tp", basis, cochain_0_at_vert_faces
-    ).unsqueeze(-1)
+    form_0: Float[t.Tensor, "tet *ch point"] = t.einsum(
+        "pv,tv...->tp...", basis, cochain_0_at_vert_faces
+    )
 
-    return form_0
+    return form_0.unsqueeze(-1)
 
 
 def _bary_whitney_tet_cochain_1(
-    cochain_1: Float[t.Tensor, " edge"],
+    cochain_1: Float[t.Tensor, " edge *ch"],
     tet_edge_idx: Integer[t.LongTensor, "tet 6"],
     tet_edge_orientations: Float[t.Tensor, "tet 6"],
     bary_coords: Float[t.Tensor, "point 4"],
     bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
-) -> Float[t.Tensor, "tet point 3"]:
+) -> Float[t.Tensor, "tet point *ch coord=3"]:
     bary_coords_grad_shaped: Float[t.Tensor, "tet 1 vert=4 coord=3"] = (
         bary_coords_grad.view(-1, 1, 4, 3)
     )
@@ -130,24 +130,24 @@ def _bary_whitney_tet_cochain_1(
 
     # tet_edge_face_idx contains the index of edges 01, 02, 12, 13, 23, and 03 in
     # the list of canonical edges of the tet mesh.
-    cochain_1_at_edge_faces: Float[t.Tensor, "tet edge=6"] = cochain_1[tet_edge_idx]
+    cochain_1_at_edge_faces: Float[t.Tensor, "tet edge=6 *ch"] = cochain_1[tet_edge_idx]
 
     # If the edges are not in their canonical orientation, then the corresponding
     # basis form needs a sign correction given by tet_edge_orientations.
-    form_1: Float[t.Tensor, "tet point coord=3"] = t.einsum(
-        "tpec,te,te->tpc", basis, tet_edge_orientations, cochain_1_at_edge_faces
+    form_1 = t.einsum(
+        "tpec,te,te...->tp...c", basis, tet_edge_orientations, cochain_1_at_edge_faces
     )
 
     return form_1
 
 
 def _bary_whitney_tet_cochain_2(
-    cochain_2: Float[t.Tensor, " tri"],
+    cochain_2: Float[t.Tensor, " tri *ch"],
     tet_tri_idx: Integer[t.LongTensor, "tet 4"],
     tet_tri_orientations: Float[t.Tensor, "tet 4"],
     bary_coords: Float[t.Tensor, "point 4"],
     bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
-) -> Float[t.Tensor, "tet point 3"]:
+) -> Float[t.Tensor, "tet point *ch coord=3"]:
     bary_coords_grad_shaped: Float[t.Tensor, "tet 1 vert=4 coord=3"] = (
         bary_coords_grad.view(-1, 1, 4, 3)
     )
@@ -188,18 +188,18 @@ def _bary_whitney_tet_cochain_2(
 
     # If the triangles are not in their canonical orientation, then the corresponding
     # basis form needs a sign correction given by tet_edge_orientations.
-    form_2: Float[t.Tensor, "tet point coord=3"] = t.einsum(
-        "tpec,te,te->tpc", basis, tet_tri_orientations, cochain_2_at_tri_faces
+    form_2 = t.einsum(
+        "tpec,te,te...->tp...c", basis, tet_tri_orientations, cochain_2_at_tri_faces
     )
 
     return form_2
 
 
 def _bary_whitney_tet_cochain_3(
-    cochain_3: Float[t.Tensor, " tet"],
+    cochain_3: Float[t.Tensor, " tet *ch"],
     tet_signed_vols: Float[t.Tensor, " tet"],
     tet_orientations: Float[t.Tensor, " tet"],
-) -> Float[t.Tensor, "tet point=1 coord=1"]:
+) -> Float[t.Tensor, "tet point=1 *ch coord=1"]:
     # There is only one basis form W_0123 = 1/vol; note that this basis
     # function is a constant of barycentric coordinates, which means that the
     # interpolated 3-forms will be constant on each tet.
@@ -207,19 +207,19 @@ def _bary_whitney_tet_cochain_3(
 
     # If the tet is not in a canonical orientation, then the basis form
     # needs a sign correction given by tet_orientations.
-    form_3: Float[t.Tensor, "tet point=1 coord=1"] = (
-        basis * tet_orientations * cochain_3
-    ).view(-1, 1, 1)
+    form_3: Float[t.Tensor, " tet *ch"] = t.einsum(
+        "t,t,t...->t...", basis, tet_orientations, cochain_3
+    )
 
-    return form_3
+    return form_3.unsqueeze(1).unsqueeze(-1)
 
 
 def _bary_whitney_tri(
     k: int,
-    k_cochain: Float[t.Tensor, " simp"],
+    k_cochain: Float[t.Tensor, " simp *ch"],
     bary_coords: Float[t.Tensor, "point bary"],
     mesh: SimplicialComplex,
-):
+) -> Float[t.Tensor, "tri point *ch coord"]:
     if k in [1, 2]:
         tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris).view(-1, 1, 1)
         d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
@@ -254,10 +254,10 @@ def _bary_whitney_tri(
 
 def _bary_whitney_tet(
     k: int,
-    k_cochain: Float[t.Tensor, " simp"],
+    k_cochain: Float[t.Tensor, " simp *ch"],
     bary_coords: Float[t.Tensor, "point bary"],
     mesh: SimplicialComplex,
-):
+) -> Float[t.Tensor, "tet point *ch coord"]:
     if k in [1, 2]:
         tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets).view(
             -1, 1, 1
@@ -302,10 +302,10 @@ def _bary_whitney_tet(
 
 def barycentric_whitney_map(
     k: int,
-    k_cochain: Float[t.Tensor, " simp"],
+    k_cochain: Float[t.Tensor, " simp *ch"],
     bary_coords: Float[t.Tensor, "point bary"],
     mesh: SimplicialComplex,
-):
+) -> Float[t.Tensor, "top_sim point *ch coord"]:
     match mesh.dim:
         case 2:
             return _bary_whitney_tri(k, k_cochain, bary_coords, mesh)
