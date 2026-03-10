@@ -1,10 +1,20 @@
 import torch as t
 from jaxtyping import Float, Integer
 
+from ..complex import SimplicialComplex
+from ..geometry.tet.tet_geometry import (
+    d_tet_signed_vols_d_vert_coords,
+    get_tet_signed_vols,
+)
+from ..geometry.tri.tri_geometry import (
+    compute_d_tri_areas_d_vert_coords,
+    compute_tri_areas,
+)
+
 
 def _bary_whitney_tri_cochain_0(
-    tris: Integer[t.LongTensor, "tri 3"],
     cochain_0: Float[t.Tensor, " vert"],
+    tris: Integer[t.LongTensor, "tri 3"],
     bary_coords: Float[t.Tensor, "point 3"],
 ) -> Float[t.Tensor, "tri point coord=1"]:
     # W_i = λ_i for i = 0, 1, 2.
@@ -20,11 +30,11 @@ def _bary_whitney_tri_cochain_0(
 
 
 def _bary_whitney_tri_cochain_1(
-    bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
+    cochain_1: Float[t.Tensor, " edge"],
     tri_edge_idx: Integer[t.LongTensor, "tri 3"],
     tri_edge_orientations: Float[t.Tensor, "tri 3"],
-    cochain_1: Float[t.Tensor, " edge"],
     bary_coords: Float[t.Tensor, "point 3"],
+    bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
 ) -> Float[t.Tensor, "tri point 3"]:
     bary_coords_grad_shaped: Float[t.Tensor, "tri 1 vert=3 coord=3"] = (
         bary_coords_grad.view(-1, 1, 3, 3)
@@ -57,9 +67,9 @@ def _bary_whitney_tri_cochain_1(
 
 
 def _bary_whitney_tri_cochain_2(
-    bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
-    tri_orientations: Float[t.Tensor, " tri"],
     cochain_2: Float[t.Tensor, " tri"],
+    tri_orientations: Float[t.Tensor, " tri"],
+    bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
 ) -> Float[t.Tensor, "tri point=1 3"]:
     # There is only one basis form W_012 = 2(∇λ_1 x ∇λ_2); note that this basis
     # function is a constant of barycentric coordinates, which means that the
@@ -78,8 +88,8 @@ def _bary_whitney_tri_cochain_2(
 
 
 def _bary_whitney_tet_cochain_0(
-    tets: Integer[t.LongTensor, "tet 4"],
     cochain_0: Float[t.Tensor, " vert"],
+    tets: Integer[t.LongTensor, "tet 4"],
     bary_coords: Float[t.Tensor, "point 4"],
 ) -> Float[t.Tensor, "tet point 1"]:
     # W_i = λ_i for i = 0, 1, 2, 3.
@@ -95,11 +105,11 @@ def _bary_whitney_tet_cochain_0(
 
 
 def _bary_whitney_tet_cochain_1(
-    bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
+    cochain_1: Float[t.Tensor, " edge"],
     tet_edge_idx: Integer[t.LongTensor, "tet 6"],
     tet_edge_orientations: Float[t.Tensor, "tet 6"],
-    cochain_1: Float[t.Tensor, " edge"],
     bary_coords: Float[t.Tensor, "point 4"],
+    bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
 ) -> Float[t.Tensor, "tet point 3"]:
     bary_coords_grad_shaped: Float[t.Tensor, "tet 1 vert=4 coord=3"] = (
         bary_coords_grad.view(-1, 1, 4, 3)
@@ -132,11 +142,11 @@ def _bary_whitney_tet_cochain_1(
 
 
 def _bary_whitney_tet_cochain_2(
-    bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
+    cochain_2: Float[t.Tensor, " tri"],
     tet_tri_idx: Integer[t.LongTensor, "tet 4"],
     tet_tri_orientations: Float[t.Tensor, "tet 4"],
-    cochain_2: Float[t.Tensor, " tri"],
     bary_coords: Float[t.Tensor, "point 4"],
+    bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
 ) -> Float[t.Tensor, "tet point 3"]:
     bary_coords_grad_shaped: Float[t.Tensor, "tet 1 vert=4 coord=3"] = (
         bary_coords_grad.view(-1, 1, 4, 3)
@@ -186,9 +196,9 @@ def _bary_whitney_tet_cochain_2(
 
 
 def _bary_whitney_tet_cochain_3(
+    cochain_3: Float[t.Tensor, " tet"],
     tet_signed_vols: Float[t.Tensor, " tet"],
     tet_orientations: Float[t.Tensor, " tet"],
-    cochain_3: Float[t.Tensor, " tet"],
 ) -> Float[t.Tensor, "tet point=1 coord=1"]:
     # There is only one basis form W_0123 = 1/vol; note that this basis
     # function is a constant of barycentric coordinates, which means that the
@@ -202,3 +212,104 @@ def _bary_whitney_tet_cochain_3(
     ).view(-1, 1, 1)
 
     return form_3
+
+
+def _bary_whitney_tri(
+    k: int,
+    k_cochain: Float[t.Tensor, " simp"],
+    bary_coords: Float[t.Tensor, "point bary"],
+    mesh: SimplicialComplex,
+):
+    if k in [1, 2]:
+        tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris).view(-1, 1, 1)
+        d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
+            mesh.vert_coords, mesh.tris
+        )
+        bary_coords_grad: Float[t.Tensor, "tri 3 3"] = (
+            d_tri_areas_d_vert_coords / tri_areas
+        )
+
+    match k:
+        case 0:
+            return _bary_whitney_tri_cochain_0(
+                cochain_0=k_cochain, tris=mesh.tris, bary_coords=bary_coords
+            )
+        case 1:
+            return _bary_whitney_tri_cochain_1(
+                cochain_1=k_cochain,
+                tri_edge_idx=mesh.tri_edge_idx,
+                tri_edge_orientations=mesh.tri_edge_orientations,
+                bary_coords=bary_coords,
+                bary_coords_grad=bary_coords_grad,
+            )
+        case 2:
+            return _bary_whitney_tri_cochain_2(
+                cochain_2=k_cochain,
+                tri_orientations=mesh.tri_orientations,
+                bary_coords_grad=bary_coords_grad,
+            )
+        case _:
+            raise ValueError()
+
+
+def _bary_whitney_tet(
+    k: int,
+    k_cochain: Float[t.Tensor, " simp"],
+    bary_coords: Float[t.Tensor, "point bary"],
+    mesh: SimplicialComplex,
+):
+    if k in [1, 2]:
+        tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets).view(
+            -1, 1, 1
+        )
+        d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
+            mesh.vert_coords, mesh.tets
+        )
+        bary_coords_grad: Float[t.Tensor, "tet 4 3"] = (
+            d_signed_vols_d_vert_coords / tet_signed_vols
+        )
+
+    match k:
+        case 0:
+            return _bary_whitney_tet_cochain_0(
+                cochain_0=k_cochain, tets=mesh.tets, bary_coords=bary_coords
+            )
+        case 1:
+            return _bary_whitney_tet_cochain_1(
+                cochain_1=k_cochain,
+                tet_edge_idx=mesh.tet_edge_idx,
+                tet_edge_orientations=mesh.tet_edge_orientations,
+                bary_coords=bary_coords,
+                bary_coords_grad=bary_coords_grad,
+            )
+        case 2:
+            return _bary_whitney_tet_cochain_2(
+                cochain_2=k_cochain,
+                tet_tri_idx=mesh.tet_tri_idx,
+                tet_tri_orientations=mesh.tet_tri_orientations,
+                bary_coords=bary_coords,
+                bary_coords_grad=bary_coords_grad,
+            )
+        case 3:
+            return _bary_whitney_tet_cochain_3(
+                cochain_3=k_cochain,
+                tet_signed_vols=tet_signed_vols,
+                tet_orientations=mesh.tet_orientations,
+            )
+        case _:
+            raise ValueError()
+
+
+def barycentric_whitney_map(
+    k: int,
+    k_cochain: Float[t.Tensor, " simp"],
+    bary_coords: Float[t.Tensor, "point bary"],
+    mesh: SimplicialComplex,
+):
+    match mesh.dim:
+        case 2:
+            return _bary_whitney_tri(k, k_cochain, bary_coords, mesh)
+        case 3:
+            return _bary_whitney_tet(k, k_cochain, bary_coords, mesh)
+        case _:
+            raise ValueError()

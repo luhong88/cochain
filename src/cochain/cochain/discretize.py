@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...utils import quadrature
+from ..utils import quadrature
 
 
 class DeRhamMap:

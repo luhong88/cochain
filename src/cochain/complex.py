@@ -8,6 +8,7 @@ from jaxtyping import Bool, Float, Integer
 
 from .sparse.operators import BaseOperator, SparseOperator
 from .topology import boundaries, coboundaries, tet_topology, tri_topology
+from .utils.perm_parity import compute_lex_rel_orient
 
 
 def _is_tensor_like(obj: Any) -> bool:
@@ -159,12 +160,20 @@ class SimplicialComplex:
         return tet_topology.get_tri_face_orientations(self.tets)
 
     @cached_property
+    def tet_orientations(self) -> Float[t.Tensor, " tet"]:
+        return compute_lex_rel_orient(self.tets)
+
+    @cached_property
     def tri_edge_idx(self) -> Integer[t.LongTensor, "tri 3"]:
         return tri_topology.get_edge_face_idx(self.tris, self.edges)
 
     @cached_property
     def tri_edge_orientations(self) -> Float[t.Tensor, "tri 3"]:
         return tri_topology.get_edge_face_orientations(self.tris)
+
+    @cached_property
+    def tri_orientations(self) -> Float[t.Tensor, " tri"]:
+        return compute_lex_rel_orient(self.tris)
 
     # TODO: write test for this method
     def is_pure(self) -> bool:
