@@ -1,22 +1,25 @@
 import torch as t
 from jaxtyping import Float, Integer
 
+from ..complex import SimplicialComplex
 from ..utils import quadrature
 
 
 class DeRhamMap:
     def __init__(
         self,
+        mesh: SimplicialComplex,
         k: int,
-        degree: int,
+        quad_degree: int,
         allow_neg_weights: bool = True,
     ):
         """
         For 0-form, the de Rham map is equivalent to sampling the 0-form (scalar
         function) at the vertex positions; therefore, only k = 1, 2, or 3 are supported.
         """
+        self.mesh = mesh
         self.k = k
-        self.degree = degree
+        self.degree = quad_degree
         self.allow_neg_weights = allow_neg_weights
 
         self.ref_barys: Float[t.Tensor, "point vert"]
@@ -34,10 +37,9 @@ class DeRhamMap:
 
     def _get_quad_rule(
         self,
-        vert_coords: Float[t.Tensor, "vert 3"],
     ):
-        dtype = vert_coords.dtype
-        device = vert_coords.device
+        dtype = self.mesh.vert_coords.dtype
+        device = self.mesh.vert_coords.device
 
         ref_barys, weights = self.quad(dtype, device).get_rule(
             self.degree, allow_neg_weights=self.allow_neg_weights
@@ -48,11 +50,9 @@ class DeRhamMap:
 
     def sample_points(
         self,
-        vert_coords: Float[t.Tensor, "vert 3"],
-        k_simps: Integer[t.LongTensor, "simp vert"],
     ) -> Float[t.Tensor, "simp point 3"]:
         if not hasattr(self, "ref_barys"):
-            self._get_quad_rule(vert_coords)
+            self._get_quad_rule()
 
         # The barycentric coordinates in ref_barys provide the weights for the
         # linear combination of the simplex vertex coordinates to identify
@@ -60,23 +60,21 @@ class DeRhamMap:
         # for the reference and physical simplices.
 
         # (simp, vert, coord), (point, vert) -> (simp, point, coord)
-        simp_vert_coords = vert_coords[k_simps]
+        simp_vert_coords = self.mesh.vert_coords[self.mesh.simplices[self.k]]
         sampled_points = t.einsum("svc,pv->spc", simp_vert_coords, self.ref_barys)
 
         return sampled_points
 
     def discretize(
         self,
-        vert_coords: Float[t.Tensor, "vert 3"],
-        k_simps: Integer[t.LongTensor, "simp vert"],
         k_forms: Float[t.Tensor, "simp point *covariant"],
     ):
         if not hasattr(self, "weights"):
-            self._get_quad_rule(vert_coords)
+            self._get_quad_rule()
 
         # Compute the Jacobian of the ref -> phys transformations (i.e., the
         # pushforward map).
-        simp_vert_coords = vert_coords[k_simps]
+        simp_vert_coords = self.mesh.vert_coords[self.mesh.simplices[self.k]]
 
         # Pick the first vertex of each simplex as the point of origin in the ref
         # simplex and compute the jacobian as the matrix of the edge (column)
