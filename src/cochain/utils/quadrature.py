@@ -9,7 +9,7 @@ from jaxtyping import Float
 @dataclass
 class GaussLegendre:
     dtype: t.dtype = t.float64
-    device: t.device = t.cpu
+    device: t.device = t.device("cpu")
 
     def get_rule(
         self, degree: int, *args, **kwargs
@@ -81,7 +81,7 @@ class Dunavant:
     """
 
     dtype: t.dtype = t.float64
-    device: t.device = t.cpu
+    device: t.device = t.device("cpu")
 
     def get_rule(
         self, degree: int, *args, **kwargs
@@ -221,7 +221,7 @@ class Keast:
     """
 
     dtype: t.dtype = t.float64
-    device: t.device = t.cpu
+    device: t.device = t.device("cpu")
 
     def get_rule(
         self, degree: int, allow_neg_weights: bool = True, *args, **kwargs
