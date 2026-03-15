@@ -255,7 +255,7 @@ def _bary_whitney_tri(
 def _bary_whitney_tet(
     k: int,
     k_cochain: Float[t.Tensor, " simp *ch"],
-    bary_coords: Float[t.Tensor, "point bary"],
+    bary_coords: Float[t.Tensor, "point coord"],
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "tet point *ch coord"]:
     if k in [1, 2, 3]:
@@ -305,7 +305,7 @@ def _bary_whitney_tet(
 def barycentric_whitney_map(
     k: int,
     k_cochain: Float[t.Tensor, " simp *ch"],
-    bary_coords: Float[t.Tensor, "point bary"],
+    bary_coords: Float[t.Tensor, "point coord"],
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "top_sim point *ch coord"]:
     """
@@ -326,3 +326,62 @@ def barycentric_whitney_map(
             return _bary_whitney_tet(k, k_cochain, bary_coords, mesh)
         case _:
             raise ValueError()
+
+
+def _bary_embed(
+    m: int,
+    k_simps_bary_coords: Float[t.Tensor, "point coord"],
+    k_simps_local_vert_idx: Integer[t.LongTensor, "k_simp vert"],
+) -> Float[t.Tensor, "n_k_simp point m+1"]:
+    """
+    Embed barycentric coordinates for a k-simplex onto the barycentric coordinates
+    of the k-dimensional faces of a higher m-simplex.
+
+    Example:
+
+    Given a two-point quadrature rule on a 1-simplex
+    ```
+    k_simps_bary_coords = [
+        [0.2, 0.8],
+        [0.8, 0.2]
+    ]
+    ```
+    and a 2-simplex with edges (represented by local vertex index)
+    ```
+    k_simps_local_vert_idx = [[0, 1], [0, 2], [1, 2]]
+    ```
+    To embed the 1-simplex barycentric coordinates onto the 1-faces 01, 02, and 12
+    of a 2-simplex (m = 2), the function returns
+    ```
+    [[[0.2, 0.8, 0.0],
+      [0.8, 0.2, 0.0]],
+
+     [[0.2, 0.0, 0.8],
+      [0.8, 0.0, 0.2]],
+
+     [[0.0, 0.2, 0.8],
+      [0.0, 0.8, 0.2]]]
+    ```
+    """
+    device = k_simps_bary_coords.device
+    dtype = k_simps_bary_coords.dtype
+
+    n_pts = k_simps_bary_coords.size(0)
+    n_k_simps = k_simps_local_vert_idx.size(0)
+    n_coords_embedded = m + 1
+
+    # Prepare for scatter by casting all tensors to the target shape
+    # (n_k_simps, n_pts, n_coords_embedded)
+    bary_coords_embedded = t.zeros(
+        n_k_simps,
+        n_pts,
+        n_coords_embedded,
+        dtype=dtype,
+        device=device,
+    )
+    src = k_simps_bary_coords.unsqueeze(0).expand(n_k_simps, -1, -1)
+    idx = k_simps_local_vert_idx.unsqueeze(1).expand(-1, n_pts, -1)
+
+    bary_coords_embedded.scatter_(dim=2, index=idx, src=src)
+
+    return bary_coords_embedded
