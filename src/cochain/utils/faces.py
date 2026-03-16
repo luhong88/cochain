@@ -20,9 +20,13 @@ def enumerate_faces(
     )
 
 
+# TODO: depreciate in favor of enumerate_faces()
 def enumerate_unique_faces(
     simp_dim: int, face_dim: int, device: t.device
 ) -> Integer[t.LongTensor, "face vert"]:
+    if face_dim > simp_dim:
+        raise ValueError()
+
     match simp_dim:
         case 2:
             match face_dim:
@@ -32,13 +36,15 @@ def enumerate_unique_faces(
                     return t.tensor(
                         [[0, 1], [0, 2], [1, 2]], dtype=t.long, device=device
                     )
-                case _:
-                    raise ValueError()
+                case 2:
+                    return t.tensor([[0, 1, 2]], dtype=t.long, device=device)
+
         case 3:
             match face_dim:
                 case 0:
                     return t.tensor([[0], [1], [2], [3]], dtype=t.long, device=device)
                 case 1:
+                    # TODO: check reason for non-lex ordering of vertices
                     return t.tensor(
                         [[0, 1], [0, 2], [1, 2], [1, 3], [2, 3], [0, 3]],
                         dtype=t.long,
@@ -54,5 +60,7 @@ def enumerate_unique_faces(
                         dtype=t.long,
                         device=device,
                     )
+                case 3:
+                    return t.tensor([[0, 1, 2, 3]], dtype=t.long, device=device)
                 case _:
                     return ValueError()

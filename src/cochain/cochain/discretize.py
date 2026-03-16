@@ -1,5 +1,5 @@
 import torch as t
-from jaxtyping import Float, Integer
+from jaxtyping import Float
 
 from ..complex import SimplicialComplex
 from ..utils import quadrature
@@ -8,9 +8,9 @@ from ..utils import quadrature
 class DeRhamMap:
     def __init__(
         self,
-        mesh: SimplicialComplex,
         k: int,
         quad_degree: int,
+        mesh: SimplicialComplex,
         allow_neg_weights: bool = True,
     ):
         """

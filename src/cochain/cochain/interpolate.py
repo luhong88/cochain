@@ -1,3 +1,5 @@
+from typing import Literal
+
 import torch as t
 from jaxtyping import Float, Integer
 
@@ -10,6 +12,8 @@ from ..geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
+from ..utils.faces import enumerate_unique_faces
+from ..utils.search import simplex_search
 
 
 def _bary_whitney_tri_cochain_0(
@@ -46,11 +50,14 @@ def _bary_whitney_tri_cochain_1(
 
     # W_ij = λ_i∇λ_j - λ_j∇λ_i for (i, j) = (0, 1), (0, 2), (1, 2)
     # Note that i, j switch positions for the second term.
+    local_edge_idx = enumerate_unique_faces(
+        simp_dim=2, face_dim=1, device=bary_coords.device
+    )
     basis: Float[t.Tensor, "tri point edge=3 coord=3"] = (
-        bary_coords_shaped[:, :, [0, 0, 1]]
-        * bary_coords_grad_shaped[:, :, [1, 2, 2], :]
-        - bary_coords_shaped[:, :, [1, 2, 2]]
-        * bary_coords_grad_shaped[:, :, [0, 0, 1], :]
+        bary_coords_shaped[:, :, local_edge_idx[:, 0]]
+        * bary_coords_grad_shaped[:, :, local_edge_idx[:, 1], :]
+        - bary_coords_shaped[:, :, local_edge_idx[:, 1]]
+        * bary_coords_grad_shaped[:, :, local_edge_idx[:, 0], :]
     )
 
     # tri_edge_face_idx contains the index of edges 01, 02, and 12 in the list of
@@ -121,11 +128,14 @@ def _bary_whitney_tet_cochain_1(
 
     # W_ij = λ_i∇λ_j - λ_j∇λ_i for ij = 01, 02, 12, 13, 23, 03
     # Note that i, j switch positions for the second term.
+    local_edge_idx = enumerate_unique_faces(
+        simp_dim=3, face_dim=1, device=bary_coords.device
+    )
     basis: Float[t.Tensor, "tet point edge=6 coord=3"] = (
-        bary_coords_shaped[:, :, [0, 0, 1, 1, 2, 0]]
-        * bary_coords_grad_shaped[:, :, [1, 2, 2, 3, 3, 3]]
-        - bary_coords_shaped[:, :, [1, 2, 2, 3, 3, 3]]
-        * bary_coords_grad_shaped[:, :, [0, 0, 1, 1, 2, 0]]
+        bary_coords_shaped[:, :, local_edge_idx[:, 0]]
+        * bary_coords_grad_shaped[:, :, local_edge_idx[:, 1]]
+        - bary_coords_shaped[:, :, local_edge_idx[:, 1]]
+        * bary_coords_grad_shaped[:, :, local_edge_idx[:, 0]]
     )
 
     # tet_edge_face_idx contains the index of edges 01, 02, 12, 13, 23, and 03 in
@@ -158,9 +168,12 @@ def _bary_whitney_tet_cochain_2(
 
     # W_ijk = 2(λ_i ∇λ_jx∇λ_k + λ_j ∇λ_kx∇λ_i + λ_k ∇λ_ix∇ λ_j)
     # for ijk in 123, 032, 013, 021
-    perm_i = [1, 0, 0, 0]
-    perm_j = [2, 3, 1, 2]
-    perm_k = [3, 2, 3, 1]
+    local_tri_idx = enumerate_unique_faces(
+        simp_dim=3, face_dim=2, device=bary_coords.device
+    )
+    perm_i = local_tri_idx[:, 0]
+    perm_j = local_tri_idx[:, 1]
+    perm_k = local_tri_idx[:, 2]
     basis: Float[t.Tensor, "tet point tri=4 coord=3"] = 2.0 * (
         bary_coords_shaped[:, :, perm_i]
         * t.cross(
@@ -302,32 +315,6 @@ def _bary_whitney_tet(
             raise ValueError()
 
 
-def barycentric_whitney_map(
-    k: int,
-    k_cochain: Float[t.Tensor, " simp *ch"],
-    bary_coords: Float[t.Tensor, "point coord"],
-    mesh: SimplicialComplex,
-) -> Float[t.Tensor, "top_sim point *ch coord"]:
-    """
-    This function implements an "element-local" version of the Whitney map for
-    interpolating discrete k-cochains, in that it maps the k-cochains to k-forms
-    evaluated at a fixed set of local barycentric coordinates across all top-level
-    simplices, which is useful for numerical quadrature. Note that this function
-    does not perform global spatial interpolation (i.e., it cannot directly evaluate
-    the k-form at arbitrary cartesian coordinates on the mesh.
-
-    The input k-cochain is allowed to have an arbitrary number of trailing
-    channel/batch dimensions.
-    """
-    match mesh.dim:
-        case 2:
-            return _bary_whitney_tri(k, k_cochain, bary_coords, mesh)
-        case 3:
-            return _bary_whitney_tet(k, k_cochain, bary_coords, mesh)
-        case _:
-            raise ValueError()
-
-
 def _bary_embed(
     m: int,
     k_simps_bary_coords: Float[t.Tensor, "point coord"],
@@ -367,21 +354,140 @@ def _bary_embed(
     dtype = k_simps_bary_coords.dtype
 
     n_pts = k_simps_bary_coords.size(0)
-    n_k_simps = k_simps_local_vert_idx.size(0)
+    n_k_faces = k_simps_local_vert_idx.size(0)
     n_coords_embedded = m + 1
 
     # Prepare for scatter by casting all tensors to the target shape
     # (n_k_simps, n_pts, n_coords_embedded)
     bary_coords_embedded = t.zeros(
-        n_k_simps,
+        n_k_faces,
         n_pts,
         n_coords_embedded,
         dtype=dtype,
         device=device,
     )
-    src = k_simps_bary_coords.unsqueeze(0).expand(n_k_simps, -1, -1)
+    src = k_simps_bary_coords.unsqueeze(0).expand(n_k_faces, -1, -1)
     idx = k_simps_local_vert_idx.unsqueeze(1).expand(-1, n_pts, -1)
 
     bary_coords_embedded.scatter_(dim=2, index=idx, src=src)
 
     return bary_coords_embedded
+
+
+def _barycentric_whitney_map_interior(
+    k: int,
+    k_cochain: Float[t.Tensor, " simp *ch"],
+    bary_coords: Float[t.Tensor, "point coord"],
+    mesh: SimplicialComplex,
+) -> Float[t.Tensor, "top_simp point *ch coord"]:
+    match mesh.dim:
+        case 2:
+            return _bary_whitney_tri(k, k_cochain, bary_coords, mesh)
+        case 3:
+            return _bary_whitney_tet(k, k_cochain, bary_coords, mesh)
+        case _:
+            raise ValueError()
+
+
+def _barycentric_whitney_map_boundary(
+    k: int,
+    k_cochain: Float[t.Tensor, " k_simp *ch"],
+    bary_coords: Float[t.Tensor, "point coord"],
+    mesh: SimplicialComplex,
+) -> Float[t.Tensor, "k_simp point *ch coord"]:
+    local_face_idx = enumerate_unique_faces(
+        simp_dim=mesh.dim, face_dim=k, device=mesh.vert_coords.device
+    )
+
+    # Perform barycentric coordinate embedding and then compute the whitney
+    # interpolation at the top simplex level.
+    bary_coords_embedded = _bary_embed(
+        m=mesh.dim,
+        k_simps_bary_coords=bary_coords,
+        k_simps_local_vert_idx=local_face_idx,
+    )
+    n_k_faces, n_pts, _ = bary_coords_embedded.shape
+
+    k_forms = _barycentric_whitney_map_interior(
+        k, k_cochain, bary_coords_embedded.view(-1, mesh.dim + 1), mesh
+    )
+    k_forms_shaped: Float[t.Tensor, "top_simp*k_face point *ch coord"] = k_forms.view(
+        k_forms.shape[0] * n_k_faces, n_pts, *k_forms.shape[2:]
+    )
+
+    # Find the global indices of all k-faces.
+    # TODO: this is not ideal since we are repating topo calculations
+    all_faces: Integer[t.LongTensor, "top_simp*n_k_face k+1"] = mesh.simplices[
+        mesh.dim
+    ][:, local_face_idx].flatten(end_dim=-2)
+
+    global_face_idx: Integer[t.LongTensor, "top_simp*k_face point *ch coord"] = (
+        simplex_search(
+            key_simps=mesh.simplices[mesh.dim],
+            query_simps=all_faces,
+            sort_key_simp=False,
+            sort_key_vert=False,
+            sort_query_vert=True,
+            method="lex_sort",
+        )
+        .view(-1, *[1] * (k_forms_shaped.ndim - 1))
+        .expand_as(k_forms_shaped)
+    )
+
+    # For each unique/canonical k-simplex in the mesh, compute the average
+    # k-forms evaluated at the barycentric coordinates per top-level simplex.
+    # Another way to achieve the same result would be to find, for each canonical
+    # k-simplex, a representative top-level simplex that contains the k-simplex
+    # as a face, and use the k-forms evaluated on the representative. Topologically,
+    # the two approaches achieve the same results, but they differ geometrically,
+    # in that 1) the normal components of the interpolated k-forms are not constrained
+    # by the whitney map and thus the two approaches will give k-forms with different
+    # normal components on the k-simplices, and 2) the second approach is not
+    # safe for autograd since it doesn't correctly link each k-simplex to all of
+    # its top-level cofaces.
+    canon_k_forms: Float[t.Tensor, "k_simp point *ch coord"] = t.zeros(
+        (mesh.simplices[k].size(0), *k_forms_shaped.shape[1:]),
+        dtype=k_cochain.dtype,
+        device=k_cochain.device,
+    )
+    canon_k_forms.scatter_reduce_(
+        dim=0,
+        index=global_face_idx,
+        src=k_forms_shaped,
+        reduce="mean",
+        include_self=False,
+    )
+
+    return canon_k_forms
+
+
+def barycentric_whitney_map(
+    k: int,
+    k_cochain: Float[t.Tensor, " k_simp *ch"],
+    bary_coords: Float[t.Tensor, "point coord"],
+    mesh: SimplicialComplex,
+    mode: Literal["interior", "boundary"],
+) -> Float[t.Tensor, "simp point *ch coord"]:
+    """
+    This function implements an "element-local" version of the Whitney map for
+    interpolating discrete k-cochains, which is useful for numerical quadrature.
+
+    In the `interior` mode, the function maps the k-cochains to k-forms interpolated
+    at a fixed set of local barycentric coordinates across all top-level simplices;
+    in the `boundary` mode, the function maps the k-cochains to k-forms interpolated
+    at a fixed set of local barycentric coordinates across the k-simplices.
+
+    Note that this function does not perform global spatial interpolation (i.e.,
+    it cannot directly evaluate the k-form at arbitrary cartesian coordinates on
+    the mesh.)
+
+    The input k-cochain is allowed to have an arbitrary number of trailing
+    channel/batch dimensions.
+    """
+    match mode:
+        case "interior":
+            return _barycentric_whitney_map_interior(k, k_cochain, bary_coords, mesh)
+        case "boundary":
+            return _barycentric_whitney_map_boundary(k, k_cochain, bary_coords, mesh)
+        case _:
+            raise ValueError()
