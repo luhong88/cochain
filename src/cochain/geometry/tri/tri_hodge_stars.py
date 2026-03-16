@@ -63,7 +63,7 @@ def _star_1_barycentric(
     vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
     tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
     edges: Integer[t.LongTensor, "edge 2"] = tri_mesh.edges
-    tri_vert_coords: Float[t.Tensor, "tet 3 3"] = vert_coords[tris]
+    tri_vert_coords: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
 
     i, j, k = 0, 1, 2
 
@@ -72,13 +72,13 @@ def _star_1_barycentric(
     tri_barys: Float[t.Tensor, "tri 1 3"] = t.mean(
         tri_vert_coords, dim=-2, keepdim=True
     )
-    tri_edge_face_barys: Float[t.Tensor, "tet 3 3"] = t.mean(
+    tri_edge_face_barys: Float[t.Tensor, "tri 3 3"] = t.mean(
         tri_vert_coords[:, [[i, j], [i, k], [j, k]]],
         dim=-2,
     )
 
     dual_edges = tri_barys - tri_edge_face_barys
-    dual_edge_lens: Float[t.Tensor, "tet 4"] = t.linalg.norm(dual_edges, dim=-1)
+    dual_edge_lens: Float[t.Tensor, "tri 4"] = t.linalg.norm(dual_edges, dim=-1)
 
     # For each edge, find all tri containing the edge as a face, and sum together
     # the tri-edge pair dual edge lengths.
