@@ -9,6 +9,7 @@ description = "Differentiable Simplicial Computation."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "einops>=0.8.2",
     "jaxtyping>=0.3.3",
     "numpy>=2.3.4",
     "pytetwild>=0.1.1",
