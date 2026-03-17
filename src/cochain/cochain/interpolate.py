@@ -28,7 +28,7 @@ def _bary_whitney_tri_cochain_0(
     cochain_0_at_vert_faces: Float[t.Tensor, "tri vert=3 *ch"] = cochain_0[tris]
 
     form_0 = einsum(
-        "pt vert, tri vert ... -> tri pt ...", basis, cochain_0_at_vert_faces
+        basis, cochain_0_at_vert_faces, "pt vert, tri vert ... -> tri pt ..."
     )
 
     return rearrange(form_0, "tri pt ... -> tri pt ... 1")
@@ -65,10 +65,10 @@ def _bary_whitney_tri_cochain_1(
     # If the edges 01, 02, and 12 are not in their canonical orientation, then
     # the corresponding basis form needs a sign correction given by tri_edge_orientations.
     form_1 = einsum(
-        "tri pt edge coord, tri edge, tri eedge ... -> tri pt ... coord",
         basis,
         tri_edge_orientations,
         cochain_1_at_edge_faces,
+        "tri pt edge coord, tri edge, tri eedge ... -> tri pt ... coord",
     )
 
     return form_1
@@ -88,13 +88,8 @@ def _bary_whitney_tri_cochain_2(
 
     # If the triangle is not in a canonical orientation, then the basis form
     # needs a sign correction given by tri_orientations.
-    form_2 = (
-        einsum(
-            "tri coord, tri, tri ... -> tri ... coord",
-            basis,
-            tri_orientations,
-            cochain_2,
-        ),
+    form_2 = einsum(
+        basis, tri_orientations, cochain_2, "tri coord, tri, tri ... -> tri ... coord"
     )
 
     return rearrange(
@@ -114,7 +109,7 @@ def _bary_whitney_tet_cochain_0(
     cochain_0_at_vert_faces: Float[t.Tensor, "tet vert=4 *ch"] = cochain_0[tets]
 
     form_0 = einsum(
-        "pt vert, tet vert ... -> tet pt ...", basis, cochain_0_at_vert_faces
+        basis, cochain_0_at_vert_faces, "pt vert, tet vert ... -> tet pt ..."
     )
 
     return rearrange(form_0, "tet pt ... -> tet pt ... 1")
@@ -151,10 +146,10 @@ def _bary_whitney_tet_cochain_1(
     # If the edges are not in their canonical orientation, then the corresponding
     # basis form needs a sign correction given by tet_edge_orientations.
     form_1 = einsum(
-        "tet pt edge coord, tet edge, tet edge ... -> tet pt ... coord",
         basis,
         tet_edge_orientations,
         cochain_1_at_edge_faces,
+        "tet pt edge coord, tet edge, tet edge ... -> tet pt ... coord",
     )
 
     return form_1
@@ -207,11 +202,11 @@ def _bary_whitney_tet_cochain_2(
 
     # If the triangles are not in their canonical orientation, then the corresponding
     # basis form needs a sign correction given by tet_edge_orientations.
-    form_2 = t.einsum(
-        "tet pt tri coord, tet tri, tet tri... -> tet pt ... coord",
+    form_2 = einsum(
         basis,
         tet_tri_orientations,
         cochain_2_at_tri_faces,
+        "tet pt tri coord, tet tri, tet tri... -> tet pt ... coord",
     )
 
     return form_2
@@ -229,7 +224,7 @@ def _bary_whitney_tet_cochain_3(
 
     # If the tet is not in a canonical orientation, then the basis form
     # needs a sign correction given by tet_orientations.
-    form_3 = einsum("tet, tet, tet ... -> tet ...", basis, tet_orientations, cochain_3)
+    form_3 = einsum(basis, tet_orientations, cochain_3, "tet, tet, tet ... -> tet ...")
 
     return rearrange(form_3, "tet 1 ... 1")
 
