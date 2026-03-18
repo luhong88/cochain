@@ -41,7 +41,7 @@ def _bary_whitney_tri_cochain_1(
     bary_coords: Float[t.Tensor, "pt vert=3"],
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
 ) -> Float[t.Tensor, "tri pt *ch coord=3"]:
-    bary_coords_shaped = rearrange(bary_coords, "pt coord -> 1 pt vert 1")
+    bary_coords_shaped = rearrange(bary_coords, "pt vert -> 1 pt vert 1")
     bary_coords_grad_shaped = rearrange(
         bary_coords_grad, "tri vert coord -> tri 1 vert coord"
     )
@@ -436,7 +436,7 @@ def _barycentric_whitney_map_boundary(
 
     global_face_idx: Integer[t.LongTensor, "m_simp*k_face pt *ch coord"] = (
         simplex_search(
-            key_simps=mesh.simplices[m],
+            key_simps=mesh.simplices[k],
             query_simps=all_faces,
             sort_key_simp=False,
             sort_key_vert=False,
@@ -497,6 +497,12 @@ def barycentric_whitney_map(
     The input k-cochain is allowed to have an arbitrary number of trailing
     channel/batch dimensions.
     """
+
+    # If k is the dimension of the top level simplices, then the mode must be
+    # 'interior' regardless of user input
+    if k == mesh.dim:
+        mode = "interior"
+
     match mode:
         case "interior":
             return _barycentric_whitney_map_interior(k, k_cochain, bary_coords, mesh)

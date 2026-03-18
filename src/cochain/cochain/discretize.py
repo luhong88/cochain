@@ -1,5 +1,5 @@
 import torch as t
-from einops import einsum, rearrange, reduce, repeat
+from einops import einsum
 from jaxtyping import Float
 
 from ..complex import SimplicialComplex
