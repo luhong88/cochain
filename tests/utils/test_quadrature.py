@@ -1,4 +1,5 @@
-import random
+import itertools
+from math import factorial
 
 import pytest
 import torch as t
@@ -10,87 +11,108 @@ from cochain.utils import quadrature
     "dtype",
     [t.float32, t.float64],
 )
-def test_gauss_legendre_polynomial_deg_1(dtype, device):
+def test_GaussLegendre_polynomial_basis(dtype, device):
     """
-    A numerical quadrature on [0, 1] of degree 1 should integrate a linear function
-    f(x) = a*x + b exactly.
+    A numerical quadrature on a unit edge of degree k should integrate a polynomial
+    basis function λ_0^a * λ_1^b (a + b = k) exactly.
     """
-    a = random.random()
-    b = random.random()
+    for k in [1, 2, 3, 4, 5]:
+        quad = quadrature.GaussLegendre(dtype=dtype, device=device)
+        bc, w = quad.get_rule(degree=k)
 
-    int_true = t.tensor(0.5 * a + b, dtype=dtype, device=device)
+        for a, b in itertools.product(range(k + 1), repeat=2):
+            if a + b == k:
+                # Integrate the basis function over the ref edge using the
+                # magic formula
+                int_true = t.tensor(
+                    (factorial(a) * factorial(b)) / factorial(a + b + 1),
+                    dtype=dtype,
+                    device=device,
+                )
 
-    quad = quadrature.GaussLegendre(dtype=dtype, device=device)
-    bc, w = quad.get_rule(degree=1)
+                int_test = t.sum(w * (bc[:, 0] ** a * bc[:, 1] ** b))
 
-    int_test_1 = t.sum(w * (a * bc[:, 0] + b))
-    int_test_2 = t.sum(w * (a * (1.0 - bc[:, 1]) + b))
-
-    t.testing.assert_close(int_test_1, int_true)
-    t.testing.assert_close(int_test_2, int_true)
+                t.testing.assert_close(int_test, int_true)
 
 
 @pytest.mark.parametrize(
     "dtype",
     [t.float32, t.float64],
 )
-def test_gauss_legendre_polynomial_deg_3(dtype, device):
+def test_Dunavant_polynomial_basis(dtype, device):
     """
-    A numerical quadrature on [0, 1] of degree 3 should integrate a cubic function
-    f(x) = a*x^3 + b*x^2 + c*x + d exactly.
+    A numerical quadrature on a ref tri of degree k should integrate a polynomial
+    basis function λ_0^a * λ_1^b * λ_2^c (a + b + c = k) exactly.
     """
-    a = random.random()
-    b = random.random()
-    c = random.random()
-    d = random.random()
+    for k in [1, 2, 3, 4, 5]:
+        quad = quadrature.Dunavant(dtype=dtype, device=device)
+        bc, w = quad.get_rule(degree=k)
 
-    int_true = t.tensor(a / 4.0 + b / 3.0 + c / 2.0 + d, dtype=dtype, device=device)
+        for a, b, c in itertools.product(range(k + 1), repeat=3):
+            if a + b + c == k:
+                # Integrate the basis function over the ref triangle using the
+                # magic formula
+                int_true = t.tensor(
+                    (factorial(a) * factorial(b) * factorial(c))
+                    / factorial(a + b + c + 2),
+                    dtype=dtype,
+                    device=device,
+                )
 
-    quad = quadrature.GaussLegendre(dtype=dtype, device=device)
-    bc, w = quad.get_rule(degree=3)
+                # Multiply by 1/2 to account for ref tri area (recall that
+                # the weights from the quadrature rules are barycentric).
+                int_test = (
+                    t.sum(w * (bc[:, 0] ** a * bc[:, 1] ** b * bc[:, 2] ** c)) / 2.0
+                )
 
-    bc1 = bc[:, 0]
-    int_test_1 = t.sum(w * (a * bc1**3 + b * bc1**2 + c * bc1 + d))
-
-    bc2 = 1.0 - bc[:, 1]
-    int_test_2 = t.sum(w * (a * bc2**3 + b * bc2**2 + c * bc2 + d))
-
-    t.testing.assert_close(int_test_1, int_true)
-    t.testing.assert_close(int_test_2, int_true)
+                t.testing.assert_close(int_test, int_true)
 
 
 @pytest.mark.parametrize(
     "dtype",
     [t.float32, t.float64],
 )
-def test_gauss_legendre_polynomial_deg_5(dtype, device):
+def test_Keast_polynomial_basis(dtype, device):
     """
-    A numerical quadrature on [0, 1] of degree 5 should integrate a cubic function
-    f(x) = a*x^5 + b*x^4 + c*x^3 + d*x^2 + e*x + f exactly.
+    A numerical quadrature on a ref tet of degree k should integrate a polynomial
+    basis function λ_0^a * λ_1^b * λ_2^c * λ_3^d (a + b + c + d = k) exactly.
     """
-    a = random.random()
-    b = random.random()
-    c = random.random()
-    d = random.random()
-    e = random.random()
-    f = random.random()
+    for k, neg_weights in [
+        (1, False),
+        (2, False),
+        (3, True),
+        (3, False),
+        (4, True),
+        (4, False),
+        (5, False),
+    ]:
+        quad = quadrature.Keast(dtype=dtype, device=device)
+        bc, w = quad.get_rule(degree=k, allow_neg_weights=neg_weights)
 
-    int_true = t.tensor(
-        a / 6.0 + b / 5.0 + c / 4.0 + d / 3.0 + e / 2.0 + f, dtype=dtype, device=device
-    )
+        for a, b, c, d in itertools.product(range(k + 1), repeat=4):
+            if a + b + c + d == k:
+                # Integrate the basis function over the ref tet using the
+                # magic formula
+                int_true = t.tensor(
+                    (factorial(a) * factorial(b) * factorial(c) * factorial(d))
+                    / factorial(a + b + c + d + 3),
+                    dtype=dtype,
+                    device=device,
+                )
 
-    quad = quadrature.GaussLegendre(dtype=dtype, device=device)
-    bc, w = quad.get_rule(degree=5)
+                # Multiply by 1/6 to account for ref tet volume (recall that
+                # the weights from the quadrature rules are barycentric).
+                int_test = (
+                    t.sum(
+                        w
+                        * (
+                            bc[:, 0] ** a
+                            * bc[:, 1] ** b
+                            * bc[:, 2] ** c
+                            * bc[:, 3] ** d
+                        )
+                    )
+                    / 6.0
+                )
 
-    bc1 = bc[:, 0]
-    int_test_1 = t.sum(
-        w * (a * bc1**5 + b * bc1**4 + c * bc1**3 + d * bc1**2 + e * bc1 + f)
-    )
-
-    bc2 = 1.0 - bc[:, 1]
-    int_test_2 = t.sum(
-        w * (a * bc2**5 + b * bc2**4 + c * bc2**3 + d * bc2**2 + e * bc2 + f)
-    )
-
-    t.testing.assert_close(int_test_1, int_true)
-    t.testing.assert_close(int_test_2, int_true)
+                t.testing.assert_close(int_test, int_true)
