@@ -462,6 +462,7 @@ def _barycentric_whitney_map_boundary(
 ) -> Float[t.Tensor, "k_simp pt *ch coord"]:
     m = mesh.dim
     n_k_simps = mesh.simplices[k].size(0)
+    n_pts = bary_coords.size(-2)
 
     local_face_idx: Integer[t.LongTensor, "k_face k_vert"] = enumerate_unique_faces(
         simp_dim=m, face_dim=k, device=mesh.vert_coords.device
@@ -490,16 +491,19 @@ def _barycentric_whitney_map_boundary(
         n_k_simps=n_k_simps,
     )
 
-    k_forms: Float[t.Tensor, "m_simp*k_face pt *ch coord"] = (
-        _barycentric_whitney_map_interior(
-            k,
-            k_cochain,
-            rearrange(
-                bary_coords_embedded,
-                "m_simp k_face pt m_vert -> (m_simp k_face) pt m_vert",
-            ),
-            mesh,
-        )
+    k_forms = _barycentric_whitney_map_interior(
+        k,
+        k_cochain,
+        rearrange(
+            bary_coords_embedded,
+            "m_simp k_face pt m_vert -> m_simp (k_face pt) m_vert",
+        ),
+        mesh,
+    )
+    k_forms_shaped = rearrange(
+        k_forms,
+        "m_simp (k_face pt) ... coord -> (m_simp k_face) pt ... coord",
+        pt=n_pts,
     )
 
     # For each unique/canonical k-simplex in the mesh, compute the average
@@ -514,18 +518,20 @@ def _barycentric_whitney_map_boundary(
     # safe for autograd since it doesn't correctly link each k-simplex to all of
     # its top-level cofaces.
     global_face_idx_shaped: Integer[t.LongTensor, "m_simp*k_face pt *ch coord"] = (
-        global_face_idx.flatten().view(-1, *[1] * (k_forms.ndim - 1)).expand_as(k_forms)
+        global_face_idx.flatten()
+        .view(-1, *[1] * (k_forms_shaped.ndim - 1))
+        .expand_as(k_forms_shaped)
     )
 
     canon_k_forms: Float[t.Tensor, "k_simp pt *ch coord"] = t.zeros(
-        (n_k_simps, *k_forms.shape[1:]),
+        (n_k_simps, *k_forms_shaped.shape[1:]),
         dtype=k_cochain.dtype,
         device=k_cochain.device,
     )
     canon_k_forms.scatter_reduce_(
         dim=0,
         index=global_face_idx_shaped,
-        src=k_forms,
+        src=k_forms_shaped,
         reduce="mean",
         include_self=False,
     )
