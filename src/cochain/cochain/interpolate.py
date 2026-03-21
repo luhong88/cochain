@@ -14,21 +14,22 @@ from ..geometry.tri.tri_geometry import (
     compute_tri_areas,
 )
 from ..utils.faces import enumerate_unique_faces
+from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import simplex_search
 
 
 def _bary_whitney_tri_cochain_0(
     cochain_0: Float[t.Tensor, " vert *ch"],
     tris: Integer[t.LongTensor, "tri vert=3"],
-    bary_coords: Float[t.Tensor, "pt vert=3"],
+    bary_coords: Float[t.Tensor, "tri pt vert=3"],
 ) -> Float[t.Tensor, "tri pt *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2.
-    basis: Float[t.Tensor, "pt vert=3"] = bary_coords
+    basis = bary_coords
 
     cochain_0_at_vert_faces: Float[t.Tensor, "tri vert=3 *ch"] = cochain_0[tris]
 
     form_0 = einsum(
-        basis, cochain_0_at_vert_faces, "pt vert, tri vert ... -> tri pt ..."
+        basis, cochain_0_at_vert_faces, "tri pt vert, tri vert ... -> tri pt ..."
     )
 
     return rearrange(form_0, "tri pt ... -> tri pt ... 1")
@@ -38,10 +39,10 @@ def _bary_whitney_tri_cochain_1(
     cochain_1: Float[t.Tensor, " edge *ch"],
     tri_edge_idx: Integer[t.LongTensor, "tri vert=3"],
     tri_edge_orientations: Float[t.Tensor, "tri vert=3"],
-    bary_coords: Float[t.Tensor, "pt vert=3"],
+    bary_coords: Float[t.Tensor, "tri pt vert=3"],
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
 ) -> Float[t.Tensor, "tri pt *ch coord=3"]:
-    bary_coords_shaped = rearrange(bary_coords, "pt vert -> 1 pt vert 1")
+    bary_coords_shaped = rearrange(bary_coords, "tri pt vert -> tri pt vert 1")
     bary_coords_grad_shaped = rearrange(
         bary_coords_grad, "tri vert coord -> tri 1 vert coord"
     )
@@ -68,7 +69,7 @@ def _bary_whitney_tri_cochain_1(
         basis,
         tri_edge_orientations,
         cochain_1_at_edge_faces,
-        "tri pt edge coord, tri edge, tri eedge ... -> tri pt ... coord",
+        "tri pt edge coord, tri edge, tri edge ... -> tri pt ... coord",
     )
 
     return form_1
@@ -101,15 +102,15 @@ def _bary_whitney_tri_cochain_2(
 def _bary_whitney_tet_cochain_0(
     cochain_0: Float[t.Tensor, " vert *ch"],
     tets: Integer[t.LongTensor, "tet 4"],
-    bary_coords: Float[t.Tensor, "pt 4"],
+    bary_coords: Float[t.Tensor, "tet pt 4"],
 ) -> Float[t.Tensor, "tet pt *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2, 3.
-    basis: Float[t.Tensor, "pt vert=4"] = bary_coords
+    basis = bary_coords
 
     cochain_0_at_vert_faces: Float[t.Tensor, "tet vert=4 *ch"] = cochain_0[tets]
 
     form_0 = einsum(
-        basis, cochain_0_at_vert_faces, "pt vert, tet vert ... -> tet pt ..."
+        basis, cochain_0_at_vert_faces, "tet pt vert, tet vert ... -> tet pt ..."
     )
 
     return rearrange(form_0, "tet pt ... -> tet pt ... 1")
@@ -119,10 +120,10 @@ def _bary_whitney_tet_cochain_1(
     cochain_1: Float[t.Tensor, " edge *ch"],
     tet_edge_idx: Integer[t.LongTensor, "tet edge=6"],
     tet_edge_orientations: Float[t.Tensor, "tet edge=6"],
-    bary_coords: Float[t.Tensor, "pt vert=4"],
+    bary_coords: Float[t.Tensor, "tet pt vert=4"],
     bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
 ) -> Float[t.Tensor, "tet pt *ch coord=3"]:
-    bary_coords_shaped = rearrange(bary_coords, "pt vert -> 1 pt vert p1")
+    bary_coords_shaped = rearrange(bary_coords, "tet pt vert -> tet pt vert p 1")
     bary_coords_grad_shaped = rearrange(
         bary_coords_grad, "tet vert coord -> tet 1 vert coord"
     )
@@ -159,10 +160,10 @@ def _bary_whitney_tet_cochain_2(
     cochain_2: Float[t.Tensor, " tri *ch"],
     tet_tri_idx: Integer[t.LongTensor, "tet tri=4"],
     tet_tri_orientations: Float[t.Tensor, "tet tri=4"],
-    bary_coords: Float[t.Tensor, "pt vert=4"],
+    bary_coords: Float[t.Tensor, "tet pt vert=4"],
     bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
 ) -> Float[t.Tensor, "tet pt *ch coord=3"]:
-    bary_coords_shaped = rearrange(bary_coords, "pt vert -> 1 pt vert 1")
+    bary_coords_shaped = rearrange(bary_coords, "tet pt vert -> tet pt vert 1")
     bary_coords_grad_shaped = rearrange(
         bary_coords_grad, "tet vert coord -> tet 1 vert coord"
     )
@@ -232,7 +233,7 @@ def _bary_whitney_tet_cochain_3(
 def _bary_whitney_tri(
     k: int,
     k_cochain: Float[t.Tensor, " simp *ch"],
-    bary_coords: Float[t.Tensor, "pt vert"],
+    bary_coords: Float[t.Tensor, "tri pt vert"],
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "tri pt *ch coord"]:
     if k in [1, 2]:
@@ -272,7 +273,7 @@ def _bary_whitney_tri(
 def _bary_whitney_tet(
     k: int,
     k_cochain: Float[t.Tensor, " simp *ch"],
-    bary_coords: Float[t.Tensor, "pt vert"],
+    bary_coords: Float[t.Tensor, "tet pt vert"],
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "tet pt *ch coord"]:
     if k in [1, 2, 3]:
@@ -320,13 +321,16 @@ def _bary_whitney_tet(
 
 
 def _bary_embed(
-    m: int,
-    k_simps_bary_coords: Float[t.Tensor, "pt k_vert"],
-    k_simps_local_vert_idx: Integer[t.LongTensor, "k_simp k_vert"],
-) -> Float[t.Tensor, "k_simp pt m_vert"]:
+    m_simps: Integer[t.LongTensor, "m_simp m_vert"],
+    k_simps_bary_coords: Float[t.Tensor, "k_simp pt k_vert"],
+    k_faces_local_vert_idx: Integer[t.LongTensor, "k_face k_vert"],
+    k_faces_global_idx: Integer[t.LongTensor, "m_simp k_face"],
+    n_k_simps: int,
+) -> Float[t.Tensor, "m_simp k_face pt m_vert"]:
     """
     Embed barycentric coordinates for a k-simplex onto the barycentric coordinates
-    of the k-dimensional faces of a higher m-simplex.
+    of the k-dimensional faces of a higher m-simplex. Note that the `k_simp`
+    dimension of `k_simps_bary_coords` is allowed to be trivial.
 
     Example:
 
@@ -353,27 +357,84 @@ def _bary_embed(
      [[0.0, 0.2, 0.8],
       [0.0, 0.8, 0.2]]]
     ```
+    Note that this function also handles orientation/permutation mismatch between
+    the k-faces and the canonical k-simplices (not shown in this example).
     """
-    device = k_simps_bary_coords.device
-    dtype = k_simps_bary_coords.dtype
+    # Collect shape/size information.
+    n_m_simps, n_m_verts = m_simps.shape
+    n_pts = k_simps_bary_coords.size(1)
+    n_k_faces_per_m_simp = k_faces_local_vert_idx.size(0)
 
-    n_pts = k_simps_bary_coords.size(0)
-    n_k_faces = k_simps_local_vert_idx.size(0)
-    n_coords_embedded = m + 1
-
-    # Prepare for scatter by casting all tensors to the target shape
-    # (n_k_simps, n_pts, n_coords_embedded)
-    bary_coords_embedded = t.zeros(
-        n_k_faces,
-        n_pts,
-        n_coords_embedded,
-        dtype=dtype,
-        device=device,
+    # In case the first dimension of k_simps_bary_coords is trivial, inflate to the
+    # correct shape.
+    k_simps_bary_coords_shaped = k_simps_bary_coords.expand(
+        n_k_simps, *k_simps_bary_coords.shape[1:]
     )
-    src = repeat(k_simps_bary_coords, "pt coord -> k_face pt coord", k_face=n_k_faces)
-    idx = repeat(k_simps_local_vert_idx, "k_simp vert -> k_simp pt vert", pt=n_pts)
 
-    bary_coords_embedded.scatter_(dim=2, index=idx, src=src)
+    # Scatter the barycentric coordinates defined on the canonical k-simplices
+    # to the k-faces of the m-simplices.
+    k_simps_bary_coords_scattered: Float[t.Tensor, "m_simp k_face pt k_vert"] = (
+        k_simps_bary_coords_shaped[k_faces_global_idx]
+    )
+
+    # For each k-face of an m-simplex, identify the permutation required to reorder
+    # the corresponding canonical k-simplex to match the k-face. For example,
+    # For a 2-face [30, 2, 40], the permutation [1, 0, 2] is required to permute
+    # the canonical 2-simplex [2, 30, 40] to [30, 2, 40].
+    all_k_faces: Integer[t.LongTensor, "m_simp k_face k_vert"] = m_simps[
+        :, k_faces_local_vert_idx
+    ]
+
+    # Note that the two argsort() here is required; the first argsort() computes
+    # the permutation required to reorder the k-face to match the canonical
+    # k-simplex, and the second argsort() computes the inverse of this mapping.
+    k_face_perm_map = repeat(
+        t.argsort(
+            t.argsort(all_k_faces, dim=-1, descending=False),
+            dim=-1,
+            descending=False,
+        ),
+        "m_simp k_face k_vert -> m_simp k_face pt k_vert",
+        pt=n_pts,
+    )
+
+    # Use the permutation map to reorder the last dimension of k_simps_bary_coords_scattered.
+    # This is required because the local k-face definition in k_faces_local_vert_idx
+    # ignores the orientation/permutation difference between a k-face and the
+    # canonical k-simplex. For example, if a canonical 1-simplex [28, 29] is the
+    # face of two 2-simplices [27, 28, 29] and [30, 29, 28], then the barycentric
+    # coordinates evaluated at edge 12 in the two 2-simplices are flipped. This
+    # becomes a problem later on in _barycentric_whitney_map_boundary() when the
+    # k-forms interpolated on the k-faces are used to produce an averaged k-form
+    # per canonical k-simplex, where the k-form evaluated at the wrong points may
+    # be averaged together. Note that this permutation correction is necessary
+    # (1) on top of the k-form sign corrections, (2) even if the set of points
+    # is invariant to vertex permutation, and (3) even if the Whitney bases used
+    # are of the lowest order.
+    k_simps_bary_coords_permuted = t.gather(
+        input=k_simps_bary_coords_scattered, dim=-1, index=k_face_perm_map
+    )
+
+    # Broadcast and embed the k-simplex barycentric coordinates into the m-simplices.
+    k_faces_local_vert_idx_shaped = repeat(
+        k_faces_local_vert_idx,
+        "k_face k_vert -> m_simp k_face pt k_vert",
+        m_simp=n_m_simps,
+        pt=n_pts,
+    )
+
+    bary_coords_embedded = t.zeros(
+        n_m_simps,
+        n_k_faces_per_m_simp,
+        n_pts,
+        n_m_verts,
+        dtype=k_simps_bary_coords.dtype,
+        device=k_simps_bary_coords.device,
+    )
+
+    bary_coords_embedded.scatter_(
+        dim=-1, index=k_faces_local_vert_idx_shaped, src=k_simps_bary_coords_permuted
+    )
 
     return bary_coords_embedded
 
@@ -381,7 +442,7 @@ def _bary_embed(
 def _barycentric_whitney_map_interior(
     k: int,
     k_cochain: Float[t.Tensor, " simp *ch"],
-    bary_coords: Float[t.Tensor, "pt vert"],
+    bary_coords: Float[t.Tensor, "top_simp pt vert"],
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "top_simp pt *ch coord"]:
     match mesh.dim:
@@ -396,55 +457,49 @@ def _barycentric_whitney_map_interior(
 def _barycentric_whitney_map_boundary(
     k: int,
     k_cochain: Float[t.Tensor, " k_simp *ch"],
-    bary_coords: Float[t.Tensor, "pt vert"],
+    bary_coords: Float[t.Tensor, "k_simp pt vert"],
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "k_simp pt *ch coord"]:
     m = mesh.dim
+    n_k_simps = mesh.simplices[k].size(0)
 
     local_face_idx: Integer[t.LongTensor, "k_face k_vert"] = enumerate_unique_faces(
         simp_dim=m, face_dim=k, device=mesh.vert_coords.device
     )
 
+    # Find the global indices of all k-faces.
+    # TODO: this is not ideal since we are repeating topo calculations
+    all_faces = mesh.simplices[m][:, local_face_idx]
+
+    global_face_idx: Integer[t.LongTensor, "m_simp k_face"] = simplex_search(
+        key_simps=mesh.simplices[k],
+        query_simps=all_faces,
+        sort_key_simp=False,
+        sort_key_vert=False,
+        sort_query_vert=True,
+        method="lex_sort",
+    )
+
     # Perform barycentric coordinate embedding and then compute the whitney
     # interpolation at the top simplex level.
-    bary_coords_embedded: Float[t.Tensor, "k_face pt m_vert"] = _bary_embed(
-        m,
-        bary_coords,
-        local_face_idx,
-    )
-    n_k_faces, n_pts, _ = bary_coords_embedded.shape
-
-    k_forms = _barycentric_whitney_map_interior(
-        k,
-        k_cochain,
-        rearrange(bary_coords_embedded, "k_face pt m_vert -> (k_face pt) m_vert"),
-        mesh,
-    )
-    k_forms_shaped = rearrange(
-        k_forms,
-        "m_simp (k_face pt) ... coord -> (m_simp k_face) pt ... coord",
-        k_face=n_k_faces,
-        pt=n_pts,
+    bary_coords_embedded: Float[t.Tensor, "m_simp k_face pt m_vert"] = _bary_embed(
+        m_simps=mesh.simplices[m],
+        k_simps_bary_coords=bary_coords,
+        k_faces_local_vert_idx=local_face_idx,
+        k_faces_global_idx=global_face_idx,
+        n_k_simps=n_k_simps,
     )
 
-    # Find the global indices of all k-faces.
-    # TODO: this is not ideal since we are repating topo calculations
-    all_faces = rearrange(
-        mesh.simplices[m][:, local_face_idx],
-        "m_simp k_face k_vert -> (m_simp k_face) k_vert",
-    )
-
-    global_face_idx: Integer[t.LongTensor, "m_simp*k_face pt *ch coord"] = (
-        simplex_search(
-            key_simps=mesh.simplices[k],
-            query_simps=all_faces,
-            sort_key_simp=False,
-            sort_key_vert=False,
-            sort_query_vert=True,
-            method="lex_sort",
+    k_forms: Float[t.Tensor, "m_simp*k_face pt *ch coord"] = (
+        _barycentric_whitney_map_interior(
+            k,
+            k_cochain,
+            rearrange(
+                bary_coords_embedded,
+                "m_simp k_face pt m_vert -> (m_simp k_face) pt m_vert",
+            ),
+            mesh,
         )
-        .view(-1, *[1] * (k_forms_shaped.ndim - 1))
-        .expand_as(k_forms_shaped)
     )
 
     # For each unique/canonical k-simplex in the mesh, compute the average
@@ -458,15 +513,19 @@ def _barycentric_whitney_map_boundary(
     # normal components on the k-simplices, and 2) the second approach is not
     # safe for autograd since it doesn't correctly link each k-simplex to all of
     # its top-level cofaces.
+    global_face_idx_shaped: Integer[t.LongTensor, "m_simp*k_face pt *ch coord"] = (
+        global_face_idx.flatten().view(-1, *[1] * (k_forms.ndim - 1)).expand_as(k_forms)
+    )
+
     canon_k_forms: Float[t.Tensor, "k_simp pt *ch coord"] = t.zeros(
-        (mesh.simplices[k].size(0), *k_forms_shaped.shape[1:]),
+        (n_k_simps, *k_forms.shape[1:]),
         dtype=k_cochain.dtype,
         device=k_cochain.device,
     )
     canon_k_forms.scatter_reduce_(
         dim=0,
-        index=global_face_idx,
-        src=k_forms_shaped,
+        index=global_face_idx_shaped,
+        src=k_forms,
         reduce="mean",
         include_self=False,
     )
@@ -477,7 +536,7 @@ def _barycentric_whitney_map_boundary(
 def barycentric_whitney_map(
     k: int,
     k_cochain: Float[t.Tensor, " k_simp *ch"],
-    bary_coords: Float[t.Tensor, "pt vert"],
+    bary_coords: Float[t.Tensor, "simp pt vert"],
     mesh: SimplicialComplex,
     mode: Literal["interior", "boundary"],
 ) -> Float[t.Tensor, "simp pt *ch coord"]:
@@ -486,20 +545,22 @@ def barycentric_whitney_map(
     interpolating discrete k-cochains, which is useful for numerical quadrature.
 
     In the `interior` mode, the function maps the k-cochains to k-forms interpolated
-    at a fixed set of local barycentric coordinates across all top-level simplices;
-    in the `boundary` mode, the function maps the k-cochains to k-forms interpolated
-    at a fixed set of local barycentric coordinates across the k-simplices.
+    at local barycentric coordinates across all top-level simplices; in the `boundary`
+    mode, the function maps the k-cochains to k-forms interpolated at local barycentric
+    coordinates across the k-simplices. In other words, the `simp` dimension refers
+    to the top-level simplices for `interior` mode and k-simplices for `boundary`
+    mode. If k is the dimension of the top-level simplices, the `interior` mode
+    is used regardless of the `mode` argument.
 
     Note that this function does not perform global spatial interpolation (i.e.,
     it cannot directly evaluate the k-form at arbitrary cartesian coordinates on
     the mesh.)
 
-    The input k-cochain is allowed to have an arbitrary number of trailing
-    channel/batch dimensions.
+    The input `k_cochain` is allowed to have an arbitrary number of trailing
+    channel/batch dimensions. The `bary_coords` argument is allowed to have a trivial
+    first `simp` dimension, in which case the k-cochain is interpolated at the
+    same fixed local barycentric coordinates over all target simplices.
     """
-
-    # If k is the dimension of the top level simplices, then the mode must be
-    # 'interior' regardless of user input
     if k == mesh.dim:
         mode = "interior"
 
