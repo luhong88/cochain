@@ -61,9 +61,9 @@ class DeRhamMap:
         # for the reference and physical simplices.
         simp_vert_coords = self.mesh.vert_coords[self.mesh.simplices[self.k]]
         sampled_points = einsum(
-            "k_simp vert coord, pt vert -> k_simp pt coord",
             simp_vert_coords,
             self.ref_barys,
+            "k_simp vert coord, pt vert -> k_simp pt coord",
         )
 
         return sampled_points
@@ -95,7 +95,7 @@ class DeRhamMap:
                 pullback = einsum(
                     jacs,
                     k_forms,
-                    "k_simp edge coord, simp pt ... coord -> k_simp pt ...",
+                    "k_simp edge coord, k_simp pt ... coord -> k_simp pt ...",
                 )
                 circulation = einsum(
                     pullback, self.weights, "k_simp pt ..., pt -> k_simp ..."
