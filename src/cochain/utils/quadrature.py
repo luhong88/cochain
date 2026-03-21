@@ -76,6 +76,9 @@ class Dunavant:
     of degree up to k is exact. Currently, a polynomial degree of exactness up to
     5 is supported. Note that rule #3 contains a negative weight.
 
+    Note that the weights returned are the "barycentric"/normalized weights in that
+    they sum up to 1, rather than the area of the reference triangle (1/2).
+
     Reference: David Dunavant, High degree efficient symmetrical Gaussian quadrature
     rules for the triangle, Int. J. Numer. Methods Eng., 1985.
     """
@@ -216,6 +219,9 @@ class Keast:
     for degree of exactness 3 and 4, two rules are provided that differ by whether
     negative weights are allowed.
 
+    Note that the weights returned are the "barycentric"/normalized weights in that
+    they sum up to 1, rather than the area of the reference tet (1/6).
+
     Reference: Patrick Keast, Moderate Degree Tetrahedral Quadrature Formulas,
     Comput. Methods Appl. Mech. Eng., 1986.
     """
@@ -234,15 +240,9 @@ class Keast:
             case 2:
                 return self.rule_2
             case 3:
-                if allow_neg_weights:
-                    return self.rule_3
-                else:
-                    return self.rule_4
+                return self.rule_3 if allow_neg_weights else self.rule_4
             case 4:
-                if allow_neg_weights:
-                    return self.rule_5
-                else:
-                    return self.rule_6
+                return self.rule_5 if allow_neg_weights else self.rule_6
             case 5:
                 return self.rule_7
             case _:
