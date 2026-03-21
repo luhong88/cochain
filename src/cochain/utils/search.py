@@ -99,13 +99,13 @@ def _lex_simplex_search(
 
 def simplex_search(
     key_simps: Integer[t.LongTensor, "key_simp vert"],
-    query_simps: Integer[t.LongTensor, "query_simp vert"],
+    query_simps: Integer[t.LongTensor, "*b query_simp vert"],
     *,
     sort_key_simp: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
     method: Literal["lex_sort", "polynomial_hash", "auto"] = "auto",
-) -> Integer[t.LongTensor, " query_simp"]:
+) -> Integer[t.LongTensor, "*b query_simp"]:
     """
     Search for simplices in `query_simps` in the `key_simps`. It uses polynomial
     rolling hash to convert the simplex vert index tuples into integers and use
@@ -128,8 +128,8 @@ def simplex_search(
     index, with tie breaks based on the second vertex index, and so on. If this is
     not true, set `sort_key_simp=True`.
     """
-    if query_simps.size(0) == 0:
-        return query_simps[:, 0]
+    if query_simps.size(-2) == 0:
+        return query_simps[..., 0]
 
     if method == "auto":
         simp_dim = key_simps.size(-1) - 1
@@ -139,22 +139,28 @@ def simplex_search(
         else:
             method = "lex_sort"
 
+    query_simps_flat = query_simps.flatten(end_dim=-2)
+
     match method:
         case "lex_sort":
-            return _lex_simplex_search(
+            simp_idx_flat = _lex_simplex_search(
                 key_simps,
-                query_simps,
+                query_simps_flat,
                 sort_key_simp=sort_key_simp,
                 sort_key_vert=sort_key_vert,
                 sort_query_vert=sort_query_vert,
             )
         case "polynomial_hash":
-            return _polynomial_hash_simplex_search(
+            simp_idx_flat = _polynomial_hash_simplex_search(
                 key_simps,
-                query_simps,
+                query_simps_flat,
                 sort_key_simp=sort_key_simp,
                 sort_key_vert=sort_key_vert,
                 sort_query_vert=sort_query_vert,
             )
         case _:
             raise ValueError("Unrecognized 'method' argument.")
+
+    simp_idx_shaped = simp_idx_flat.view(*query_simps.shape[:-1])
+
+    return simp_idx_shaped
