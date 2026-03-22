@@ -78,8 +78,9 @@ def _bary_whitney_tri_cochain_1(
 def _bary_whitney_tri_cochain_2(
     cochain_2: Float[t.Tensor, " tri *ch"],
     tri_orientations: Float[t.Tensor, " tri"],
+    bary_coords: Float[t.Tensor, "tri pt vert=3"],
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
-) -> Float[t.Tensor, "tri pt=1 *ch coord=3"]:
+) -> Float[t.Tensor, "tri pt *ch coord=3"]:
     # There is only one basis form W_012 = 2(∇λ_1 x ∇λ_2); note that this basis
     # function is a constant of barycentric coordinates, which means that the
     # interpolated 2-forms will be constant on each triangle.
@@ -93,10 +94,13 @@ def _bary_whitney_tri_cochain_2(
         basis, tri_orientations, cochain_2, "tri coord, tri, tri ... -> tri ... coord"
     )
 
-    return rearrange(
-        form_2,
-        "tri ... coord -> tri 1 ... coord",
+    # Note that the bary_coords argument is only used to determine the number
+    # of sampled points.
+    form_2_shaped = repeat(
+        form_2, "tri ... coord -> tri pt ... coord", pt=bary_coords.size(-2)
     )
+
+    return form_2_shaped
 
 
 def _bary_whitney_tet_cochain_0(
@@ -217,7 +221,8 @@ def _bary_whitney_tet_cochain_3(
     cochain_3: Float[t.Tensor, " tet *ch"],
     tet_signed_vols: Float[t.Tensor, " tet"],
     tet_orientations: Float[t.Tensor, " tet"],
-) -> Float[t.Tensor, "tet pt=1 *ch coord=1"]:
+    bary_coords: Float[t.Tensor, "tet pt vert=4"],
+) -> Float[t.Tensor, "tet pt *ch coord=1"]:
     # There is only one basis form W_0123 = 1/vol; note that this basis
     # function is a constant of barycentric coordinates, which means that the
     # interpolated 3-forms will be constant on each tet.
@@ -227,7 +232,13 @@ def _bary_whitney_tet_cochain_3(
     # needs a sign correction given by tet_orientations.
     form_3 = einsum(basis, tet_orientations, cochain_3, "tet, tet, tet ... -> tet ...")
 
-    return rearrange(form_3, "tet 1 ... 1")
+    # Note that the bary_coords argument is only used here to determine the
+    # number of sampled points.
+    form_3_shaped = repeat(
+        form_3, "tet ... -> tet pt ... coord", pt=bary_coords.size(-2), coord=1
+    )
+
+    return form_3_shaped
 
 
 def _bary_whitney_tri(
@@ -264,6 +275,7 @@ def _bary_whitney_tri(
             return _bary_whitney_tri_cochain_2(
                 cochain_2=k_cochain,
                 tri_orientations=mesh.tri_orientations,
+                bary_coords=bary_coords,
                 bary_coords_grad=bary_coords_grad,
             )
         case _:
@@ -314,6 +326,7 @@ def _bary_whitney_tet(
             return _bary_whitney_tet_cochain_3(
                 cochain_3=k_cochain,
                 tet_signed_vols=tet_signed_vols,
+                bary_coords=bary_coords,
                 tet_orientations=mesh.tet_orientations,
             )
         case _:
@@ -459,7 +472,8 @@ def _barycentric_whitney_map_boundary(
     k_cochain: Float[t.Tensor, " k_simp *ch"],
     bary_coords: Float[t.Tensor, "k_simp pt vert"],
     mesh: SimplicialComplex,
-) -> Float[t.Tensor, "k_simp pt *ch coord"]:
+    reduction: Literal["mean", "none"] = "none",
+) -> Float[t.Tensor, "*m_simp k_simp_or_face pt *ch coord"]:
     m = mesh.dim
     n_k_simps = mesh.simplices[k].size(0)
     n_pts = bary_coords.size(-2)
@@ -500,43 +514,47 @@ def _barycentric_whitney_map_boundary(
         ),
         mesh,
     )
-    k_forms_shaped = rearrange(
-        k_forms,
-        "m_simp (k_face pt) ... coord -> (m_simp k_face) pt ... coord",
-        pt=n_pts,
-    )
 
-    # For each unique/canonical k-simplex in the mesh, compute the average
-    # k-forms evaluated at the barycentric coordinates per top-level simplex.
-    # Another way to achieve the same result would be to find, for each canonical
-    # k-simplex, a representative top-level simplex that contains the k-simplex
-    # as a face, and use the k-forms evaluated on the representative. Topologically,
-    # the two approaches achieve the same results, but they differ geometrically,
-    # in that 1) the normal components of the interpolated k-forms are not constrained
-    # by the whitney map and thus the two approaches will give k-forms with different
-    # normal components on the k-simplices, and 2) the second approach is not
-    # safe for autograd since it doesn't correctly link each k-simplex to all of
-    # its top-level cofaces.
-    global_face_idx_shaped: Integer[t.LongTensor, "m_simp*k_face pt *ch coord"] = (
-        global_face_idx.flatten()
-        .view(-1, *[1] * (k_forms_shaped.ndim - 1))
-        .expand_as(k_forms_shaped)
-    )
+    match reduction:
+        case "none":
+            k_forms_shaped = rearrange(
+                k_forms,
+                "m_simp (k_face pt) ... coord -> m_simp k_face pt ... coord",
+                pt=n_pts,
+            )
+            return k_forms_shaped
 
-    canon_k_forms: Float[t.Tensor, "k_simp pt *ch coord"] = t.zeros(
-        (n_k_simps, *k_forms_shaped.shape[1:]),
-        dtype=k_cochain.dtype,
-        device=k_cochain.device,
-    )
-    canon_k_forms.scatter_reduce_(
-        dim=0,
-        index=global_face_idx_shaped,
-        src=k_forms_shaped,
-        reduce="mean",
-        include_self=False,
-    )
+        # For each unique/canonical k-simplex in the mesh, compute the average
+        # k-forms evaluated at the barycentric coordinates per top-level simplex.
+        case "mean":
+            k_forms_shaped = rearrange(
+                k_forms,
+                "m_simp (k_face pt) ... coord -> (m_simp k_face) pt ... coord",
+                pt=n_pts,
+            )
 
-    return canon_k_forms
+            global_face_idx_shaped: Integer[
+                t.LongTensor, "m_simp*k_face pt *ch coord"
+            ] = (
+                global_face_idx.flatten()
+                .view(-1, *[1] * (k_forms_shaped.ndim - 1))
+                .expand_as(k_forms_shaped)
+            )
+
+            canon_k_forms: Float[t.Tensor, "k_simp pt *ch coord"] = t.zeros(
+                (n_k_simps, *k_forms_shaped.shape[1:]),
+                dtype=k_cochain.dtype,
+                device=k_cochain.device,
+            )
+            canon_k_forms.scatter_reduce_(
+                dim=0,
+                index=global_face_idx_shaped,
+                src=k_forms_shaped,
+                reduce="mean",
+                include_self=False,
+            )
+
+            return canon_k_forms
 
 
 def barycentric_whitney_map(
@@ -545,18 +563,43 @@ def barycentric_whitney_map(
     bary_coords: Float[t.Tensor, "simp pt vert"],
     mesh: SimplicialComplex,
     mode: Literal["interior", "boundary"],
-) -> Float[t.Tensor, "simp pt *ch coord"]:
+    boundary_reduction: Literal["mean", "none"] = "none",
+) -> Float[t.Tensor, "*simp pt *ch coord"]:
     """
     This function implements an "element-local" version of the Whitney map for
-    interpolating discrete k-cochains, which is useful for numerical quadrature.
+    interpolating discrete k-cochains using Whitney basis functions of the lowest
+    order.
 
     In the `interior` mode, the function maps the k-cochains to k-forms interpolated
-    at local barycentric coordinates across all top-level simplices; in the `boundary`
-    mode, the function maps the k-cochains to k-forms interpolated at local barycentric
-    coordinates across the k-simplices. In other words, the `simp` dimension refers
-    to the top-level simplices for `interior` mode and k-simplices for `boundary`
-    mode. If k is the dimension of the top-level simplices, the `interior` mode
-    is used regardless of the `mode` argument.
+    at local barycentric coordinates across all m-simplices, where m is the dimension
+    of the mesh; in the `boundary` mode, the function maps the k-cochains to k-forms
+    interpolated at local barycentric coordinates across the k-simplices. If
+    k = m, the `interior` mode is used regardless of the `mode` argument. Currently,
+    interpolation of k-cochains on l-simplices in an m-dimensional mesh, where
+    k < l < m, is not supported.
+
+    The `boundary_reduction` argument modifies the output of the `boundary` mode,
+    if set to `'none'`, then the returned tensor is of shape (`m_simp`, `k_face`,
+    `pt`, `*ch`, `coord`); if set to `'mean'`, then the returned tensor is of shape
+    (`k_simp`, `pt`, `*ch`, `coord`), where the interpolated k-forms are averaged
+    over all k-faces of m-simplices corresponding to the same canonical k-simplex.
+    Note that k-forms interpolated using Whitney bases have discontinuous, multi-
+    valued, unconstrained components (e.g., for 1-forms, the tangential components
+    are continuous but the normal components jump; for 2-forms, the normal components
+    are continuous but the tangential components jump between higher-order simplices);
+    as such, the `'mean'` reduction creates distortions and should only be used
+    for downstream applications when the unconstrained components are irrelevant
+    (e.g., for de Rham map).
+
+    For the `boundary` mode, the `pt` dimension is always ordered relative to the
+    canonical simplices. For example, consider a two point quadrature on 1-simplices
+    consisting of barycentric coordinates (0.2, 0.8) and (0.8, 0.2); if a canonical
+    1-simplex [28, 29] is the face of two 2-simplices [27, 28, 29] and [30, 29, 28],
+    then the `pt` dimension for both faces will refer to the point closer to vertex
+    29 first, and the point closer to vertex 28 second, regardless of the local
+    vertex ordering of the 1-face in the 2-simplices. Note that, for the `interior`
+    mode, the values across the `pt` dimension will be constant since the interpolated
+    m-forms (i.e., volume forms) on the m-simplices are always piecewise constant.
 
     Note that this function does not perform global spatial interpolation (i.e.,
     it cannot directly evaluate the k-form at arbitrary cartesian coordinates on
@@ -574,6 +617,8 @@ def barycentric_whitney_map(
         case "interior":
             return _barycentric_whitney_map_interior(k, k_cochain, bary_coords, mesh)
         case "boundary":
-            return _barycentric_whitney_map_boundary(k, k_cochain, bary_coords, mesh)
+            return _barycentric_whitney_map_boundary(
+                k, k_cochain, bary_coords, mesh, boundary_reduction
+            )
         case _:
             raise ValueError()
