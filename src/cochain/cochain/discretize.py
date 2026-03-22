@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import torch as t
 from einops import einsum
 from jaxtyping import Float
@@ -6,30 +8,23 @@ from ..complex import SimplicialComplex
 from ..utils import quadrature
 
 
+@dataclass
 class DeRhamMap:
-    def __init__(
-        self,
-        k: int,
-        quad_degree: int,
-        mesh: SimplicialComplex,
-        allow_neg_weights: bool = True,
-    ):
-        """
-        For 0-form, the de Rham map is equivalent to sampling the 0-form (scalar
-        function) at the vertex positions; therefore, only k = 1, 2, or 3 are supported.
-        """
-        self.mesh = mesh
-        self.k = k
-        self.degree = quad_degree
-        self.allow_neg_weights = allow_neg_weights
+    """
+    For 0-form, the de Rham map is equivalent to sampling the 0-form (scalar
+    function) at the vertex positions; therefore, only k = 1, 2, or 3 are supported.
+    """
 
-        self.ref_barys: Float[t.Tensor, "pt vert"]
-        self.weights: Float[t.Tensor, " pt"]
+    k: int
+    quad_degree: int
+    mesh: SimplicialComplex
+    allow_neg_weights: bool = True
 
-        if k > mesh.dim:
+    def __post_init__(self):
+        if self.k > self.mesh.dim:
             raise ValueError()
 
-        match k:
+        match self.k:
             case 1:
                 self.quad = quadrature.GaussLegendre
             case 2:
@@ -39,23 +34,19 @@ class DeRhamMap:
             case _:
                 raise ValueError()
 
-    def _get_quad_rule(
-        self,
-    ):
+    def _get_quad_rule(self):
         dtype = self.mesh.vert_coords.dtype
         device = self.mesh.vert_coords.device
 
-        ref_barys, weights = self.quad(dtype, device).get_rule(
-            self.degree, allow_neg_weights=self.allow_neg_weights
+        bary_coords, weights = self.quad(dtype, device).get_rule(
+            self.quad_degree, allow_neg_weights=self.allow_neg_weights
         )
 
-        self.ref_barys = ref_barys
+        self.bary_coords = bary_coords
         self.weights = weights
 
-    def sample_points(
-        self,
-    ) -> Float[t.Tensor, "k_simp pt coord=3"]:
-        if not hasattr(self, "ref_barys"):
+    def sample_points(self) -> Float[t.Tensor, "k_simp pt coord=3"]:
+        if not hasattr(self, "bary_coords"):
             self._get_quad_rule()
 
         # The barycentric coordinates in ref_barys provide the weights for the
@@ -65,7 +56,7 @@ class DeRhamMap:
         simp_vert_coords = self.mesh.vert_coords[self.mesh.simplices[self.k]]
         sampled_points = einsum(
             simp_vert_coords,
-            self.ref_barys,
+            self.bary_coords,
             "k_simp vert coord, pt vert -> k_simp pt coord",
         )
 
@@ -75,7 +66,7 @@ class DeRhamMap:
         self,
         k_forms: Float[t.Tensor, "k_simp pt *ch coord"],
     ) -> Float[t.Tensor, " k_simp *ch"]:
-        if not hasattr(self, "weights"):
+        if not hasattr(self, "bary_coords"):
             self._get_quad_rule()
 
         # Consider the pushforward map ϕ: λ -> x from the barycentric coordinates

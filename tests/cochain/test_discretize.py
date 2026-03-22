@@ -79,6 +79,48 @@ def test_const_3_form_integration(two_tets_mesh, device):
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+def test_commutativity_with_d_on_0_form(mesh, request, device):
+    """
+    Test that the de Rham map π commutes with the exterior derivative d using
+    0-forms; i.e., for any 0-form ω, π(dω) = d(πω). Recall that dω for a 0-form
+    is analogous to the gradient of scalar functions. The test is restricted to
+    polynomial basis functions of degree 1.
+    """
+    mesh = request.getfixturevalue(mesh).to(device)
+
+    d_0 = mesh.cbd[0]
+
+    # For the commutativity to hold, the numerical integration needs to be exact.
+    # dω is always one degree lower than ω.
+    de_rham_1 = DeRhamMap(k=1, quad_degree=0, mesh=mesh)
+
+    pts_1 = de_rham_1.sample_points()
+    n_1_simps, n_1_pts, _ = pts_1.shape
+
+    # The space of 0-forms with polynomial degree 1 consists of 3 basis functions
+    # x, y, z. To discretize a 0-form is to simply sample the 0-forms at the
+    # mesh vertices. Therefore, the mesh.vert_coords can already be considered
+    # as a sample of the three basis functions at the mesh vertices.
+    # (1_simp, 0_simp) @ (0_simp, basis) -> (2_simp, basis)
+    d_pi_form = d_0 @ mesh.vert_coords
+
+    # Compute dω analytically.
+    grad_1_forms = t.eye(
+        3,
+        dtype=mesh.vert_coords.dtype,
+        device=device,
+    )
+
+    sampled_1_forms = repeat(
+        grad_1_forms, "basis coord -> simp pt basis coord", simp=n_1_simps, pt=n_1_pts
+    )
+
+    pi_d_form = de_rham_1.discretize(sampled_1_forms)
+
+    t.testing.assert_close(d_pi_form, pi_d_form)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_commutativity_with_d_on_1_form(mesh, request, device):
     """
     Test that the de Rham map π commutes with the exterior derivative d using
@@ -153,5 +195,84 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     )
 
     pi_d_form = de_rham_2.discretize(sampled_2_forms)
+
+    t.testing.assert_close(d_pi_form, pi_d_form)
+
+
+def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
+    """
+    Test that the de Rham map π commutes with the exterior derivative d using
+    2-forms; i.e., for any 2-form ω, π(dω) = d(πω). Recall that dω for a 2-form
+    is analogous to the divergence of vector fields. The test is restricted to
+    polynomial basis functions of degree 1.
+    """
+    mesh = two_tets_mesh.to(device)
+
+    d_2 = mesh.cbd[2]
+
+    # For the commutativity to hold, the numerical integration needs to be exact.
+    de_rham_2 = DeRhamMap(k=2, quad_degree=1, mesh=mesh)
+    # dω is always one degree lower than ω.
+    de_rham_3 = DeRhamMap(k=3, quad_degree=0, mesh=mesh)
+
+    pts_2 = de_rham_2.sample_points()
+    pts_3 = de_rham_3.sample_points()
+
+    n_3_simps, n_3_pts, _ = pts_3.shape
+
+    # The space of 2-forms with polynomial degree 1 consists of 9 basis functions
+    # of the form (x, 0, 0), (0, y, 0), (0, 0, z), etc. under Hodge star isomorphism,
+    # and each of these basis functions can be written as a 3x3 matrix that, when
+    # multiplied by a coordinate vector, returns the value of the 2-form at the
+    # coordinate location.
+    matrix_2_forms = t.tensor(
+        [
+            [[1, 0, 0], [0, 0, 0], [0, 0, 0]],  # (x, 0, 0)
+            [[0, 1, 0], [0, 0, 0], [0, 0, 0]],  # (y, 0, 0)
+            [[0, 0, 1], [0, 0, 0], [0, 0, 0]],  # (z, 0, 0)
+            [[0, 0, 0], [1, 0, 0], [0, 0, 0]],  # (0, x, 0)
+            [[0, 0, 0], [0, 1, 0], [0, 0, 0]],  # (0, y, 0)
+            [[0, 0, 0], [0, 0, 1], [0, 0, 0]],  # (0, z, 0)
+            [[0, 0, 0], [0, 0, 0], [1, 0, 0]],  # (0, 0, x)
+            [[0, 0, 0], [0, 0, 0], [0, 1, 0]],  # (0, 0, y)
+            [[0, 0, 0], [0, 0, 0], [0, 0, 1]],  # (0, 0, z)
+        ],
+        dtype=mesh.vert_coords.dtype,
+        device=device,
+    )
+
+    sampled_2_forms = einsum(
+        matrix_2_forms,
+        pts_2,
+        "basis coord1 coord2, simp pt coord2 -> simp pt basis coord1",
+    )
+
+    # (3_simp, 2_simp) @ (2_simp, basis) -> (3_simp, basis)
+    d_pi_form = d_2 @ de_rham_2.discretize(sampled_2_forms)
+
+    # Compute dω analytically.
+    # fmt:off
+    div_3_forms = t.tensor(
+        [
+            [1], # ∇ ⋅ (x, 0, 0)
+            [0], # ∇ ⋅ (y, 0, 0)
+            [0], # ∇ ⋅ (z, 0, 0)
+            [0], # ∇ ⋅ (0, x, 0)
+            [1], # ∇ ⋅ (0, y, 0)
+            [0], # ∇ ⋅ (0, z, 0)
+            [0], # ∇ ⋅ (0, 0, x)
+            [0], # ∇ ⋅ (0, 0, y)
+            [1], # ∇ ⋅ (0, 0, z)
+        ],
+        dtype=mesh.vert_coords.dtype,
+        device=device,
+    )
+    # fmt:on
+
+    sampled_3_forms = repeat(
+        div_3_forms, "basis coord -> simp pt basis coord", simp=n_3_simps, pt=n_3_pts
+    )
+
+    pi_d_form = de_rham_3.discretize(sampled_3_forms)
 
     t.testing.assert_close(d_pi_form, pi_d_form)
