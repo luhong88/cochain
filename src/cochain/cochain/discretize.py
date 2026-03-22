@@ -26,6 +26,9 @@ class DeRhamMap:
         self.ref_barys: Float[t.Tensor, "pt vert"]
         self.weights: Float[t.Tensor, " pt"]
 
+        if k > mesh.dim:
+            raise ValueError()
+
         match k:
             case 1:
                 self.quad = quadrature.GaussLegendre
@@ -75,13 +78,13 @@ class DeRhamMap:
         if not hasattr(self, "weights"):
             self._get_quad_rule()
 
-        # Compute the Jacobian of the ref -> phys transformations (i.e., the
-        # pushforward map).
+        # Consider the pushforward map ϕ: λ -> x from the barycentric coordinates
+        # on the reference simplex to the Cartesian coordinates of the "physical"
+        # simplices. If we match the first vertex of each simplex with the point of
+        # origin in the ref simplex, then the map can be written as ϕ(λ) = J@λ + v_0;
+        # in particular, J is the jacobian and can be computed as the matrix of
+        # the edge (column) vectors v_i - v_0.
         simp_vert_coords = self.mesh.vert_coords[self.mesh.simplices[self.k]]
-
-        # Pick the first vertex of each simplex as the point of origin in the ref
-        # simplex and compute the jacobian as the matrix of the edge (column)
-        # vectors v_i - v_0.
         jacs: Float[t.Tensor, "k_simp edge coord=3"] = (
             simp_vert_coords[:, 1:, :] - simp_vert_coords[:, [0], :]
         )
