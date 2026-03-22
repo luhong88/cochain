@@ -14,7 +14,6 @@ from ..geometry.tri.tri_geometry import (
     compute_tri_areas,
 )
 from ..utils.faces import enumerate_unique_faces
-from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import simplex_search
 
 
@@ -77,7 +76,6 @@ def _bary_whitney_tri_cochain_1(
 
 def _bary_whitney_tri_cochain_2(
     cochain_2: Float[t.Tensor, " tri *ch"],
-    tri_orientations: Float[t.Tensor, " tri"],
     bary_coords: Float[t.Tensor, "tri pt vert=3"],
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
 ) -> Float[t.Tensor, "tri pt *ch coord=3"]:
@@ -88,11 +86,9 @@ def _bary_whitney_tri_cochain_2(
         bary_coords_grad[:, 1, :], bary_coords_grad[:, 2, :], dim=-1
     )
 
-    # If the triangle is not in a canonical orientation, then the basis form
-    # needs a sign correction given by tri_orientations.
-    form_2 = einsum(
-        basis, tri_orientations, cochain_2, "tri coord, tri, tri ... -> tri ... coord"
-    )
+    # Note that no orientation sign correction is needed here since the top-level
+    # simplices are stored as is rather than lex-sorted.
+    form_2 = einsum(basis, cochain_2, "tri coord, tri ... -> tri ... coord")
 
     # Note that the bary_coords argument is only used to determine the number
     # of sampled points.
@@ -127,7 +123,7 @@ def _bary_whitney_tet_cochain_1(
     bary_coords: Float[t.Tensor, "tet pt vert=4"],
     bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
 ) -> Float[t.Tensor, "tet pt *ch coord=3"]:
-    bary_coords_shaped = rearrange(bary_coords, "tet pt vert -> tet pt vert p 1")
+    bary_coords_shaped = rearrange(bary_coords, "tet pt vert -> tet pt vert 1")
     bary_coords_grad_shaped = rearrange(
         bary_coords_grad, "tet vert coord -> tet 1 vert coord"
     )
@@ -211,7 +207,7 @@ def _bary_whitney_tet_cochain_2(
         basis,
         tet_tri_orientations,
         cochain_2_at_tri_faces,
-        "tet pt tri coord, tet tri, tet tri... -> tet pt ... coord",
+        "tet pt tri coord, tet tri, tet tri ... -> tet pt ... coord",
     )
 
     return form_2
@@ -220,7 +216,6 @@ def _bary_whitney_tet_cochain_2(
 def _bary_whitney_tet_cochain_3(
     cochain_3: Float[t.Tensor, " tet *ch"],
     tet_signed_vols: Float[t.Tensor, " tet"],
-    tet_orientations: Float[t.Tensor, " tet"],
     bary_coords: Float[t.Tensor, "tet pt vert=4"],
 ) -> Float[t.Tensor, "tet pt *ch coord=1"]:
     # There is only one basis form W_0123 = 1/vol; note that this basis
@@ -228,9 +223,9 @@ def _bary_whitney_tet_cochain_3(
     # interpolated 3-forms will be constant on each tet.
     basis = 1.0 / tet_signed_vols
 
-    # If the tet is not in a canonical orientation, then the basis form
-    # needs a sign correction given by tet_orientations.
-    form_3 = einsum(basis, tet_orientations, cochain_3, "tet, tet, tet ... -> tet ...")
+    # Note that no orientation sign correction is needed here since the top-level
+    # simplices are stored as is rather than lex-sorted.
+    form_3 = einsum(basis, cochain_3, "tet, tet ... -> tet ...")
 
     # Note that the bary_coords argument is only used here to determine the
     # number of sampled points.
@@ -274,7 +269,6 @@ def _bary_whitney_tri(
         case 2:
             return _bary_whitney_tri_cochain_2(
                 cochain_2=k_cochain,
-                tri_orientations=mesh.tri_orientations,
                 bary_coords=bary_coords,
                 bary_coords_grad=bary_coords_grad,
             )
@@ -289,16 +283,14 @@ def _bary_whitney_tet(
     mesh: SimplicialComplex,
 ) -> Float[t.Tensor, "tet pt *ch coord"]:
     if k in [1, 2, 3]:
-        tet_signed_vols = rearrange(
-            get_tet_signed_vols(mesh.vert_coords, mesh.tets), "tet -> tet 1 1"
-        )
+        tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
 
     if k in [1, 2]:
         d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
             mesh.vert_coords, mesh.tets
         )
         bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"] = (
-            d_signed_vols_d_vert_coords / tet_signed_vols
+            d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
         )
 
     match k:
@@ -327,7 +319,6 @@ def _bary_whitney_tet(
                 cochain_3=k_cochain,
                 tet_signed_vols=tet_signed_vols,
                 bary_coords=bary_coords,
-                tet_orientations=mesh.tet_orientations,
             )
         case _:
             raise ValueError()
@@ -473,7 +464,10 @@ def _barycentric_whitney_map_boundary(
     bary_coords: Float[t.Tensor, "k_simp pt vert"],
     mesh: SimplicialComplex,
     reduction: Literal["mean", "none"] = "none",
-) -> Float[t.Tensor, "*m_simp k_simp_or_face pt *ch coord"]:
+) -> (
+    Float[t.Tensor, "m_simp k_face pt *ch coord"]
+    | Float[t.Tensor, "k_simp pt *ch coord"]
+):
     m = mesh.dim
     n_k_simps = mesh.simplices[k].size(0)
     n_pts = bary_coords.size(-2)
@@ -564,7 +558,7 @@ def barycentric_whitney_map(
     mesh: SimplicialComplex,
     mode: Literal["interior", "boundary"],
     boundary_reduction: Literal["mean", "none"] = "none",
-) -> Float[t.Tensor, "*simp pt *ch coord"]:
+) -> t.Tensor:
     """
     This function implements an "element-local" version of the Whitney map for
     interpolating discrete k-cochains using Whitney basis functions of the lowest
