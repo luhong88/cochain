@@ -283,30 +283,42 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
+    """
+    Test that the numerical integration of a polynomial 1-form of degree 2 should
+    be exact using a quadrature rule of the same degree.
+    """
     mesh = request.getfixturevalue(mesh).to(device)
     edge_verts = mesh.vert_coords[mesh.edges]
-
-    de_rham = DeRhamMap(k=1, quad_degree=2, mesh=mesh)
-
-    pts = de_rham.sample_points()
 
     # In general, polynomial functions f(x, y, z) with 3 variables and of degree 2
     # can be described by 6 basis functions: x^2, y^2, z^2, xy, xz, yz. In addition,
     # for a polynomial 1-form of degree 2, the basis functions can be placed as
-    # coefficient in front of the three basis vectors, thus resulting in 18 basis
-    # vectors.
+    # coefficient in front of the three basis covectors, thus resulting in 18 basis
+    # covectors. The integration of these basis covectors is equivalent to the
+    # line integral of basis vectors. Since the tangent vector on a 1-simplex
+    # is constant, the dot product of the field with the tangent can be pulled
+    # out of the integral; i.e., <int_0^1 F dt, v_1 - v_0> (note that, with the
+    # reference element parametrization, the integral is over the unit length/
+    # reference 1-simplex and the tangent vector v_1 - v_0 is not normalized; this
+    # is to be contrasted with the standard arc-length parametrization, where the
+    # integral is over [0, L] and the tangent vector is unit length). This expression
+    # can be simplified further. Because each F has only one nonzero component,
+    # the 18 basis vector fields reduces to only 6 unique integrals of  the form,
+    # e.g., int[xy*dt], which can be computed using the magic formula after converting
+    # the cartesian coordinates into barycentric coordinates. The final 18 line
+    # integrals can then be computed as an outer product between the 6 (scalar)
+    # integrals and the 3 (x, y, z) components of the tangent v_1 - v_0.
 
     # Using the magic formula, the integral of the scalar basis functions over
     # a 1-simplex are:
     #
     # int[x^2] = L * (x_0^2 + x_0*x_1 + x_1^2) / 3
     # int[xy] = L * (2*x_0*y_0 + 2*x_1*y_1 + x_0*y_1 + x_1*y_0) / 6
-    x_0 = edge_verts[:, 0, 0]
-    y_0 = edge_verts[:, 0, 1]
-    z_0 = edge_verts[:, 0, 2]
-    x_1 = edge_verts[:, 1, 0]
-    y_1 = edge_verts[:, 1, 1]
-    z_1 = edge_verts[:, 1, 2]
+    #
+    # Note that the arc length L is simply 1 with reference element parametrization.
+    v0, v1 = edge_verts.unbind(1)
+    x_0, y_0, z_0 = v0.unbind(-1)
+    x_1, y_1, z_1 = v1.unbind(-1)
 
     scalar_basis_int = t.stack(
         [
@@ -327,7 +339,17 @@ def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
         "scalar_basis edge, edge vec_basis -> edge scalar_basis vec_basis",
     )
 
+    # Compute the 18 basis vector field integrals using numerical quadrature.
+    de_rham = DeRhamMap(k=1, quad_degree=2, mesh=mesh)
+
+    pts = de_rham.sample_points()
     x_pts, y_pts, z_pts = pts.unbind(-1)
+
+    # To obtain the values of the 18 basis vector fields over the sampled points,
+    # first evaluate the 6 basis functions at the sampled points, and then use
+    # the same outer product trick to broadcast the scalar values into the three
+    # coordinate slots (here, the "tangent vectors" are simply the standard
+    # Cartesian basis vectors).
     sampled_form_scalar_basis = t.stack(
         [x_pts**2, y_pts**2, z_pts**2, x_pts * y_pts, x_pts * z_pts, y_pts * z_pts]
     )
@@ -341,4 +363,5 @@ def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
 
     discretized_cochain = de_rham.discretize(sampled_form)
 
+    # Check that the analytical line integrals agree with the numerical quadratures.
     t.testing.assert_close(discretized_cochain, dot_prod)
