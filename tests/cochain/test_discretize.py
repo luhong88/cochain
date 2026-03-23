@@ -1,9 +1,6 @@
-import itertools
-
 import pytest
 import torch as t
 from einops import einsum, repeat
-from jaxtyping import Float
 
 from cochain.cochain.discretize import DeRhamMap
 from cochain.geometry.tet.tet_geometry import get_tet_signed_vols
@@ -359,6 +356,237 @@ def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
         sampled_form_scalar_basis,
         vec_basis,
         "scalar_basis edge pt, vec_basis coord -> edge pt scalar_basis vec_basis coord",
+    )
+
+    discretized_cochain = de_rham.discretize(sampled_form)
+
+    # Check that the analytical line integrals agree with the numerical quadratures.
+    t.testing.assert_close(discretized_cochain, dot_prod)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+def test_2_form_polynomial_deg_2_exact_integration(mesh, request, device):
+    """
+    Test that the numerical integration of a polynomial 2-form of degree 2 should
+    be exact using a quadrature rule of the same degree. See the test for 1-form
+    for more information.
+    """
+    mesh = request.getfixturevalue(mesh).to(device)
+    tri_verts = mesh.vert_coords[mesh.tris]
+
+    # Using the magic formula, the integral of the scalar basis functions over
+    # a 2-simplex are:
+    #
+    # int[x^2] = (x_0^2 + x_1^2 + x_2^2 + x_0*x_1 + x_0*x_2 + x_1*x_2) / 6
+    # int[xy] = (2(x_0*y_0 + x_1*y_1 + x_2*y_2) +
+    #            x_0*y_1 + x_1*y_0 + x_1*y_2 + x_2*y_1 + x_2*y_0 + x_0*y_2) / 12
+    v0, v1, v2 = tri_verts.unbind(1)
+    x_0, y_0, z_0 = v0.unbind(-1)
+    x_1, y_1, z_1 = v1.unbind(-1)
+    x_2, y_2, z_2 = v2.unbind(-1)
+
+    scalar_basis_int = t.stack(
+        [
+            (x_0**2 + x_1**2 + x_2**2 + x_0 * x_1 + x_0 * x_2 + x_1 * x_2) / 6.0,
+            (y_0**2 + y_1**2 + y_2**2 + y_0 * y_1 + y_0 * y_2 + y_1 * y_2) / 6.0,
+            (z_0**2 + z_1**2 + z_2**2 + z_0 * z_1 + z_0 * z_2 + z_1 * z_2) / 6.0,
+            (
+                2 * (x_0 * y_0 + x_1 * y_1 + x_2 * y_2)
+                + x_0 * y_1
+                + x_1 * y_0
+                + x_1 * y_2
+                + x_2 * y_1
+                + x_2 * y_0
+                + x_0 * y_2
+            )
+            / 12.0,
+            (
+                2 * (x_0 * z_0 + x_1 * z_1 + x_2 * z_2)
+                + x_0 * z_1
+                + x_1 * z_0
+                + x_1 * z_2
+                + x_2 * z_1
+                + x_2 * z_0
+                + x_0 * z_2
+            )
+            / 12.0,
+            (
+                2 * (y_0 * z_0 + y_1 * z_1 + y_2 * z_2)
+                + y_0 * z_1
+                + y_1 * z_0
+                + y_1 * z_2
+                + y_2 * z_1
+                + y_2 * z_0
+                + y_0 * z_2
+            )
+            / 12.0,
+        ]
+    )
+
+    tri_area_norms = 0.5 * t.cross(
+        tri_verts[:, 1] - tri_verts[:, 0], tri_verts[:, 2] - tri_verts[:, 0], dim=-1
+    )
+
+    dot_prod = einsum(
+        scalar_basis_int,
+        tri_area_norms,
+        "scalar_basis tri, tri vec_basis -> tri scalar_basis vec_basis",
+    )
+
+    # Compute the 18 basis vector field integrals using numerical quadrature.
+    de_rham = DeRhamMap(k=2, quad_degree=2, mesh=mesh)
+
+    pts = de_rham.sample_points()
+    x_pts, y_pts, z_pts = pts.unbind(-1)
+
+    sampled_form_scalar_basis = t.stack(
+        [x_pts**2, y_pts**2, z_pts**2, x_pts * y_pts, x_pts * z_pts, y_pts * z_pts]
+    )
+    vec_basis = t.eye(3, dtype=pts.dtype, device=pts.device)
+
+    sampled_form = einsum(
+        sampled_form_scalar_basis,
+        vec_basis,
+        "scalar_basis tri pt, vec_basis coord -> tri pt scalar_basis vec_basis coord",
+    )
+
+    discretized_cochain = de_rham.discretize(sampled_form)
+
+    # Check that the analytical line integrals agree with the numerical quadratures.
+    t.testing.assert_close(discretized_cochain, dot_prod)
+
+
+def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
+    """
+    Test that the numerical integration of a polynomial 3-form of degree 2 should
+    be exact using a quadrature rule of the same degree. See the test for 1-form
+    for more information.
+    """
+    mesh = two_tets_mesh.to(device)
+    tet_verts = mesh.vert_coords[mesh.tets]
+
+    v0, v1, v2, v3 = tet_verts.unbind(1)
+    x_0, y_0, z_0 = v0.unbind(-1)
+    x_1, y_1, z_1 = v1.unbind(-1)
+    x_2, y_2, z_2 = v2.unbind(-1)
+    x_3, y_3, z_3 = v3.unbind(-1)
+
+    scalar_basis_int = t.stack(
+        [
+            (
+                x_0**2
+                + x_1**2
+                + x_2**2
+                + x_3**2
+                + x_0 * x_1
+                + x_0 * x_2
+                + x_0 * x_3
+                + x_1 * x_2
+                + x_1 * x_3
+                + x_2 * x_3
+            )
+            / 10.0,
+            (
+                y_0**2
+                + y_1**2
+                + y_2**2
+                + y_3**2
+                + y_0 * y_1
+                + y_0 * y_2
+                + y_0 * y_3
+                + y_1 * y_2
+                + y_1 * y_3
+                + y_2 * y_3
+            )
+            / 10.0,
+            (
+                z_0**2
+                + z_1**2
+                + z_2**2
+                + z_3**2
+                + z_0 * z_1
+                + z_0 * z_2
+                + z_0 * z_3
+                + z_1 * z_2
+                + z_1 * z_3
+                + z_2 * z_3
+            )
+            / 10.0,
+            (
+                2 * (x_0 * y_0 + x_1 * y_1 + x_2 * y_2 + x_3 * y_3)
+                + x_0 * y_1
+                + x_1 * y_0
+                + x_0 * y_2
+                + x_2 * y_0
+                + x_0 * y_3
+                + x_3 * y_0
+                + x_1 * y_2
+                + x_2 * y_1
+                + x_1 * y_3
+                + x_3 * y_1
+                + x_2 * y_3
+                + x_3 * y_2
+            )
+            / 20.0,
+            (
+                2 * (x_0 * z_0 + x_1 * z_1 + x_2 * z_2 + x_3 * z_3)
+                + x_0 * z_1
+                + x_1 * z_0
+                + x_0 * z_2
+                + x_2 * z_0
+                + x_0 * z_3
+                + x_3 * z_0
+                + x_1 * z_2
+                + x_2 * z_1
+                + x_1 * z_3
+                + x_3 * z_1
+                + x_2 * z_3
+                + x_3 * z_2
+            )
+            / 20.0,
+            (
+                2 * (y_0 * z_0 + y_1 * z_1 + y_2 * z_2 + y_3 * z_3)
+                + y_0 * z_1
+                + y_1 * z_0
+                + y_0 * z_2
+                + y_2 * z_0
+                + y_0 * z_3
+                + y_3 * z_0
+                + y_1 * z_2
+                + y_2 * z_1
+                + y_1 * z_3
+                + y_3 * z_1
+                + y_2 * z_3
+                + y_3 * z_2
+            )
+            / 20.0,
+        ]
+    )
+
+    # Since 3-forms are scalar-valued, the vec_basis dimension is trivial.
+    tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets).unsqueeze(-1)
+
+    dot_prod = einsum(
+        scalar_basis_int,
+        tet_signed_vols,
+        "scalar_basis tri, tri vec_basis -> tri scalar_basis vec_basis",
+    )
+
+    # Compute the basis integrals using numerical quadrature.
+    de_rham = DeRhamMap(k=3, quad_degree=2, mesh=mesh)
+
+    pts = de_rham.sample_points()
+    x_pts, y_pts, z_pts = pts.unbind(-1)
+
+    sampled_form_scalar_basis = t.stack(
+        [x_pts**2, y_pts**2, z_pts**2, x_pts * y_pts, x_pts * z_pts, y_pts * z_pts]
+    )
+    vec_basis = t.tensor([[1]], dtype=pts.dtype, device=pts.device)
+
+    sampled_form = einsum(
+        sampled_form_scalar_basis,
+        vec_basis,
+        "scalar_basis tri pt, vec_basis coord -> tri pt scalar_basis vec_basis coord",
     )
 
     discretized_cochain = de_rham.discretize(sampled_form)
