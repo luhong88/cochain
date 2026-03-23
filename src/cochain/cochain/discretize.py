@@ -11,8 +11,31 @@ from ..utils import quadrature
 @dataclass
 class DeRhamMap:
     """
-    For 0-form, the de Rham map is equivalent to sampling the 0-form (scalar
-    function) at the vertex positions; therefore, only k = 1, 2, or 3 are supported.
+    This class implements the de Rham map and discretizes k-forms by mapping them
+    to discrete k-cochains via numerical integration. Note that, for 0-forms, the
+    de Rham map is "trivial" and equivalent to sampling the 0-form (scalar function)
+    at the vertex positions; therefore, only k = 1, 2, or 3 are supported.
+
+    To use this class, first call `sample_points()` to get a set of points on the
+    mesh at which to evaluate the k-form. Then, call `discretize()` with the
+    sampled k-form to perform the integration. It is possible to call `discretize()`
+    directly without having called `sample_points()`. Note that this function
+    supports input sampled k-forms with arbitrary batch/channel dimensions (but
+    note that the batch/channel dimensions precedes the final coordiate dimension).
+
+    This class uses Gauss-Legendre, Dunavant, and Keast numerical quadrature
+    rules for integrating over 1-, 2-, and 2-simplices, respectively. These rules
+    have the following properties:
+
+    * Invariance to vertex permutation.
+    * Can integrate polynomial functions exactly (currently, up to degree 5 is
+      supported); in general, higher degree rules require more sampled points. The
+      degree is specified via the `quad_degree` argument.
+
+    Note that some of the Keast rules employ negative weights; such rules require
+    fewer points to achieve the same exactness, but may be less numerically
+    stable due to potential cancellations with adjacent positively weighted points.
+    The argument `allow_neg_weights` specifies whether such rules are allowed.
     """
 
     k: int
