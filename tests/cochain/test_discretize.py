@@ -1,6 +1,9 @@
+import itertools
+
 import pytest
 import torch as t
 from einops import einsum, repeat
+from jaxtyping import Float
 
 from cochain.cochain.discretize import DeRhamMap
 from cochain.geometry.tet.tet_geometry import get_tet_signed_vols
@@ -276,3 +279,66 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
     pi_d_form = de_rham_3.discretize(sampled_3_forms)
 
     t.testing.assert_close(d_pi_form, pi_d_form)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
+    edge_verts = mesh.vert_coords[mesh.edges]
+
+    de_rham = DeRhamMap(k=1, quad_degree=2, mesh=mesh)
+
+    pts = de_rham.sample_points()
+
+    # In general, polynomial functions f(x, y, z) with 3 variables and of degree 2
+    # can be described by 6 basis functions: x^2, y^2, z^2, xy, xz, yz. In addition,
+    # for a polynomial 1-form of degree 2, the basis functions can be placed as
+    # coefficient in front of the three basis vectors, thus resulting in 18 basis
+    # vectors.
+
+    # Using the magic formula, the integral of the scalar basis functions over
+    # a 1-simplex are:
+    #
+    # int[x^2] = L * (x_0^2 + x_0*x_1 + x_1^2) / 3
+    # int[xy] = L * (2*x_0*y_0 + 2*x_1*y_1 + x_0*y_1 + x_1*y_0) / 6
+    x_0 = edge_verts[:, 0, 0]
+    y_0 = edge_verts[:, 0, 1]
+    z_0 = edge_verts[:, 0, 2]
+    x_1 = edge_verts[:, 1, 0]
+    y_1 = edge_verts[:, 1, 1]
+    z_1 = edge_verts[:, 1, 2]
+
+    scalar_basis_int = t.stack(
+        [
+            (x_0**2 + x_0 * x_1 + x_1**2) / 3.0,
+            (y_0**2 + y_0 * y_1 + y_1**2) / 3.0,
+            (z_0**2 + z_0 * z_1 + z_1**2) / 3.0,
+            (2 * x_0 * y_0 + 2 * x_1 * y_1 + x_0 * y_1 + x_1 * y_0) / 6.0,
+            (2 * x_0 * z_0 + 2 * x_1 * z_1 + x_0 * z_1 + x_1 * z_0) / 6.0,
+            (2 * y_0 * z_0 + 2 * y_1 * z_1 + y_0 * z_1 + y_1 * z_0) / 6.0,
+        ]
+    )
+
+    edge_vecs = edge_verts[:, 1] - edge_verts[:, 0]
+
+    dot_prod = einsum(
+        scalar_basis_int,
+        edge_vecs,
+        "scalar_basis edge, edge vec_basis -> edge scalar_basis vec_basis",
+    )
+
+    x_pts, y_pts, z_pts = pts.unbind(-1)
+    sampled_form_scalar_basis = t.stack(
+        [x_pts**2, y_pts**2, z_pts**2, x_pts * y_pts, x_pts * z_pts, y_pts * z_pts]
+    )
+    vec_basis = t.eye(3, dtype=pts.dtype, device=pts.device)
+
+    sampled_form = einsum(
+        sampled_form_scalar_basis,
+        vec_basis,
+        "scalar_basis edge pt, vec_basis coord -> edge pt scalar_basis vec_basis coord",
+    )
+
+    discretized_cochain = de_rham.discretize(sampled_form)
+
+    t.testing.assert_close(discretized_cochain, dot_prod)
