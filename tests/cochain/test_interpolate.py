@@ -1,8 +1,18 @@
 import pytest
 import torch as t
+from einops import einsum, rearrange, repeat
+from jaxtyping import Float, Integer
 
 from cochain.cochain.discretize import DeRhamMap
 from cochain.cochain.interpolate import barycentric_whitney_map
+from cochain.geometry.tet.tet_geometry import (
+    d_tet_signed_vols_d_vert_coords,
+    get_tet_signed_vols,
+)
+from cochain.geometry.tri.tri_geometry import (
+    compute_d_tri_areas_d_vert_coords,
+    compute_tri_areas,
+)
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 
 
@@ -44,3 +54,83 @@ def test_interpolate_discretize_left_inverse(mesh, k, quad, device, request):
     k_cochain_reconstructed = de_rham.discretize(k_form)
 
     t.testing.assert_close(k_cochain_reconstructed, k_cochain_true)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+def test_commutativity_with_d_on_0_form(mesh, request, device):
+    """
+    Test that the Whitney map W commutes with the exterior derivative d using
+    0-cochains; i.e., for any 0-cochain η, W(dη) = d(Wη).
+    """
+    mesh = request.getfixturevalue(mesh).to(device)
+
+    # Generate a common set of sampled points on the interior of the top-level simplices.
+    match mesh.dim:
+        case 2:
+            bary_coords, _ = Dunavant(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+        case 3:
+            bary_coords, _ = Keast(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+
+    # Test a random 0-cochain with 2 channel dimensions.
+    cochain_0 = t.randn((mesh.n_verts, 2), dtype=mesh.vert_coords.dtype, device=device)
+    d_0 = mesh.cbd[0]
+
+    # First, compute the interpolation of the exterior derivative.
+    cochain_1 = d_0 @ cochain_0
+    w_d_cochain = barycentric_whitney_map(
+        k=1,
+        k_cochain=cochain_1,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="interior",
+    )
+
+    # Then, compute the exterior derivative of the interpolation. Recall that
+    # the interpolated 0-form is expressed as ω(p) = sum[η_i*W_i(p)], where,
+    # for 0-forms, W_i = λ_i. THe application of the exterior derivative to this
+    # expression is equivalent to taking the gradient: ∇ω(p) = sum[η_i*∇W_i(p)].
+    # Therefore, to compute the exterior derivative of the interpolation, we
+    # repeat the same logic as in _bary_whitney_tri_cochain_0() and
+    # _bary_whitney_tet_cochain_0(), but with the original basis function W_i(p)
+    # replaced by ∇W_i(p).
+    match mesh.dim:
+        case 2:
+            tri_areas = rearrange(
+                compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
+            )
+            d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
+                mesh.vert_coords, mesh.tris
+            )
+            bary_coords_grad = d_tri_areas_d_vert_coords / tri_areas
+            cochain_0_at_vert_faces = cochain_0[mesh.tris]
+
+        case 3:
+            tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
+                mesh.vert_coords, mesh.tets
+            )
+            bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(
+                -1, 1, 1
+            )
+            cochain_0_at_vert_faces = cochain_0[mesh.tets]
+
+        case _:
+            raise ValueError()
+
+    # Note that the exterior derivative of the interpolated 0-cochain has no pt
+    # dimension (since it should be constant within the top-level simplices).
+    d_w_cochain = einsum(
+        bary_coords_grad,
+        cochain_0_at_vert_faces,
+        "top_simp vert coord, top_simp vert ch -> top_simp ch coord",
+    )
+    d_w_cochain_formed = repeat(
+        d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
+    )
+
+    # Check that the two approaches give the same results.
+    t.testing.assert_close(w_d_cochain, d_w_cochain_formed)
