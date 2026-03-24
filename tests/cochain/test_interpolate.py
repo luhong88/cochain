@@ -13,6 +13,7 @@ from cochain.geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
+from cochain.utils.faces import enumerate_unique_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 
 
@@ -127,6 +128,111 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
         bary_coords_grad,
         cochain_0_at_vert_faces,
         "top_simp vert coord, top_simp vert ch -> top_simp ch coord",
+    )
+    d_w_cochain_formed = repeat(
+        d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
+    )
+
+    # Check that the two approaches give the same results.
+    t.testing.assert_close(w_d_cochain, d_w_cochain_formed)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+def test_commutativity_with_d_on_1_form(mesh, request, device):
+    """
+    Test that the Whitney map W commutes with the exterior derivative d using
+    1-cochains; i.e., for any 1-cochain η, W(dη) = d(Wη).
+    """
+    mesh = request.getfixturevalue(mesh).to(device)
+
+    # Generate a common set of sampled points on the interior of the top-level simplices.
+    match mesh.dim:
+        case 2:
+            bary_coords, _ = Dunavant(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+        case 3:
+            bary_coords, _ = Keast(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+
+    # Test a random 1-cochain with 2 channel dimensions.
+    cochain_1 = t.randn((mesh.n_edges, 2), dtype=mesh.vert_coords.dtype, device=device)
+    d_1 = mesh.cbd[1]
+
+    # First, compute the interpolation of the exterior derivative.
+    cochain_2 = d_1 @ cochain_1
+    w_d_cochain = barycentric_whitney_map(
+        k=2,
+        k_cochain=cochain_2,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="interior",
+    )
+
+    # Then, compute the exterior derivative of the interpolation. Recall that
+    # the interpolated 1-form is expressed as ω(p) = sum[η_ij*W_ij(p)], where,
+    # for 0-forms, W_ij = W_ij = λ_i∇λ_j - λ_j∇λ_i. THe application of the exterior
+    # derivative to this expression is equivalent to taking the curl:
+    #
+    # ∇ x ω(p) = sum[η_ij * ∇ x W_ij(p)] = sum[η_ij * 2(∇λ_i x ∇λ_j)]
+    #
+    # Therefore, to compute the exterior derivative of the interpolation, we
+    # repeat the same logic as in _bary_whitney_tri_cochain_1() and
+    # _bary_whitney_tet_cochain_1(), but with the original basis function W_ij(p)
+    # replaced by ∇ x W_ij(p).
+    match mesh.dim:
+        case 2:
+            tri_areas = rearrange(
+                compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
+            )
+            d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
+                mesh.vert_coords, mesh.tris
+            )
+            bary_coords_grad = d_tri_areas_d_vert_coords / tri_areas
+
+            local_edge_idx = enumerate_unique_faces(
+                simp_dim=2, face_dim=1, device=device
+            )
+
+            cochain_1_at_edge_faces = cochain_1[mesh.tri_edge_idx]
+            sign_correction = mesh.tri_edge_orientations
+
+        case 3:
+            tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
+                mesh.vert_coords, mesh.tets
+            )
+            bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(
+                -1, 1, 1
+            )
+
+            local_edge_idx = enumerate_unique_faces(
+                simp_dim=3, face_dim=1, device=device
+            )
+
+            cochain_1_at_edge_faces = cochain_1[mesh.tet_edge_idx]
+            sign_correction = mesh.tet_edge_orientations
+
+        case _:
+            raise ValueError()
+
+    basis = 2.0 * t.cross(
+        bary_coords_grad[:, local_edge_idx[:, 0]],
+        bary_coords_grad[:, local_edge_idx[:, 1]],
+        dim=-1,
+    )
+
+    # Note that (1) the exterior derivative of the interpolated 1-cochain has no
+    # pt dimension (since it should be constant within the top-level simplices),
+    # and (2) we need a sign correction here, in comparison to the 0-form test case,
+    # because of potential mismatch between the orientations of local 1-faces vs
+    # global canonical 1-simplices.
+    d_w_cochain = einsum(
+        basis,
+        sign_correction,
+        cochain_1_at_edge_faces,
+        "top_simp edge coord, top_simp edge, top_simp edge ch -> top_simp ch coord",
     )
     d_w_cochain_formed = repeat(
         d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
