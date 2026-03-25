@@ -1,3 +1,5 @@
+from random import random
+
 import pytest
 import torch as t
 from einops import einsum, rearrange, repeat
@@ -325,3 +327,219 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
 
     # Check that the two approaches give the same results.
     t.testing.assert_close(w_d_cochain, d_w_cochain_formed)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+def test_0_form_interpolate_discretize_right_project(mesh, request, device):
+    """
+    Test that the Whitney interpolation of a 0-cochain discretized from a constant
+    0-form returns the original 0-form. This is a consequence of the fact that
+    W ∘ π is a projection operator that projects k-forms to the subspace spanned
+    by the Whitney basis functions.
+    """
+    mesh = request.getfixturevalue(mesh).to(device)
+
+    constant = random()
+
+    # The 0-cochain is simply the assignment of the constant to the vertices.
+    cochain_0 = constant * t.ones(
+        (mesh.n_verts, 1), dtype=mesh.vert_coords.dtype, device=device
+    )
+
+    match mesh.dim:
+        case 2:
+            bary_coords, _ = Dunavant(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+        case 3:
+            bary_coords, _ = Keast(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+
+    form_0 = barycentric_whitney_map(
+        k=0,
+        k_cochain=cochain_0,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="interior",
+    )
+
+    form_0_true = constant * t.ones_like(form_0)
+
+    t.testing.assert_close(form_0, form_0_true)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+def test_1_form_interpolate_discretize_right_project(mesh, request, device):
+    """
+    Test that the Whitney interpolation of a 1-cochain discretized from a constant
+    1-form is exact.
+    """
+    mesh = request.getfixturevalue(mesh).to(device)
+
+    const_vec = t.randn(3, dtype=mesh.vert_coords.dtype, device=device)
+
+    # Discretize the constant 1-form via de Rham map.
+    de_rham = DeRhamMap(k=1, quad_degree=3, mesh=mesh)
+    pts = de_rham.sample_points()
+    n_simps, n_pts, _ = pts.shape
+
+    cochain_1 = de_rham.discretize(
+        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+    )
+
+    # Interpolate the discretized 1-form via Whitney map.
+    match mesh.dim:
+        case 2:
+            bary_coords, _ = Dunavant(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+        case 3:
+            bary_coords, _ = Keast(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+
+    form_1 = barycentric_whitney_map(
+        k=1,
+        k_cochain=cochain_1,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="interior",
+    )
+
+    # Compare the interpolated 1-form with the true 1-form.
+    form_1_true = const_vec.view(1, 1, -1).expand_as(form_1)
+
+    match mesh.dim:
+        case 2:
+            # For a 2D mesh embedded in 3D space, the component of the 1-form that
+            # is perpendicular to the triangles cannot be reconstructed using
+            # the Whitney basis functions; therefore, the perp component needs
+            # to be removed from the 1-form before comparing against the
+            # interpolated 1-form.
+            tri_verts = mesh.vert_coords[mesh.tris]
+
+            area_normal = t.cross(
+                tri_verts[:, 1] - tri_verts[:, 0],
+                tri_verts[:, 2] - tri_verts[:, 0],
+                dim=-1,
+            )
+            area_unormal = area_normal / t.linalg.norm(
+                area_normal, dim=-1, keepdim=True
+            )
+            form_1_perp_comp = einsum(
+                const_vec, area_unormal, "coord, tri coord -> tri"
+            )
+            form_1_perp = form_1_perp_comp.view(-1, 1) * area_unormal
+            form_1_tangent = form_1_true - form_1_perp.unsqueeze(1)
+
+            t.testing.assert_close(form_1, form_1_tangent)
+
+        case 3:
+            t.testing.assert_close(form_1, form_1_true)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+def test_2_form_interpolate_discretize_right_project(mesh, request, device):
+    """
+    Test that the Whitney interpolation of a 2-cochain discretized from a constant
+    2-form is exact.
+    """
+    mesh = request.getfixturevalue(mesh).to(device)
+
+    const_vec = t.randn(3, dtype=mesh.vert_coords.dtype, device=device)
+
+    # Discretize the constant 2-form via de Rham map.
+    de_rham = DeRhamMap(k=2, quad_degree=3, mesh=mesh)
+    pts = de_rham.sample_points()
+    n_simps, n_pts, _ = pts.shape
+
+    cochain_2 = de_rham.discretize(
+        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+    )
+
+    # Interpolate the discretized 2-form via Whitney map.
+    match mesh.dim:
+        case 2:
+            bary_coords, _ = Dunavant(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+        case 3:
+            bary_coords, _ = Keast(
+                dtype=mesh.vert_coords.dtype, device=device
+            ).get_rule(degree=3)
+
+    form_2 = barycentric_whitney_map(
+        k=2,
+        k_cochain=cochain_2,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="interior",
+    )
+
+    # Compare the interpolated 2-form with the true 2-form.
+
+    match mesh.dim:
+        case 2:
+            # For a 2D mesh embedded in 3D space, the component of the 2-form that
+            # is tangential to the triangles cannot be reconstructed using
+            # the Whitney basis functions; therefore, the tangential component needs
+            # to be removed from the 2-form before comparing against the
+            # interpolated 2-form.
+            tri_verts = mesh.vert_coords[mesh.tris]
+
+            area_normal = t.cross(
+                tri_verts[:, 1] - tri_verts[:, 0],
+                tri_verts[:, 2] - tri_verts[:, 0],
+                dim=-1,
+            )
+            area_unormal = area_normal / t.linalg.norm(
+                area_normal, dim=-1, keepdim=True
+            )
+            form_2_perp_comp = einsum(
+                const_vec, area_unormal, "coord, tri coord -> tri"
+            )
+            form_2_perp = form_2_perp_comp.view(-1, 1) * area_unormal
+            form_2_perp_shaped = form_2_perp.unsqueeze(1).expand_as(form_2)
+
+            t.testing.assert_close(form_2, form_2_perp_shaped)
+
+        case 3:
+            form_2_true = const_vec.view(1, 1, -1).expand_as(form_2)
+            t.testing.assert_close(form_2, form_2_true)
+
+
+def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
+    """
+    Test that the Whitney interpolation of a 3-cochain discretized from a constant
+    3-form is exact.
+    """
+    mesh = two_tets_mesh.to(device)
+
+    const_scalar = t.randn(1, dtype=mesh.vert_coords.dtype, device=device)
+
+    # Discretize the constant 3-form via de Rham map.
+    de_rham = DeRhamMap(k=3, quad_degree=3, mesh=mesh)
+    pts = de_rham.sample_points()
+    n_simps, n_pts, _ = pts.shape
+
+    cochain_3 = de_rham.discretize(
+        k_forms=repeat(const_scalar, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+    )
+
+    # Interpolate the discretized 3-form via Whitney map.
+    bary_coords, _ = Keast(dtype=mesh.vert_coords.dtype, device=device).get_rule(
+        degree=3
+    )
+
+    form_3 = barycentric_whitney_map(
+        k=3,
+        k_cochain=cochain_3,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="interior",
+    )
+
+    # Compare the interpolated 2-form with the true 3-form.
+    form_3_true = const_scalar.view(1, 1, -1).expand_as(form_3)
+    t.testing.assert_close(form_3, form_3_true)
