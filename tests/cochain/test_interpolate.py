@@ -543,3 +543,131 @@ def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
     # Compare the interpolated 2-form with the true 3-form.
     form_3_true = const_scalar.view(1, 1, -1).expand_as(form_3)
     t.testing.assert_close(form_3, form_3_true)
+
+
+def test_1_form_tangential_continuity_on_tri_mesh(two_tris_mesh, device):
+    """
+    Testing that the interpolated 1-form on the shared 1-face of two triangles
+    must agree in their tangential components.
+    """
+    mesh = two_tris_mesh.to(device)
+
+    cochain_1 = t.randn(mesh.n_edges, dtype=mesh.vert_coords.dtype, device=device)
+
+    bary_coords, _ = GaussLegendre(
+        dtype=mesh.vert_coords.dtype, device=device
+    ).get_rule(degree=3)
+
+    form_1: Float[t.Tensor, "tri edge pt coord"] = barycentric_whitney_map(
+        k=1,
+        k_cochain=cochain_1,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="boundary",
+        boundary_reduction="none",
+    )
+
+    # For the two_tris_mesh, the triangles are defined as [[0, 1, 2], [1, 3, 2]]
+    # so the last edge in the first triangle and the second edge in the second
+    # triangle are shared.
+    form_1_shared_edge_1 = form_1[0, 2]
+    form_1_shared_edge_2 = form_1[1, 1]
+
+    shared_edge_vec = mesh.vert_coords[2] - mesh.vert_coords[1]
+
+    form_1_tangent_1 = einsum(
+        form_1_shared_edge_1, shared_edge_vec, "pt coord, coord -> pt"
+    )
+    form_1_tangent_2 = einsum(
+        form_1_shared_edge_2, shared_edge_vec, "pt coord, coord -> pt"
+    )
+
+    t.testing.assert_close(form_1_tangent_1, form_1_tangent_2)
+
+
+def test_1_form_tangential_continuity_on_tet_mesh(two_tets_mesh, device):
+    """
+    Testing that the interpolated 1-form on the shared 1-face of two tets
+    must agree in their tangential components.
+    """
+    mesh = two_tets_mesh.to(device)
+
+    cochain_1 = t.randn(mesh.n_edges, dtype=mesh.vert_coords.dtype, device=device)
+
+    bary_coords, _ = GaussLegendre(
+        dtype=mesh.vert_coords.dtype, device=device
+    ).get_rule(degree=3)
+
+    form_1: Float[t.Tensor, "tet edge pt coord"] = barycentric_whitney_map(
+        k=1,
+        k_cochain=cochain_1,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="boundary",
+        boundary_reduction="none",
+    )
+
+    # For the two_tets_mesh, the triangles are defined as [[0, 1, 2, 4], [2, 1, 0, 3]],
+    # so the edges 01, 02, 12 are shared. By enumerate_unique_faces(), these three
+    # edges correspond to edge 0, 1, 2, and 2, 1, 0 on the two tets, respectively.
+    form_1_shared_edge_1 = form_1[0, [0, 1, 2]]
+    form_1_shared_edge_2 = form_1[1, [2, 1, 0]]
+
+    shared_edge_vec = mesh.vert_coords[[1, 2, 2]] - mesh.vert_coords[[0, 0, 1]]
+
+    form_1_tangent_1 = einsum(
+        form_1_shared_edge_1, shared_edge_vec, "edge pt coord, edge coord -> edge pt"
+    )
+    form_1_tangent_2 = einsum(
+        form_1_shared_edge_2, shared_edge_vec, "edge pt coord, edge coord -> edge pt"
+    )
+
+    t.testing.assert_close(form_1_tangent_1, form_1_tangent_2)
+
+
+def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
+    """
+    Testing that the interpolated 2-form on the shared 2-face of two tets
+    must agree in their normal components.
+    """
+    mesh = two_tets_mesh.to(device)
+
+    cochain_2 = t.randn(mesh.n_tris, dtype=mesh.vert_coords.dtype, device=device)
+
+    bary_coords, _ = Dunavant(dtype=mesh.vert_coords.dtype, device=device).get_rule(
+        degree=3
+    )
+
+    form_2: Float[t.Tensor, "tet tri pt coord"] = barycentric_whitney_map(
+        k=2,
+        k_cochain=cochain_2,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="boundary",
+        boundary_reduction="none",
+    )
+
+    # For the two_tets_mesh, the triangles are defined as [[0, 1, 2, 4], [2, 1, 0, 3]],
+    # so the triangle 012 is shared. By enumerate_unique_faces(), this is the last
+    # triangle face in each tet.
+    form_2_shared_tri_1 = form_2[0, -1]
+    form_2_shared_tri_2 = form_2[1, -1]
+
+    shared_tri_normal_vec = t.cross(
+        mesh.vert_coords[1] - mesh.vert_coords[0],
+        mesh.vert_coords[2] - mesh.vert_coords[0],
+    )
+
+    form_2_normal_1 = einsum(
+        form_2_shared_tri_1, shared_tri_normal_vec, "pt coord, coord -> pt"
+    )
+    form_2_normal_2 = einsum(
+        form_2_shared_tri_2, shared_tri_normal_vec, "pt coord, coord -> pt"
+    )
+
+    # Note that, although the triangle faces 012 and 210 have different local
+    # orientations, the function barycentric_whitney_map() returns interpolated
+    # forms assuming that the 2-simplices assume the canonical orientation; therefore
+    # the normal components of the 2-form on the shared 2-faces should point in
+    # the same, not the opposite, directions.
+    t.testing.assert_close(form_2_normal_1, form_2_normal_2)
