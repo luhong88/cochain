@@ -189,36 +189,36 @@ def test_dense_diag_mm(diag, device):
 
 def test_diag_sp_mm(A, diag, device):
     sp_tensor = A.to(device)
-    sp_operator = SparseDecoupledTensor.from_tensor(sp_tensor)
+    sdt = SparseDecoupledTensor.from_tensor(sp_tensor)
 
     diag_tensor = t.diagflat(diag).to(device)
-    diag_operator = DiagDecoupledTensor.from_tensor(diag).to(device)
+    ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
 
     diag_sp_true = diag_tensor @ sp_tensor
-    diag_sp = diag_operator @ sp_operator
+    diag_sp = ddt @ sdt
 
     t.testing.assert_close(diag_sp.to_dense(), diag_sp_true.to_dense())
 
 
 def test_sp_diag_mm(A, diag, device):
     sp_tensor = A.to(device)
-    sp_operator = SparseDecoupledTensor.from_tensor(sp_tensor)
+    sdt = SparseDecoupledTensor.from_tensor(sp_tensor)
 
     diag_tensor = t.diagflat(diag).to(device)
-    diag_operator = DiagDecoupledTensor.from_tensor(diag).to(device)
+    ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
 
     sp_diag_true = sp_tensor @ diag_tensor
-    sp_diag = sp_operator @ diag_operator
+    sp_diag = sdt @ ddt
 
     t.testing.assert_close(sp_diag.to_dense(), sp_diag_true.to_dense())
 
 
 def test_diag_diag_mm(diag, device):
     diag_tensor = t.diagflat(diag).to(device)
-    diag_operator = DiagDecoupledTensor.from_tensor(diag).to(device)
+    ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
 
     diag_diag_true = diag_tensor @ diag_tensor.T
-    diag_diag = diag_operator @ diag_operator.T
+    diag_diag = ddt @ ddt.T
 
     t.testing.assert_close(diag_diag.to_dense(), diag_diag_true.to_dense())
 
@@ -248,7 +248,7 @@ def test_sp_vm(diag, device):
 
 
 def test_matmul_with_batch_dim(diag, diag_batched, A_batched, device):
-    diag_operator = DiagDecoupledTensor.from_tensor(diag).to(device)
+    ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
     diag_batched_operator = DiagDecoupledTensor.from_tensor(diag_batched).to(device)
 
     sp_batched_operator = SparseDecoupledTensor.from_tensor(A_batched).to(device)
@@ -266,16 +266,16 @@ def test_matmul_with_batch_dim(diag, diag_batched, A_batched, device):
         b_dense @ diag_batched_operator
 
     with pytest.raises(NotImplementedError):
-        diag_batched_operator @ diag_operator
+        diag_batched_operator @ ddt
 
     with pytest.raises(NotImplementedError):
-        diag_operator @ diag_batched_operator
+        ddt @ diag_batched_operator
 
     with pytest.raises(NotImplementedError):
-        diag_operator @ sp_batched_operator
+        ddt @ sp_batched_operator
 
     with pytest.raises(NotImplementedError):
-        sp_batched_operator @ diag_operator
+        sp_batched_operator @ ddt
 
 
 def test_matmul_with_dense_dim(diag, device):

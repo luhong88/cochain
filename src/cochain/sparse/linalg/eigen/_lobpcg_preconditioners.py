@@ -61,10 +61,10 @@ class JacobiPrecond:
 
     def __init__(self, A_op: Float[SparseDecoupledTensor, "m m"]):
         eps = 1e-4 * A_op.tr / A_op.size(0)
-        self.diag_op = DiagDecoupledTensor(1 / (A_op.diagonal() + eps))
+        self.ddt = DiagDecoupledTensor(1 / (A_op.diagonal() + eps))
 
     def __matmul__(self, res: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
-        return self.diag_op @ res
+        return self.ddt @ res
 
 
 class ILUPrecond:

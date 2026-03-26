@@ -74,13 +74,11 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         val_dtype = rep_sp_op.dtype
 
         # Construct concatenated sparse topology.
-        pattern_list = [sp_op.pattern for sp_op in sp_op_list]
+        pattern_list = [sdt.pattern for sdt in sp_op_list]
         pattern_concat = SparsityPattern.pack_block_diag(pattern_list)
 
         # Construct concatenated values tensor.
-        val_list = [
-            sp_op.val.to(device=device, dtype=val_dtype) for sp_op in sp_op_list
-        ]
+        val_list = [sdt.val.to(device=device, dtype=val_dtype) for sdt in sp_op_list]
 
         batch_perm = pattern_concat.block_diag_config.batch_perm
 
@@ -118,8 +116,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         empty/zero blocks.
         """
         # Convert all input blocks except for None to SparseDecoupledTensor, and produce
-        # two lists: one flattened list of sp_op.val (excluding None), and a nested
-        # list of sp_op.pattern (including None).
+        # two lists: one flattened list of sdt.val (excluding None), and a nested
+        # list of sdt.pattern (including None).
         pattern_list = []
         val_list = []
         rep_sp_op = None
@@ -128,22 +126,22 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             for block in block_row:
                 match block:
                     case t.Tensor():
-                        sp_op = SparseDecoupledTensor.from_tensor(block)
-                        pattern_row.append(sp_op.pattern)
-                        val_list.append(sp_op.val)
+                        sdt = SparseDecoupledTensor.from_tensor(block)
+                        pattern_row.append(sdt.pattern)
+                        val_list.append(sdt.val)
 
                         # Pick a representative SparseDecoupledTensor and use it to
                         # determine device, dtype, and dense dimension information.
                         if rep_sp_op is None:
-                            rep_sp_op = sp_op
+                            rep_sp_op = sdt
 
                     case BaseDecoupledTensor():
-                        sp_op = block.to_sparse_operator()
-                        pattern_row.append(sp_op.pattern)
-                        val_list.append(sp_op.val)
+                        sdt = block.to_sparse_operator()
+                        pattern_row.append(sdt.pattern)
+                        val_list.append(sdt.val)
 
                         if rep_sp_op is None:
-                            rep_sp_op = sp_op
+                            rep_sp_op = sdt
 
                     case None:
                         pattern_row.append(None)

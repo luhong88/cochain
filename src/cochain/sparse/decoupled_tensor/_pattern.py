@@ -165,7 +165,7 @@ class SparsityPattern:
         ).cumsum(dim=0)
 
         c_sizes_cum = t.tensor(
-            [0] + [sp_op.size(-1) for sp_op in block_patterns],
+            [0] + [sdt.size(-1) for sdt in block_patterns],
             dtype=idx_dtype,
             device=device,
         ).cumsum(dim=0)

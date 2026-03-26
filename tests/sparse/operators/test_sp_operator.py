@@ -378,10 +378,10 @@ def test_transpose_with_batch_dense_dim(device):
     idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
-    sp_op = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
+    sdt = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
 
-    sp_op_T = sp_op.T.to_dense()
-    sp_tensor_T = sp_op.to_dense().transpose(1, 2)
+    sp_op_T = sdt.T.to_dense()
+    sp_tensor_T = sdt.to_dense().transpose(1, 2)
 
     t.testing.assert_close(sp_op_T, sp_tensor_T)
 
@@ -429,12 +429,12 @@ def test_size(device):
     idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
-    sp_op = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
+    sdt = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
 
-    assert sp_op.size() == sp_op.shape
+    assert sdt.size() == sdt.shape
 
     for idx, val in enumerate(shape + (val.shape[-1],)):
-        assert sp_op.size(idx) == val
+        assert sdt.size(idx) == val
 
 
 def test_to_float64(A, device):
@@ -507,10 +507,10 @@ def test_assemble_with_diag_operator(A, device):
 
     diag = t.randn(A_tensor.size(0))
     diag_tensor = t.diagflat(diag).to(device)
-    diag_op = DiagDecoupledTensor.from_tensor(diag).to(device)
+    ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
 
     tensor_sum = diag_tensor + A_tensor
-    op_sum = SparseDecoupledTensor.assemble(A_op, diag_op)
+    op_sum = SparseDecoupledTensor.assemble(A_op, ddt)
 
     t.testing.assert_close(op_sum.to_dense(), tensor_sum)
 
@@ -555,8 +555,8 @@ def test_pack_block_diag(device):
 
     sp_ops = block_diag.unpack_block_diag()
 
-    for sp_op, ori_op in zip(sp_ops, [a, b, c]):
-        t.testing.assert_close(sp_op.to_dense(), ori_op.to_dense())
+    for sdt, ori_op in zip(sp_ops, [a, b, c]):
+        t.testing.assert_close(sdt.to_dense(), ori_op.to_dense())
 
 
 def test_pack_block_diag_with_batch_dim(A_batched, device):
