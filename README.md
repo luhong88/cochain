@@ -8,14 +8,15 @@
     * Piecewise-linear triangular and tetrahedral meshes embedded in $\mathbb{R}^3$.
 * Topological operators:
     * Coboundary operators, aka discrete exterior derivatives.
-    * Combinatorial Laplacians.
+    * Combinatorial Laplacians on both the primal and dual meshes.
     * Cup product and anti-symmetrized cup product.
     * Tree-cotree decomposition for 1-Laplacians (on triangular meshes).
 * Geometric operators:
     * Discrete Hodge stars for both circumcentric and barycentric duals.
     * Mass matrices derived from Whitney basis functions (of the lowest order).
     * DEC Hodge Laplacians (for triangular meshes) and weak Laplacians/stiffness matrices (for tetrahedral meshes).
-    * Galerkin/$L^2$-projected wedge product.
+    * Galerkin ($L^2$-projected) wedge product.
+    * Whitney map for interpolation of discrete $k$-cochains and de Rham map for discretization of continuous $k$-forms. 
 * Computational backend:
     * Differentiable wrappers for sparse linear solvers SuperLU (via `scipy` and `cupy`) and cuDSS (via `nvmath-python`).
     * Differentiable sparse eigensolvers, including the implicitly restarted Lanczos method (via `scipy`), the thick-restart Lanczos method (via `cupy`), and a custom, GPU-compatible LOBPCG implementation that supports both generalized eigenvalue problems and the shift-invert mode for interior eigenvalues.
@@ -26,4 +27,3 @@
 
 * Musical operators.
 * Harmonic form generator.
-* Whitney form interpolation (for point cloud/mesh conversions).
