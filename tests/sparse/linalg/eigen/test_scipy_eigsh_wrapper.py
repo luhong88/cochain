@@ -1,9 +1,9 @@
 import torch as t
 from jaxtyping import Float
 
+from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.sparse.linalg.eigen import SciPyEigshConfig, scipy_eigsh
 from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
-from cochain.sparse.operators import SparseOperator
 
 # TODO: test handling of degenerate eigenvalues
 # TODO: test handling of batching
@@ -24,7 +24,7 @@ def dense_gep(
 
 
 def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
-    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
     eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
@@ -67,9 +67,9 @@ def test_batched_standard_forward(
 
     k = 2
 
-    A1_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
-    A2_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
-    A_op = SparseOperator.pack_block_diag((A1_op, A2_op))
+    A1_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
+    A2_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.pack_block_diag((A1_op, A2_op))
 
     eig_vals, eig_vecs = scipy_eigsh(
         A=A_op, block_diag_batch=True, k=k, config=SciPyEigshConfig(which="LM")
@@ -95,7 +95,7 @@ def test_batched_standard_forward(
 def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     k = 3
 
-    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
     A_op.requires_grad_()
 
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
@@ -116,7 +116,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     eig_vals_loss_true.backward()
     eig_vals_loss.backward()
 
-    eig_vals_grad_true = A_dense.grad[t.unbind(A_op.sp_topo.idx_coo, dim=0)]
+    eig_vals_grad_true = A_dense.grad[t.unbind(A_op.pattern.idx_coo, dim=0)]
     eig_vals_grad = A_op.val.grad
 
     t.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
@@ -125,7 +125,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
 def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     k = 3
 
-    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
     A_op.requires_grad_()
 
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
@@ -156,7 +156,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     eig_vecs_loss.backward()
 
     eig_vecs_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
-        t.unbind(A_op.sp_topo.idx_coo, dim=0)
+        t.unbind(A_op.pattern.idx_coo, dim=0)
     ]
     eig_vecs_grad = A_op.val.grad
 
@@ -166,7 +166,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
 def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     k = 3
 
-    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
     A_op.requires_grad_()
 
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
@@ -196,7 +196,7 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     combined_loss.backward()
 
     combined_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
-        t.unbind(A_op.sp_topo.idx_coo, dim=0)
+        t.unbind(A_op.pattern.idx_coo, dim=0)
     ]
     combined_grad = A_op.val.grad
 
@@ -211,8 +211,8 @@ def test_gep_forward(rand_sp_gep_6x6: Float[t.Tensor, "6 6"], device):
 
     eig_vals_true, eig_vecs_true = dense_gep(A_dense, M_dense)
 
-    A_op = SparseOperator.from_tensor(A).to(device)
-    M_op = SparseOperator.from_tensor(M).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+    M_op = SparseDecoupledTensor.from_tensor(M).to(device)
 
     k = 3
 
@@ -253,10 +253,10 @@ def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     eig_vals_true_all, eig_vecs_true_all = dense_gep(A_dense, M_dense)
     eig_vals_true = eig_vals_true_all[-k:]
 
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     A_op.requires_grad_()
 
-    M_op = SparseOperator.from_tensor(M).to(device)
+    M_op = SparseDecoupledTensor.from_tensor(M).to(device)
     M_op.requires_grad_()
 
     eig_vals, eig_vecs = scipy_eigsh(
@@ -270,12 +270,12 @@ def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     eig_vals_loss_true.backward()
     eig_vals_loss.backward()
 
-    A_grad_true = A_dense.grad[t.unbind(A_op.sp_topo.idx_coo, dim=0)]
+    A_grad_true = A_dense.grad[t.unbind(A_op.pattern.idx_coo, dim=0)]
     A_grad = A_op.val.grad
 
     t.testing.assert_close(A_grad, A_grad_true)
 
-    M_grad_true = M_dense.grad[t.unbind(M_op.sp_topo.idx_coo, dim=0)]
+    M_grad_true = M_dense.grad[t.unbind(M_op.pattern.idx_coo, dim=0)]
     M_grad = M_op.val.grad
 
     t.testing.assert_close(M_grad, M_grad_true)
@@ -296,10 +296,10 @@ def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     eig_vecs_true = eig_vecs_true_all[:, -k:]
     subspace_projector = eig_vecs_true @ eig_vecs_true.T @ M_dense
 
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     A_op.requires_grad_()
 
-    M_op = SparseOperator.from_tensor(M).to(device)
+    M_op = SparseDecoupledTensor.from_tensor(M).to(device)
     M_op.requires_grad_()
 
     eig_vals, eig_vecs = scipy_eigsh(
@@ -314,14 +314,14 @@ def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     eig_vecs_loss.backward()
 
     A_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector.T)[
-        t.unbind(A_op.sp_topo.idx_coo, dim=0)
+        t.unbind(A_op.pattern.idx_coo, dim=0)
     ]
     A_grad = A_op.val.grad
 
     t.testing.assert_close(A_grad, A_grad_true)
 
     M_grad_true = (subspace_projector @ M_dense.grad @ subspace_projector.T)[
-        t.unbind(M_op.sp_topo.idx_coo, dim=0)
+        t.unbind(M_op.pattern.idx_coo, dim=0)
     ]
     M_grad = M_op.val.grad
 
@@ -329,7 +329,7 @@ def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
 
 
 def test_shift_invert_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
-    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
     # Since t.linalg.eigh does not support shift-invert mode, need to manually
@@ -369,8 +369,8 @@ def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
     eig_val_true = eig_vals_true[target_idx]
     eig_vec_true = eig_vecs_true[:, target_idx]
 
-    A_op = SparseOperator.from_tensor(A).to(device)
-    M_op = SparseOperator.from_tensor(M).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+    M_op = SparseDecoupledTensor.from_tensor(M).to(device)
 
     eig_val, eig_vec = scipy_eigsh(
         A=A_op, M=M_op, k=k, config=SciPyEigshConfig(sigma=target_eig_val, which="LM")

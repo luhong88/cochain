@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...operators import SparseTopology
+from ...decoupled_tensor import SparsityPattern
 
 
 def compute_eig_vec_grad_proj(
@@ -33,7 +33,7 @@ def compute_cauchy_matrix(
 
 
 def compute_dLdA_val(
-    A_sp_topo: Integer[SparseTopology, "r c"],
+    A_pattern: Integer[SparsityPattern, "r c"],
     eig_vecs: Float[t.Tensor, "c k"],
     dLdl: Float[t.Tensor, " k"],
     dLdv: Float[t.Tensor, "c k"] | None,
@@ -43,8 +43,8 @@ def compute_dLdA_val(
     """
     The formula is the same for standard and generalized eigenvalue problems.
     """
-    eig_vecs_row = eig_vecs[A_sp_topo.idx_coo[0]]
-    eig_vecs_col = eig_vecs[A_sp_topo.idx_coo[1]]
+    eig_vecs_row = eig_vecs[A_pattern.idx_coo[0]]
+    eig_vecs_col = eig_vecs[A_pattern.idx_coo[1]]
 
     # If the loss does not depend on the eigenvectors, then the "eigenvalue"
     # component of the gradient is given by dLdA_ij = sum_k[dLdλ_k * V_ik * V_jk]
@@ -75,7 +75,7 @@ def compute_dLdA_val(
 
 
 def compute_dLdM_val(
-    M_sp_topo: Integer[SparseTopology, "r c"],
+    M_pattern: Integer[SparsityPattern, "r c"],
     eig_vals: Float[t.Tensor, " k"],
     eig_vecs: Float[t.Tensor, "c k"],
     dLdl: Float[t.Tensor, " k"],
@@ -83,8 +83,8 @@ def compute_dLdM_val(
     eig_vec_grad_proj: Float[t.Tensor, "k k"] | None,
     cauchy: Float[t.Tensor, "k k"] | None,
 ) -> Float[t.Tensor, " nnz"]:
-    eig_vecs_row = eig_vecs[M_sp_topo.idx_coo[0]]
-    eig_vecs_col = eig_vecs[M_sp_topo.idx_coo[1]]
+    eig_vecs_row = eig_vecs[M_pattern.idx_coo[0]]
+    eig_vecs_col = eig_vecs[M_pattern.idx_coo[1]]
 
     # If the loss does not depend on the eigenvectors, then the "eigenvalue"
     # component of the gradient is given by
@@ -128,7 +128,7 @@ def dLdA_backward(
     """
     # The eigenvectors need to be length-normalized for the following calculation.
     eig_vals, eig_vecs = ctx.saved_tensors
-    A_sp_topo: SparseTopology = ctx.A_sp_topo
+    A_pattern: SparsityPattern = ctx.A_pattern
 
     # This error should never be triggered if the user-facing wrapper does
     # its job.
@@ -143,7 +143,7 @@ def dLdA_backward(
         cauchy = compute_cauchy_matrix(eig_vals, ctx.k, ctx.eps)
 
     dLdA_val = compute_dLdA_val(
-        A_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+        A_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
     )
 
     return dLdA_val
@@ -165,8 +165,8 @@ def dLdA_dLdM_backward(
 
     # The eigenvectors need to be orthonormal wrt M for the following calculation.
     eig_vals, eig_vecs = ctx.saved_tensors
-    A_sp_topo: SparseTopology = ctx.A_sp_topo
-    M_sp_topo: SparseTopology = ctx.M_sp_topo
+    A_pattern: SparsityPattern = ctx.A_pattern
+    M_pattern: SparsityPattern = ctx.M_pattern
 
     if needs_grad_A_val or needs_grad_M_val:
         # This error should never be triggered if the user-facing wrapper does
@@ -183,12 +183,12 @@ def dLdA_dLdM_backward(
 
     if needs_grad_A_val:
         dLdA_val = compute_dLdA_val(
-            A_sp_topo, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+            A_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
         )
 
     if needs_grad_M_val:
         dLdM_val = compute_dLdM_val(
-            M_sp_topo, eig_vals, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+            M_pattern, eig_vals, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
         )
 
     return dLdA_val, dLdM_val

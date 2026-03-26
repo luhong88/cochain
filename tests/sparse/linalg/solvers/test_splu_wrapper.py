@@ -1,8 +1,8 @@
 import pytest
 import torch as t
 
+from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.sparse.linalg.solvers import splu
-from cochain.sparse.operators import SparseOperator
 
 itemize_backend = pytest.mark.parametrize(
     "backend",
@@ -15,7 +15,7 @@ itemize_backend = pytest.mark.parametrize(
 
 @itemize_backend
 def test_splu_forward(A, backend, device):
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -30,7 +30,7 @@ def test_splu_forward(A, backend, device):
 
 @itemize_backend
 def test_splu_forward_with_channel_dim(A, backend, device):
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -52,7 +52,7 @@ def test_splu_forward_with_channel_dim(A, backend, device):
     [(2, 3), (2, 1), (1, 2)],
 )
 def test_splu_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device):
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -74,7 +74,7 @@ def test_splu_backward(A, backend, device):
     dLdA and dLdb computed through the adjoint method matches the autograd gradients
     from t.linalg.solve() (using dense A).
     """
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     A_dense = A_op.to_dense()
     n_dim = A_op.size(0)
 
@@ -101,7 +101,7 @@ def test_splu_backward(A, backend, device):
 
     # Extract the nonzero elements of dLdA computed using a dense A.
     A_dense_grad = (
-        A_dense.grad[A_op.sp_topo.idx_coo[0], A_op.sp_topo.idx_coo[1]].detach().clone()
+        A_dense.grad[A_op.pattern.idx_coo[0], A_op.pattern.idx_coo[1]].detach().clone()
     )
     b_dense_grad = b.grad.detach().clone()
 

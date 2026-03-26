@@ -2,7 +2,7 @@ import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float
 
-from ...operators import DiagOperator, SparseOperator
+from ...decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._inv_operator import BaseNVMathInvSymSpOp
 
@@ -33,7 +33,7 @@ class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
 
     def __init__(
         self,
-        A_op: Float[SparseOperator, "m m"],
+        A_op: Float[SparseDecoupledTensor, "m m"],
         sigma: float,
         n: int,
         config: DirectSolverConfig,
@@ -42,8 +42,10 @@ class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
 
         # Pytorch currently does not support operations like A - I on sparse CSR
         # tensors.
-        eye = DiagOperator.eye(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
-        A_shift_inv = SparseOperator.assemble(A_op, -sigma * eye).to_sparse_csr(
+        eye = DiagDecoupledTensor.eye(
+            A_op.size(-1), dtype=A_op.dtype, device=A_op.device
+        )
+        A_shift_inv = SparseDecoupledTensor.assemble(A_op, -sigma * eye).to_sparse_csr(
             int32=True
         )
 
@@ -96,8 +98,8 @@ class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
 
     def __init__(
         self,
-        A_op: Float[SparseOperator, "m m"],
-        M_op: Float[SparseOperator, "m m"],
+        A_op: Float[SparseDecoupledTensor, "m m"],
+        M_op: Float[SparseDecoupledTensor, "m m"],
         sigma: float,
         n: int,
         config: DirectSolverConfig,
@@ -106,7 +108,7 @@ class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
 
         # Pytorch currently does not support operations like A - M on sparse CSR
         # tensors.
-        A_shift_inv = SparseOperator.assemble(A_op, -sigma * M_op).to_sparse_csr(
+        A_shift_inv = SparseDecoupledTensor.assemble(A_op, -sigma * M_op).to_sparse_csr(
             int32=True
         )
         self.M_csr = M_op.to_sparse_csr(int32=True)

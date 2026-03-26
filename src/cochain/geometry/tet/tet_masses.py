@@ -2,7 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
-from ...sparse.operators import DiagOperator, SparseOperator
+from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from .tet_geometry import (
     bary_coord_grad_inner_prods,
     d_tet_signed_vols_d_vert_coords,
@@ -11,7 +11,7 @@ from .tet_geometry import (
 )
 
 
-def mass_0_consistent(tet_mesh) -> Float[SparseOperator, "vert vert"]:
+def mass_0_consistent(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
     """
@@ -33,10 +33,10 @@ def mass_0_consistent(tet_mesh) -> Float[SparseOperator, "vert vert"]:
         size=(tet_mesh.n_verts, tet_mesh.n_verts),
     ).coalesce()
 
-    return SparseOperator.from_tensor(mass)
+    return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
+def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
     Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
     barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
@@ -56,10 +56,10 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
         src=t.repeat_interleave(tet_vol / 4.0, 4),
     )
 
-    return DiagOperator.from_tensor(diag)
+    return DiagDecoupledTensor.from_tensor(diag)
 
 
-def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
+def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
 
@@ -159,10 +159,10 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
         (n_edges, n_edges),
     ).coalesce()
 
-    return SparseOperator.from_tensor(mass)
+    return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
+def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseDecoupledTensor, "tri tri"]:
     """
     Compute the Galerkin triangle/2-form mass matrix.
 
@@ -198,15 +198,15 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
     mass_val = whitney_inner_prod_signed.flatten()
     mass = t.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
 
-    return SparseOperator.from_tensor(mass)
+    return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_3(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tet tet"]:
+def mass_3(tet_mesh: SimplicialComplex) -> Float[DiagDecoupledTensor, "tet tet"]:
     """
     Compute the diagonal of the tet/3-form mass matrix, which is a diagonal matrix
     containing the inverse of the unsigned tet volumes, which is equivalent to
     the 3-star.
     """
-    return DiagOperator.from_tensor(
+    return DiagDecoupledTensor.from_tensor(
         1.0 / t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
     )

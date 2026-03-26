@@ -6,151 +6,152 @@ from typing import Callable, Sequence
 import torch as t
 from jaxtyping import Float, Integer
 
-from ._base_operator import BaseOperator, is_scalar, validate_matmul_args
+from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
-from ._sp_topo import SparseTopology, check_topo_equality
+from ._pattern import SparsityPattern, check_pattern_equality
 
 
 @dataclass
-class SparseOperator(BaseOperator):
-    sp_topo: Integer[SparseTopology, "*b r c"]
+class SparseDecoupledTensor(BaseDecoupledTensor):
+    pattern: Integer[SparsityPattern, "*b r c"]
     val: Float[t.Tensor, " nnz *d"]
 
     def __post_init__(self):
-        if self.val.device != self.sp_topo.device:
-            raise RuntimeError("'val' and 'sp_topo' must be on the same device.")
+        if self.val.device != self.pattern.device:
+            raise RuntimeError("'val' and 'pattern' must be on the same device.")
 
-        if self.val.size(0) != self.sp_topo._nnz():
-            raise ValueError("nnz mismatch between 'val' and 'sp_topo'.")
+        if self.val.size(0) != self.pattern._nnz():
+            raise ValueError("nnz mismatch between 'val' and 'pattern'.")
 
         if not t.isfinite(self.val).all():
-            raise ValueError("SparseOperator values contain NaN or Inf.")
+            raise ValueError("SparseDecoupledTensor values contain NaN or Inf.")
 
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
 
     # TODO: allow additional kwargs, e.g., copy=True
     @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> SparseOperator:
+    def from_tensor(cls, tensor: t.Tensor) -> SparseDecoupledTensor:
         coalesced_tensor = tensor.to_sparse_coo().coalesce()
 
         # If the input coo tensor has more than two dimensions (r, c), need to
         # determine if the extra dimensions are batch or dense dimensions.
-        # SparseTopology does not need to see the dense dimensions.
+        # SparsityPattern does not need to see the dense dimensions.
         n_dense_dim = coalesced_tensor.dense_dim()
         if n_dense_dim > 0:
-            sp_topo_shape = coalesced_tensor.shape[:-n_dense_dim]
+            pattern_shape = coalesced_tensor.shape[:-n_dense_dim]
         else:
-            sp_topo_shape = coalesced_tensor.shape
+            pattern_shape = coalesced_tensor.shape
 
         return cls(
-            sp_topo=SparseTopology(coalesced_tensor.indices(), sp_topo_shape),
+            pattern=SparsityPattern(coalesced_tensor.indices(), pattern_shape),
             val=coalesced_tensor.values(),
         )
 
     @classmethod
     def pack_block_diag(
-        cls, blocks: Sequence[t.Tensor | BaseOperator]
-    ) -> SparseOperator:
+        cls, blocks: Sequence[t.Tensor | BaseDecoupledTensor]
+    ) -> SparseDecoupledTensor:
         """
-        Construct a block diagonal matrix as a `SparseOperator` from a list of tensor,
-        `SparseOperator`, and `DiagOperator` objects.
+        Construct a block diagonal matrix as a `SparseDecoupledTensor` from a list of tensor,
+        `SparseDecoupledTensor`, and `DiagDecoupledTensor` objects.
         """
-        # Convert all input elements to SparseOperator.
-        sp_op_list: list[SparseOperator] = []
+        # Convert all input elements to SparseDecoupledTensor.
+        sp_op_list: list[SparseDecoupledTensor] = []
         for block in blocks:
             match block:
                 case t.Tensor():
-                    sp_op_list.append(SparseOperator.from_tensor(block))
-                case BaseOperator():
+                    sp_op_list.append(SparseDecoupledTensor.from_tensor(block))
+                case BaseDecoupledTensor():
                     sp_op_list.append(block.to_sparse_operator())
                 case _:
                     raise TypeError()
 
-        # Pick a representative SparseOperator and use it to determine device and
+        # Pick a representative SparseDecoupledTensor and use it to determine device and
         # dtype information.
         rep_sp_op = sp_op_list[0]
         device = rep_sp_op.device
         val_dtype = rep_sp_op.dtype
 
         # Construct concatenated sparse topology.
-        sp_topo_list = [sp_op.sp_topo for sp_op in sp_op_list]
-        sp_topo_concat = SparseTopology.pack_block_diag(sp_topo_list)
+        pattern_list = [sp_op.pattern for sp_op in sp_op_list]
+        pattern_concat = SparsityPattern.pack_block_diag(pattern_list)
 
         # Construct concatenated values tensor.
         val_list = [
             sp_op.val.to(device=device, dtype=val_dtype) for sp_op in sp_op_list
         ]
 
-        batch_perm = sp_topo_concat.block_diag_config.batch_perm
+        batch_perm = pattern_concat.block_diag_config.batch_perm
 
         if rep_sp_op.n_dense_dim == 0:
             val_concat = t.hstack(val_list)[batch_perm]
         else:
             val_concat = t.vstack(val_list)[batch_perm]
 
-        return SparseOperator(sp_topo_concat, val_concat)
+        return SparseDecoupledTensor(pattern_concat, val_concat)
 
-    def unpack_block_diag(self) -> list[SparseOperator]:
+    def unpack_block_diag(self) -> list[SparseDecoupledTensor]:
         """
-        Deconstruct a block diagonal `SparseOperator` into a list of constituent
-        `SparseOperator`s.
+        Deconstruct a block diagonal `SparseDecoupledTensor` into a list of constituent
+        `SparseDecoupledTensor`s.
         """
-        # Reconstruct the constituent SparseTopology.
-        sp_topo_list, block_perm_inv = self.sp_topo.unpack_block_diag()
+        # Reconstruct the constituent SparsityPattern.
+        pattern_list, block_perm_inv = self.pattern.unpack_block_diag()
 
         # Perform similar reconstruction on the values
         val_concat = self.val[block_perm_inv]
-        val_list = t.split(val_concat, self.sp_topo.block_diag_config.nnzs, dim=0)
+        val_list = t.split(val_concat, self.pattern.block_diag_config.nnzs, dim=0)
 
         sp_op_list = [
-            SparseOperator(sp_topo, val) for sp_topo, val in zip(sp_topo_list, val_list)
+            SparseDecoupledTensor(pattern, val)
+            for pattern, val in zip(pattern_list, val_list)
         ]
 
         return sp_op_list
 
     @classmethod
-    def bmat(cls, blocks: Sequence[Sequence[t.Tensor | BaseOperator | None]]):
+    def bmat(cls, blocks: Sequence[Sequence[t.Tensor | BaseDecoupledTensor | None]]):
         """
-        Construct a block matrix as a `SparseOperator` from a 2D grid of existing
-        tensor, `SparseOperator`, or `DiagOperator`. `None` is allowed to represent
+        Construct a block matrix as a `SparseDecoupledTensor` from a 2D grid of existing
+        tensor, `SparseDecoupledTensor`, or `DiagDecoupledTensor`. `None` is allowed to represent
         empty/zero blocks.
         """
-        # Convert all input blocks except for None to SparseOperator, and produce
+        # Convert all input blocks except for None to SparseDecoupledTensor, and produce
         # two lists: one flattened list of sp_op.val (excluding None), and a nested
-        # list of sp_op.sp_topo (including None).
-        sp_topo_list = []
+        # list of sp_op.pattern (including None).
+        pattern_list = []
         val_list = []
         rep_sp_op = None
         for block_row in blocks:
-            sp_topo_row = []
+            pattern_row = []
             for block in block_row:
                 match block:
                     case t.Tensor():
-                        sp_op = SparseOperator.from_tensor(block)
-                        sp_topo_row.append(sp_op.sp_topo)
+                        sp_op = SparseDecoupledTensor.from_tensor(block)
+                        pattern_row.append(sp_op.pattern)
                         val_list.append(sp_op.val)
 
-                        # Pick a representative SparseOperator and use it to
+                        # Pick a representative SparseDecoupledTensor and use it to
                         # determine device, dtype, and dense dimension information.
                         if rep_sp_op is None:
                             rep_sp_op = sp_op
 
-                    case BaseOperator():
+                    case BaseDecoupledTensor():
                         sp_op = block.to_sparse_operator()
-                        sp_topo_row.append(sp_op.sp_topo)
+                        pattern_row.append(sp_op.pattern)
                         val_list.append(sp_op.val)
 
                         if rep_sp_op is None:
                             rep_sp_op = sp_op
 
                     case None:
-                        sp_topo_row.append(None)
+                        pattern_row.append(None)
 
                     case _:
                         raise TypeError()
 
-            sp_topo_list.append(sp_topo_row)
+            pattern_list.append(pattern_row)
 
         if rep_sp_op is None:
             raise ValueError("At least one block in 'blocks' must be non-null value.")
@@ -158,8 +159,8 @@ class SparseOperator(BaseOperator):
         device = rep_sp_op.device
         val_dtype = rep_sp_op.dtype
 
-        # Construct concatenated SparseTopology.
-        sp_topo_concat, batch_perm = SparseTopology.bmat(sp_topo_list)
+        # Construct concatenated SparsityPattern.
+        pattern_concat, batch_perm = SparsityPattern.bmat(pattern_list)
 
         # Construct concatenated values tensor.
         val_list_uniform = [val.to(device=device, dtype=val_dtype) for val in val_list]
@@ -169,47 +170,49 @@ class SparseOperator(BaseOperator):
         else:
             val_concat = t.vstack(val_list_uniform)[batch_perm]
 
-        return SparseOperator(sp_topo_concat, val_concat)
+        return SparseDecoupledTensor(pattern_concat, val_concat)
 
-    def apply(self, fn: Callable, **kwargs) -> SparseOperator:
+    def apply(self, fn: Callable, **kwargs) -> SparseDecoupledTensor:
         """
-        Apply a sparsity-preserving function on the values of SparseOperator.
+        Apply a sparsity-preserving function on the values of SparseDecoupledTensor.
         """
         new_val = fn(self.val, **kwargs)
 
         if new_val.size(0) != self.val.size(0):
-            raise RuntimeError("Function changed the nnz dim of the SparseOperator.")
+            raise RuntimeError(
+                "Function changed the nnz dim of the SparseDecoupledTensor."
+            )
 
-        return SparseOperator(self.sp_topo, new_val)
+        return SparseDecoupledTensor(self.pattern, new_val)
 
-    def __neg__(self) -> SparseOperator:
-        return SparseOperator(self.sp_topo, -self.val)
+    def __neg__(self) -> SparseDecoupledTensor:
+        return SparseDecoupledTensor(self.pattern, -self.val)
 
-    def abs(self) -> SparseOperator:
-        return SparseOperator(self.sp_topo, self.val.abs())
+    def abs(self) -> SparseDecoupledTensor:
+        return SparseDecoupledTensor(self.pattern, self.val.abs())
 
     def diagonal(self) -> Float[t.Tensor, "*b diag"]:
         if self.n_batch_dim == 0:
             return self.val[
-                t.argwhere(self.sp_topo.idx_coo[0] == self.sp_topo.idx_coo[1]).flatten()
+                t.argwhere(self.pattern.idx_coo[0] == self.pattern.idx_coo[1]).flatten()
             ]
         else:
             raise NotImplementedError()
 
     # TODO: implement for batched operators
     # TODO: write tests
-    def off_diagonal(self) -> SparseOperator:
+    def off_diagonal(self) -> SparseDecoupledTensor:
         if self.n_batch_dim == 0:
-            off_diag_mask = self.sp_topo.idx_coo[0] != self.sp_topo.idx_coo[1]
-            off_diag_sp_topo = SparseTopology(
-                self.sp_topo.idx_coo[:, off_diag_mask], self.sp_topo.shape
+            off_diag_mask = self.pattern.idx_coo[0] != self.pattern.idx_coo[1]
+            off_diag_pattern = SparsityPattern(
+                self.pattern.idx_coo[:, off_diag_mask], self.pattern.shape
             )
             off_diag_val = self.val[off_diag_mask]
-            return SparseOperator(off_diag_sp_topo, off_diag_val)
+            return SparseDecoupledTensor(off_diag_pattern, off_diag_val)
 
     # TODO: implement trace for batched operators
     # TODO: write tests fot tr()
-    # TODO: implement the same tr and diagonal() functions for DiagOperators
+    # TODO: implement the same tr and diagonal() functions for DiagDecoupledTensors
     @property
     def tr(self) -> Float[t.Tensor, "*b"]:
         if self.n_batch_dim == 0:
@@ -219,47 +222,47 @@ class SparseOperator(BaseOperator):
 
     # TODO: implement for batched operators
     # TODO: write tests
-    def triu(self, diagonal: int = 0) -> SparseOperator:
+    def triu(self, diagonal: int = 0) -> SparseDecoupledTensor:
         if self.n_batch_dim == 0:
-            triu_mask = self.sp_topo.idx_coo[0] <= self.sp_topo.idx_coo[1] - diagonal
-            triu_sp_topo = SparseTopology(
-                self.sp_topo.idx_coo[:, triu_mask], self.sp_topo.shape
+            triu_mask = self.pattern.idx_coo[0] <= self.pattern.idx_coo[1] - diagonal
+            triu_pattern = SparsityPattern(
+                self.pattern.idx_coo[:, triu_mask], self.pattern.shape
             )
             triu_val = self.val[triu_mask]
-            return SparseOperator(triu_sp_topo, triu_val)
+            return SparseDecoupledTensor(triu_pattern, triu_val)
 
-    def __add__(self, other) -> SparseOperator:
+    def __add__(self, other) -> SparseDecoupledTensor:
         """
-        Elementwise-addition of two SparseOperators that share the same topology/
+        Elementwise-addition of two SparseDecoupledTensors that share the same topology/
         sparsity pattern.
         """
         match other:
-            case SparseOperator():
-                check_topo_equality(
-                    self.sp_topo,
-                    other.sp_topo,
-                    msg="SparseOperator __add__ only supports operators with identical topologies.",
+            case SparseDecoupledTensor():
+                check_pattern_equality(
+                    self.pattern,
+                    other.pattern,
+                    msg="SparseDecoupledTensor __add__ only supports operators with identical topologies.",
                 )
-                return SparseOperator(self.sp_topo, self.val + other.val)
+                return SparseDecoupledTensor(self.pattern, self.val + other.val)
             case _:
                 return NotImplemented
 
-    def __sub__(self, other) -> SparseOperator:
+    def __sub__(self, other) -> SparseDecoupledTensor:
         match other:
-            case SparseOperator():
-                check_topo_equality(
-                    self.sp_topo,
-                    other.sp_topo,
-                    msg="SparseOperator __sub__ only supports operators with identical topologies.",
+            case SparseDecoupledTensor():
+                check_pattern_equality(
+                    self.pattern,
+                    other.pattern,
+                    msg="SparseDecoupledTensor __sub__ only supports operators with identical topologies.",
                 )
-                return SparseOperator(self.sp_topo, self.val - other.val)
+                return SparseDecoupledTensor(self.pattern, self.val - other.val)
             case _:
                 return NotImplemented
 
     @classmethod
-    def assemble(cls, *operators: BaseOperator) -> SparseOperator:
+    def assemble(cls, *operators: BaseDecoupledTensor) -> SparseDecoupledTensor:
         """
-        Efficiently sum multiple SparseOperators and/or DiagOperators with different
+        Efficiently sum multiple SparseDecoupledTensors and/or DiagDecoupledTensors with different
         topologies.
         """
         if not operators:
@@ -271,26 +274,26 @@ class SparseOperator(BaseOperator):
         all_val = t.hstack([coo.values() for coo in coo_tensors])
 
         # from_tensor() handles coalesce.
-        return SparseOperator.from_tensor(
+        return SparseDecoupledTensor.from_tensor(
             t.sparse_coo_tensor(all_idx, all_val, size=coo_tensors[0].size())
         )
 
-    def __mul__(self, other) -> SparseOperator:
+    def __mul__(self, other) -> SparseDecoupledTensor:
         """
         Scalar multiplication.
         """
         return (
-            SparseOperator(self.sp_topo, self.val * other)
+            SparseDecoupledTensor(self.pattern, self.val * other)
             if is_scalar(other)
             else NotImplemented
         )
 
-    def __truediv__(self, other) -> SparseOperator:
+    def __truediv__(self, other) -> SparseDecoupledTensor:
         """
         Scalar division.
         """
         return (
-            SparseOperator(self.sp_topo, self.val / other)
+            SparseDecoupledTensor(self.pattern, self.val / other)
             if is_scalar(other)
             else NotImplemented
         )
@@ -302,9 +305,9 @@ class SparseOperator(BaseOperator):
         validate_matmul_args(self, other)
 
         match other:
-            case SparseOperator():
+            case SparseDecoupledTensor():
                 idx_crow, idx_col, val, shape = sp_sp_mm(
-                    self.val, self.sp_topo, other.val, other.sp_topo
+                    self.val, self.pattern, other.val, other.pattern
                 )
                 sp_sp = t.sparse_csr_tensor(idx_crow, idx_col, val, shape)
                 return self.from_tensor(sp_sp)
@@ -312,9 +315,9 @@ class SparseOperator(BaseOperator):
             case t.Tensor():
                 match other.ndim:
                     case 1:
-                        return sp_mv(self.val, self.sp_topo, other)
+                        return sp_mv(self.val, self.pattern, other)
                     case 2:
-                        return sp_dense_mm(self.val, self.sp_topo, other)
+                        return sp_dense_mm(self.val, self.pattern, other)
 
             case _:
                 return NotImplemented
@@ -326,20 +329,20 @@ class SparseOperator(BaseOperator):
         validate_matmul_args(self, other)
 
         match other:
-            # Do not check for case SparseOperator(), which is handled by __matmul__
+            # Do not check for case SparseDecoupledTensor(), which is handled by __matmul__
             case t.Tensor():
                 match other.ndim:
                     case 1:
-                        return sp_vm(other, self.val, self.sp_topo)
+                        return sp_vm(other, self.val, self.pattern)
                     case 2:
-                        return dense_sp_mm(other, self.val, self.sp_topo)
+                        return dense_sp_mm(other, self.val, self.pattern)
 
             case _:
                 return NotImplemented
 
     @property
     def shape(self) -> t.Size:
-        return self.sp_topo.shape + self.val.shape[1:]
+        return self.pattern.shape + self.val.shape[1:]
 
     def _nnz(self) -> int:
         """
@@ -348,11 +351,11 @@ class SparseOperator(BaseOperator):
         method returns the total number of nonzero elements, regardless of batch
         dimensions. Here we follow the sparse coo convention.
         """
-        return self.sp_topo._nnz()
+        return self.pattern._nnz()
 
     @property
     def n_batch_dim(self) -> int:
-        return self.sp_topo.n_batch_dim
+        return self.pattern.n_batch_dim
 
     @property
     def n_sp_dim(self) -> int:
@@ -361,58 +364,60 @@ class SparseOperator(BaseOperator):
         towards sparse_dim(); for sparse coo tensors, no such distinction is
         made. Here we follow the sparse csr/csc convention.
         """
-        return self.sp_topo.n_sp_dim
+        return self.pattern.n_sp_dim
 
     @property
     def n_dense_dim(self) -> int:
         return self.val.ndim - 1
 
     @property
-    def T(self) -> SparseOperator:
+    def T(self) -> SparseDecoupledTensor:
         """
         Note that the transpose preserves the batch and dense dimensions and only
         operates on the sparse dimensions.
         """
-        val_trans = self.val[self.sp_topo.coo_to_csc_perm]
-        sp_topo_trans = self.sp_topo.T
-        return SparseOperator(sp_topo_trans, val_trans)
+        val_trans = self.val[self.pattern.coo_to_csc_perm]
+        pattern_trans = self.pattern.T
+        return SparseDecoupledTensor(pattern_trans, val_trans)
 
     def clone(
         self, memory_format: t.memory_format = t.contiguous_format
-    ) -> SparseOperator:
+    ) -> SparseDecoupledTensor:
         """
-        Create a new SparseOperator with the same `sp_topo` but with the `val`
+        Create a new SparseDecoupledTensor with the same `pattern` but with the `val`
         cloned (in the contiguous format by default).
         """
-        return SparseOperator(self.sp_topo, self.val.clone(memory_format=memory_format))
+        return SparseDecoupledTensor(
+            self.pattern, self.val.clone(memory_format=memory_format)
+        )
 
-    def detach(self) -> SparseOperator:
+    def detach(self) -> SparseDecoupledTensor:
         """
-        Create a new SparseOperator with the same `sp_topo` but with the `val` detached.
+        Create a new SparseDecoupledTensor with the same `pattern` but with the `val` detached.
         """
-        return SparseOperator(self.sp_topo, self.val.detach())
+        return SparseDecoupledTensor(self.pattern, self.val.detach())
 
-    def to(self, *args, **kwargs) -> SparseOperator:
+    def to(self, *args, **kwargs) -> SparseDecoupledTensor:
         new_val = self.val.to(*args, **kwargs)
 
         # The topology object ignores dtype
-        new_sp_topo = self.sp_topo.to(
+        new_pattern = self.pattern.to(
             device=new_val.device,
             copy=kwargs.get("copy", False),
             non_blocking=kwargs.get("non_blocking", False),
         )
 
-        return SparseOperator(new_sp_topo, new_val)
+        return SparseDecoupledTensor(new_pattern, new_val)
 
     def to_dense(self) -> Float[t.Tensor, "*b r c *d"]:
         return self.to_sparse_coo().to_dense()
 
-    def to_sparse_operator(self) -> SparseOperator:
+    def to_sparse_operator(self) -> SparseDecoupledTensor:
         return self
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b r c *d"]:
         return t.sparse_coo_tensor(
-            self.sp_topo.idx_coo,
+            self.pattern.idx_coo,
             self.val,
             self.shape,
             dtype=self.dtype,
@@ -421,11 +426,11 @@ class SparseOperator(BaseOperator):
 
     def to_sparse_csr(self, int32: bool = False) -> Float[t.Tensor, "*b r c *d"]:
         if int32:
-            idx_crow = self.sp_topo.idx_crow_int32
-            idx_col = self.sp_topo.idx_col_int32
+            idx_crow = self.pattern.idx_crow_int32
+            idx_col = self.pattern.idx_col_int32
         else:
-            idx_crow = self.sp_topo.idx_crow
-            idx_col = self.sp_topo.idx_col
+            idx_crow = self.pattern.idx_crow
+            idx_col = self.pattern.idx_col
 
         if self.n_batch_dim == 0:
             val = self.val
@@ -443,17 +448,17 @@ class SparseOperator(BaseOperator):
 
     def _prepare_sparse_csr_components(self, int32: bool):
         if int32:
-            idx_ccol = self.sp_topo.idx_ccol_int32
-            idx_row_csc = self.sp_topo.idx_row_csc_int32
+            idx_ccol = self.pattern.idx_ccol_int32
+            idx_row_csc = self.pattern.idx_row_csc_int32
         else:
-            idx_ccol = self.sp_topo.idx_ccol
-            idx_row_csc = self.sp_topo.idx_row_csc
+            idx_ccol = self.pattern.idx_ccol
+            idx_row_csc = self.pattern.idx_row_csc
 
         if self.n_batch_dim == 0:
-            val = self.val[self.sp_topo.coo_to_csc_perm].contiguous()
+            val = self.val[self.pattern.coo_to_csc_perm].contiguous()
         else:
             val = (
-                self.val[self.sp_topo.coo_to_csc_perm]
+                self.val[self.pattern.coo_to_csc_perm]
                 .view(self.size(0), -1)
                 .contiguous()
             )

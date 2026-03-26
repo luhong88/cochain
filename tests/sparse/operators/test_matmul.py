@@ -1,6 +1,6 @@
 import torch as t
 
-from cochain.sparse.operators import SparseOperator
+from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 
 
 def test_sp_dense_mm_backward(A, device):
@@ -8,7 +8,7 @@ def test_sp_dense_mm_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
@@ -17,7 +17,7 @@ def test_sp_dense_mm_backward(A, device):
     C_dense_true = A_dense @ B_dense
     loss_true = t.sum(C_dense_true**2)
     loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.sp_topo.idx_coo.unbind(0)]
+    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
     B_dense_grad_true = B_dense.grad.detach().clone()
 
     B_dense.grad = None
@@ -36,7 +36,7 @@ def test_dense_sp_mm_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
@@ -45,7 +45,7 @@ def test_dense_sp_mm_backward(A, device):
     C_dense_true = B_dense @ A_dense
     loss_true = t.sum(C_dense_true**2)
     loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.sp_topo.idx_coo.unbind(0)]
+    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
     B_dense_grad_true = B_dense.grad.detach().clone()
 
     B_dense.grad = None
@@ -64,20 +64,20 @@ def test_sp_sp_mm_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
     B_dense.requires_grad_()
 
-    B_operator = SparseOperator.from_tensor(B_dense).detach().clone()
+    B_operator = SparseDecoupledTensor.from_tensor(B_dense).detach().clone()
     B_operator.requires_grad_()
 
     C_dense_true = A_dense @ B_dense
     loss_true = t.sum(C_dense_true**2)
     loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.sp_topo.idx_coo.unbind(0)]
-    B_grad_true = B_dense.grad.detach().clone()[B_operator.sp_topo.idx_coo.unbind(0)]
+    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
+    B_grad_true = B_dense.grad.detach().clone()[B_operator.pattern.idx_coo.unbind(0)]
 
     C_operator = A_operator @ B_operator
     loss = t.sum(C_operator.val**2)
@@ -94,7 +94,7 @@ def test_sp_mv_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     b_dense = t.randn(A_tensor.shape[-1], dtype=A_tensor.dtype, device=device)
@@ -103,7 +103,7 @@ def test_sp_mv_backward(A, device):
     C_dense_true = A_dense @ b_dense
     loss_true = t.sum(C_dense_true**2)
     loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.sp_topo.idx_coo.unbind(0)]
+    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
     b_dense_grad_true = b_dense.grad.detach().clone()
 
     b_dense.grad = None
@@ -122,7 +122,7 @@ def test_sp_vm_backward(A, device):
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor).detach().clone()
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
     A_operator.requires_grad_()
 
     b_dense = t.randn(A_tensor.shape[0], dtype=A_tensor.dtype, device=device)
@@ -131,7 +131,7 @@ def test_sp_vm_backward(A, device):
     C_dense_true = b_dense @ A_dense
     loss_true = t.sum(C_dense_true**2)
     loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.sp_topo.idx_coo.unbind(0)]
+    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
     b_dense_grad_true = b_dense.grad.detach().clone()
 
     b_dense.grad = None

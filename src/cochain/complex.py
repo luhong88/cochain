@@ -6,21 +6,21 @@ from typing import Any
 import torch as t
 from jaxtyping import Bool, Float, Integer
 
-from .sparse.operators import BaseOperator, SparseOperator
+from .sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
 from .topology import boundaries, coboundaries, tet_topology, tri_topology
 from .utils.perm_parity import compute_lex_rel_orient
 
 
 def _is_tensor_like(obj: Any) -> bool:
-    return t.is_tensor(obj) | isinstance(obj, BaseOperator)
+    return t.is_tensor(obj) | isinstance(obj, BaseDecoupledTensor)
 
 
 @dataclass
 class SimplicialComplex:
     cbd: tuple[
-        Float[SparseOperator, "edge vert"],
-        Float[SparseOperator, "tri edge"],
-        Float[SparseOperator, "tet tri"],
+        Float[SparseDecoupledTensor, "edge vert"],
+        Float[SparseDecoupledTensor, "tri edge"],
+        Float[SparseDecoupledTensor, "tet tri"],
     ]
     simplices: tuple[
         Integer[t.LongTensor, "edge 2"],
@@ -114,9 +114,9 @@ class SimplicialComplex:
     def dual_cbd(
         self,
     ) -> tuple[
-        Float[SparseOperator, "dual_edge dual_vert"],
-        Float[SparseOperator, "dual_tri dual_edge"],
-        Float[SparseOperator, "dual_tet dual_tri"],
+        Float[SparseDecoupledTensor, "dual_edge dual_vert"],
+        Float[SparseDecoupledTensor, "dual_tri dual_edge"],
+        Float[SparseDecoupledTensor, "dual_tet dual_tri"],
     ]:
         # the k-th coboundary operator d_k* on the dual complex is given by
         # (-1)^k * d_{n-k-1}.T, where n is the dimension of the simplicial complex.
@@ -295,7 +295,7 @@ class SimplicialBatch(SimplicialComplex):
         return self.batch_verts.max().item() + 1
 
 
-# TODO: update to use SparseOperator
+# TODO: update to use SparseDecoupledTensor
 def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
     """
     This function takes in a list of `SimplicialComplex` objects and collate them

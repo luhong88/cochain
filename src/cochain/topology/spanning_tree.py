@@ -4,12 +4,12 @@ from jaxtyping import Bool, Float, Integer
 from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
 
-from cochain.sparse.operators import SparseOperator
+from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.utils.search import simplex_search
 
 
 def _minimum_spanning_tree(
-    adjacency: Float[SparseOperator, "node node"],
+    adjacency: Float[SparseDecoupledTensor, "node node"],
     root_mask: Bool[t.Tensor, " node"] | None = None,
     exclusion_mask: Bool[t.Tensor, " edge"] | None = None,
     weights: Float[t.Tensor, " edge"] | None = None,
@@ -26,7 +26,7 @@ def _minimum_spanning_tree(
     n_nodes = adjacency.shape[0]
 
     # int32 is required for scipy sparse array indices
-    idx_coo_full = adjacency.sp_topo.idx_coo.to(dtype=t.int32)
+    idx_coo_full = adjacency.pattern.idx_coo.to(dtype=t.int32)
     idx_coo_rows_full = idx_coo_full[0].detach().cpu().numpy()
     idx_coo_cols_full = idx_coo_full[1].detach().cpu().numpy()
 
@@ -98,7 +98,7 @@ def _minimum_spanning_tree(
         tree_v = mst_coo.col[valid_mask]
 
     tree_edges = t.from_numpy(np.stack((tree_u, tree_v))).to(
-        dtype=adjacency.sp_topo.dtype, device=adjacency.device
+        dtype=adjacency.pattern.dtype, device=adjacency.device
     )
 
     return tree_edges
@@ -106,9 +106,9 @@ def _minimum_spanning_tree(
 
 # TODO: update to accommodate tet meshes
 def compute_tree_mask(
-    topo_laplacian_0: Float[SparseOperator, "vert vert"],
+    topo_laplacian_0: Float[SparseDecoupledTensor, "vert vert"],
     canon_edges: Integer[t.LongTensor, "edge 2"],
-    mass_1: Float[SparseOperator, "edge edge"] | None = None,
+    mass_1: Float[SparseDecoupledTensor, "edge edge"] | None = None,
     vert_rel_bc_mask: Bool[t.Tensor, " vert"] | None = None,
     cotree_mask: Bool[t.Tensor, " edge"] | None = None,
 ) -> Bool[t.Tensor, " edge"]:
@@ -140,7 +140,7 @@ def compute_tree_mask(
     # Find the indices of the adjacency edges on the canonical edge list, and
     # use the indices to retrieve the edge weights from the provided mass (or hodge
     # star) matrices.
-    edges = adjacency.sp_topo.idx_coo.T
+    edges = adjacency.pattern.idx_coo.T
     edge_idx = simplex_search(
         key_simps=canon_edges,
         query_simps=edges,
@@ -196,7 +196,7 @@ def _cbd_to_coface(
     the returned list of (k+1)-simplex index tuples are sorted in ascending order
     within each tuple (but the list itself is not necessarily in lex order).
     """
-    idx_coo = cbd.sp_topo.idx_coo
+    idx_coo = cbd.pattern.idx_coo
     # The row indices correspond to the (k+1)-simplex indices, and the col indices
     # correspond to the k-simplex indices.
     idx_coo_col = idx_coo[-1]
@@ -226,9 +226,9 @@ def _cbd_to_coface(
 
 # TODO: update to accommodate tet meshes
 def compute_cotree_mask(
-    dual_topo_laplacian_0: Float[SparseOperator, "vert vert"],
-    cbd_1: Float[SparseOperator, "tri edge"],
-    inv_mass_1: Float[SparseOperator, "edge edge"] | None = None,
+    dual_topo_laplacian_0: Float[SparseDecoupledTensor, "vert vert"],
+    cbd_1: Float[SparseDecoupledTensor, "tri edge"],
+    inv_mass_1: Float[SparseDecoupledTensor, "edge edge"] | None = None,
     edge_rel_bc_mask: Bool[t.Tensor, " edge"] | None = None,
 ) -> Bool[t.Tensor, " edge"]:
     """
@@ -257,7 +257,7 @@ def compute_cotree_mask(
     # Here, the dual edges are indexed by the indices of the two primal triangles
     # sharing the primal edge; need to convert this representation of the dual
     # edges to the indices of the corresponding primal edges.
-    dual_edges = adjacency.sp_topo.idx_coo.T
+    dual_edges = adjacency.pattern.idx_coo.T
     edge_face_idx, edge_coface_idx = _cbd_to_coface(cbd_1, degree=2)
     primal_edge_idx = edge_face_idx[
         simplex_search(

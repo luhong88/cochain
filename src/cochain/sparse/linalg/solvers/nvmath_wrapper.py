@@ -7,7 +7,7 @@ import torch as t
 from jaxtyping import Float, Integer
 from torch.autograd.function import once_differentiable
 
-from ...operators import SparseOperator, SparseTopology
+from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
@@ -68,11 +68,11 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
-        A_sp_topo: Integer[SparseTopology, "*b r c"],
+        A_pattern: Integer[SparsityPattern, "*b r c"],
         b: Float[t.Tensor, " r"] | Float[t.Tensor, "*b *ch r"],
         config: DirectSolverConfig,
     ) -> tuple[Float[t.Tensor, "*b c *ch"], AutogradDirectSolver]:
-        A_csr = SparseOperator(A_sp_topo, A_val).to_sparse_csr(int32=True)
+        A_csr = SparseDecoupledTensor(A_pattern, A_val).to_sparse_csr(int32=True)
 
         if b.ndim > 1:
             b_col_major = b.contiguous().transpose(-1, -2)
@@ -107,13 +107,13 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, b, config = inputs
+        A_val, A_pattern, b, config = inputs
 
         x, solver = output
 
         ctx.save_for_backward(x)
         ctx.solver = solver
-        ctx.A_sp_topo = A_sp_topo
+        ctx.A_pattern = A_pattern
 
     @staticmethod
     @once_differentiable
@@ -140,7 +140,7 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
             solver: AutogradDirectSolver = ctx.solver
 
         (x,) = ctx.saved_tensors
-        A_sp_topo: SparseTopology = ctx.A_sp_topo
+        A_pattern: SparsityPattern = ctx.A_pattern
 
         if x.is_cuda:
             # torch calls backward() on a separate thread where nvmath's internal
@@ -173,8 +173,8 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
             # steps. Note that, currently, the DirectSolver class does not expose
             # a transpose mode option, which would have been preferred over
             # re-initializing the solver.
-            A_T = SparseOperator(
-                A_sp_topo, solver.a.tensor.values().flatten()
+            A_T = SparseDecoupledTensor(
+                A_pattern, solver.a.tensor.values().flatten()
             ).to_sparse_csr_transposed(int32=True)
             solver.reset_operands(a=A_T, b=dLdx_col_major, stream=stream)
             solver.plan(stream=stream)
@@ -198,26 +198,26 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
             # Sum over the channel dimension while accounting for zero or more
             # batch dimensions.
 
-            # Recall that A.sp_topo.idx_coo has shape (sp, nnz), where sp has size
+            # Recall that A.pattern.idx_coo has shape (sp, nnz), where sp has size
             # equal to the number of batch dims plus 2 (i.e., sp = len(*b) + 2).
-            n_batch = A_sp_topo.n_batch_dim
+            n_batch = A_pattern.n_batch_dim
 
             # Extract the nonzero dLdA element row and col indices, accounting for
             # batch dimensions, and use them to extract the corresponding elements
             # from lambda_ and x to construct the nonzero outer product elements.
-            r_idx: Integer[t.LongTensor, "n_batch+1 nnz"] = A_sp_topo.idx_coo[
+            r_idx: Integer[t.LongTensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
                 list(range(n_batch)) + [n_batch]
             ]
-            c_idx: Integer[t.LongTensor, "n_batch+1 nnz"] = A_sp_topo.idx_coo[
+            c_idx: Integer[t.LongTensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
                 list(range(n_batch)) + [n_batch + 1]
             ]
             # Note that r_idx.unbind(0) is equivalent to *r_idx for indexing.
             dLdA_val = t.sum(-lambda_[r_idx.unbind(0)] * x[c_idx.unbind(0)], dim=-1)
 
         else:
-            # if there are no batch dimensions, then the A_sp_topo.idx_coo is of
+            # if there are no batch dimensions, then the A_pattern.idx_coo is of
             # shape (sp=2, nnz).
-            dLdA_val = -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]]
+            dLdA_val = -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None)
@@ -227,7 +227,7 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
 
 
 def nvmath_direct_solver(
-    A: Float[SparseOperator, "*b r c"],
+    A: Float[SparseDecoupledTensor, "*b r c"],
     b: Float[t.Tensor, "*b *ch r"],
     *,
     sparse_system_type: Literal["general", "symmetric", "SPD"] = "general",
@@ -237,7 +237,7 @@ def nvmath_direct_solver(
     This function provides a differentiable wrapper for the `nvmath.sparse.advanced.DirectSolver`
     class in `nvmath-python` for solving sparse linear systems of the form `A@x=b`.
 
-    Here, `A` is a SparseOperator and `b` is a dense tensor. The `DirectSolver`
+    Here, `A` is a SparseDecoupledTensor and `b` is a dense tensor. The `DirectSolver`
     class supports batching in `A` and/or `b` tensors. In particular, there are
     four supported batching configurations:
 
@@ -314,7 +314,7 @@ def nvmath_direct_solver(
 
     x, solver = _NvmathDirectSolverAutogradFunction.apply(
         A.val,
-        A.sp_topo,
+        A.pattern,
         b,
         config,
     )

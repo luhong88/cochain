@@ -120,7 +120,7 @@ def test_mass_3_matrix_total_vol_partition(two_tets_mesh: SimplicialComplex):
 def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialComplex):
     mass_1 = tet_masses.mass_1(two_tets_mesh)
     mass_1_mask = t.zeros_like(mass_1.to_dense(), dtype=t.long)
-    mass_1_mask[mass_1.sp_topo.idx_coo.unbind(0)] = 1
+    mass_1_mask[mass_1.pattern.idx_coo.unbind(0)] = 1
 
     true_mass_1_mask = t.tensor(
         [
@@ -143,7 +143,7 @@ def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialComplex):
 def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialComplex):
     mass_2 = tet_masses.mass_2(two_tets_mesh)
     mass_2_mask = t.zeros_like(mass_2.to_dense(), dtype=t.long)
-    mass_2_mask[mass_2.sp_topo.idx_coo.unbind(0)] = 1
+    mass_2_mask[mass_2.pattern.idx_coo.unbind(0)] = 1
 
     true_mass_2_mask = t.tensor(
         [

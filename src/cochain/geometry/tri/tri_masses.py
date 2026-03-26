@@ -2,7 +2,7 @@ import torch as t
 from jaxtyping import Float, Integer
 
 from ...complex import SimplicialComplex
-from ...sparse.operators import SparseOperator
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tri_geometry import (
     bary_coord_grad_inner_prods,
     compute_d_tri_areas_d_vert_coords,
@@ -10,7 +10,7 @@ from .tri_geometry import (
 )
 
 
-def mass_0_consistent(tri_mesh) -> Float[SparseOperator, "vert vert"]:
+def mass_0_consistent(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
     """
@@ -32,10 +32,10 @@ def mass_0_consistent(tri_mesh) -> Float[SparseOperator, "vert vert"]:
         size=(tri_mesh.n_verts, tri_mesh.n_verts),
     ).coalesce()
 
-    return SparseOperator.from_tensor(mass)
+    return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_1(tri_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
+def mass_1(tri_mesh: SimplicialComplex) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
 
@@ -133,4 +133,4 @@ def mass_1(tri_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
         (n_edges, n_edges),
     ).coalesce()
 
-    return SparseOperator.from_tensor(mass)
+    return SparseDecoupledTensor.from_tensor(mass)

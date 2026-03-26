@@ -8,7 +8,7 @@ import torch as t
 from jaxtyping import Float, Integer
 from torch.autograd.function import once_differentiable
 
-from ...operators import SparseOperator, SparseTopology
+from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 
 try:
     import cupy as cp
@@ -28,13 +28,13 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
-        A_sp_topo: Integer[SparseTopology, "r c"],
+        A_pattern: Integer[SparsityPattern, "r c"],
         b: Float[t.Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[t.Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
-        val = A_val[A_sp_topo.coo_to_csc_perm].detach().contiguous()
-        idx_ccol = A_sp_topo.idx_ccol_int32.detach().contiguous()
-        idx_row = A_sp_topo.idx_row_csc_int32.detach().contiguous()
+        val = A_val[A_pattern.coo_to_csc_perm].detach().contiguous()
+        idx_ccol = A_pattern.idx_ccol_int32.detach().contiguous()
+        idx_row = A_pattern.idx_row_csc_int32.detach().contiguous()
 
         # Force CuPy to use the current Pytorch stream.
         stream = t.cuda.current_stream()
@@ -45,7 +45,7 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
                     cp.from_dlpack(idx_row),
                     cp.from_dlpack(idx_ccol),
                 ),
-                shape=tuple(A_sp_topo.shape),
+                shape=tuple(A_pattern.shape),
             )
             x_cp = cp.from_dlpack(b.detach().contiguous())
 
@@ -56,13 +56,13 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, b, splu_kwargs = inputs
+        A_val, A_pattern, b, splu_kwargs = inputs
 
         x, solver = output
 
         ctx.save_for_backward(x)
         ctx.solver = solver
-        ctx.A_sp_topo = A_sp_topo
+        ctx.A_pattern = A_pattern
 
     @staticmethod
     @once_differentiable
@@ -89,7 +89,7 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
             return (None,) * 4
 
         (x,) = ctx.saved_tensors
-        A_sp_topo: SparseTopology = ctx.A_sp_topo
+        A_pattern: SparsityPattern = ctx.A_pattern
 
         if ctx.solver is None:
             raise RuntimeError(
@@ -116,10 +116,10 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
         if lambda_.dim() > 1:
             # If there is a channel dimension, sum over it.
             dLdA_val = t.sum(
-                -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]], dim=-1
+                -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]], dim=-1
             )
         else:
-            dLdA_val = -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]]
+            dLdA_val = -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None)
@@ -132,17 +132,17 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
-        A_sp_topo: Integer[SparseTopology, "r c"],
+        A_pattern: Integer[SparsityPattern, "r c"],
         b: Float[t.Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[t.Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
-        val = A_val[A_sp_topo.coo_to_csc_perm].detach().contiguous().cpu().numpy()
-        idx_ccol = A_sp_topo.idx_ccol_int32.detach().contiguous().cpu().numpy()
-        idx_row = A_sp_topo.idx_row_csc_int32.detach().contiguous().cpu().numpy()
+        val = A_val[A_pattern.coo_to_csc_perm].detach().contiguous().cpu().numpy()
+        idx_ccol = A_pattern.idx_ccol_int32.detach().contiguous().cpu().numpy()
+        idx_row = A_pattern.idx_row_csc_int32.detach().contiguous().cpu().numpy()
 
         A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
             (val, idx_row, idx_ccol),
-            shape=A_sp_topo.shape,
+            shape=A_pattern.shape,
         )
         x_np = b.detach().contiguous().cpu().numpy()
 
@@ -155,13 +155,13 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, b, splu_kwargs = inputs
+        A_val, A_pattern, b, splu_kwargs = inputs
 
         x, solver = output
 
         ctx.save_for_backward(x)
         ctx.solver = solver
-        ctx.A_sp_topo = A_sp_topo
+        ctx.A_pattern = A_pattern
 
     @staticmethod
     @once_differentiable
@@ -180,7 +180,7 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
             return (None,) * 4
 
         (x,) = ctx.saved_tensors
-        A_sp_topo: SparseTopology = ctx.A_sp_topo
+        A_pattern: SparsityPattern = ctx.A_pattern
 
         if ctx.solver is None:
             raise RuntimeError(
@@ -205,10 +205,10 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
         if lambda_.ndim > 1:
             # If there is a channel dimension, sum over it.
             dLdA_val = t.sum(
-                -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]], dim=-1
+                -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]], dim=-1
             )
         else:
-            dLdA_val = -lambda_[A_sp_topo.idx_coo[0]] * x[A_sp_topo.idx_coo[1]]
+            dLdA_val = -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None)
@@ -218,7 +218,7 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
 
 
 def splu(
-    A: Float[SparseOperator, "r c"],
+    A: Float[SparseDecoupledTensor, "r c"],
     b: Float[t.Tensor, " r *ch"],
     *,
     backend: Literal["cupy", "scipy"],
@@ -228,7 +228,7 @@ def splu(
     """
     This function provides a differentiable wrapper for SuperLU.
 
-    Here, A is a SparseOperator and b is a dense tensor with optional channel
+    Here, A is a SparseDecoupledTensor and b is a dense tensor with optional channel
     dimensions. If `channel_first` is `True`, all but the last dimension of `b`
     is treated as channel dimensions; if it is `False`, all but the first dimension
     of `b` is treated as channel dimensions.
@@ -279,12 +279,12 @@ def splu(
                 raise ImportError("CuPy backend required.")
 
             x, solver = _CuPySuperLUAutogradFunction.apply(
-                A.val, A.sp_topo, b_ready, splu_kwargs
+                A.val, A.pattern, b_ready, splu_kwargs
             )
 
         case "scipy":
             x, solver = _SciPySuperLUAutogradFunction.apply(
-                A.val, A.sp_topo, b_ready, splu_kwargs
+                A.val, A.pattern, b_ready, splu_kwargs
             )
 
         case _:

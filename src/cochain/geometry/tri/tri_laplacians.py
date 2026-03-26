@@ -3,7 +3,7 @@ from typing import Literal
 from jaxtyping import Float
 
 from ...complex import SimplicialComplex
-from ...sparse.operators import SparseOperator
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tri_hodge_stars import star_0, star_1, star_2
 from .tri_stiffness import stiffness_matrix
 
@@ -27,7 +27,7 @@ from .tri_stiffness import stiffness_matrix
 def codifferential_1(
     tri_mesh: SimplicialComplex,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
-) -> Float[SparseOperator, "vert edge"]:
+) -> Float[SparseDecoupledTensor, "vert edge"]:
     """
     Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
     """
@@ -44,7 +44,7 @@ def codifferential_1(
 def codifferential_2(
     tri_mesh: SimplicialComplex,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
-) -> Float[SparseOperator, "edge tri"]:
+) -> Float[SparseDecoupledTensor, "edge tri"]:
     """
     Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
     """
@@ -61,8 +61,8 @@ def codifferential_2(
 def laplacian_0(
     tri_mesh: SimplicialComplex,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
-    codiff_1: Float[SparseOperator, "vert edge"] | None = None,
-) -> Float[SparseOperator, "vert vert"]:
+    codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
+) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the 0-Laplacian (vertex Laplacian).
     L0 = codiff_1 @ d0 = inv_star_0 @ d0.T @ star_1 @ d0
@@ -88,8 +88,8 @@ def laplacian_0(
 def laplacian_1_div_grad(
     tri_mesh: SimplicialComplex,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
-    codiff_1: Float[SparseOperator, "vert edge"] | None = None,
-) -> Float[SparseOperator, "edge edge"]:
+    codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the div grad component of the 1-Laplacian, `d0 @ codiff_1`.
 
@@ -106,8 +106,8 @@ def laplacian_1_div_grad(
 def laplacian_1_curl_curl(
     tri_mesh: SimplicialComplex,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
-    codiff_2: Float[SparseOperator, "edge tri"] | None = None,
-) -> Float[SparseOperator, "edge edge"]:
+    codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Computes the curl curl component of the 1-Laplacian, `codiff_2 @ d1`.
 
@@ -124,9 +124,9 @@ def laplacian_1_curl_curl(
 def laplacian_1(
     tri_mesh: SimplicialComplex,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
-    codiff_1: Float[SparseOperator, "vert edge"] | None = None,
-    codiff_2: Float[SparseOperator, "edge tri"] | None = None,
-) -> Float[SparseOperator, "edge edge"]:
+    codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
+    codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the 1-Laplacian (edge/vector Laplacian).
     L1 = (codiff_2 @ d1) + (d0 @ codiff_1)
@@ -134,7 +134,7 @@ def laplacian_1(
     If the codifferentials are not provided, construct them using 1-star specified
     by 'dual_complex'.
     """
-    laplacian_1 = SparseOperator.assemble(
+    laplacian_1 = SparseDecoupledTensor.assemble(
         laplacian_1_div_grad(tri_mesh, dual_complex, codiff_1),
         laplacian_1_curl_curl(tri_mesh, dual_complex, codiff_2),
     )
@@ -145,8 +145,8 @@ def laplacian_1(
 def laplacian_2(
     tri_mesh: SimplicialComplex,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
-    codiff_2: Float[SparseOperator, "edge tri"] | None = None,
-) -> Float[SparseOperator, "tri tri"]:
+    codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
+) -> Float[SparseDecoupledTensor, "tri tri"]:
     """
     Compute the 2-Laplacian (face Laplacian).
     L2 = d1 @ codiff_2
