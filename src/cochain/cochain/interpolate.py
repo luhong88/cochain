@@ -566,11 +566,12 @@ def barycentric_whitney_map(
 
     In the `interior` mode, the function maps the k-cochains to k-forms interpolated
     at local barycentric coordinates across all m-simplices, where m is the dimension
-    of the mesh; in the `boundary` mode, the function maps the k-cochains to k-forms
-    interpolated at local barycentric coordinates across the k-simplices. If
-    k = m, the `interior` mode is used regardless of the `mode` argument. Currently,
-    interpolation of k-cochains on l-simplices in an m-dimensional mesh, where
-    k < l < m, is not supported.
+    of the mesh, and the returned tensor is of shape (`m_simp`, `pt`, `*ch`, `coord`);
+    in the `boundary` mode, the function maps the k-cochains to k-forms interpolated
+    at local barycentric coordinates across the k-simplices. If k = m, the `interior`
+    mode is used regardless of the `mode` argument. Currently, interpolation of
+    k-cochains on l-simplices in an m-dimensional mesh, where k < l < m, is not
+    supported.
 
     The `boundary_reduction` argument modifies the output of the `boundary` mode,
     if set to `'none'`, then the returned tensor is of shape (`m_simp`, `k_face`,
