@@ -8,7 +8,7 @@
     * Piecewise-linear triangular and tetrahedral meshes embedded in $\mathbb{R}^3$.
 * Topological operators:
     * Coboundary operators, aka discrete exterior derivatives.
-    * Combinatorial Laplacians.
+    * Combinatorial Laplacians on both the primal and dual meshes.
     * Cup product and anti-symmetrized cup product.
     * Tree-cotree decomposition for 1-Laplacians (on triangular meshes).
 * Geometric operators:
