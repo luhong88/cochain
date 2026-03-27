@@ -208,18 +208,17 @@ class AntisymmetricCupProduct(t.nn.Module):
 
         # Identify permutations of the  k-front faces of (k+l)-simplices and their
         # sign correction.
-        uf_face: Integer[t.LongTensor, " m_splx uf_face k+1"] = m_splx_sorted[
+        uf_face: Integer[t.LongTensor, "m_splx uf_face k+1"] = m_splx_sorted[
             :, perm.unique_front
         ]
-        uf_face_flat = uf_face.view(-1, k + 1)
-        uf_face_idx: Integer[t.LongTensor, " m_splx*uf_face"] = splx_search(
+        uf_face_idx: Integer[t.LongTensor, "m_splx uf_face"] = splx_search(
             key_splx=mesh.splx[k],
-            query_splx=uf_face_flat,
+            query_splx=uf_face,
             sort_key_splx=True if k == mesh.dim else False,
             sort_key_vert=True if k == mesh.dim else False,
             sort_query_vert=False,
         )
-        f_face_idx = uf_face_idx.view(*uf_face.shape[:-1])[:, perm.front_idx]
+        f_face_idx = uf_face_idx[:, perm.front_idx]
 
         self.f_face_idx: Integer[t.LongTensor, "m_splx face"]
         self.register_buffer("f_face_idx", f_face_idx)
@@ -235,23 +234,22 @@ class AntisymmetricCupProduct(t.nn.Module):
                 self.f_face_idx.shape
             )
 
-        self.f_face_parity: Float[t.Tensor, " m_splx face"]
+        self.f_face_parity: Float[t.Tensor, "m_splx face"]
         self.register_buffer("f_face_parity", f_face_parity)
 
         # Identify permutations of the k-back faces of (k+l)-simplices and their
         # sign correction.
-        ub_face: Integer[t.LongTensor, " m_splx ub_face l+1"] = (
+        ub_face: Integer[t.LongTensor, "m_splx ub_face l+1"] = (
             m_splx_sorted[:, perm.unique_back].sort(dim=-1).values
         )
-        ub_face_flat = ub_face.view(-1, l + 1)
-        ub_face_idx: Integer[t.LongTensor, " m_splx*ub_face"] = splx_search(
+        ub_face_idx: Integer[t.LongTensor, "m_splx ub_face"] = splx_search(
             key_splx=mesh.splx[l],
-            query_splx=ub_face_flat,
+            query_splx=ub_face,
             sort_key_splx=True if l == mesh.dim else False,
             sort_key_vert=True if l == mesh.dim else False,
             sort_query_vert=False,
         )
-        b_face_idx = ub_face_idx.view(*ub_face.shape[:-1])[:, perm.back_idx]
+        b_face_idx = ub_face_idx[:, perm.back_idx]
 
         self.b_face_idx: Integer[t.LongTensor, "m_splx face"]
         self.register_buffer("b_face_idx", b_face_idx)

@@ -17,7 +17,7 @@ def get_edge_face_idx(
     # Enumerate all unique edges via their vertex position in the tris.
     local_edge_idx = enumerate_local_faces(simp_dim=2, face_dim=1, device=tris.device)
 
-    all_edges: Float[t.Tensor, "tri*3 2"] = tris[:, local_edge_idx].flatten(end_dim=-2)
+    all_edges: Float[t.Tensor, "tri 3 2"] = tris[:, local_edge_idx]
 
     canon_edges_idx = splx_search(
         key_splx=edges,
@@ -26,7 +26,7 @@ def get_edge_face_idx(
         sort_key_vert=False,
         sort_query_vert=True,
         method="polynomial_hash",
-    ).view(-1, 3)
+    )
 
     return canon_edges_idx
 
@@ -40,8 +40,8 @@ def get_edge_face_orientations(
     """
     local_edge_idx = enumerate_local_faces(simp_dim=2, face_dim=1, device=tris.device)
 
-    all_edges: Float[t.Tensor, "tri*3 2"] = tris[:, local_edge_idx].flatten(end_dim=-2)
+    all_edges: Float[t.Tensor, "tri 3 2"] = tris[:, local_edge_idx]
 
-    edge_signs = compute_lex_rel_orient(all_edges).view(-1, 3)
+    edge_signs = compute_lex_rel_orient(all_edges)
 
     return edge_signs

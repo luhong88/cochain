@@ -38,18 +38,27 @@ def _tet_perm_parity(
 
 
 def compute_lex_rel_orient(
-    simps: Integer[t.LongTensor, "simp vert"], dtype: t.dtype = t.float32
-) -> Float[t.Tensor, " simp"]:
-    simp_dim = simps.size(-1) - 1
+    splx: Integer[t.LongTensor, "*b splx vert"], dtype: t.dtype = t.float32
+) -> Float[t.Tensor, "*b splx"]:
+    if splx.size(-2) == 0:
+        return splx[..., 0]
 
-    match simp_dim:
+    splx_flat = splx.flatten(end_dim=-2)
+
+    splx_dim = splx_flat.size(-1) - 1
+
+    match splx_dim:
         case 0:
-            return _vertex_perm_parity(simps, dtype)
+            perm_parity = _vertex_perm_parity(splx_flat, dtype)
         case 1:
-            return _edge_perm_parity(simps, dtype)
+            perm_parity = _edge_perm_parity(splx_flat, dtype)
         case 2:
-            return _tri_perm_parity(simps, dtype)
+            perm_parity = _tri_perm_parity(splx_flat, dtype)
         case 3:
-            return _tet_perm_parity(simps, dtype)
+            perm_parity = _tet_perm_parity(splx_flat, dtype)
         case _:
             raise NotImplementedError()
+
+    perm_parity_shaped = perm_parity.view(*splx.shape[:-1])
+
+    return perm_parity_shaped

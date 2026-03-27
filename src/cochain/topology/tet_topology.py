@@ -17,7 +17,7 @@ def get_edge_face_idx(
 
     # For each tet and each unique edge pair, find the orientations of the edges
     # and their indices on the list of unique, canonical edges (tet_mesh.edges).
-    all_edges: Float[t.Tensor, "tet*6 2"] = tets[:, local_edge_idx].flatten(end_dim=-2)
+    all_edges: Float[t.Tensor, "tet 6 2"] = tets[:, local_edge_idx]
 
     canon_edges_idx = splx_search(
         key_splx=edges,
@@ -26,7 +26,7 @@ def get_edge_face_idx(
         sort_key_vert=False,
         sort_query_vert=True,
         method="polynomial_hash",
-    ).view(-1, 6)
+    )
 
     return canon_edges_idx
 
@@ -40,9 +40,9 @@ def get_edge_face_orientations(
     """
     local_edge_idx = enumerate_local_faces(simp_dim=3, face_dim=1, device=tets.device)
 
-    all_edges: Float[t.Tensor, "tet*6 2"] = tets[:, local_edge_idx].flatten(end_dim=-2)
+    all_edges: Float[t.Tensor, "tet 6 2"] = tets[:, local_edge_idx]
 
-    edge_signs = compute_lex_rel_orient(all_edges).view(-1, 6)
+    edge_signs = compute_lex_rel_orient(all_edges)
 
     return edge_signs
 
@@ -57,9 +57,7 @@ def get_tri_face_idx(
     """
     local_tri_idx = enumerate_local_faces(simp_dim=3, face_dim=2, device=tets.device)
 
-    all_tris: Integer[t.LongTensor, "tet*4 3"] = tets[:, local_tri_idx].flatten(
-        end_dim=-2
-    )
+    all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[:, local_tri_idx]
 
     all_canon_tris_idx = splx_search(
         key_splx=tris,
@@ -68,7 +66,7 @@ def get_tri_face_idx(
         sort_key_vert=False,
         sort_query_vert=True,
         method="lex_sort",
-    ).view(-1, 4)
+    )
 
     return all_canon_tris_idx
 
@@ -80,6 +78,6 @@ def get_tri_face_orientations(
 
     all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[:, local_tri_idx]
 
-    tris_signs = compute_lex_rel_orient(all_tris.view(-1, 3)).view(-1, 4)
+    tris_signs = compute_lex_rel_orient(all_tris)
 
     return tris_signs
