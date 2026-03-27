@@ -1,15 +1,15 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..sparse.operators import SparseOperator
+from ..sparse.decoupled_tensor import SparseDecoupledTensor
 
 
 def cbd_from_tri_mesh(
     tris: Integer[t.LongTensor, "tri 3"],
 ) -> tuple[
     Integer[t.LongTensor, "edge 2"],
-    Float[SparseOperator, "edge vert"],
-    Float[SparseOperator, "tri edge"],
+    Float[SparseDecoupledTensor, "edge vert"],
+    Float[SparseDecoupledTensor, "tri edge"],
 ]:
     tris = tris.long()
 
@@ -88,8 +88,8 @@ def cbd_from_tri_mesh(
 
     return (
         unique_canon_edges,
-        SparseOperator.from_tensor(cbd_0),
-        SparseOperator.from_tensor(cbd_1),
+        SparseDecoupledTensor.from_tensor(cbd_0),
+        SparseDecoupledTensor.from_tensor(cbd_1),
     )
 
 
@@ -98,9 +98,9 @@ def cbd_from_tet_mesh(
 ) -> tuple[
     Integer[t.LongTensor, "edge 2"],
     Integer[t.LongTensor, "tri 3"],
-    Float[SparseOperator, "edge vert"],
-    Float[SparseOperator, "tri edge"],
-    Float[SparseOperator, "tet tri"],
+    Float[SparseDecoupledTensor, "edge vert"],
+    Float[SparseDecoupledTensor, "tri edge"],
+    Float[SparseDecoupledTensor, "tet tri"],
 ]:
     tets = tets.long()
 
@@ -160,5 +160,5 @@ def cbd_from_tet_mesh(
         unique_canon_tris,
         cbd_0,
         cbd_1,
-        SparseOperator.from_tensor(cbd_2),
+        SparseDecoupledTensor.from_tensor(cbd_2),
     )

@@ -13,13 +13,13 @@ def test_const_1_form_integration(mesh, request, device):
     de_rham = DeRhamMap(k=1, quad_degree=1, mesh=mesh)
 
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     const_form = t.randn((2, 3)).to(
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
-        const_form, "ch coord -> simp pt ch coord", simp=n_simps, pt=n_pts
+        const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
     discretized_cochain = de_rham.discretize(sampled_form)
 
@@ -37,13 +37,13 @@ def test_const_2_form_integration(mesh, request, device):
     de_rham = DeRhamMap(k=2, quad_degree=1, mesh=mesh)
 
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     const_form = t.randn((2, 3)).to(
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
-        const_form, "ch coord -> simp pt ch coord", simp=n_simps, pt=n_pts
+        const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
     discretized_cochain = de_rham.discretize(sampled_form)
 
@@ -62,13 +62,13 @@ def test_const_3_form_integration(two_tets_mesh, device):
     de_rham = DeRhamMap(k=3, quad_degree=1, mesh=mesh)
 
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     const_form = t.randn((2, 1)).to(
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
-        const_form, "ch coord -> simp pt ch coord", simp=n_simps, pt=n_pts
+        const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
     discretized_cochain = de_rham.discretize(sampled_form)
 
@@ -95,13 +95,13 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     de_rham_1 = DeRhamMap(k=1, quad_degree=0, mesh=mesh)
 
     pts_1 = de_rham_1.sample_points()
-    n_1_simps, n_1_pts, _ = pts_1.shape
+    n_1_splx, n_1_pts, _ = pts_1.shape
 
     # The space of 0-forms with polynomial degree 1 consists of 3 basis functions
     # x, y, z. To discretize a 0-form is to simply sample the 0-forms at the
     # mesh vertices. Therefore, the mesh.vert_coords can already be considered
     # as a sample of the three basis functions at the mesh vertices.
-    # (1_simp, 0_simp) @ (0_simp, basis) -> (2_simp, basis)
+    # (1_splx, 0_splx) @ (0_splx, basis) -> (2_splx, basis)
     d_pi_form = d_0 @ mesh.vert_coords
 
     # Compute dω analytically.
@@ -112,7 +112,7 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     )
 
     sampled_1_forms = repeat(
-        grad_1_forms, "basis coord -> simp pt basis coord", simp=n_1_simps, pt=n_1_pts
+        grad_1_forms, "basis coord -> splx pt basis coord", splx=n_1_splx, pt=n_1_pts
     )
 
     pi_d_form = de_rham_1.discretize(sampled_1_forms)
@@ -140,7 +140,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     pts_1 = de_rham_1.sample_points()
     pts_2 = de_rham_2.sample_points()
 
-    n_2_simps, n_2_pts, _ = pts_2.shape
+    n_2_splx, n_2_pts, _ = pts_2.shape
 
     # The space of 1-forms with polynomial degree 1 consists of 9 basis functions
     # of the form (x, 0, 0), (0, y, 0), (0, 0, z), etc., and each of these basis
@@ -165,10 +165,10 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     sampled_1_forms = einsum(
         matrix_1_forms,
         pts_1,
-        "basis coord1 coord2, simp pt coord2 -> simp pt basis coord1",
+        "basis coord1 coord2, splx pt coord2 -> splx pt basis coord1",
     )
 
-    # (2_simp, 1_simp) @ (1_simp, basis) -> (2_simp, basis)
+    # (2_splx, 1_splx) @ (1_splx, basis) -> (2_splx, basis)
     d_pi_form = d_1 @ de_rham_1.discretize(sampled_1_forms)
 
     # Compute dω analytically.
@@ -191,7 +191,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     # fmt:on
 
     sampled_2_forms = repeat(
-        curl_2_forms, "basis coord -> simp pt basis coord", simp=n_2_simps, pt=n_2_pts
+        curl_2_forms, "basis coord -> splx pt basis coord", splx=n_2_splx, pt=n_2_pts
     )
 
     pi_d_form = de_rham_2.discretize(sampled_2_forms)
@@ -218,7 +218,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
     pts_2 = de_rham_2.sample_points()
     pts_3 = de_rham_3.sample_points()
 
-    n_3_simps, n_3_pts, _ = pts_3.shape
+    n_3_splx, n_3_pts, _ = pts_3.shape
 
     # The space of 2-forms with polynomial degree 1 consists of 9 basis functions
     # of the form (x, 0, 0), (0, y, 0), (0, 0, z), etc. under Hodge star isomorphism,
@@ -244,10 +244,10 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
     sampled_2_forms = einsum(
         matrix_2_forms,
         pts_2,
-        "basis coord1 coord2, simp pt coord2 -> simp pt basis coord1",
+        "basis coord1 coord2, splx pt coord2 -> splx pt basis coord1",
     )
 
-    # (3_simp, 2_simp) @ (2_simp, basis) -> (3_simp, basis)
+    # (3_splx, 2_splx) @ (2_splx, basis) -> (3_splx, basis)
     d_pi_form = d_2 @ de_rham_2.discretize(sampled_2_forms)
 
     # Compute dω analytically.
@@ -270,7 +270,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
     # fmt:on
 
     sampled_3_forms = repeat(
-        div_3_forms, "basis coord -> simp pt basis coord", simp=n_3_simps, pt=n_3_pts
+        div_3_forms, "basis coord -> splx pt basis coord", splx=n_3_splx, pt=n_3_pts
     )
 
     pi_d_form = de_rham_3.discretize(sampled_3_forms)

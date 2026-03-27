@@ -3,12 +3,12 @@ from typing import Literal
 import torch as t
 from jaxtyping import Float
 
-from ...operators import SparseOperator
+from ...decoupled_tensor import SparseDecoupledTensor
 
 
 def M_orthonormalize(
     V: Float[t.Tensor, "m n"],
-    M_op: Float[SparseOperator, "m m"],
+    M_op: Float[SparseDecoupledTensor, "m m"],
     *,
     rtol: float | None = None,
     n_min: int | None = None,
@@ -82,7 +82,7 @@ def M_orthonormalize(
 
 def _M_orthonormalize_one_iter(
     V: Float[t.Tensor, "m n"],
-    M_op: Float[SparseOperator, "m m"],
+    M_op: Float[SparseDecoupledTensor, "m m"],
     rtol: float | None = None,
 ) -> tuple[Float[t.Tensor, "m l"], Float[t.Tensor, ""]]:
     if rtol is None:
@@ -151,7 +151,7 @@ def canonicalize_eig_vec_signs(
 def grassmann_proj_dists(
     eig_vecs_pred: Float[t.Tensor, "m k"],
     eig_vecs_true: Float[t.Tensor, "m k"],
-    M: Float[t.Tensor, "m m"] | Float[SparseOperator, "m m"] | None = None,
+    M: Float[t.Tensor, "m m"] | Float[SparseDecoupledTensor, "m m"] | None = None,
     mode: Literal["pairwise", "subspace"] = "subspace",
 ) -> Float[t.Tensor, "*k"]:
     """

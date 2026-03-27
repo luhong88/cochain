@@ -1,8 +1,8 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...complex import SimplicialComplex
-from ...sparse.operators import DiagOperator, SparseOperator
+from ...complex import SimplicialMesh
+from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from .tet_geometry import (
     bary_coord_grad_inner_prods,
     d_tet_signed_vols_d_vert_coords,
@@ -11,7 +11,7 @@ from .tet_geometry import (
 )
 
 
-def mass_0_consistent(tet_mesh) -> Float[SparseOperator, "vert vert"]:
+def mass_0_consistent(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
     """
@@ -33,10 +33,10 @@ def mass_0_consistent(tet_mesh) -> Float[SparseOperator, "vert vert"]:
         size=(tet_mesh.n_verts, tet_mesh.n_verts),
     ).coalesce()
 
-    return SparseOperator.from_tensor(mass)
+    return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
+def mass_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
     Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
     barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
@@ -56,10 +56,10 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "vert vert"]:
         src=t.repeat_interleave(tet_vol / 4.0, 4),
     )
 
-    return DiagOperator.from_tensor(diag)
+    return DiagDecoupledTensor.from_tensor(diag)
 
 
-def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
+def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
 
@@ -132,8 +132,22 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
 
     # For each tet and each unique edge pair, find the orientations of the edges
     # and their indices on the list of unique, canonical edges (tet_mesh.edges).
-    whitney_edge_signs = tet_mesh.tet_edge_orientations
-    whitney_edges_idx = tet_mesh.tet_edge_idx
+    # Note that, given the specific unique_edges definition used in this function
+    # (related to the tet edge local ref frame definitions), the way the unique
+    # 1-faces is enumerated in unique_edges differs from the canonical edge
+    # definition used in utils.faces.enumerate_local_faces(), which gives
+    #
+    # [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]
+    #
+    # Therefore, the canonical edge definitions need to be adjusted for use in
+    # this function; however, note that, since unique_edges define 1-faces
+    # with the same orientation as the canonical 1-faces, no adjustment of edge
+    # orientation signs is required.
+    canon_edge_perm = [0, 1, 3, 4, 5, 2]
+
+    edge_faces = tet_mesh.edge_faces
+    whitney_edge_signs = edge_faces.parity[:, canon_edge_perm]
+    whitney_edges_idx = edge_faces.idx[:, canon_edge_perm]
 
     # Multiply the Whitney 1-form inner product by the edge orientation signs
     # to get the contribution from canonical edges.
@@ -159,10 +173,10 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
         (n_edges, n_edges),
     ).coalesce()
 
-    return SparseOperator.from_tensor(mass)
+    return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
+def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     """
     Compute the Galerkin triangle/2-form mass matrix.
 
@@ -178,35 +192,54 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "tri tri"]:
     """
     n_tris = tet_mesh.n_tris
 
+    # Note that, for the purpose of computing the mass-2 matrix, the definition
+    # of triangle faces is different from the global, "canonical" definitions
+    # used in utils.faces.enumerate_local_faces(). More specifically, the canonical
+    # triangle faces of a tet is defined locally as
+    #
+    # [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
+    #
+    # However, here, we enumerate the triangle faces by first enumerating the
+    # vertices that oppose the triangle faces, and the triangle vertices are
+    # enumerated such that its area normal is outward-facing (note that the way
+    # the triangles are indexed here satisfies the right-hand rule for positively
+    # oriented tets. More specifically, this results in the following triangle
+    # face definitions:
+    #
+    # [[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]]
+    #
+    # Therefore, the canonical 2-face definitions and orientations need to be
+    # adjusted prior for this function.
+    tri_face_idx = t.flip(tet_mesh.tri_faces.idx, dims=(-1,))
+    tri_face_orientations = t.tensor(
+        [[1.0, -1.0, 1.0, -1.0]], dtype=tet_mesh.dtype, device=tet_mesh.device
+    ) * t.flip(tet_mesh.tri_faces.parity, dims=(-1,))
+
     # First, compute the inner products of the Whitney 2-form basis functions.
     _, whitney_inner_prod_signed = whitney_2_form_inner_prods(
-        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.tet_tri_orientations
+        tet_mesh.vert_coords, tet_mesh.tets, tri_face_orientations
     )
-
-    # Then, find the indices of the tet triangle faces associated with the basis
-    # functions.
-    all_canon_tris_idx = tet_mesh.tet_tri_idx
 
     # Assemble the mass matrix by scattering the inner products according to the
     # triangle indices.
     mass_idx = t.vstack(
         (
-            all_canon_tris_idx.view(-1, 4, 1).expand(-1, 4, 4).flatten(),
-            all_canon_tris_idx.view(-1, 1, 4).expand(-1, 4, 4).flatten(),
+            tri_face_idx.view(-1, 4, 1).expand(-1, 4, 4).flatten(),
+            tri_face_idx.view(-1, 1, 4).expand(-1, 4, 4).flatten(),
         )
     )
     mass_val = whitney_inner_prod_signed.flatten()
     mass = t.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
 
-    return SparseOperator.from_tensor(mass)
+    return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_3(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tet tet"]:
+def mass_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tet tet"]:
     """
     Compute the diagonal of the tet/3-form mass matrix, which is a diagonal matrix
     containing the inverse of the unsigned tet volumes, which is equivalent to
     the 3-star.
     """
-    return DiagOperator.from_tensor(
+    return DiagDecoupledTensor.from_tensor(
         1.0 / t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
     )

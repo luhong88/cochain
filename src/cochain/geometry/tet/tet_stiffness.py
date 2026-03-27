@@ -1,14 +1,14 @@
 import torch as t
 from jaxtyping import Float
 
-from ...complex import SimplicialComplex
-from ...sparse.operators import SparseOperator
+from ...complex import SimplicialMesh
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tet_geometry import cotan_weights
 
 
 def stiffness_matrix(
-    tet_mesh: SimplicialComplex,
-) -> Float[SparseOperator, "vert vert"]:
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Computes the stiffness matrix for a 3D mesh, sometimes also known as the "cotan
     Laplacian".
@@ -28,4 +28,4 @@ def stiffness_matrix(
         t.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
     ).coalesce()
 
-    return SparseOperator.from_tensor(stiffness)
+    return SparseDecoupledTensor.from_tensor(stiffness)

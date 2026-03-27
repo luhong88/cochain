@@ -15,7 +15,7 @@ from cochain.geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
-from cochain.utils.faces import enumerate_unique_faces
+from cochain.utils.faces import enumerate_local_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 
 
@@ -36,7 +36,7 @@ def test_interpolate_discretize_left_inverse(mesh, k, quad, device, request):
     map to discretize the k-form, gives back the same k-cochain.
     """
     mesh = request.getfixturevalue(mesh).to(device)
-    k_cochain_true = t.randn(mesh.simplices[k].size(0)).to(device)
+    k_cochain_true = t.randn(mesh.splx[k].size(0)).to(device)
 
     # First, interpolate the discrete k-cochain
     bary_coords, weights = quad(
@@ -129,10 +129,10 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     d_w_cochain = einsum(
         bary_coords_grad,
         cochain_0_at_vert_faces,
-        "top_simp vert coord, top_simp vert ch -> top_simp ch coord",
+        "top_splx vert coord, top_splx vert ch -> top_splx ch coord",
     )
     d_w_cochain_formed = repeat(
-        d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
+        d_w_cochain, "top_splx ch coord -> top_splx pt ch coord", pt=bary_coords.size(0)
     )
 
     # Check that the two approaches give the same results.
@@ -193,12 +193,12 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             )
             bary_coords_grad = d_tri_areas_d_vert_coords / tri_areas
 
-            local_edge_idx = enumerate_unique_faces(
-                simp_dim=2, face_dim=1, device=device
+            local_edge_idx = enumerate_local_faces(
+                splx_dim=2, face_dim=1, device=device
             )
 
-            cochain_1_at_edge_faces = cochain_1[mesh.tri_edge_idx]
-            sign_correction = mesh.tri_edge_orientations
+            cochain_1_at_edge_faces = cochain_1[mesh.edge_faces.idx]
+            sign_correction = mesh.edge_faces.parity
 
         case 3:
             tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
@@ -209,12 +209,12 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
                 -1, 1, 1
             )
 
-            local_edge_idx = enumerate_unique_faces(
-                simp_dim=3, face_dim=1, device=device
+            local_edge_idx = enumerate_local_faces(
+                splx_dim=3, face_dim=1, device=device
             )
 
-            cochain_1_at_edge_faces = cochain_1[mesh.tet_edge_idx]
-            sign_correction = mesh.tet_edge_orientations
+            sign_correction = mesh.edge_faces.parity
+            cochain_1_at_edge_faces = cochain_1[mesh.edge_faces.idx]
 
         case _:
             raise ValueError()
@@ -234,10 +234,10 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
         basis,
         sign_correction,
         cochain_1_at_edge_faces,
-        "top_simp edge coord, top_simp edge, top_simp edge ch -> top_simp ch coord",
+        "top_splx edge coord, top_splx edge, top_splx edge ch -> top_splx ch coord",
     )
     d_w_cochain_formed = repeat(
-        d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
+        d_w_cochain, "top_splx ch coord -> top_splx pt ch coord", pt=bary_coords.size(0)
     )
 
     # Check that the two approaches give the same results.
@@ -288,10 +288,10 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     )
     bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
 
-    local_tri_idx = enumerate_unique_faces(simp_dim=3, face_dim=2, device=device)
+    local_tri_idx = enumerate_local_faces(splx_dim=3, face_dim=2, device=device)
 
-    cochain_2_at_edge_faces = cochain_2[mesh.tet_tri_idx]
-    sign_correction = mesh.tet_tri_orientations
+    cochain_2_at_edge_faces = cochain_2[mesh.tri_faces.idx]
+    sign_correction = mesh.tri_faces.parity
 
     # Note that the scalar triple product can be more conveniently computed
     # using the matrix determinant; bary_coords_grad[:, local_tri_idx] has the
@@ -319,10 +319,10 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
         basis,
         sign_correction,
         cochain_2_at_edge_faces,
-        "top_simp tri coord, top_simp tri, top_simp tri ch -> top_simp ch coord",
+        "top_splx tri coord, top_splx tri, top_splx tri ch -> top_splx ch coord",
     )
     d_w_cochain_formed = repeat(
-        d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
+        d_w_cochain, "top_splx ch coord -> top_splx pt ch coord", pt=bary_coords.size(0)
     )
 
     # Check that the two approaches give the same results.
@@ -382,10 +382,10 @@ def test_1_form_interpolate_discretize_right_project(mesh, request, device):
     # Discretize the constant 1-form via de Rham map.
     de_rham = DeRhamMap(k=1, quad_degree=3, mesh=mesh)
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     cochain_1 = de_rham.discretize(
-        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+        k_forms=repeat(const_vec, "coord -> splx pt coord", splx=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 1-form via Whitney map.
@@ -452,10 +452,10 @@ def test_2_form_interpolate_discretize_right_project(mesh, request, device):
     # Discretize the constant 2-form via de Rham map.
     de_rham = DeRhamMap(k=2, quad_degree=3, mesh=mesh)
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     cochain_2 = de_rham.discretize(
-        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+        k_forms=repeat(const_vec, "coord -> splx pt coord", splx=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 2-form via Whitney map.
@@ -521,10 +521,10 @@ def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
     # Discretize the constant 3-form via de Rham map.
     de_rham = DeRhamMap(k=3, quad_degree=3, mesh=mesh)
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     cochain_3 = de_rham.discretize(
-        k_forms=repeat(const_scalar, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+        k_forms=repeat(const_scalar, "coord -> splx pt coord", splx=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 3-form via Whitney map.
@@ -608,10 +608,10 @@ def test_1_form_tangential_continuity_on_tet_mesh(two_tets_mesh, device):
     )
 
     # For the two_tets_mesh, the triangles are defined as [[0, 1, 2, 4], [2, 1, 0, 3]],
-    # so the edges 01, 02, 12 are shared. By enumerate_unique_faces(), these three
-    # edges correspond to edge 0, 1, 2, and 2, 1, 0 on the two tets, respectively.
-    form_1_shared_edge_1 = form_1[0, [0, 1, 2]]
-    form_1_shared_edge_2 = form_1[1, [2, 1, 0]]
+    # so the edges 01, 02, 12 are shared. By enumerate_local_faces(), these three
+    # edges correspond to edge 0, 1, 3, and 3, 1, 0 on the two tets, respectively.
+    form_1_shared_edge_1 = form_1[0, [0, 1, 3]]
+    form_1_shared_edge_2 = form_1[1, [3, 1, 0]]
 
     shared_edge_vec = mesh.vert_coords[[1, 2, 2]] - mesh.vert_coords[[0, 0, 1]]
 
@@ -648,10 +648,10 @@ def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     )
 
     # For the two_tets_mesh, the triangles are defined as [[0, 1, 2, 4], [2, 1, 0, 3]],
-    # so the triangle 012 is shared. By enumerate_unique_faces(), this is the last
+    # so the triangle 012 is shared. By enumerate_local_faces(), this is the first
     # triangle face in each tet.
-    form_2_shared_tri_1 = form_2[0, -1]
-    form_2_shared_tri_2 = form_2[1, -1]
+    form_2_shared_tri_1 = form_2[0, 0]
+    form_2_shared_tri_2 = form_2[1, 0]
 
     shared_tri_normal_vec = t.cross(
         mesh.vert_coords[1] - mesh.vert_coords[0],

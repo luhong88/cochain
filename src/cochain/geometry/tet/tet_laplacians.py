@@ -3,8 +3,8 @@ from typing import Literal
 import torch as t
 from jaxtyping import Float
 
-from ...complex import SimplicialComplex
-from ...sparse.operators import SparseOperator
+from ...complex import SimplicialMesh
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tet_hodge_stars import star_1, star_2
 from .tet_masses import mass_0, mass_1, mass_2, mass_3
 from .tet_stiffness import stiffness_matrix
@@ -23,8 +23,8 @@ from .tet_stiffness import stiffness_matrix
 
 
 def weak_laplacian_0(
-    tet_mesh: SimplicialComplex, method: Literal["cotan", "consistent"]
-) -> Float[SparseOperator, "vert vert"]:
+    tet_mesh: SimplicialMesh, method: Literal["cotan", "consistent"]
+) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the weak 0-Laplacian (vertex Laplacian)
     S0= d0.T @ M_1 @ d0
@@ -48,8 +48,8 @@ def weak_laplacian_0(
 
 
 def weak_laplacian_1_div_grad(
-    tet_mesh: SimplicialComplex,
-) -> Float[SparseOperator, "edge edge"]:
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the div grad component of the weak 1-Laplacian
     M_1 @ d_0 @ inv_M_0 @ d_0.T @ M_1
@@ -64,8 +64,8 @@ def weak_laplacian_1_div_grad(
 
 
 def weak_laplacian_1_curl_curl(
-    tet_mesh: SimplicialComplex,
-) -> Float[SparseOperator, "edge edge"]:
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the curl curl component of the weak 1-Laplacian
     d_1.T @ M_2 @ d_1
@@ -78,25 +78,27 @@ def weak_laplacian_1_curl_curl(
     return d1_T @ m_2 @ d1
 
 
-def weak_laplacian_1(tet_mesh: SimplicialComplex) -> Float[SparseOperator, "edge edge"]:
+def weak_laplacian_1(
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the weak 1-Laplacian (edge/vector Laplacian)
     S1 = d_1.T @ M_2 @ d_1 + M_1 @ d_0 @ inv_M_0 @ d_0.T @ M_1
     """
-    return SparseOperator.assemble(
+    return SparseDecoupledTensor.assemble(
         weak_laplacian_1_div_grad(tet_mesh), weak_laplacian_1_curl_curl(tet_mesh)
     )
 
 
 # TODO: update docstring to remove reference to cholesky
 def weak_laplacian_2_curl_curl(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
     method: Literal[
         "dense",
         "solver",
         "inv_star",
     ],
-) -> Float[SparseOperator, "tri tri"] | Float[t.Tensor, "tri tri"]:
+) -> Float[SparseDecoupledTensor, "tri tri"] | Float[t.Tensor, "tri tri"]:
     """
     Compute the curl curl component of the weak 2-Laplacian
     M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
@@ -136,8 +138,8 @@ def weak_laplacian_2_curl_curl(
 
 
 def weak_laplacian_2_div_grad(
-    tet_mesh: SimplicialComplex,
-) -> Float[SparseOperator, "tri tri"]:
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "tri tri"]:
     """
     Compute the div grad component of the weak 1-Laplacian
     d_2.T @ M_3 @ d_2
@@ -151,13 +153,13 @@ def weak_laplacian_2_div_grad(
 
 
 def weak_laplacian_2(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
     method: Literal[
         "dense",
         "solver",
         "inv_star",
     ],
-) -> Float[SparseOperator, "tri tri"] | Float[t.Tensor, "tri tri"]:
+) -> Float[SparseDecoupledTensor, "tri tri"] | Float[t.Tensor, "tri tri"]:
     """
     Compute the weak 2-Laplacian (face Laplacian)
     S2 = d_2.T @ M_3 @ d_2 + M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
@@ -172,8 +174,8 @@ def weak_laplacian_2(
         div_grad = weak_laplacian_2_div_grad(tet_mesh)
 
         match div_grad:
-            case SparseOperator():
-                return SparseOperator.assemble(div_grad, curl_curl)
+            case SparseDecoupledTensor():
+                return SparseDecoupledTensor.assemble(div_grad, curl_curl)
             case t.Tensor():
                 return div_grad + curl_curl.to_dense()
             case _:
@@ -185,13 +187,13 @@ def weak_laplacian_2(
 
 # TODO: update docstring to remove reference to cholesky
 def weak_laplacian_3(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
     method: Literal[
         "dense",
         "solver",
         "inv_star",
     ],
-) -> Float[SparseOperator, "tri tri"] | Float[t.Tensor, "tri tri"]:
+) -> Float[SparseDecoupledTensor, "tri tri"] | Float[t.Tensor, "tri tri"]:
     """
     Compute the weak 3-Laplacian (tet Laplacian)
     M_3 @ d_2 @ inv_M_2 @ d_2.T @ M_3

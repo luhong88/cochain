@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Sequence
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...operators import SparseOperator, SparseTopology
+from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ._backward import dLdA_backward, dLdA_dLdM_backward
 from ._lobpcg_routines import lobpcg_forward
 
@@ -48,21 +48,21 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " A_nnz"],
-        A_sp_topo: Integer[SparseTopology, "m m"],
+        A_pattern: Integer[SparsityPattern, "m m"],
         M_val: Float[t.Tensor, " M_nnz"] | None,
-        M_sp_topo: Integer[SparseTopology, "m m"] | None,
+        M_pattern: Integer[SparsityPattern, "m m"] | None,
         k: int,
         eps: float | int,
         lobpcg_config: LOBPCGConfig,
         precond_config: LOBPCGPrecondConfig,
         nvmath_config: DirectSolverConfig,
     ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
-        A_op = SparseOperator(A_sp_topo, A_val)
+        A_op = SparseDecoupledTensor(A_pattern, A_val)
 
-        if (M_val is None) and (M_sp_topo is None):
+        if (M_val is None) and (M_pattern is None):
             M_op = None
-        elif (M_val is not None) and (M_sp_topo is not None):
-            M_op = SparseOperator(M_sp_topo, M_val)
+        elif (M_val is not None) and (M_pattern is not None):
+            M_op = SparseDecoupledTensor(M_pattern, M_val)
         else:
             raise ValueError()
 
@@ -86,9 +86,9 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
     def setup_context(ctx, inputs, output):
         (
             A_val,
-            A_sp_topo,
+            A_pattern,
             M_val,
-            M_sp_topo,
+            M_pattern,
             k,
             eps,
             lobpcg_config,
@@ -98,8 +98,8 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
-        ctx.A_sp_topo = A_sp_topo
-        ctx.M_sp_topo = M_sp_topo
+        ctx.A_pattern = A_pattern
+        ctx.M_pattern = M_pattern
         ctx.k = k
         ctx.eps = eps
 
@@ -120,7 +120,7 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
         needs_grad_A_val = ctx.needs_input_grad[0]
         needs_grad_M_val = ctx.needs_input_grad[2]
 
-        if ctx.M_sp_topo is None:
+        if ctx.M_pattern is None:
             dLdA_val = dLdA_backward(ctx, dLdl, dLdv) if needs_grad_A_val else None
             dLdM_val = None
         else:
@@ -132,8 +132,8 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
 
 
 def _lobpcg_no_batch(
-    A: Float[SparseOperator, "m m"],
-    M: Float[SparseOperator, "m m"] | None,
+    A: Float[SparseDecoupledTensor, "m m"],
+    M: Float[SparseDecoupledTensor, "m m"] | None,
     k: int,
     eps: float | int,
     lobpcg_config: LOBPCGConfig,
@@ -143,7 +143,7 @@ def _lobpcg_no_batch(
     if M is None:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
             A.val,
-            A.sp_topo,
+            A.pattern,
             None,
             None,
             k,
@@ -155,9 +155,9 @@ def _lobpcg_no_batch(
     else:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
             A.val,
-            A.sp_topo,
+            A.pattern,
             M.val,
-            M.sp_topo,
+            M.pattern,
             k,
             eps,
             lobpcg_config,
@@ -169,8 +169,8 @@ def _lobpcg_no_batch(
 
 
 def _lobpcg_batch(
-    A_list: list[Float[SparseOperator, "m m"]],
-    M_batched: Float[SparseOperator, "m m"] | None,
+    A_list: list[Float[SparseDecoupledTensor, "m m"]],
+    M_batched: Float[SparseDecoupledTensor, "m m"] | None,
     k: int,
     eps: float | int,
     lobpcg_config_batched: LOBPCGConfig,
@@ -205,8 +205,8 @@ def _lobpcg_batch(
 
 # TODO: relax nvmath import if not doing shift invert mode
 def lobpcg(
-    A: Float[SparseOperator, "m m"],
-    M: Float[SparseOperator, "m m"] | None = None,
+    A: Float[SparseDecoupledTensor, "m m"],
+    M: Float[SparseDecoupledTensor, "m m"] | None = None,
     block_diag_batch: bool = False,
     n: int | None = None,
     k: int = 6,
@@ -224,7 +224,7 @@ def lobpcg(
     This function implements a version of LOBPCG that's roughly equivalent to
     `torch.lobpcg(method='ortho')`, but with the following key differences:
 
-    * This implementation is differentiable with respect to the `SparseOperator`s
+    * This implementation is differentiable with respect to the `SparseDecoupledTensor`s
       `A` and `M`. The `eps` argument is used for Lorentzian broadening/regularization
       in the gradient calculation to prevent gradient explosion when the eigenvalues
       are (near) degenerate.

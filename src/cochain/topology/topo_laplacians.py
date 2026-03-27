@@ -2,17 +2,17 @@ from typing import Literal
 
 from jaxtyping import Float
 
-from ..complex import SimplicialComplex
-from ..sparse.operators import SparseOperator
+from ..complex import SimplicialMesh
+from ..sparse.decoupled_tensor import SparseDecoupledTensor
 
 
 def laplacian_k(
-    sc: SimplicialComplex,
+    sc: SimplicialMesh,
     *,
     k: int,
     component: Literal["up", "down", "full"],
     dual: bool = False,
-) -> Float[SparseOperator, "k_simp k_simp"]:
+) -> Float[SparseDecoupledTensor, "k_splx k_splx"]:
     """
     Laplacian_k = d_j @ d_j.T + d_k.T @ d_k, where d_k is the k-coboundary
     operator, d_k.T is the k-boundary operator, and j = k - 1.
@@ -42,7 +42,9 @@ def laplacian_k(
             d_j = cbd[k - 1]
             down_laplacian = d_j @ d_j.T
 
-            full_laplacian = SparseOperator.assemble(up_laplacian, down_laplacian)
+            full_laplacian = SparseDecoupledTensor.assemble(
+                up_laplacian, down_laplacian
+            )
 
             return full_laplacian
 

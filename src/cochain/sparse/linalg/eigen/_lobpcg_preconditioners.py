@@ -6,7 +6,7 @@ import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float
 
-from ...operators import DiagOperator, SparseOperator
+from ...decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._inv_operator import BaseNVMathInvSymSpOp
 from ._lobpcg_operators import IdentityOperator
@@ -59,12 +59,12 @@ class JacobiPrecond:
     is already very good.
     """
 
-    def __init__(self, A_op: Float[SparseOperator, "m m"]):
+    def __init__(self, A_op: Float[SparseDecoupledTensor, "m m"]):
         eps = 1e-4 * A_op.tr / A_op.size(0)
-        self.diag_op = DiagOperator(1 / (A_op.diagonal() + eps))
+        self.ddt = DiagDecoupledTensor(1 / (A_op.diagonal() + eps))
 
     def __matmul__(self, res: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
-        return self.diag_op @ res
+        return self.ddt @ res
 
 
 class ILUPrecond:
@@ -84,7 +84,7 @@ class ILUPrecond:
 
     def __init__(
         self,
-        A_op: Float[SparseOperator, "m m"],
+        A_op: Float[SparseDecoupledTensor, "m m"],
         diag_damp: float | int | None,
         spilu_kwargs: dict[str, Any],
     ):
@@ -101,9 +101,13 @@ class ILUPrecond:
 
             # Pytorch currently does not support operations like A - I on sparse
             # CSC tensors.
-            eye = DiagOperator.eye(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
+            eye = DiagDecoupledTensor.eye(
+                A_op.size(-1), dtype=A_op.dtype, device=A_op.device
+            )
 
-            op = SparseOperator.assemble(A_op, eps * eye).to_sparse_csc(int32=True)
+            op = SparseDecoupledTensor.assemble(A_op, eps * eye).to_sparse_csc(
+                int32=True
+            )
 
         stream = t.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
@@ -145,7 +149,7 @@ class ChoPrecond(BaseNVMathInvSymSpOp):
 
     def __init__(
         self,
-        A_op: Float[SparseOperator, "m m"],
+        A_op: Float[SparseDecoupledTensor, "m m"],
         n: int,
         diag_damp: float | int | None,
         nvmath_config: DirectSolverConfig,
@@ -170,9 +174,13 @@ class ChoPrecond(BaseNVMathInvSymSpOp):
 
             # Pytorch currently does not support operations like A - I on sparse
             # CSR tensors.
-            eye = DiagOperator.eye(A_op.size(-1), dtype=A_op.dtype, device=A_op.device)
+            eye = DiagDecoupledTensor.eye(
+                A_op.size(-1), dtype=A_op.dtype, device=A_op.device
+            )
 
-            op = SparseOperator.assemble(A_op, eps * eye).to_sparse_csr(int32=True)
+            op = SparseDecoupledTensor.assemble(A_op, eps * eye).to_sparse_csr(
+                int32=True
+            )
 
         super().__init__(op, b_dummy, nvmath_config, t.cuda.current_stream())
 

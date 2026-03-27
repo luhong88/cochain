@@ -3,7 +3,7 @@ import warnings
 import torch as t
 from jaxtyping import Float
 
-from ...operators import SparseOperator
+from ...decoupled_tensor import SparseDecoupledTensor
 from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._lobpcg_operators import (
     IdentityOperator,
@@ -19,9 +19,9 @@ from ._lobpcg_preconditioners import (
 )
 from .utils import M_orthonormalize
 
-type SparseOperatorLike = (
+type SparseDecoupledTensorLike = (
     IdentityOperator
-    | Float[SparseOperator, "m m"]
+    | Float[SparseDecoupledTensor, "m m"]
     | Float[ShiftInvSymSpOp, "m m"]
     | Float[ShiftInvSymGEPSpOp, "m m"]
 )
@@ -30,9 +30,9 @@ type LOBPCGPreconditioner = IdentityPrecond | JacobiPrecond | ILUPrecond | ChoPr
 
 
 def _lobpcg_one_iter(
-    T_op: SparseOperatorLike,
-    M_op: Float[SparseOperator, "m m"] | IdentityOperator,
-    S_op: Float[SparseOperator, "m m"] | IdentityOperator,
+    T_op: SparseDecoupledTensorLike,
+    M_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
+    S_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
     R: Float[t.Tensor, "m n"],
     X_current: Float[t.Tensor, "m n"],
     X_prev: Float[t.Tensor, "m n"],
@@ -108,10 +108,10 @@ def _lobpcg_one_iter(
 
 
 def _lobpcg_loop(
-    T_op: SparseOperatorLike,
-    B_op: Float[SparseOperator, "m m"] | IdentityOperator,
-    M_op: Float[SparseOperator, "m m"] | IdentityOperator,
-    S_op: Float[SparseOperator, "m m"] | IdentityOperator,
+    T_op: SparseDecoupledTensorLike,
+    B_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
+    M_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
+    S_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
     X_0: Float[t.Tensor, "m n"],
     precond: LOBPCGPreconditioner,
     largest: bool,
@@ -177,16 +177,16 @@ def _lobpcg_loop(
 
 def _dispatch_operators(
     n: int,
-    A_op: SparseOperatorLike,
-    M_op: Float[SparseOperator, "m m"] | None,
+    A_op: SparseDecoupledTensorLike,
+    M_op: Float[SparseDecoupledTensor, "m m"] | None,
     sigma: float | int | None,
     nvmath_config: DirectSolverConfig,
     precond_config: LOBPCGPrecondConfig,
 ) -> tuple[
-    SparseOperatorLike,
-    SparseOperatorLike,
-    SparseOperatorLike,
-    SparseOperatorLike,
+    SparseDecoupledTensorLike,
+    SparseDecoupledTensorLike,
+    SparseDecoupledTensorLike,
+    SparseDecoupledTensorLike,
     LOBPCGPreconditioner,
 ]:
     if sigma is not None:
@@ -249,8 +249,8 @@ def _dispatch_operators(
 
 
 def lobpcg_forward(
-    A_op: SparseOperatorLike,
-    M_op: Float[SparseOperator, "m m"] | None,
+    A_op: SparseDecoupledTensorLike,
+    M_op: Float[SparseDecoupledTensor, "m m"] | None,
     sigma: float | int | None,
     v0: Float[t.Tensor, "m n"],
     largest: bool,

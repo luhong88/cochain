@@ -1,14 +1,14 @@
 import torch as t
 from jaxtyping import Bool, Float
 
-from ..sparse.operators import SparseOperator
+from ..sparse.decoupled_tensor import SparseDecoupledTensor
 
 
 def detect_mesh_boundaries(
     cbd: tuple[
-        Float[SparseOperator, "edge vert"],
-        Float[SparseOperator, "tri edge"],
-        Float[SparseOperator, "tet tri"],
+        Float[SparseDecoupledTensor, "edge vert"],
+        Float[SparseDecoupledTensor, "tri edge"],
+        Float[SparseDecoupledTensor, "tet tri"],
     ],
 ) -> tuple[
     Bool[t.Tensor, " vert"],

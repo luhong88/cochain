@@ -3,9 +3,9 @@ from typing import Literal
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from ..utils.perm_parity import compute_lex_rel_orient
-from ..utils.search import simplex_search
+from ..utils.search import splx_search
 from ._face_perm_lut import compute_face_perm_lut
 
 
@@ -14,7 +14,7 @@ class CupProduct(t.nn.Module):
         self,
         k: int,
         l: int,
-        mesh: SimplicialComplex,
+        mesh: SimplicialMesh,
     ):
         """
         Compute the cup product between a `k`-cochain `ξ` and an `l`-cochain `η`,
@@ -58,69 +58,69 @@ class CupProduct(t.nn.Module):
 
         # Compute (k+l)-simplex sign correction
         if m == mesh.dim:
-            m_simps_sorted = mesh.simplices[m].sort(dim=-1).values
-            m_simp_parity = compute_lex_rel_orient(mesh.simplices[m]).to(
+            m_splx_sorted = mesh.splx[m].sort(dim=-1).values
+            m_splx_parity = compute_lex_rel_orient(mesh.splx[m]).to(
                 dtype=mesh.vert_coords.dtype
             )
         else:
-            m_simps_sorted = mesh.simplices[m]
-            m_simp_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
-                mesh.simplices[m].size(0)
+            m_splx_sorted = mesh.splx[m]
+            m_splx_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+                mesh.splx[m].size(0)
             )
 
-        self.m_simp_parity: Float[t.Tensor, " m_simp"]
-        self.register_buffer("m_simp_parity", m_simp_parity)
+        self.m_splx_parity: Float[t.Tensor, " m_splx"]
+        self.register_buffer("m_splx_parity", m_splx_parity)
 
         # Identify the k-front faces of (k+l)-simplices and their sign correction
-        f_face_idx = simplex_search(
-            key_simps=mesh.simplices[k],
-            query_simps=m_simps_sorted[:, : k + 1],
-            sort_key_simp=True if k == mesh.dim else False,
+        f_face_idx = splx_search(
+            key_splx=mesh.splx[k],
+            query_splx=m_splx_sorted[:, : k + 1],
+            sort_key_splx=True if k == mesh.dim else False,
             sort_key_vert=True if k == mesh.dim else False,
             sort_query_vert=False,
         )
 
-        self.f_face_idx: Integer[t.LongTensor, " m_simp"]
+        self.f_face_idx: Integer[t.LongTensor, " m_splx"]
         self.register_buffer("f_face_idx", f_face_idx)
 
         if k == mesh.dim:
-            f_face_parity = compute_lex_rel_orient(mesh.simplices[k][self.f_face_idx])
+            f_face_parity = compute_lex_rel_orient(mesh.splx[k][self.f_face_idx])
         else:
             f_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 self.f_face_idx.size(0)
             )
 
-        self.f_face_parity: Integer[t.LongTensor, " m_simp"]
+        self.f_face_parity: Integer[t.LongTensor, " m_splx"]
         self.register_buffer("f_face_parity", f_face_parity)
 
         # Identify the k-back faces of (k+l)-simplices and their sign correction
-        b_face_idx = simplex_search(
-            key_simps=mesh.simplices[l],
-            query_simps=m_simps_sorted[:, k:],
-            sort_key_simp=True if l == mesh.dim else False,
+        b_face_idx = splx_search(
+            key_splx=mesh.splx[l],
+            query_splx=m_splx_sorted[:, k:],
+            sort_key_splx=True if l == mesh.dim else False,
             sort_key_vert=True if l == mesh.dim else False,
             sort_query_vert=False,
         )
 
-        self.b_face_idx: Integer[t.LongTensor, " m_simp"]
+        self.b_face_idx: Integer[t.LongTensor, " m_splx"]
         self.register_buffer("b_face_idx", b_face_idx)
 
         if l == mesh.dim:
-            b_face_parity = compute_lex_rel_orient(mesh.simplices[l][self.b_face_idx])
+            b_face_parity = compute_lex_rel_orient(mesh.splx[l][self.b_face_idx])
         else:
             b_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 self.b_face_idx.size(0)
             )
 
-        self.b_face_parity: Integer[t.LongTensor, " m_simp"]
+        self.b_face_parity: Integer[t.LongTensor, " m_splx"]
         self.register_buffer("b_face_parity", b_face_parity)
 
     def forward(
         self,
-        k_cochain: Float[t.Tensor, " k_simp *ch_in"],
-        l_cochain: Float[t.Tensor, " l_simp *ch_in"],
+        k_cochain: Float[t.Tensor, " k_splx *ch_in"],
+        l_cochain: Float[t.Tensor, " l_splx *ch_in"],
         pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
-    ) -> Float[t.Tensor, " m_simp *ch_out"]:
+    ) -> Float[t.Tensor, " m_splx *ch_out"]:
         k_cochain_at_f_face = t.einsum(
             "n,n...->n...", self.f_face_parity, k_cochain[self.f_face_idx]
         )
@@ -134,26 +134,26 @@ class CupProduct(t.nn.Module):
             case "scalar":
                 prod = t.einsum(
                     "n,n...->n...",
-                    self.m_simp_parity,
+                    self.m_splx_parity,
                     k_cochain_at_f_face * l_cochain_at_b_face,
                 )
 
             case "dot":
-                prod = self.m_simp_parity.view(-1, 1) * t.sum(
+                prod = self.m_splx_parity.view(-1, 1) * t.sum(
                     k_cochain_at_f_face * l_cochain_at_b_face,
                     dim=-1,
                     keepdim=True,
                 )
 
             case "cross":
-                prod = self.m_simp_parity.view(-1, 1) * t.cross(
+                prod = self.m_splx_parity.view(-1, 1) * t.cross(
                     k_cochain_at_f_face, l_cochain_at_b_face, dim=-1
                 )
 
             case "outer":
                 prod = t.einsum(
                     "n,nk,nl->nkl",
-                    self.m_simp_parity,
+                    self.m_splx_parity,
                     k_cochain_at_f_face,
                     l_cochain_at_b_face,
                 )
@@ -169,7 +169,7 @@ class AntisymmetricCupProduct(t.nn.Module):
         self,
         k: int,
         l: int,
-        mesh: SimplicialComplex,
+        mesh: SimplicialMesh,
     ):
         """
         Compute the anti-symmetrized cup product between a `k`-cochain `ξ` and an
@@ -193,40 +193,39 @@ class AntisymmetricCupProduct(t.nn.Module):
 
         # Compute (k+l)-simplex sign correction.
         if m == mesh.dim:
-            m_simps_sorted = mesh.simplices[m].sort(dim=-1).values
-            m_simp_parity = compute_lex_rel_orient(mesh.simplices[m]).to(
+            m_splx_sorted = mesh.splx[m].sort(dim=-1).values
+            m_splx_parity = compute_lex_rel_orient(mesh.splx[m]).to(
                 dtype=mesh.vert_coords.dtype
             )
         else:
-            m_simps_sorted = mesh.simplices[m]
-            m_simp_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
-                mesh.simplices[m].size(0)
+            m_splx_sorted = mesh.splx[m]
+            m_splx_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+                mesh.splx[m].size(0)
             )
 
-        self.m_simp_parity: Float[t.Tensor, " m_simp"]
-        self.register_buffer("m_simp_parity", m_simp_parity)
+        self.m_splx_parity: Float[t.Tensor, " m_splx"]
+        self.register_buffer("m_splx_parity", m_splx_parity)
 
         # Identify permutations of the  k-front faces of (k+l)-simplices and their
         # sign correction.
-        uf_face: Integer[t.LongTensor, " m_simp uf_face k+1"] = m_simps_sorted[
+        uf_face: Integer[t.LongTensor, "m_splx uf_face k+1"] = m_splx_sorted[
             :, perm.unique_front
         ]
-        uf_face_flat = uf_face.view(-1, k + 1)
-        uf_face_idx: Integer[t.LongTensor, " m_simp*uf_face"] = simplex_search(
-            key_simps=mesh.simplices[k],
-            query_simps=uf_face_flat,
-            sort_key_simp=True if k == mesh.dim else False,
+        uf_face_idx: Integer[t.LongTensor, "m_splx uf_face"] = splx_search(
+            key_splx=mesh.splx[k],
+            query_splx=uf_face,
+            sort_key_splx=True if k == mesh.dim else False,
             sort_key_vert=True if k == mesh.dim else False,
             sort_query_vert=False,
         )
-        f_face_idx = uf_face_idx.view(*uf_face.shape[:-1])[:, perm.front_idx]
+        f_face_idx = uf_face_idx[:, perm.front_idx]
 
-        self.f_face_idx: Integer[t.LongTensor, "m_simp face"]
+        self.f_face_idx: Integer[t.LongTensor, "m_splx face"]
         self.register_buffer("f_face_idx", f_face_idx)
 
         if k == mesh.dim:
             f_face_parity = (
-                compute_lex_rel_orient(mesh.simplices[k][uf_face_idx])
+                compute_lex_rel_orient(mesh.splx[k][uf_face_idx])
                 .to(dtype=mesh.vert_coords.dtype)
                 .view(*uf_face.shape[:-1])[:, perm.front_idx]
             )
@@ -235,30 +234,29 @@ class AntisymmetricCupProduct(t.nn.Module):
                 self.f_face_idx.shape
             )
 
-        self.f_face_parity: Float[t.Tensor, " m_simp face"]
+        self.f_face_parity: Float[t.Tensor, "m_splx face"]
         self.register_buffer("f_face_parity", f_face_parity)
 
         # Identify permutations of the k-back faces of (k+l)-simplices and their
         # sign correction.
-        ub_face: Integer[t.LongTensor, " m_simp ub_face l+1"] = (
-            m_simps_sorted[:, perm.unique_back].sort(dim=-1).values
+        ub_face: Integer[t.LongTensor, "m_splx ub_face l+1"] = (
+            m_splx_sorted[:, perm.unique_back].sort(dim=-1).values
         )
-        ub_face_flat = ub_face.view(-1, l + 1)
-        ub_face_idx: Integer[t.LongTensor, " m_simp*ub_face"] = simplex_search(
-            key_simps=mesh.simplices[l],
-            query_simps=ub_face_flat,
-            sort_key_simp=True if l == mesh.dim else False,
+        ub_face_idx: Integer[t.LongTensor, "m_splx ub_face"] = splx_search(
+            key_splx=mesh.splx[l],
+            query_splx=ub_face,
+            sort_key_splx=True if l == mesh.dim else False,
             sort_key_vert=True if l == mesh.dim else False,
             sort_query_vert=False,
         )
-        b_face_idx = ub_face_idx.view(*ub_face.shape[:-1])[:, perm.back_idx]
+        b_face_idx = ub_face_idx[:, perm.back_idx]
 
-        self.b_face_idx: Integer[t.LongTensor, "m_simp face"]
+        self.b_face_idx: Integer[t.LongTensor, "m_splx face"]
         self.register_buffer("b_face_idx", b_face_idx)
 
         if l == mesh.dim:
             b_face_parity = (
-                compute_lex_rel_orient(mesh.simplices[l][ub_face_idx])
+                compute_lex_rel_orient(mesh.splx[l][ub_face_idx])
                 .to(dtype=mesh.vert_coords.dtype)
                 .view(*ub_face.shape[:-1])[:, perm.back_idx]
             )
@@ -267,24 +265,24 @@ class AntisymmetricCupProduct(t.nn.Module):
                 self.b_face_idx.shape
             )
 
-        self.b_face_parity: Float[t.Tensor, " m_simp face"]
+        self.b_face_parity: Float[t.Tensor, " m_splx face"]
         self.register_buffer("b_face_parity", b_face_parity)
 
     def forward(
         self,
-        k_cochain: Float[t.Tensor, " k_simp *ch_in"],
-        l_cochain: Float[t.Tensor, " l_simp *ch_in"],
+        k_cochain: Float[t.Tensor, " k_splx *ch_in"],
+        l_cochain: Float[t.Tensor, " l_splx *ch_in"],
         pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
-    ) -> Float[t.Tensor, " m_simp *ch_out"]:
-        k_cochain_at_f_face: Float[t.Tensor, "m_simp face *ch_in"] = k_cochain[
+    ) -> Float[t.Tensor, " m_splx *ch_out"]:
+        k_cochain_at_f_face: Float[t.Tensor, "m_splx face *ch_in"] = k_cochain[
             self.f_face_idx
         ]
-        l_cochain_at_b_face: Float[t.Tensor, "m_simp face *ch_in"] = l_cochain[
+        l_cochain_at_b_face: Float[t.Tensor, "m_splx face *ch_in"] = l_cochain[
             self.b_face_idx
         ]
 
-        combined_perm_sign: Float[t.Tensor, "m_simp face 1"] = (
-            self.m_simp_parity.view(-1, 1, 1)
+        combined_perm_sign: Float[t.Tensor, "m_splx face 1"] = (
+            self.m_splx_parity.view(-1, 1, 1)
             * self.f_face_parity.unsqueeze(-1)
             * self.b_face_parity.unsqueeze(-1)
             * self.perm_sign

@@ -12,27 +12,29 @@ def is_scalar(other) -> bool:
     )
 
 
-def validate_matmul_args(self: BaseOperator, other: BaseOperator | t.Tensor):
+def validate_matmul_args(
+    self: BaseDecoupledTensor, other: BaseDecoupledTensor | t.Tensor
+):
     if self.n_batch_dim > 0:
         raise NotImplementedError(
-            "__matmul__ with batched sparse BaseOperator is not supported."
+            "__matmul__ with batched sparse BaseDecoupledTensor is not supported."
         )
 
     if self.n_dense_dim > 0:
         raise NotImplementedError(
-            "__matmul__ with sparse hybrid BaseOperator is not supported."
+            "__matmul__ with sparse hybrid BaseDecoupledTensor is not supported."
         )
 
     match other:
-        case BaseOperator():
+        case BaseDecoupledTensor():
             if other.n_batch_dim > 0:
                 raise NotImplementedError(
-                    "__matmul__ with batched sparse BaseOperator is not supported."
+                    "__matmul__ with batched sparse BaseDecoupledTensor is not supported."
                 )
 
             if other.n_dense_dim > 0:
                 raise NotImplementedError(
-                    "__matmul__ with sparse hybrid BaseOperator is not supported."
+                    "__matmul__ with sparse hybrid BaseDecoupledTensor is not supported."
                 )
 
         case t.Tensor():
@@ -43,47 +45,47 @@ def validate_matmul_args(self: BaseOperator, other: BaseOperator | t.Tensor):
 
         case _:
             raise TypeError(
-                f"__matmul__ between BaseOperator and {type(other)} is not supported."
+                f"__matmul__ between BaseDecoupledTensor and {type(other)} is not supported."
             )
 
 
-class BaseOperator(ABC):
+class BaseDecoupledTensor(ABC):
     val: t.Tensor
 
     @classmethod
     @abstractmethod
-    def from_tensor(cls, tensor: t.Tensor) -> BaseOperator: ...
+    def from_tensor(cls, tensor: t.Tensor) -> BaseDecoupledTensor: ...
 
     @abstractmethod
-    def apply(self, fn: Callable, **kwargs) -> BaseOperator: ...
+    def apply(self, fn: Callable, **kwargs) -> BaseDecoupledTensor: ...
 
     @abstractmethod
-    def __neg__(self) -> BaseOperator: ...
+    def __neg__(self) -> BaseDecoupledTensor: ...
 
     @property
     @abstractmethod
     def tr(self): ...
 
     @abstractmethod
-    def __add__(self, other) -> BaseOperator: ...
+    def __add__(self, other) -> BaseDecoupledTensor: ...
 
     @abstractmethod
-    def __sub__(self, other) -> BaseOperator: ...
+    def __sub__(self, other) -> BaseDecoupledTensor: ...
 
     @abstractmethod
-    def abs(self) -> BaseOperator: ...
+    def abs(self) -> BaseDecoupledTensor: ...
 
     @abstractmethod
     def diagonal(self) -> t.Tensor: ...
 
     @abstractmethod
-    def __mul__(self, other) -> BaseOperator: ...
+    def __mul__(self, other) -> BaseDecoupledTensor: ...
 
-    def __rmul__(self, other) -> BaseOperator:
+    def __rmul__(self, other) -> BaseDecoupledTensor:
         return self.__mul__(other)
 
     @abstractmethod
-    def __truediv__(self, other) -> BaseOperator: ...
+    def __truediv__(self, other) -> BaseDecoupledTensor: ...
 
     @abstractmethod
     def __matmul__(self, other): ...
@@ -122,7 +124,7 @@ class BaseOperator(ABC):
 
     @property
     @abstractmethod
-    def T(self) -> BaseOperator: ...
+    def T(self) -> BaseDecoupledTensor: ...
 
     @property
     def dtype(self) -> t.dtype:
@@ -135,27 +137,27 @@ class BaseOperator(ABC):
     @abstractmethod
     def clone(
         self, memory_format: t.memory_format = t.contiguous_format
-    ) -> BaseOperator: ...
+    ) -> BaseDecoupledTensor: ...
 
     @abstractmethod
-    def detach(self) -> BaseOperator: ...
+    def detach(self) -> BaseDecoupledTensor: ...
 
     @property
     def requires_grad(self) -> bool:
         return self.val.requires_grad
 
-    def requires_grad_(self, requires_grad: bool = True) -> BaseOperator:
+    def requires_grad_(self, requires_grad: bool = True) -> BaseDecoupledTensor:
         self.val.requires_grad_(requires_grad)
         return self
 
     @abstractmethod
-    def to(self, *args, **kwargs) -> BaseOperator: ...
+    def to(self, *args, **kwargs) -> BaseDecoupledTensor: ...
 
     @abstractmethod
     def to_dense(self) -> t.Tensor: ...
 
     @abstractmethod
-    def to_sparse_operator(self) -> BaseOperator: ...
+    def to_sparse_operator(self) -> BaseDecoupledTensor: ...
 
     @abstractmethod
     def to_sparse_coo(self) -> t.Tensor: ...

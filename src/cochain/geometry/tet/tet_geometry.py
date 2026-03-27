@@ -5,7 +5,8 @@ from ...utils.constants import EPS
 
 
 def get_tet_signed_vols(
-    vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
+    vert_coords: Float[t.Tensor, "vert coord=3"],
+    tets: Integer[t.LongTensor, "tet vert=4"],
 ) -> Float[t.Tensor, " tet"]:
     """
     Compute the signed volume of each tetrahedron in a 3D mesh. A tet is assigned
@@ -32,8 +33,9 @@ def get_tet_signed_vols(
 
 
 def d_tet_signed_vols_d_vert_coords(
-    vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
-) -> Float[t.Tensor, "tet 4 3"]:
+    vert_coords: Float[t.Tensor, "vert coord=3"],
+    tets: Integer[t.LongTensor, "tet vert=4"],
+) -> Float[t.Tensor, "tet vert=4 coord=3"]:
     """
     Compute the gradient of the signed volume of each tetrahedron wrt the coordinates
     of its four vertices.
@@ -69,9 +71,12 @@ def d_tet_signed_vols_d_vert_coords(
 
 
 def tet_face_vector_areas(
-    vert_coords: Float[t.Tensor, "vert 3"], tets: Integer[t.LongTensor, "tet 4"]
+    vert_coords: Float[t.Tensor, "vert coord=3"],
+    tets: Integer[t.LongTensor, "tet vert=4"],
 ) -> tuple[
-    Float[t.Tensor, "tet 6 3"], Float[t.Tensor, "tet 6 3"], Float[t.Tensor, "tet 6"]
+    Float[t.Tensor, "tet edge=6 coord=3"],
+    Float[t.Tensor, "tet edge=6 coord=3"],
+    Float[t.Tensor, "tet edge=6"],
 ]:
     """
     Compute the outward pointing vector areas for triangles in a tet mesh and their
@@ -116,8 +121,8 @@ def tet_face_vector_areas(
 
 def bary_coord_grad_inner_prods(
     tet_signed_vols: Float[t.Tensor, " tet 1 1"],
-    d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"],
-) -> Float[t.Tensor, "tet 4 4"]:
+    d_signed_vols_d_vert_coords: Float[t.Tensor, "tet vert=4 coord=3"],
+) -> Float[t.Tensor, "tet vert=4 vert=4"]:
     """
     For a tet, let lambda_x(p) be the barycentric coordinate function for p wrt
     a vertex x of the tet. This function computes all pairwise inner products
@@ -138,16 +143,15 @@ def bary_coord_grad_inner_prods(
 
 
 def whitney_2_form_inner_prods(
-    vert_coords: Float[t.Tensor, "vert 3"],
-    tets: Integer[t.LongTensor, "tet 4"],
-    tet_tris_signs: Float[t.Tensor, "tet 4"],
-) -> tuple[Float[t.Tensor, "tet 1"], Float[t.Tensor, "tet 4 4"]]:
+    vert_coords: Float[t.Tensor, "vert coord=3"],
+    tets: Integer[t.LongTensor, "tet vert=4"],
+    tet_tris_signs: Float[t.Tensor, "tet tri=4"],
+) -> tuple[Float[t.Tensor, "tet 1"], Float[t.Tensor, "tet tri=4 tri=4"]]:
     """
     For each tet, compute the pairwise inner product of the Whitney 2-form basis
     functions associated with the faces of the tet, and correct for the face and
     tet orientation.
     """
-    i, j, k, l = 0, 1, 2, 3
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
@@ -186,17 +190,15 @@ def whitney_2_form_inner_prods(
         t.sum(gram, dim=(-1, -2)) + t.einsum("tii->t", gram)
     ).view(-1, 1, 1)
 
-    whitney_inner_prod: Float[t.Tensor, "tet 4 4"] = (
+    whitney_inner_prod: Float[t.Tensor, "tet tri=4 tri=4"] = (
         20.0 * gram - 5.0 * gram_partial_sum + gram_sum
     ) / (180.0 * tet_vols.view(-1, 1, 1))
 
     # Mapping the local basis function to the global basis function requires
-    # correction of both the triangle face orientation as well as the tet orientations
-    # (to account for negatively oriented tets, for which all_tris no longer satisfies
-    # the right-hand rule).
+    # correction of both the triangle face orientation as well as the tet orientations.
     sign_corrections = tet_tris_signs * tet_signs.view(-1, 1)
 
-    whitney_inner_prod_signed: Float[t.Tensor, "tet 4 4"] = (
+    whitney_inner_prod_signed: Float[t.Tensor, "tet tri=4 tri=4"] = (
         whitney_inner_prod
         * sign_corrections.view(-1, 1, 4)
         * sign_corrections.view(-1, 4, 1)

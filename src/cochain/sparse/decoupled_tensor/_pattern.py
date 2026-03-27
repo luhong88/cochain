@@ -69,17 +69,17 @@ def _validate_coo_idx_shape(coo_idx: Integer[t.LongTensor, "sp nnz"], shape: t.S
             )
 
 
-def check_topo_equality(
-    self_topo: SparseTopology, other_topo: SparseTopology, msg: str
+def check_pattern_equality(
+    self_pattern: SparsityPattern, other_pattern: SparsityPattern, msg: str
 ):
     # Enforce equal topology requirement with three increasingly more expensive
-    # checks: 1) same underlying sp_topo object, 2) same sp_topo shape, and 3)
-    # same sp_topo.idx_coo elements.
-    if self_topo is other_topo:
+    # checks: 1) same underlying pattern object, 2) same pattern shape, and 3)
+    # same pattern.idx_coo elements.
+    if self_pattern is other_pattern:
         pass
 
-    elif self_topo.shape == other_topo.shape and t.equal(
-        self_topo.idx_coo, other_topo.idx_coo
+    elif self_pattern.shape == other_pattern.shape and t.equal(
+        self_pattern.idx_coo, other_pattern.idx_coo
     ):
         pass
 
@@ -92,15 +92,15 @@ def check_topo_equality(
 class BlockDiagConfig:
     batch_perm: Integer[t.LongTensor, " nnz"]
     nnzs: list[int]
-    sp_topo_shapes: list[t.Size]
+    pattern_shapes: list[t.Size]
 
     def to(self, *args, **kwargs) -> BlockDiagConfig:
         new_batch_perm = self.batch_perm.to(*args, **kwargs)
-        return BlockDiagConfig(new_batch_perm, self.nnzs, self.sp_topo_shapes)
+        return BlockDiagConfig(new_batch_perm, self.nnzs, self.pattern_shapes)
 
 
 @dataclass(frozen=True)
-class SparseTopology:
+class SparsityPattern:
     """
     idx_coo must be coalesced and of shape (2, nnz) or (3, nnz).
     This class does not check that idx_coo is coalesced.
@@ -144,34 +144,34 @@ class SparseTopology:
 
     @classmethod
     def pack_block_diag(
-        cls, block_sp_topos: Sequence[SparseTopology]
-    ) -> SparseTopology:
+        cls, block_patterns: Sequence[SparsityPattern]
+    ) -> SparsityPattern:
         """
-        Determine how to combine a list of `SparseTopology`s to form a block
+        Determine how to combine a list of `SparsityPattern`s to form a block
         diagonal operator.
         """
-        # Pick a representative SparseTopology and use it to determine device,
+        # Pick a representative SparsityPattern and use it to determine device,
         # dtype, and batch/dense dimension information.
-        rep_sp_topo = block_sp_topos[0]
+        rep_pattern = block_patterns[0]
 
-        device = rep_sp_topo.device
-        idx_dtype = rep_sp_topo.dtype
+        device = rep_pattern.device
+        idx_dtype = rep_pattern.dtype
 
-        # Determine the input SparseTopology sparse row/column shapes.
+        # Determine the input SparsityPattern sparse row/column shapes.
         r_sizes_cum = t.tensor(
-            [0] + [sp_topo.size(-2) for sp_topo in block_sp_topos],
+            [0] + [pattern.size(-2) for pattern in block_patterns],
             dtype=idx_dtype,
             device=device,
         ).cumsum(dim=0)
 
         c_sizes_cum = t.tensor(
-            [0] + [sp_op.size(-1) for sp_op in block_sp_topos],
+            [0] + [sdt.size(-1) for sdt in block_patterns],
             dtype=idx_dtype,
             device=device,
         ).cumsum(dim=0)
 
         # Compute block offsets and apply to concatenated coo index.
-        nnzs = [sp_topo._nnz() for sp_topo in block_sp_topos]
+        nnzs = [pattern._nnz() for pattern in block_patterns]
         nnz_concat = t.tensor(nnzs, dtype=idx_dtype, device=device)
 
         r_offset = t.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
@@ -179,8 +179,8 @@ class SparseTopology:
 
         idx_coo_concat = t.hstack(
             [
-                sp_topo.idx_coo.to(device=device, dtype=idx_dtype)
-                for sp_topo in block_sp_topos
+                pattern.idx_coo.to(device=device, dtype=idx_dtype)
+                for pattern in block_patterns
             ]
         )
         idx_coo_concat[-2] += r_offset
@@ -191,34 +191,34 @@ class SparseTopology:
         # batch dim, this sort does nothing.
         batch_perm = t.sort(idx_coo_concat[0], stable=True).indices
 
-        # Determine the concatenated SparseTopology shape.
-        if rep_sp_topo.n_batch_dim > 0:
-            sp_topo_shape_concat = t.Size(
-                [rep_sp_topo.size(0), r_sizes_cum[-1], c_sizes_cum[-1]]
+        # Determine the concatenated SparsityPattern shape.
+        if rep_pattern.n_batch_dim > 0:
+            pattern_shape_concat = t.Size(
+                [rep_pattern.size(0), r_sizes_cum[-1], c_sizes_cum[-1]]
             )
         else:
-            sp_topo_shape_concat = t.Size([r_sizes_cum[-1], c_sizes_cum[-1]])
+            pattern_shape_concat = t.Size([r_sizes_cum[-1], c_sizes_cum[-1]])
 
         # Record block diag construction information for disassembly
         # block_ptr = t.repeat_interleave(t.arange(len(sp_ops)), nnz_concat)
-        sp_topo_shapes = [sp_topo.shape for sp_topo in block_sp_topos]
-        config = BlockDiagConfig(batch_perm, nnzs, sp_topo_shapes)
+        pattern_shapes = [pattern.shape for pattern in block_patterns]
+        config = BlockDiagConfig(batch_perm, nnzs, pattern_shapes)
 
-        # Construct concatenated SparseTopology.
-        sp_topo_concat = SparseTopology(
+        # Construct concatenated SparsityPattern.
+        pattern_concat = SparsityPattern(
             idx_coo_concat[:, batch_perm],
-            shape=sp_topo_shape_concat,
+            shape=pattern_shape_concat,
             block_diag_config=config,
         )
 
-        return sp_topo_concat
+        return pattern_concat
 
     def unpack_block_diag(
         self,
-    ) -> tuple[list[SparseTopology], Integer[t.LongTensor, " nnz"]]:
+    ) -> tuple[list[SparsityPattern], Integer[t.LongTensor, " nnz"]]:
         """
-        Deconstruct a block diagonal `SparseTopology` into a list of constituent
-        `SparseTopology`s.
+        Deconstruct a block diagonal `SparsityPattern` into a list of constituent
+        `SparsityPattern`s.
         """
         if not isinstance(self.block_diag_config, BlockDiagConfig):
             raise ValueError("A valid 'block_diag_config' is required for disassembly.")
@@ -234,13 +234,13 @@ class SparseTopology:
 
         # Undo the per-block, cumulative index offsets.
         r_sizes_cum = t.tensor(
-            [0] + [shape[-2] for shape in self.block_diag_config.sp_topo_shapes],
+            [0] + [shape[-2] for shape in self.block_diag_config.pattern_shapes],
             dtype=idx_dtype,
             device=device,
         ).cumsum(dim=0)
 
         c_sizes_cum = t.tensor(
-            [0] + [shape[-1] for shape in self.block_diag_config.sp_topo_shapes],
+            [0] + [shape[-1] for shape in self.block_diag_config.pattern_shapes],
             dtype=idx_dtype,
             device=device,
         ).cumsum(dim=0)
@@ -257,57 +257,57 @@ class SparseTopology:
 
         # Split the concatenated idx_coo into constituent parts. Note that
         # t.split() creates a view without copying; this is okay because the
-        # SparseTopology constructor enforces copying.
+        # SparsityPattern constructor enforces copying.
         idx_coo_list = t.split(idx_coo_concat, self.block_diag_config.nnzs, dim=-1)
 
-        sp_topo_list = [
-            SparseTopology(idx_coo, shape)
+        pattern_list = [
+            SparsityPattern(idx_coo, shape)
             for idx_coo, shape in zip(
-                idx_coo_list, self.block_diag_config.sp_topo_shapes, strict=True
+                idx_coo_list, self.block_diag_config.pattern_shapes, strict=True
             )
         ]
 
-        return sp_topo_list, block_perm_inv
+        return pattern_list, block_perm_inv
 
     # TODO: optimize to avoid multiple index tensor copies
     @classmethod
     def bmat(
-        cls, sp_topos: Sequence[Sequence[SparseTopology | None]]
-    ) -> tuple[SparseTopology, Integer[t.LongTensor, " nnz"]]:
+        cls, patterns: Sequence[Sequence[SparsityPattern | None]]
+    ) -> tuple[SparsityPattern, Integer[t.LongTensor, " nnz"]]:
         """
-        Determine how to combine a 2D grid of `SparseTopology`s to construct a
+        Determine how to combine a 2D grid of `SparsityPattern`s to construct a
         block matrix operator. None is allowed to represent empty/zero blocks.
         """
-        # Pick a representative SparseTopology and use it to determine device,
+        # Pick a representative SparsityPattern and use it to determine device,
         # dtype, and batch/dense dimension information.
-        rep_sp_topo = None
-        for sp_topo_row in sp_topos:
-            for sp_topo in sp_topo_row:
-                if sp_topo is not None:
-                    rep_sp_topo = sp_topo
+        rep_pattern = None
+        for pattern_row in patterns:
+            for pattern in pattern_row:
+                if pattern is not None:
+                    rep_pattern = pattern
 
-        if rep_sp_topo is None:
+        if rep_pattern is None:
             raise ValueError("At least one block in 'blocks' must be non-null value.")
 
-        device = rep_sp_topo.device
-        idx_dtype = rep_sp_topo.dtype
+        device = rep_pattern.device
+        idx_dtype = rep_pattern.dtype
 
-        # Determine the input SparseTopology sparse row/column shapes. The row
+        # Determine the input SparsityPattern sparse row/column shapes. The row
         # sizes and col sizes are each represented as a 2D tensor; None is assigned
         # a shape of 0.
         r_sizes = []
         c_sizes = []
-        for sp_topo_row in sp_topos:
+        for pattern_row in patterns:
             row_r_sizes = []
             row_c_sizes = []
 
-            for sp_topo in sp_topo_row:
-                if sp_topo is None:
+            for pattern in pattern_row:
+                if pattern is None:
                     row_r_sizes.append(0)
                     row_c_sizes.append(0)
                 else:
-                    row_r_sizes.append(sp_topo.size(-2))
-                    row_c_sizes.append(sp_topo.size(-1))
+                    row_r_sizes.append(pattern.size(-2))
+                    row_c_sizes.append(pattern.size(-1))
 
             r_sizes.append(row_r_sizes)
             c_sizes.append(row_c_sizes)
@@ -345,11 +345,11 @@ class SparseTopology:
         idx_coo_list = []
         r_offset = 0
         c_offset = 0
-        for r_idx, sp_topo_row in enumerate(sp_topos):
-            for c_idx, sp_topo in enumerate(sp_topo_row):
-                if sp_topo is not None:
+        for r_idx, pattern_row in enumerate(patterns):
+            for c_idx, pattern in enumerate(pattern_row):
+                if pattern is not None:
                     idx_coo = (
-                        sp_topo.idx_coo.detach()
+                        pattern.idx_coo.detach()
                         .clone()
                         .to(device=device, dtype=idx_dtype)
                     )
@@ -370,20 +370,20 @@ class SparseTopology:
         # by batch item order; find the permutation for this sort.
         batch_perm = t.sort(idx_coo_concat[0], stable=True).indices
 
-        # Determine the concatenated SparseTopology shape.
+        # Determine the concatenated SparsityPattern shape.
         n_row = r_sizes.max(dim=1).values.sum().item()
         n_col = c_sizes.max(dim=0).values.sum().item()
-        if rep_sp_topo.n_batch_dim > 0:
-            sp_topo_shape_concat = t.Size([rep_sp_topo.size(0), n_row, n_col])
+        if rep_pattern.n_batch_dim > 0:
+            pattern_shape_concat = t.Size([rep_pattern.size(0), n_row, n_col])
         else:
-            sp_topo_shape_concat = t.Size([n_row, n_col])
+            pattern_shape_concat = t.Size([n_row, n_col])
 
         # Construct concatenated coo index.
-        sp_topo_concat = SparseTopology(
-            idx_coo_concat[:, batch_perm], shape=sp_topo_shape_concat
+        pattern_concat = SparsityPattern(
+            idx_coo_concat[:, batch_perm], shape=pattern_shape_concat
         )
 
-        return sp_topo_concat, batch_perm
+        return pattern_concat, batch_perm
 
     def size(self, dim: int | None = None) -> int | t.Size:
         if dim is None:
@@ -414,7 +414,7 @@ class SparseTopology:
         return 2
 
     @property
-    def T(self) -> SparseTopology:
+    def T(self) -> SparsityPattern:
         """
         Note that the transpose preserves the batch dimension and only operates
         on the sparse dimensions.
@@ -429,7 +429,7 @@ class SparseTopology:
 
         shape_trans = self.shape[:-2] + (self.shape[-1], self.shape[-2])
 
-        sp_topo_trans = SparseTopology(idx_coo_trans, shape_trans)
+        pattern_trans = SparsityPattern(idx_coo_trans, shape_trans)
 
         attr_map = {
             "idx_ccol": "idx_crow",
@@ -444,9 +444,9 @@ class SparseTopology:
 
         for attr, attr_trans in attr_map.items():
             if attr in self.__dict__:
-                sp_topo_trans.__dict__[attr_trans] = self.__dict__[attr]
+                pattern_trans.__dict__[attr_trans] = self.__dict__[attr]
 
-        return sp_topo_trans
+        return pattern_trans
 
     @property
     def dtype(self) -> t.dtype:
@@ -456,7 +456,7 @@ class SparseTopology:
     def device(self) -> t.device:
         return self.idx_coo.device
 
-    def to(self, *args, **kwargs) -> SparseTopology:
+    def to(self, *args, **kwargs) -> SparsityPattern:
         # idx_coo respect all to() arguments, including dtype, device, non_blocking,
         # copy, and memory_format.
         new_idx_coo = self.idx_coo.to(*args, **kwargs)
@@ -467,7 +467,7 @@ class SparseTopology:
         else:
             new_block_diag_config = self.block_diag_config.to(*args, **kwargs)
 
-        new_sp_topo = SparseTopology(new_idx_coo, self.shape, new_block_diag_config)
+        new_pattern = SparsityPattern(new_idx_coo, self.shape, new_block_diag_config)
 
         # Handle the cached index tensors. Extract the device and dtype arguments
         # from the new_idx_coo, and get the non_blocking and copy arguments from
@@ -478,7 +478,7 @@ class SparseTopology:
 
         # Forbid conversion to (most) non-int dtypes.
         if target_dtype.is_floating_point or target_dtype.is_complex:
-            raise ValueError("SparseTopology indices cannot be float or complex.")
+            raise ValueError("SparsityPattern indices cannot be float or complex.")
 
         cache_kwargs = {
             "non_blocking": kwargs.get("non_blocking", False),
@@ -504,17 +504,17 @@ class SparseTopology:
 
         for attr in cached_attrs_dtype_covariant:
             if attr in self.__dict__:
-                new_sp_topo.__dict__[attr] = self.__dict__[attr].to(
+                new_pattern.__dict__[attr] = self.__dict__[attr].to(
                     dtype=target_dtype, device=target_device, **cache_kwargs
                 )
 
         for attr in cached_attrs_dtype_invariant:
             if attr in self.__dict__:
-                new_sp_topo.__dict__[attr] = self.__dict__[attr].to(
+                new_pattern.__dict__[attr] = self.__dict__[attr].to(
                     device=target_device, **cache_kwargs
                 )
 
-        return new_sp_topo
+        return new_pattern
 
     @cached_property
     def idx_crow(self) -> Integer[t.LongTensor, "*b nnz/b"]:

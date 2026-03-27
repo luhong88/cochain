@@ -6,19 +6,19 @@ from typing import Callable, Sequence
 import torch as t
 from jaxtyping import Float, Integer
 
-from ._base_operator import BaseOperator, is_scalar, validate_matmul_args
+from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from ._matmul import (
     dense_diag_mm,
     diag_dense_mm,
     diag_sp_mm,
     sp_diag_mm,
 )
-from ._sp_operator import SparseOperator
-from ._sp_topo import SparseTopology
+from ._pattern import SparsityPattern
+from ._sparse_decoupled_tensor import SparseDecoupledTensor
 
 
 @dataclass
-class DiagOperator(BaseOperator):
+class DiagDecoupledTensor(BaseDecoupledTensor):
     val: Float[t.Tensor, "*b diag"]
 
     def __post_init__(self):
@@ -31,42 +31,42 @@ class DiagOperator(BaseOperator):
             raise ValueError("'val' must be either of shape (diag,) or (b, diag).")
 
         if not t.isfinite(self.val).all():
-            raise ValueError("DiagOperator values contain NaN or Inf.")
+            raise ValueError("DiagDecoupledTensor values contain NaN or Inf.")
 
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
 
     @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> DiagOperator:
+    def from_tensor(cls, tensor: t.Tensor) -> DiagDecoupledTensor:
         return cls(tensor)
 
     @classmethod
-    def eye(cls, n: int, dtype: t.dtype, device: t.device) -> DiagOperator:
+    def eye(cls, n: int, dtype: t.dtype, device: t.device) -> DiagDecoupledTensor:
         val = t.ones(n, dtype=dtype, device=device)
-        return DiagOperator(val)
+        return DiagDecoupledTensor(val)
 
-    def apply(self, fn: Callable, **kwargs) -> DiagOperator:
+    def apply(self, fn: Callable, **kwargs) -> DiagDecoupledTensor:
         new_val = fn(self.val, **kwargs)
-        return DiagOperator(new_val)
+        return DiagDecoupledTensor(new_val)
 
-    def __neg__(self) -> DiagOperator:
-        return DiagOperator(-self.val)
+    def __neg__(self) -> DiagDecoupledTensor:
+        return DiagDecoupledTensor(-self.val)
 
-    def __pow__(self, exp: float | int) -> DiagOperator:
-        return DiagOperator(self.val**exp)
+    def __pow__(self, exp: float | int) -> DiagDecoupledTensor:
+        return DiagDecoupledTensor(self.val**exp)
 
-    def pow(self, exp: float | int) -> DiagOperator:
+    def pow(self, exp: float | int) -> DiagDecoupledTensor:
         return self.__pow__(exp)
 
-    def abs(self) -> DiagOperator:
-        return DiagOperator(self.val.abs())
+    def abs(self) -> DiagDecoupledTensor:
+        return DiagDecoupledTensor(self.val.abs())
 
     def diagonal(self) -> Float[t.Tensor, "*b diag"]:
         return self.val
 
     @property
-    def inv(self) -> DiagOperator:
-        return DiagOperator(1.0 / self.val)
+    def inv(self) -> DiagDecoupledTensor:
+        return DiagDecoupledTensor(1.0 / self.val)
 
     @property
     def tr(self) -> Float[t.Tensor, "*b"]:
@@ -75,33 +75,33 @@ class DiagOperator(BaseOperator):
         else:
             return self.val.sum(dim=-1)
 
-    def __add__(self, other) -> DiagOperator:
+    def __add__(self, other) -> DiagDecoupledTensor:
         match other:
-            case DiagOperator():
-                return DiagOperator(self.val + other.val)
+            case DiagDecoupledTensor():
+                return DiagDecoupledTensor(self.val + other.val)
             case _:
                 return NotImplemented
 
-    def __sub__(self, other) -> DiagOperator:
+    def __sub__(self, other) -> DiagDecoupledTensor:
         match other:
-            case DiagOperator():
-                return DiagOperator(self.val - other.val)
+            case DiagDecoupledTensor():
+                return DiagDecoupledTensor(self.val - other.val)
             case _:
                 return NotImplemented
 
-    def __mul__(self, other) -> DiagOperator:
-        if isinstance(other, DiagOperator):
+    def __mul__(self, other) -> DiagDecoupledTensor:
+        if isinstance(other, DiagDecoupledTensor):
             return self.__matmul(other)
         elif is_scalar(other):
-            return DiagOperator(self.val * other)
+            return DiagDecoupledTensor(self.val * other)
         else:
             return NotImplemented
 
-    def __truediv__(self, other) -> DiagOperator:
-        if isinstance(other, DiagOperator):
-            return DiagOperator(self.val / other.val)
+    def __truediv__(self, other) -> DiagDecoupledTensor:
+        if isinstance(other, DiagDecoupledTensor):
+            return DiagDecoupledTensor(self.val / other.val)
         elif is_scalar(other):
-            return DiagOperator(self.val / other)
+            return DiagDecoupledTensor(self.val / other)
         else:
             return NotImplemented
 
@@ -112,12 +112,12 @@ class DiagOperator(BaseOperator):
         validate_matmul_args(self, other)
 
         match other:
-            case DiagOperator():
-                return DiagOperator(self.val * other.val)
+            case DiagDecoupledTensor():
+                return DiagDecoupledTensor(self.val * other.val)
 
-            case SparseOperator():
-                val, sp_topo = diag_sp_mm(self.val, other.val, other.sp_topo)
-                diag_sp = SparseOperator(sp_topo, val)
+            case SparseDecoupledTensor():
+                val, pattern = diag_sp_mm(self.val, other.val, other.pattern)
+                diag_sp = SparseDecoupledTensor(pattern, val)
                 return diag_sp
 
             case t.Tensor():
@@ -137,10 +137,10 @@ class DiagOperator(BaseOperator):
         validate_matmul_args(self, other)
 
         match other:
-            # Do not check for case DiagOperator(), which is handled by __matmul__
-            case SparseOperator():
-                val, sp_topo = sp_diag_mm(other.val, other.sp_topo, self.val)
-                sp_diag = SparseOperator(sp_topo, val)
+            # Do not check for case DiagDecoupledTensor(), which is handled by __matmul__
+            case SparseDecoupledTensor():
+                val, pattern = sp_diag_mm(other.val, other.pattern, self.val)
+                sp_diag = SparseDecoupledTensor(pattern, val)
                 return sp_diag
 
             case t.Tensor():
@@ -179,7 +179,7 @@ class DiagOperator(BaseOperator):
         return 0
 
     @property
-    def T(self) -> DiagOperator:
+    def T(self) -> DiagDecoupledTensor:
         """
         Note that the transpose preserves the batch dimensions.
         """
@@ -187,14 +187,14 @@ class DiagOperator(BaseOperator):
 
     def clone(
         self, memory_format: t.memory_format = t.contiguous_format
-    ) -> DiagOperator:
-        return DiagOperator(self.val.clone(memory_format=memory_format))
+    ) -> DiagDecoupledTensor:
+        return DiagDecoupledTensor(self.val.clone(memory_format=memory_format))
 
-    def detach(self) -> DiagOperator:
-        return DiagOperator(self.val.detach())
+    def detach(self) -> DiagDecoupledTensor:
+        return DiagDecoupledTensor(self.val.detach())
 
-    def to(self, *args, **kwargs) -> DiagOperator:
-        return DiagOperator(self.val.to(*args, **kwargs))
+    def to(self, *args, **kwargs) -> DiagDecoupledTensor:
+        return DiagDecoupledTensor(self.val.to(*args, **kwargs))
 
     def to_dense(self) -> Float[t.Tensor, "*b d d"]:
         if self.n_batch_dim == 0:
@@ -219,13 +219,13 @@ class DiagOperator(BaseOperator):
 
         return idx_coo
 
-    def to_sparse_operator(self) -> SparseOperator:
+    def to_sparse_operator(self) -> SparseDecoupledTensor:
         idx_coo = self._get_idx_coo()
-        sp_topo = SparseTopology(idx_coo, self.shape)
+        pattern = SparsityPattern(idx_coo, self.shape)
 
         val = self.val.flatten()
 
-        return SparseOperator(sp_topo, val)
+        return SparseDecoupledTensor(pattern, val)
 
     def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
         idx_coo = self._get_idx_coo()

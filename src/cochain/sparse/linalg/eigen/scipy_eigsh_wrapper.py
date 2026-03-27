@@ -10,7 +10,7 @@ import scipy.sparse.linalg
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...operators import SparseOperator, SparseTopology
+from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ._backward import dLdA_backward, dLdA_dLdM_backward
 
 
@@ -56,30 +56,30 @@ class SciPyEigshConfig:
 
 def _sp_op_comps_to_scipy_csr(
     val: Float[t.Tensor, " nnz"],
-    sp_topo: Integer[SparseTopology, "r c"],
+    pattern: Integer[SparsityPattern, "r c"],
 ) -> Float[scipy.sparse.csr_array, "r c"]:
     sp_op_scipy = scipy.sparse.csr_array(
         (
             val.detach().contiguous().cpu().numpy(),
-            sp_topo.idx_col_int32.detach().contiguous().cpu().numpy(),
-            sp_topo.idx_crow_int32.detach().contiguous().cpu().numpy(),
+            pattern.idx_col_int32.detach().contiguous().cpu().numpy(),
+            pattern.idx_crow_int32.detach().contiguous().cpu().numpy(),
         ),
-        shape=sp_topo.shape,
+        shape=pattern.shape,
     )
     return sp_op_scipy
 
 
 def _sp_op_comps_to_scipy_csc(
     val: Float[t.Tensor, " nnz"],
-    sp_topo: Integer[SparseTopology, "r c"],
+    pattern: Integer[SparsityPattern, "r c"],
 ) -> Float[scipy.sparse.csc_array, "r c"]:
     sp_op_scipy = scipy.sparse.csc_array(
         (
-            val[sp_topo.coo_to_csc_perm].detach().contiguous().cpu().numpy(),
-            sp_topo.idx_row_csc_int32.detach().contiguous().cpu().numpy(),
-            sp_topo.idx_ccol_int32.detach().contiguous().cpu().numpy(),
+            val[pattern.coo_to_csc_perm].detach().contiguous().cpu().numpy(),
+            pattern.idx_row_csc_int32.detach().contiguous().cpu().numpy(),
+            pattern.idx_ccol_int32.detach().contiguous().cpu().numpy(),
         ),
-        shape=sp_topo.shape,
+        shape=pattern.shape,
     )
     return sp_op_scipy
 
@@ -88,7 +88,7 @@ class _SciPyEigshStandardAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
-        A_sp_topo: Integer[SparseTopology, "r c"],
+        A_pattern: Integer[SparsityPattern, "r c"],
         k: int,
         eps: float | int,
         compute_eig_vecs: bool,
@@ -97,12 +97,12 @@ class _SciPyEigshStandardAutogradFunction(t.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = _sp_op_comps_to_scipy_csr(A_val, A_sp_topo)
+            A_scipy = _sp_op_comps_to_scipy_csr(A_val, A_pattern)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = _sp_op_comps_to_scipy_csc(A_val, A_sp_topo)
+            A_scipy = _sp_op_comps_to_scipy_csc(A_val, A_pattern)
 
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
@@ -128,11 +128,11 @@ class _SciPyEigshStandardAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, k, eps, compute_eig_vecs, config = inputs
+        A_val, A_pattern, k, eps, compute_eig_vecs, config = inputs
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
-        ctx.A_sp_topo = A_sp_topo
+        ctx.A_pattern = A_pattern
         ctx.k = k
         ctx.eps = eps
 
@@ -158,9 +158,9 @@ class _SciPyEigshGEPAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " A_nnz"],
-        A_sp_topo: Integer[SparseTopology, "r c"],
+        A_pattern: Integer[SparsityPattern, "r c"],
         M_val: Float[t.Tensor, " M_nnz"],
-        M_sp_topo: Integer[SparseTopology, "r c"],
+        M_pattern: Integer[SparsityPattern, "r c"],
         k: int,
         eps: float | int,
         compute_eig_vecs: bool,
@@ -169,15 +169,15 @@ class _SciPyEigshGEPAutogradFunction(t.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = _sp_op_comps_to_scipy_csr(A_val, A_sp_topo)
+            A_scipy = _sp_op_comps_to_scipy_csr(A_val, A_pattern)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = _sp_op_comps_to_scipy_csc(A_val, A_sp_topo)
+            A_scipy = _sp_op_comps_to_scipy_csc(A_val, A_pattern)
 
         # M should always be in CSC format for LU factorization.
-        M_scipy = _sp_op_comps_to_scipy_csc(M_val, M_sp_topo)
+        M_scipy = _sp_op_comps_to_scipy_csc(M_val, M_pattern)
 
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
@@ -204,12 +204,12 @@ class _SciPyEigshGEPAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, M_val, M_sp_topo, k, eps, compute_eig_vecs, config = inputs
+        A_val, A_pattern, M_val, M_pattern, k, eps, compute_eig_vecs, config = inputs
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
-        ctx.A_sp_topo = A_sp_topo
-        ctx.M_sp_topo = M_sp_topo
+        ctx.A_pattern = A_pattern
+        ctx.M_pattern = M_pattern
         ctx.k = k
         ctx.eps = eps
 
@@ -237,8 +237,8 @@ class _SciPyEigshGEPAutogradFunction(t.autograd.Function):
 
 
 def _scipy_eigsh_no_batch(
-    A: Float[SparseOperator, "r c"],
-    M: Float[SparseOperator, "r c"] | None,
+    A: Float[SparseDecoupledTensor, "r c"],
+    M: Float[SparseDecoupledTensor, "r c"] | None,
     k: int,
     eps: float | int,
     compute_eig_vecs: bool,
@@ -246,19 +246,19 @@ def _scipy_eigsh_no_batch(
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _SciPyEigshStandardAutogradFunction.apply(
-            A.val, A.sp_topo, k, eps, compute_eig_vecs, config
+            A.val, A.pattern, k, eps, compute_eig_vecs, config
         )
     else:
         eig_vals, eig_vecs = _SciPyEigshGEPAutogradFunction.apply(
-            A.val, A.sp_topo, M.val, M.sp_topo, k, eps, compute_eig_vecs, config
+            A.val, A.pattern, M.val, M.pattern, k, eps, compute_eig_vecs, config
         )
 
     return eig_vals, eig_vecs
 
 
 def _scipy_eigsh_batch(
-    A_batched: Float[SparseOperator, "r c"],
-    M_batched: Float[SparseOperator, "r c"] | None,
+    A_batched: Float[SparseDecoupledTensor, "r c"],
+    M_batched: Float[SparseDecoupledTensor, "r c"] | None,
     k: int,
     eps: float | int,
     compute_eig_vecs: bool,
@@ -291,8 +291,8 @@ def _scipy_eigsh_batch(
 
 
 def scipy_eigsh(
-    A: Float[SparseOperator, "r c"],
-    M: Float[SparseOperator, "r c"] | None = None,
+    A: Float[SparseDecoupledTensor, "r c"],
+    M: Float[SparseDecoupledTensor, "r c"] | None = None,
     block_diag_batch: bool = False,
     k: int = 6,
     eps: float | int = 1e-6,
@@ -309,7 +309,7 @@ def scipy_eigsh(
     * The arguments `sigma`, `which`, `v0`, `ncv`, `maxiter`, `tol`, and `mode`
       are collected in a `ScipyEigshConfig` dataclass object, whilc the rest of
       the arguments are exposed as direct arguments to this function.
-    * The `A` and `M` matrices must be `SparseOperator` objects and will be
+    * The `A` and `M` matrices must be `SparseDecoupledTensor` objects and will be
       converted to SciPy CSR/CSC arrays and copied to CPU. The `v0` argument
       can be a torch tensor, but will be converted to a numpy array and copied
       to CPU. The use of SciPy `LinearOperator` objects for `A` and `M` is not
@@ -327,7 +327,7 @@ def scipy_eigsh(
     * The autograd through eigenvectors do not account for contributions from the
       unresolved eigenvectors.
     * The `eigsh()` function does not natively support batching. if
-      `block_diag_batch` is True, the `A` `SparseOperator` (and `M` if not `None`)
+      `block_diag_batch` is True, the `A` `SparseDecoupledTensor` (and `M` if not `None`)
       will be split into individual sparse matrices and solved sequentially. The
       resulting eigenvalue tensor will contain a leading batch dimension, but the
       resulting eigenvector tensor will respect the original concatenated/packed

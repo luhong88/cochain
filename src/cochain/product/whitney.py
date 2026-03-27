@@ -3,14 +3,14 @@ from typing import Literal
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from ._whitney_3_form import triple_tensor_prod_3_form
 from ._whitney_m_form import triple_tensor_prod
-from ._whitney_utils import find_top_simp_faces
+from ._whitney_utils import find_top_splx_faces
 
 
 class WhitneyWedgeL2Projector(t.nn.Module):
-    def __init__(self, k: int, l: int, mesh: SimplicialComplex):
+    def __init__(self, k: int, l: int, mesh: SimplicialMesh):
         """
         Compute the load vector required to compute the L^2-projected wedge product
         (or the Galerkin wedge product).
@@ -30,39 +30,33 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         m = k + l
 
         # Identify the k-faces of the top level simplices and their sign corrections.
-        k_face_idx, k_face_parity = find_top_simp_faces(
-            k, mesh.dim, mesh, mesh.simplices
-        )
+        k_face_idx, k_face_parity = find_top_splx_faces(k, mesh)
 
-        self.k_face_idx: Integer[t.LongTensor, "top_simp k_face"]
+        self.k_face_idx: Integer[t.LongTensor, "top_splx k_face"]
         self.register_buffer("k_face_idx", k_face_idx)
 
-        self.k_face_parity: Float[t.Tensor, "top_simp k_face"]
+        self.k_face_parity: Float[t.Tensor, "top_splx k_face"]
         self.register_buffer("k_face_parity", k_face_parity)
 
         # Identify the l-faces of the top level simplices and their sign corrections.
-        l_face_idx, l_face_parity = find_top_simp_faces(
-            l, mesh.dim, mesh, mesh.simplices
-        )
+        l_face_idx, l_face_parity = find_top_splx_faces(l, mesh)
 
-        self.l_face_idx: Integer[t.LongTensor, "top_simp l_face"]
+        self.l_face_idx: Integer[t.LongTensor, "top_splx l_face"]
         self.register_buffer("l_face_idx", l_face_idx)
 
-        self.l_face_parity: Float[t.Tensor, "top_simp l_face"]
+        self.l_face_parity: Float[t.Tensor, "top_splx l_face"]
         self.register_buffer("l_face_parity", l_face_parity)
 
         # Identify the (k+l)-faces of the top level simplices and their sign corrections.
-        m_face_idx, m_face_parity = find_top_simp_faces(
-            m, mesh.dim, mesh, mesh.simplices
-        )
+        m_face_idx, m_face_parity = find_top_splx_faces(m, mesh)
 
-        self.m_face_idx: Integer[t.LongTensor, "top_simp m_face"]
+        self.m_face_idx: Integer[t.LongTensor, "top_splx m_face"]
         self.register_buffer("m_face_idx", m_face_idx)
 
-        self.m_face_parity: Float[t.Tensor, "top_simp m_face"]
+        self.m_face_parity: Float[t.Tensor, "top_splx m_face"]
         self.register_buffer("m_face_parity", m_face_parity)
 
-        self.n_m_simp = mesh.simplices[m].size(0)
+        self.n_m_splx = mesh.splx[m].size(0)
 
         # Compute the triple tensor product. When k + l = 3, a special optimized
         # version of the method is applied that is more memory efficient.
@@ -71,15 +65,15 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         else:
             triple_prod = triple_tensor_prod(k, l, mesh)
 
-        self.triple_prod: Float[t.Tensor, "top_simp k_face l_face m_face"]
+        self.triple_prod: Float[t.Tensor, "top_splx k_face l_face m_face"]
         self.register_buffer("triple_prod", triple_prod)
 
     def forward(
         self,
-        k_cochain: Float[t.Tensor, " k_simp *ch_in"],
-        l_cochain: Float[t.Tensor, " l_simp *ch_in"],
+        k_cochain: Float[t.Tensor, " k_splx *ch_in"],
+        l_cochain: Float[t.Tensor, " l_splx *ch_in"],
         pairing: Literal["scalar", "dot", "cross"] = "scalar",
-    ) -> Float[t.Tensor, " m_simp *ch_out"]:
+    ) -> Float[t.Tensor, " m_splx *ch_out"]:
         k_cochain_at_k_face = t.einsum(
             "tf,tf...->tf...", self.k_face_parity, k_cochain[self.k_face_idx]
         )
@@ -133,7 +127,7 @@ class WhitneyWedgeL2Projector(t.nn.Module):
 
         ch_out_dims = m_cochain_at_m_face.shape[2:]
         load = t.zeros(
-            (self.n_m_simp,) + ch_out_dims,
+            (self.n_m_splx,) + ch_out_dims,
             device=self.triple_prod.device,
             dtype=self.triple_prod.dtype,
         )

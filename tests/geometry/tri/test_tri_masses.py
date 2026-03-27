@@ -4,11 +4,11 @@ import torch as t
 from jaxtyping import Float
 from skfem.helpers import dot
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.geometry.tri import tri_masses
 
 
-def test_mass_1_with_skfem(flat_annulus_mesh: SimplicialComplex):
+def test_mass_1_with_skfem(flat_annulus_mesh: SimplicialMesh):
     skfem_mesh = skfem.MeshTri(
         flat_annulus_mesh.vert_coords[:, [0, 1]].T.cpu().detach().numpy(),
         flat_annulus_mesh.tris.T.cpu().detach().numpy(),
@@ -36,22 +36,22 @@ def test_mass_1_with_skfem(flat_annulus_mesh: SimplicialComplex):
     t.testing.assert_close(cochain_mass_1_eigs, skfem_mass_1_eigs_torch)
 
 
-def test_mass_1_symmetry(two_tris_mesh: SimplicialComplex):
+def test_mass_1_symmetry(two_tris_mesh: SimplicialMesh):
     mass = tri_masses.mass_1(two_tris_mesh)
     mass_T = mass.T
     t.testing.assert_close(mass.to_dense(), mass_T.to_dense())
 
 
-def test_mass_matrix_positive_definite(two_tris_mesh: SimplicialComplex):
+def test_mass_matrix_positive_definite(two_tris_mesh: SimplicialMesh):
     mass = tri_masses.mass_1(two_tris_mesh).to_dense()
     eigs = t.linalg.eigvalsh(mass)
     assert eigs.min() >= 1e-6
 
 
-def test_mass_1_matrix_connectivity(two_tris_mesh: SimplicialComplex):
+def test_mass_1_matrix_connectivity(two_tris_mesh: SimplicialMesh):
     mass_1 = tri_masses.mass_1(two_tris_mesh)
     mass_1_mask = t.zeros_like(mass_1.to_dense(), dtype=t.long)
-    mass_1_mask[mass_1.sp_topo.idx_coo.unbind(0)] = 1
+    mass_1_mask[mass_1.pattern.idx_coo.unbind(0)] = 1
 
     true_mass_1_mask = t.tensor(
         [
@@ -67,7 +67,7 @@ def test_mass_1_matrix_connectivity(two_tris_mesh: SimplicialComplex):
     t.testing.assert_close(mass_1_mask, true_mass_1_mask)
 
 
-def test_mass_1_linear_potential(two_tris_mesh: SimplicialComplex):
+def test_mass_1_linear_potential(two_tris_mesh: SimplicialMesh):
     mass_1 = tri_masses.mass_1(two_tris_mesh)
 
     const_vec = t.tensor([[1.0, 3.0, 2.0]], dtype=two_tris_mesh.vert_coords.dtype)

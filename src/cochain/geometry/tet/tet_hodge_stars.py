@@ -1,15 +1,15 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...complex import SimplicialComplex
-from ...sparse.operators import DiagOperator
+from ...complex import SimplicialMesh
+from ...sparse.decoupled_tensor import DiagDecoupledTensor
 from ..tri.tri_geometry import compute_tri_areas
 from .tet_masses import mass_0, mass_3
 
 star_3 = mass_3
 
 
-def star_2(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:
+def star_2(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
     """
     Compute the barycentric Hodge 2-star operator.
     """
@@ -34,7 +34,7 @@ def star_2(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:
 
     # For each tri, find all tet containing the tri as a face, and sum together
     # the tet-tri pair dual edge lengths.
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tet_tri_idx
+    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tri_faces.idx
 
     diag = t.zeros(
         tet_mesh.n_tris,
@@ -51,10 +51,10 @@ def star_2(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "tri tri"]:
     tri_areas = compute_tri_areas(vert_coords, tris)
     diag.divide_(tri_areas)
 
-    return DiagOperator.from_tensor(diag)
+    return DiagDecoupledTensor.from_tensor(diag)
 
 
-def star_1(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "edge edge"]:
+def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
     """
     Compute the barycentric Hodge 1-star operator.
     """
@@ -95,7 +95,7 @@ def star_1(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "edge edge"]:
 
     # For each edge, find all tet containing the edge as a face, and sum together
     # the subareas of the two barycentric triangles.
-    all_canon_edges_idx = tet_mesh.tet_edge_idx
+    all_canon_edges_idx = tet_mesh.edge_faces.idx
 
     diag = t.zeros(
         tet_mesh.n_edges,
@@ -115,7 +115,7 @@ def star_1(tet_mesh: SimplicialComplex) -> Float[DiagOperator, "edge edge"]:
     )
     diag.divide_(edge_lens)
 
-    return DiagOperator.from_tensor(diag)
+    return DiagDecoupledTensor.from_tensor(diag)
 
 
 star_0 = mass_0

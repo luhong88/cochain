@@ -2,16 +2,16 @@ import pytest
 import torch as t
 from jaxtyping import Float
 
+from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.sparse.linalg.eigen import CuPyEigshConfig, cupy_eigsh
 from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
-from cochain.sparse.operators import SparseOperator
 
 # TODO: test handling of degenerate eigenvalues
 
 
 @pytest.mark.gpu_only
 def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
-    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
     eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
@@ -51,9 +51,9 @@ def test_batched_standard_forward(
 
     k = 2
 
-    A1_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
-    A2_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
-    A_op = SparseOperator.pack_block_diag((A1_op, A2_op))
+    A1_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
+    A2_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.pack_block_diag((A1_op, A2_op))
 
     eig_vals, eig_vecs = cupy_eigsh(
         A=A_op, block_diag_batch=True, k=k, cp_config=CuPyEigshConfig(which="LM")
@@ -80,7 +80,7 @@ def test_batched_standard_forward(
 def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     k = 3
 
-    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
     A_op.requires_grad_()
 
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
@@ -101,7 +101,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     eig_vals_loss_true.backward()
     eig_vals_loss.backward()
 
-    eig_vals_grad_true = A_dense.grad[t.unbind(A_op.sp_topo.idx_coo, dim=0)]
+    eig_vals_grad_true = A_dense.grad[t.unbind(A_op.pattern.idx_coo, dim=0)]
     eig_vals_grad = A_op.val.grad
 
     t.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
@@ -111,7 +111,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
 def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     k = 3
 
-    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
     A_op.requires_grad_()
 
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
@@ -142,7 +142,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     eig_vecs_loss.backward()
 
     eig_vecs_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
-        t.unbind(A_op.sp_topo.idx_coo, dim=0)
+        t.unbind(A_op.pattern.idx_coo, dim=0)
     ]
     eig_vecs_grad = A_op.val.grad
 
@@ -153,7 +153,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
 def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
     k = 3
 
-    A_op = SparseOperator.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
     A_op.requires_grad_()
 
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
@@ -183,7 +183,7 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     combined_loss.backward()
 
     combined_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
-        t.unbind(A_op.sp_topo.idx_coo, dim=0)
+        t.unbind(A_op.pattern.idx_coo, dim=0)
     ]
     combined_grad = A_op.val.grad
 
@@ -192,7 +192,7 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
 
 @pytest.mark.gpu_only
 def test_shift_invert_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
-    A_op = SparseOperator.from_tensor(rand_sp_spd_6x6).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
     # Since t.linalg.eigh does not support shift-invert mode, need to manually

@@ -6,7 +6,7 @@ import pytest
 import pyvista as pv
 import torch as t
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.datasets import synthetic_tet_meshes, synthetic_tri_meshes
 
 # TODO: update all tests to run on both GPU and CPU
@@ -90,32 +90,32 @@ def device(request) -> t.device:
 
 
 @pytest.fixture
-def two_tris_mesh() -> SimplicialComplex:
+def two_tris_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_two_tris_mesh()
 
 
 @pytest.fixture
-def two_disjoint_tris_mesh() -> SimplicialComplex:
+def two_disjoint_tris_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_two_disjoint_tris_mesh()
 
 
 @pytest.fixture
-def square_mesh() -> SimplicialComplex:
+def square_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_square_mesh()
 
 
 @pytest.fixture
-def tent_mesh() -> SimplicialComplex:
+def tent_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_tent_mesh()
 
 
 @pytest.fixture
-def hollow_tet_mesh() -> SimplicialComplex:
+def hollow_tet_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_hollow_tet_mesh()
 
 
 @pytest.fixture
-def icosphere_mesh() -> SimplicialComplex:
+def icosphere_mesh() -> SimplicialMesh:
     pv_sphere = pv.Icosphere(nsub=1)
 
     vert_coords_np = np.asarray(pv_sphere.points)
@@ -124,20 +124,20 @@ def icosphere_mesh() -> SimplicialComplex:
     vert_coords_t = t.from_numpy(vert_coords_np).to(dtype=t.float)
     tris_t = t.from_numpy(tris_np).to(dtype=t.long)
 
-    cochain_sphere = SimplicialComplex.from_tri_mesh(vert_coords_t, tris_t)
+    cochain_sphere = SimplicialMesh.from_tri_mesh(vert_coords_t, tris_t)
 
     return cochain_sphere
 
 
 @pytest.fixture
-def flat_annulus_mesh() -> SimplicialComplex:
+def flat_annulus_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_flat_annulus_mesh(
         r_in=0.5, r_out=1.0, n_segments_in=5, n_segments_out=10
     )
 
 
 @pytest.fixture
-def finer_flat_annulus_mesh() -> SimplicialComplex:
+def finer_flat_annulus_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_finer_flat_annulus_mesh(
         r_in=0.5,
         r_out=1.0,
@@ -147,22 +147,22 @@ def finer_flat_annulus_mesh() -> SimplicialComplex:
 
 
 @pytest.fixture
-def reg_tet_mesh() -> SimplicialComplex:
+def reg_tet_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_regular_tet_mesh()
 
 
 @pytest.fixture
-def two_tets_mesh() -> SimplicialComplex:
+def two_tets_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_two_tets_mesh()
 
 
 @pytest.fixture
-def simple_bcc_mesh() -> SimplicialComplex:
+def simple_bcc_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_bcc_mesh(dim=3)
 
 
 @pytest.fixture
-def solid_torus_mesh() -> SimplicialComplex:
+def solid_torus_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_solid_torus(
         major_r=1.0, minor_r=0.5, u_res=5, v_res=5, edge_length_frac=1.0
     )

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Literal
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...operators import SparseOperator, SparseTopology
+from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ._backward import dLdA_backward
 
 try:
@@ -80,7 +80,7 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[t.Tensor, " nnz"],
-        A_sp_topo: Integer[SparseTopology, "r c"],
+        A_pattern: Integer[SparsityPattern, "r c"],
         k: int,
         eps: float | int,
         compute_eig_vecs: bool,
@@ -93,10 +93,10 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
         stream = t.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             if cp_config.sigma is None:
-                A_cp = sp_op_comps_to_cp_csr(A_val, A_sp_topo)
+                A_cp = sp_op_comps_to_cp_csr(A_val, A_pattern)
             else:
                 A_cp = CuPyShiftInvSymOp(
-                    A_val, A_sp_topo, cp_config.sigma, nvmath_config
+                    A_val, A_pattern, cp_config.sigma, nvmath_config
                 )
 
             cp_config_dict = asdict(cp_config)
@@ -128,11 +128,11 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_sp_topo, k, eps, compute_eig_vecs, cp_config, nvmath_config = inputs
+        A_val, A_pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config = inputs
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
-        ctx.A_sp_topo = A_sp_topo
+        ctx.A_pattern = A_pattern
         ctx.k = k
         ctx.eps = eps
 
@@ -156,7 +156,7 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
 
 
 def _cupy_eigsh_no_batch(
-    A: Float[SparseOperator, "r c"],
+    A: Float[SparseDecoupledTensor, "r c"],
     k: int,
     eps: float | int,
     compute_eig_vecs: bool,
@@ -164,14 +164,14 @@ def _cupy_eigsh_no_batch(
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
     eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
-        A.val, A.sp_topo, k, eps, compute_eig_vecs, cp_config, nvmath_config
+        A.val, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
     )
 
     return eig_vals, eig_vecs
 
 
 def _cupy_eigsh_batch(
-    A_batched: Float[SparseOperator, "r c"],
+    A_batched: Float[SparseDecoupledTensor, "r c"],
     k: int,
     eps: float | int,
     compute_eig_vecs: bool,
@@ -203,7 +203,7 @@ def _cupy_eigsh_batch(
 
 # TODO: relax nvmath requirement if not in shift-invert mode
 def cupy_eigsh(
-    A: Float[SparseOperator, "r c"],
+    A: Float[SparseDecoupledTensor, "r c"],
     block_diag_batch: bool = False,
     k: int = 6,
     eps: float | int = 1e-6,
@@ -221,7 +221,7 @@ def cupy_eigsh(
     * The arguments `which`, `v0`, `ncv`, `maxiter`, and `tol`, are collected in
       a `CuPyEigshConfig` dataclass object, whilc the rest of the arguments are
       exposed as direct arguments to this function.
-    * The `A` matrix must be a `SparseOperator` object and will be converted to
+    * The `A` matrix must be a `SparseDecoupledTensor` object and will be converted to
       CuPy CSR matrix. The `v0` argument can be a torch tensor, but will be converted
       to a cupy array and copied. The use of CuPy `LinearOperator` objects for `A`
       is not supported.
@@ -250,7 +250,7 @@ def cupy_eigsh(
     * The autograd through eigenvectors do not account for contributions from the
       unresolved eigenvectors.
     * The `eigsh()` function does not natively support batching. if
-      `block_diag_batch` is True, the `A` `SparseOperator` will be split into
+      `block_diag_batch` is True, the `A` `SparseDecoupledTensor` will be split into
       individual sparse matrices and solved sequentially. The resulting eigenvalue
       tensor will contain a leading batch dimension, but the resulting eigenvector
       tensor will respect the original concatenated/packed format. This requires

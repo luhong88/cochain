@@ -1,12 +1,12 @@
 import pytest
 import torch as t
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.geometry.tri import tri_hodge_stars, tri_laplacians
 from cochain.geometry.tri.tri_stiffness import stiffness_matrix
 
 
-def test_l0_stiffness_relation(two_tris_mesh: SimplicialComplex):
+def test_l0_stiffness_relation(two_tris_mesh: SimplicialMesh):
     """
     Check that the 0-Laplacian and the stiffness matrix is related through the
     Hodge 0-star.
@@ -20,7 +20,7 @@ def test_l0_stiffness_relation(two_tris_mesh: SimplicialComplex):
     t.testing.assert_close(stiffness_indirect, stiffness_direct)
 
 
-def test_l0_direct_construction(two_tris_mesh: SimplicialComplex):
+def test_l0_direct_construction(two_tris_mesh: SimplicialMesh):
     """
     Constructing 0-Laplacian through the codifferential and coboundary operators
     should give the same matrix as through the stiffness matrix.
@@ -49,7 +49,7 @@ def test_l0_direct_construction(two_tris_mesh: SimplicialComplex):
     ],
 )
 def test_disk_homology_group_dims(
-    laplacian, dual_complex, betti, tent_mesh: SimplicialComplex
+    laplacian, dual_complex, betti, tent_mesh: SimplicialMesh
 ):
     operator = laplacian(tent_mesh, dual_complex).to_dense()
     dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
@@ -68,7 +68,7 @@ def test_disk_homology_group_dims(
     ],
 )
 def test_annulus_homology_group_dims(
-    laplacian, dual_complex, betti, flat_annulus_mesh: SimplicialComplex
+    laplacian, dual_complex, betti, flat_annulus_mesh: SimplicialMesh
 ):
     operator = laplacian(flat_annulus_mesh, dual_complex).to_dense()
     dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
@@ -87,7 +87,7 @@ def test_annulus_homology_group_dims(
     ],
 )
 def test_sphere_homology_group_dims(
-    laplacian, dual_complex, betti, icosphere_mesh: SimplicialComplex
+    laplacian, dual_complex, betti, icosphere_mesh: SimplicialMesh
 ):
     operator = laplacian(icosphere_mesh, dual_complex).to_dense()
     dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
@@ -98,7 +98,7 @@ def test_sphere_homology_group_dims(
     "dual_complex",
     ["circumcentric", "barycentric"],
 )
-def test_laplacian_0_kernel(dual_complex, tent_mesh: SimplicialComplex):
+def test_laplacian_0_kernel(dual_complex, tent_mesh: SimplicialMesh):
     l0 = tri_laplacians.laplacian_0(tent_mesh, dual_complex)
     row_sum = l0.to_dense().sum(dim=-1)
     t.testing.assert_close(row_sum, t.zeros_like(row_sum))
@@ -108,7 +108,7 @@ def test_laplacian_0_kernel(dual_complex, tent_mesh: SimplicialComplex):
     "dual_complex",
     ["circumcentric", "barycentric"],
 )
-def test_laplacian_2_kernel(dual_complex, hollow_tet_mesh: SimplicialComplex):
+def test_laplacian_2_kernel(dual_complex, hollow_tet_mesh: SimplicialMesh):
     """
     Check that the triangle area vector is in the kernel of the 2-Laplacian for
     a closed mesh.
@@ -143,7 +143,7 @@ def test_laplacian_2_kernel(dual_complex, hollow_tet_mesh: SimplicialComplex):
     ],
 )
 def test_laplacian_symmetry(
-    laplacian, dual_complex, star, hollow_tet_mesh: SimplicialComplex
+    laplacian, dual_complex, star, hollow_tet_mesh: SimplicialMesh
 ):
     """
     Test that the stiffness matrices are symmetric, but the corresponding
@@ -179,9 +179,7 @@ def test_laplacian_symmetry(
         (tri_laplacians.laplacian_2, "barycentric", tri_hodge_stars.star_2),
     ],
 )
-def test_laplacian_PSD(
-    laplacian, dual_complex, star, hollow_tet_mesh: SimplicialComplex
-):
+def test_laplacian_PSD(laplacian, dual_complex, star, hollow_tet_mesh: SimplicialMesh):
     """
     Test that the stiffness matrices are positive semi-definite.
     """
@@ -197,7 +195,7 @@ def test_laplacian_PSD(
     "dual_complex",
     ["circumcentric", "barycentric"],
 )
-def test_laplacian_1_orthogonality(dual_complex, hollow_tet_mesh: SimplicialComplex):
+def test_laplacian_1_orthogonality(dual_complex, hollow_tet_mesh: SimplicialMesh):
     l1_div_grad = tri_laplacians.laplacian_1_div_grad(hollow_tet_mesh, dual_complex)
     l1_curl_curl = tri_laplacians.laplacian_1_curl_curl(hollow_tet_mesh, dual_complex)
 
@@ -212,7 +210,7 @@ def test_laplacian_1_orthogonality(dual_complex, hollow_tet_mesh: SimplicialComp
     "dual_complex",
     ["circumcentric", "barycentric"],
 )
-def test_laplacian_1_curl_free(dual_complex, hollow_tet_mesh: SimplicialComplex):
+def test_laplacian_1_curl_free(dual_complex, hollow_tet_mesh: SimplicialMesh):
     """
     The curl curl component of the 1-Laplacian acting on a curl-free 1-cochain/
     1-form produces 0.
@@ -231,7 +229,7 @@ def test_laplacian_1_curl_free(dual_complex, hollow_tet_mesh: SimplicialComplex)
     "dual_complex",
     ["circumcentric", "barycentric"],
 )
-def test_laplacian_1_div_free(dual_complex, hollow_tet_mesh: SimplicialComplex):
+def test_laplacian_1_div_free(dual_complex, hollow_tet_mesh: SimplicialMesh):
     """
     The div grad component of the 1-Laplacian acting on a div-free 1-cochain/
     1-form produces 0.
@@ -253,7 +251,7 @@ def test_laplacian_1_div_free(dual_complex, hollow_tet_mesh: SimplicialComplex):
     "dual_complex",
     ["circumcentric", "barycentric"],
 )
-def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComplex):
+def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialMesh):
     """
     Check that the 1-codifferential and the coboundary-0 operators are adjoints
     with respect to the Hodge star-weighted inner product.
@@ -281,7 +279,7 @@ def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComp
     "dual_complex",
     ["circumcentric", "barycentric"],
 )
-def test_codiff_2_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialComplex):
+def test_codiff_2_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialMesh):
     """
     Check that the 2-codifferential and the coboundary-1 operators are adjoints
     with respect to the Hodge star-weighted inner products.

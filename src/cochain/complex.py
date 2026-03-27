@@ -6,23 +6,23 @@ from typing import Any
 import torch as t
 from jaxtyping import Bool, Float, Integer
 
-from .sparse.operators import BaseOperator, SparseOperator
-from .topology import boundaries, coboundaries, tet_topology, tri_topology
-from .utils.perm_parity import compute_lex_rel_orient
+from .sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+from .topology import boundaries, coboundaries
+from .utils.faces import GlobalFaces, enumerate_global_faces
 
 
 def _is_tensor_like(obj: Any) -> bool:
-    return t.is_tensor(obj) | isinstance(obj, BaseOperator)
+    return t.is_tensor(obj) | isinstance(obj, BaseDecoupledTensor)
 
 
 @dataclass
-class SimplicialComplex:
+class SimplicialMesh:
     cbd: tuple[
-        Float[SparseOperator, "edge vert"],
-        Float[SparseOperator, "tri edge"],
-        Float[SparseOperator, "tet tri"],
+        Float[SparseDecoupledTensor, "edge vert"],
+        Float[SparseDecoupledTensor, "tri edge"],
+        Float[SparseDecoupledTensor, "tet tri"],
     ]
-    simplices: tuple[
+    splx: tuple[
         Integer[t.LongTensor, "edge 2"],
         Integer[t.LongTensor, "tri 3"],
         Integer[t.LongTensor, "tet 4"],
@@ -33,7 +33,7 @@ class SimplicialComplex:
         # The list of vertices contains only redundant information, but we
         # materialize it anyways so that simplices[0] gives the list of 0-simplices.
         verts = t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
-        self.simplices = (verts,) + self.simplices
+        self.splx = (verts,) + self.splx
 
         # Check for dim consistency in coboundary operators.
         assert self.cbd[0].shape[0] == self.cbd[1].shape[1]
@@ -45,21 +45,60 @@ class SimplicialComplex:
         assert self.tris.shape[0] == self.cbd[1].shape[0]
         assert self.tets.shape[0] == self.cbd[2].shape[0]
 
+        # Check for device consistency
+        for tensor in self.cbd + self.splx:
+            assert tensor.device == self.device
+
+        # Check for dtype consistency
+        for tensor in self.cbd:
+            assert tensor.dtype == self.dtype
+
+        int_dtype = self.splx[0].dtype
+        for tensor in self.splx:
+            assert tensor.dtype == int_dtype
+
+    def _apply(self, func):
+        """
+        Apply a function (recursively) to all tensor-like attributes.
+        """
+        for key, value in self.__dict__.items():
+            if _is_tensor_like(value):
+                setattr(self, key, func(value))
+            elif isinstance(value, Sequence):
+                setattr(
+                    self,
+                    key,
+                    tuple(func(v) if _is_tensor_like(v) else v for v in value),
+                )
+        return self
+
+    # TODO: also implement .cuda() and .cpu()
+    def to(self, *args, **kwargs):
+        return self._apply(lambda x: x.to(*args, **kwargs))
+
+    @property
+    def dtype(self) -> t.dtype:
+        return self.vert_coords.dtype
+
+    @property
+    def device(self) -> t.device:
+        return self.vert_coords.device
+
     @property
     def verts(self) -> Integer[t.LongTensor, "vert 1"]:
-        return self.simplices[0]
+        return self.splx[0]
 
     @property
     def edges(self) -> Integer[t.LongTensor, "edge 2"]:
-        return self.simplices[1]
+        return self.splx[1]
 
     @property
     def tris(self) -> Integer[t.LongTensor, "tri 3"]:
-        return self.simplices[2]
+        return self.splx[2]
 
     @property
     def tets(self) -> Integer[t.LongTensor, "tet 4"]:
-        return self.simplices[3]
+        return self.splx[3]
 
     @property
     def n_verts(self) -> int:
@@ -76,6 +115,36 @@ class SimplicialComplex:
     @property
     def n_tets(self) -> int:
         return self.cbd[2].shape[0]
+
+    @property
+    def n_splx(self) -> tuple[int, int, int, int]:
+        return (self.n_verts, self.n_edges, self.n_tris, self.n_tets)
+
+    @property
+    def dim(self) -> int:
+        return max(
+            1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
+        )
+
+    @cached_property
+    def edge_faces(self) -> GlobalFaces:
+        return enumerate_global_faces(self.splx[self.dim], self.edges)
+
+    @cached_property
+    def tri_faces(self) -> GlobalFaces:
+        return enumerate_global_faces(self.splx[self.dim], self.tris)
+
+    @property
+    def dual_cbd(
+        self,
+    ) -> tuple[
+        Float[SparseDecoupledTensor, "dual_edge dual_vert"],
+        Float[SparseDecoupledTensor, "dual_tri dual_edge"],
+        Float[SparseDecoupledTensor, "dual_tet dual_tri"],
+    ]:
+        # the k-th coboundary operator d_k* on the dual complex is given by
+        # (-1)^k * d_{n-k-1}.T, where n is the dimension of the simplicial complex.
+        return tuple(self.cbd[self.dim - k - 1].T * ((-1.0) ** k) for k in range(3))
 
     @cached_property
     def bd_mask(
@@ -103,77 +172,6 @@ class SimplicialComplex:
     @property
     def bd_tet_mask(self) -> Bool[t.Tensor, " tet"]:
         return self.bd_mask[3]
-
-    @property
-    def dim(self) -> int:
-        return max(
-            1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
-        )
-
-    @property
-    def dual_cbd(
-        self,
-    ) -> tuple[
-        Float[SparseOperator, "dual_edge dual_vert"],
-        Float[SparseOperator, "dual_tri dual_edge"],
-        Float[SparseOperator, "dual_tet dual_tri"],
-    ]:
-        # the k-th coboundary operator d_k* on the dual complex is given by
-        # (-1)^k * d_{n-k-1}.T, where n is the dimension of the simplicial complex.
-        return tuple(self.cbd[self.dim - k - 1].T * ((-1.0) ** k) for k in range(3))
-
-    def _apply(self, func):
-        """
-        Apply a function (recursively) to all tensor-like attributes.
-        """
-        for key, value in self.__dict__.items():
-            if _is_tensor_like(value):
-                setattr(self, key, func(value))
-            elif isinstance(value, Sequence):
-                setattr(
-                    self,
-                    key,
-                    tuple(func(v) if _is_tensor_like(v) else v for v in value),
-                )
-        return self
-
-    # TODO: also implement .cuda() and .cpu()
-    def to(self, *args, **kwargs):
-        return self._apply(lambda x: x.to(*args, **kwargs))
-
-    # TODO: check that the tet topo properties work for non-tet meshes
-    # TODO: these should use canonical face orientations
-    @cached_property
-    def tet_edge_idx(self) -> Integer[t.LongTensor, "tet 6"]:
-        return tet_topology.get_edge_face_idx(self.tets, self.edges)
-
-    @cached_property
-    def tet_edge_orientations(self) -> Float[t.Tensor, "tet 6"]:
-        return tet_topology.get_edge_face_orientations(self.tets)
-
-    @cached_property
-    def tet_tri_idx(self) -> Integer[t.LongTensor, "tet 4"]:
-        return tet_topology.get_tri_face_idx(self.tets, self.tris)
-
-    @cached_property
-    def tet_tri_orientations(self) -> Float[t.Tensor, "tet 4"]:
-        return tet_topology.get_tri_face_orientations(self.tets)
-
-    @cached_property
-    def tet_orientations(self) -> Float[t.Tensor, " tet"]:
-        return compute_lex_rel_orient(self.tets)
-
-    @cached_property
-    def tri_edge_idx(self) -> Integer[t.LongTensor, "tri 3"]:
-        return tri_topology.get_edge_face_idx(self.tris, self.edges)
-
-    @cached_property
-    def tri_edge_orientations(self) -> Float[t.Tensor, "tri 3"]:
-        return tri_topology.get_edge_face_orientations(self.tris)
-
-    @cached_property
-    def tri_orientations(self) -> Float[t.Tensor, " tri"]:
-        return compute_lex_rel_orient(self.tris)
 
     # TODO: write test for this method
     def is_pure(self) -> bool:
@@ -219,7 +217,7 @@ class SimplicialComplex:
 
         return cls(
             cbd=(cbd_0, cbd_1, cbd_2),
-            simplices=(unique_canon_edges, tris, tets),
+            splx=(unique_canon_edges, tris, tets),
             vert_coords=vert_coords,
         )
 
@@ -248,24 +246,12 @@ class SimplicialComplex:
 
         return cls(
             cbd=(cbd_0, cbd_1, cbd_2),
-            simplices=(unique_canon_edges, unique_canon_tris, tets),
+            splx=(unique_canon_edges, unique_canon_tris, tets),
             vert_coords=vert_coords,
         )
 
-    @classmethod
-    def from_graph(cls, edges: t.Tensor, n_verts: int, **kwargs):
-        """
-        Creates a Simplicial2Complex object from a standard graph (i.e., a pure
-        1-complex with no tris)
-        """
-        raise NotImplementedError()
 
-    @classmethod
-    def from_simplex_lists(cls, n_verts: int, tris=None, edges=None, **kwargs):
-        raise NotImplementedError()
-
-
-class SimplicialBatch(SimplicialComplex):
+class SimplicialBatch(SimplicialMesh):
     """
     A "batch" of complexes, represented as a single large, disconnected complex.
     This is what the DataLoader returns.
@@ -295,8 +281,8 @@ class SimplicialBatch(SimplicialComplex):
         return self.batch_verts.max().item() + 1
 
 
-# TODO: update to use SparseOperator
-def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
+# TODO: update to use SparseDecoupledTensor
+def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
     """
     This function takes in a list of `SimplicialComplex` objects and collate them
     into a single batched complex.
@@ -315,7 +301,7 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
     dtype = sc_batch[0].cbd[0].dtype
 
     # Generate a cumsum n_sc list for each simplex dimension
-    n_simp_batch = t.tensor(
+    n_splx_batch = t.tensor(
         [
             [0] + [sc.n_verts for sc in sc_batch],
             [0] + [sc.n_edges for sc in sc_batch],
@@ -326,15 +312,15 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
         device=device,
     )
 
-    n_simp_cumsum_batch = t.cumsum(n_simp_batch, dim=-1, dtype=t.long)
+    n_splx_cumsum_batch = t.cumsum(n_splx_batch, dim=-1, dtype=t.long)
 
     # Generate the batch tensor for each simplex dimension
     batch_tensor_dict = {
-        f"batch_{simp_type}": t.repeat_interleave(
+        f"batch_{splx_type}": t.repeat_interleave(
             t.arange(len(sc_batch), dtype=t.long, device=device),
-            repeats=n_simp_batch[simp_dim, 1:],
+            repeats=n_splx_batch[splx_dim, 1:],
         )
-        for simp_dim, simp_type in enumerate(["verts", "edges", "tris", "tets"])
+        for splx_dim, splx_type in enumerate(["verts", "edges", "tris", "tets"])
     }
 
     # Collate the coboundary operators into sparse block-diagonal forms.
@@ -344,12 +330,12 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
             indices=t.hstack(
                 [
                     sc.cbd[dim].indices()
-                    + n_simp_cumsum_batch[[dim + 1, dim], idx][:, None]
+                    + n_splx_cumsum_batch[[dim + 1, dim], idx][:, None]
                     for idx, sc in enumerate(sc_batch)
                 ]
             ),
             values=t.hstack([sc.cbd[dim].values() for sc in sc_batch]),
-            size=(n_simp_cumsum_batch[dim + 1, -1], n_simp_cumsum_batch[dim, -1]),
+            size=(n_splx_cumsum_batch[dim + 1, -1], n_splx_cumsum_batch[dim, -1]),
             dtype=dtype,
             device=device,
         ).coalesce()
@@ -360,11 +346,11 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
     simplices_batch = [
         t.vstack(
             [
-                getattr(sc, simp_type) + n_simp_cumsum_batch[0, idx]
+                getattr(sc, splx_type) + n_splx_cumsum_batch[0, idx]
                 for idx, sc in enumerate(sc_batch)
             ]
         )
-        for simp_type in ["edges", "tris", "tets"]
+        for splx_type in ["edges", "tris", "tets"]
     ]
 
     # Collate the vertex coordinates

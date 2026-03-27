@@ -1,9 +1,9 @@
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from .spanning_tree import _minimum_spanning_tree
 from .topo_laplacians import laplacian_k
 
 
-def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialComplex) -> tuple[int, int, int]:
+def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialMesh) -> tuple[int, int, int]:
     """
     Compute the first three Betti numbers (b_0, b_1, b_2) for a triangular
     mesh using the tree-cotree decomposition.

@@ -1,7 +1,11 @@
 import pytest
 import torch as t
 
-from cochain.sparse.operators import DiagOperator, SparseOperator, SparseTopology
+from cochain.sparse.decoupled_tensor import (
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
 
 
 @pytest.mark.gpu_only
@@ -10,31 +14,31 @@ def test_device_mismatch(A, device):
 
     idx_coo = A.indices()
     shape = A.shape
-    sp_topo = SparseTopology(idx_coo, shape)
+    pattern = SparsityPattern(idx_coo, shape)
 
     with pytest.raises(RuntimeError):
-        SparseOperator(sp_topo.to(device), val)
+        SparseDecoupledTensor(pattern.to(device), val)
 
     with pytest.raises(RuntimeError):
-        SparseOperator(sp_topo, val.to(device))
+        SparseDecoupledTensor(pattern, val.to(device))
 
 
 def test_nnz_mismatch(device):
     idx_coo = t.tensor([[0, 0, 1, 2], [0, 1, 0, 3]])
     shape = (4, 4)
-    sp_topo = SparseTopology(idx_coo, shape).to(device)
+    pattern = SparsityPattern(idx_coo, shape).to(device)
 
     val = t.randn(3).to(device)
 
     with pytest.raises(ValueError):
-        SparseOperator(sp_topo, val)
+        SparseDecoupledTensor(pattern, val)
 
 
 def test_dense_conversion(A, device):
     A_tensor = A.to(device)
     A_tensor_dense = A_tensor.to_dense()
 
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
     A_operator_dense = A_operator.to_dense()
 
     assert A_tensor_dense.dtype == A_operator.dtype
@@ -44,7 +48,7 @@ def test_dense_conversion(A, device):
 
 def test_coo_conversion(A, device):
     A_coo_true = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_coo_true)
+    A_operator = SparseDecoupledTensor.from_tensor(A_coo_true)
 
     A_coo = A_operator.to_sparse_coo().coalesce()
 
@@ -58,7 +62,7 @@ def test_coo_conversion(A, device):
 
 def test_coo_conversion_with_batch_dim(A_batched, device):
     A_coo_true = A_batched.to(device)
-    A_operator = SparseOperator.from_tensor(A_coo_true)
+    A_operator = SparseDecoupledTensor.from_tensor(A_coo_true)
 
     A_coo = A_operator.to_sparse_coo().coalesce()
 
@@ -72,7 +76,7 @@ def test_coo_conversion_with_batch_dim(A_batched, device):
 
 def test_csr_conversion(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     A_csr_true = A_tensor.to_sparse_csr()
     A_csr = A_operator.to_sparse_csr()
@@ -97,7 +101,7 @@ def test_csr_conversion(A, device):
 
 def test_csr_conversion_with_batch_dim(A_batched, device):
     A_tensor = A_batched.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     A_csr = A_operator.to_sparse_csr()
 
@@ -121,7 +125,7 @@ def test_csr_conversion_with_batch_dim(A_batched, device):
 
 
 def test_csr_transposed_conversion(A, device):
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     A_T_direct = A_op.to_sparse_csr_transposed()
     A_T_indirect = A_op.T.to_sparse_csr()
 
@@ -133,7 +137,7 @@ def test_csr_transposed_conversion(A, device):
 
 
 def test_csr_transposed_conversion_with_batch_dim(A_batched, device):
-    A_op = SparseOperator.from_tensor(A_batched).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A_batched).to(device)
     A_T_direct = A_op.to_sparse_csr_transposed()
     A_T_indirect = A_op.T.to_sparse_csr()
 
@@ -146,7 +150,7 @@ def test_csr_transposed_conversion_with_batch_dim(A_batched, device):
 
 def test_csc_conversion(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     A_csc_true = A_tensor.to_sparse_csc()
     A_csc = A_operator.to_sparse_csc()
@@ -171,7 +175,7 @@ def test_csc_conversion(A, device):
 
 def test_csc_conversion_with_batch_dim(A_batched, device):
     A_tensor = A_batched.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     A_csc = A_operator.to_sparse_csc()
 
@@ -196,7 +200,7 @@ def test_csc_conversion_with_batch_dim(A_batched, device):
 
 def test_sp_dense_mm(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
 
@@ -208,7 +212,7 @@ def test_sp_dense_mm(A, device):
 
 def test_dense_sp_mm(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
 
@@ -220,7 +224,7 @@ def test_dense_sp_mm(A, device):
 
 def test_sp_sp_mm(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     sp_sp_true = A_tensor @ A_tensor.T
     sp_sp = A_operator @ A_operator.T
@@ -230,7 +234,7 @@ def test_sp_sp_mm(A, device):
 
 def test_sp_mv(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     b_dense = t.randn(A_tensor.shape[-1], dtype=A_tensor.dtype, device=device)
 
@@ -242,7 +246,7 @@ def test_sp_mv(A, device):
 
 def test_sp_vm(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     b_dense = t.randn(A_tensor.shape[0], dtype=A_tensor.dtype, device=device)
 
@@ -253,8 +257,8 @@ def test_sp_vm(A, device):
 
 
 def test_matmul_with_batch_dim(A, A_batched, device):
-    A_operator = SparseOperator.from_tensor(A).to(device)
-    A_batched_operator = SparseOperator.from_tensor(A_batched).to(device)
+    A_operator = SparseDecoupledTensor.from_tensor(A).to(device)
+    A_batched_operator = SparseDecoupledTensor.from_tensor(A_batched).to(device)
 
     b_dense = t.randn(
         A_batched_operator.shape[-1], dtype=A_batched_operator.dtype, device=device
@@ -274,13 +278,15 @@ def test_matmul_with_batch_dim(A, A_batched, device):
 
 
 def test_matmul_with_dense_dim(A, device):
-    A_operator = SparseOperator.from_tensor(A).to(device)
+    A_operator = SparseDecoupledTensor.from_tensor(A).to(device)
 
     val = t.randn(4, 2)
     idx_coo = t.tensor([[0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (4, 4)
 
-    hybrid_operator = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
+    hybrid_operator = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(
+        device
+    )
 
     b_dense = t.randn(shape[-1], dtype=hybrid_operator.dtype, device=device)
 
@@ -299,7 +305,7 @@ def test_matmul_with_dense_dim(A, device):
 
 def test_matmul_with_wrong_tensor_ndim(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     b_dense = t.randn((A_tensor.shape[-1],) * 3, dtype=A_tensor.dtype, device=device)
 
@@ -311,7 +317,7 @@ def test_matmul_with_wrong_tensor_ndim(A, device):
 
 
 def test_dim(A, device):
-    A_operator = SparseOperator.from_tensor(A).to(device)
+    A_operator = SparseDecoupledTensor.from_tensor(A).to(device)
 
     assert len(A_operator.shape) == 2
 
@@ -322,7 +328,7 @@ def test_dim(A, device):
 
 
 def test_dim_with_batch(A_batched, device):
-    A_operator = SparseOperator.from_tensor(A_batched).to(device)
+    A_operator = SparseDecoupledTensor.from_tensor(A_batched).to(device)
 
     assert len(A_operator.shape) == 3
 
@@ -337,7 +343,7 @@ def test_dim_with_batch_dense(device):
     idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
-    A_operator = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
+    A_operator = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
 
     assert len(A_operator.shape) == 4
 
@@ -349,7 +355,7 @@ def test_dim_with_batch_dense(device):
 
 def test_transpose(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     A_tensor_T = A_tensor.T.to_dense()
     A_operator_T = A_operator.T.to_dense()
@@ -359,7 +365,7 @@ def test_transpose(A, device):
 
 def test_transpose_with_batch_dim(A_batched, device):
     A_tensor = A_batched.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     A_tensor_T = A_tensor.to_dense().transpose(-1, -2)
     A_operator_T = A_operator.T.to_dense()
@@ -372,17 +378,17 @@ def test_transpose_with_batch_dense_dim(device):
     idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
-    sp_op = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
+    sdt = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
 
-    sp_op_T = sp_op.T.to_dense()
-    sp_tensor_T = sp_op.to_dense().transpose(1, 2)
+    sp_op_T = sdt.T.to_dense()
+    sp_tensor_T = sdt.to_dense().transpose(1, 2)
 
     t.testing.assert_close(sp_op_T, sp_tensor_T)
 
 
 def test_requires_grad_is_false(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     assert A_tensor.requires_grad == A_operator.requires_grad
 
@@ -391,14 +397,14 @@ def test_requires_grad_is_true(A, device):
     A_tensor = A.to(device)
     A_tensor.requires_grad_()
 
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     assert A_tensor.requires_grad == A_operator.requires_grad
 
 
 def test_requires_grad_(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     A_operator.requires_grad_()
     assert A_operator.val.requires_grad
@@ -406,14 +412,14 @@ def test_requires_grad_(A, device):
 
 def test_nnz(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     assert A_operator._nnz() == A_tensor._nnz()
 
 
 def test_nnz_with_batch_dim(A_batched, device):
     A_tensor = A_batched.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
     assert A_operator._nnz() == A_tensor._nnz()
 
@@ -423,32 +429,32 @@ def test_size(device):
     idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
-    sp_op = SparseOperator(SparseTopology(idx_coo, shape), val).to(device)
+    sdt = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
 
-    assert sp_op.size() == sp_op.shape
+    assert sdt.size() == sdt.shape
 
     for idx, val in enumerate(shape + (val.shape[-1],)):
-        assert sp_op.size(idx) == val
+        assert sdt.size(idx) == val
 
 
 def test_to_float64(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseOperator.from_tensor(A_tensor).to(t.float64)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).to(t.float64)
 
     assert A_operator.val.dtype == t.float64
 
 
 def test_to_device(A, device):
     A_tensor = A
-    A_operator = SparseOperator.from_tensor(A_tensor).to(device)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).to(device)
 
     assert A_operator.val.device.type == device.type
-    assert A_operator.sp_topo.device.type == device.type
+    assert A_operator.pattern.device.type == device.type
 
 
 def test_apply(A, device):
     A_tensor = A.to(device)
-    A_op = SparseOperator.from_tensor(A).clone().to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).clone().to(device)
 
     tensor_applied = t.relu(A_tensor.to_dense())
     op_applied = A_op.apply(t.relu).to_dense()
@@ -459,7 +465,7 @@ def test_apply(A, device):
 def test_neg(A, device):
     A_tensor = A.to(device)
     neg_A_tensor = -A_tensor
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     neg_A_op = -A_op
 
     t.testing.assert_close(neg_A_op.to_dense(), neg_A_tensor.to_dense())
@@ -467,7 +473,7 @@ def test_neg(A, device):
 
 def test_add(A, device):
     A_tensor = A.to(device)
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
     tensor_sum = A_tensor + A_tensor
     op_sum = A_op + A_op
@@ -477,7 +483,7 @@ def test_add(A, device):
 
 def test_sub(A, device):
     A_tensor = A.to(device)
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
     tensor_sub = A_tensor - A_tensor
     op_sub = A_op - A_op
@@ -487,31 +493,31 @@ def test_sub(A, device):
 
 def test_assemble(A, device):
     A_tensor = A.to(device)
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
     tensor_sum = A_tensor + A_tensor.T
-    op_sum = SparseOperator.assemble(A_op, A_op.T)
+    op_sum = SparseDecoupledTensor.assemble(A_op, A_op.T)
 
     t.testing.assert_close(op_sum.to_dense(), tensor_sum.to_dense())
 
 
 def test_assemble_with_diag_operator(A, device):
     A_tensor = A.to(device)
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
     diag = t.randn(A_tensor.size(0))
     diag_tensor = t.diagflat(diag).to(device)
-    diag_op = DiagOperator.from_tensor(diag).to(device)
+    ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
 
     tensor_sum = diag_tensor + A_tensor
-    op_sum = SparseOperator.assemble(A_op, diag_op)
+    op_sum = SparseDecoupledTensor.assemble(A_op, ddt)
 
     t.testing.assert_close(op_sum.to_dense(), tensor_sum)
 
 
 def test_mul(A, device):
     A_tensor = A.to(device)
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
     for scalar in [2, 3.0, t.tensor(-9.0).to(device)]:
         tensor_scaled = scalar * A_tensor
@@ -524,7 +530,7 @@ def test_mul(A, device):
 
 def test_trudiv(A, device):
     A_tensor = A.to(device)
-    A_op = SparseOperator.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
     for scalar in [2, 3.0, t.tensor(-9.0).to(device)]:
         tensor_scaled = A_tensor / scalar
@@ -535,26 +541,28 @@ def test_trudiv(A, device):
 
 def test_pack_block_diag(device):
     a = t.randint(0, 3, (3, 3)).to_sparse_coo().to(dtype=t.float32, device=device)
-    b = SparseOperator.from_tensor(t.randint(0, 3, (2, 2))).to(
+    b = SparseDecoupledTensor.from_tensor(t.randint(0, 3, (2, 2))).to(
         dtype=t.float32, device=device
     )
-    c = DiagOperator.from_tensor(t.randint(0, 3, (4,))).to(
+    c = DiagDecoupledTensor.from_tensor(t.randint(0, 3, (4,))).to(
         dtype=t.float32, device=device
     )
 
     true_block_diag = t.block_diag(a.to_dense(), b.to_dense(), c.to_dense())
-    block_diag = SparseOperator.pack_block_diag((a, b, c))
+    block_diag = SparseDecoupledTensor.pack_block_diag((a, b, c))
 
     t.testing.assert_close(block_diag.to_dense(), true_block_diag)
 
     sp_ops = block_diag.unpack_block_diag()
 
-    for sp_op, ori_op in zip(sp_ops, [a, b, c]):
-        t.testing.assert_close(sp_op.to_dense(), ori_op.to_dense())
+    for sdt, ori_op in zip(sp_ops, [a, b, c]):
+        t.testing.assert_close(sdt.to_dense(), ori_op.to_dense())
 
 
 def test_pack_block_diag_with_batch_dim(A_batched, device):
-    block_diag = SparseOperator.pack_block_diag((A_batched, -A_batched)).to(device)
+    block_diag = SparseDecoupledTensor.pack_block_diag((A_batched, -A_batched)).to(
+        device
+    )
 
     A_batched_dense = A_batched.to_dense().to(device)
 
@@ -574,19 +582,19 @@ def test_pack_block_diag_with_batch_dim(A_batched, device):
 
 
 def test_pack_block_diag_with_dense_dim(device):
-    a = SparseOperator.from_tensor(
+    a = SparseDecoupledTensor.from_tensor(
         t.sparse_coo_tensor(
             indices=t.randint(0, 4, (2, 5)), values=t.randn(5, 2), size=(4, 4, 2)
         ).coalesce()
     ).to(device)
 
-    b = SparseOperator.from_tensor(
+    b = SparseDecoupledTensor.from_tensor(
         t.sparse_coo_tensor(
             indices=t.randint(0, 3, (2, 3)), values=t.randn(3, 2), size=(3, 3, 2)
         ).coalesce()
     ).to(device)
 
-    block_diag = SparseOperator.pack_block_diag((a, b))
+    block_diag = SparseDecoupledTensor.pack_block_diag((a, b))
 
     block_diag_true = t.stack(
         (
@@ -605,7 +613,7 @@ def test_bmat(device):
     c = t.randn(4, 3).to(device)
     d = t.zeros(4, 4).to(device)
 
-    bmat = SparseOperator.bmat([[a, b], [c, None]])
+    bmat = SparseDecoupledTensor.bmat([[a, b], [c, None]])
     bmat_true = t.cat((t.cat((a, b), dim=-1), t.cat((c, d), dim=-1)), dim=0)
 
     t.testing.assert_close(bmat.to_dense(), bmat_true)
@@ -617,7 +625,7 @@ def test_bmat_with_batch_dim(device):
     c = t.randn(2, 4, 3).to(device)
     d = t.zeros(2, 4, 4).to(device)
 
-    bmat = SparseOperator.bmat([[a, b], [c, None]])
+    bmat = SparseDecoupledTensor.bmat([[a, b], [c, None]])
     bmat_true = t.stack(
         (
             t.cat((t.cat((a[0], b[0]), dim=-1), t.cat((c[0], d[0]), dim=-1)), dim=0),
@@ -629,19 +637,19 @@ def test_bmat_with_batch_dim(device):
 
 
 def test_bmat_with_dense_dim(device):
-    a = SparseOperator.from_tensor(
+    a = SparseDecoupledTensor.from_tensor(
         t.sparse_coo_tensor(
             indices=t.randint(0, 4, (2, 5)), values=t.randn(5, 2), size=(4, 4, 2)
         ).coalesce()
     ).to(device)
 
-    b = SparseOperator.from_tensor(
+    b = SparseDecoupledTensor.from_tensor(
         t.sparse_coo_tensor(
             indices=t.randint(0, 3, (2, 3)), values=t.randn(3, 2), size=(3, 3, 2)
         ).coalesce()
     ).to(device)
 
-    bmat = SparseOperator.bmat([[a, None], [None, b]])
+    bmat = SparseDecoupledTensor.bmat([[a, None], [None, b]])
 
     bmat_true = t.stack(
         (
@@ -658,13 +666,13 @@ def test_bmat_with_invalid_row_col(A, device):
     a = A.to(device)
 
     with pytest.raises(ValueError):
-        SparseOperator.bmat([[a, None], [a, None]])
+        SparseDecoupledTensor.bmat([[a, None], [a, None]])
 
     with pytest.raises(ValueError):
-        SparseOperator.bmat([[None, a], [None, a]])
+        SparseDecoupledTensor.bmat([[None, a], [None, a]])
 
     with pytest.raises(ValueError):
-        SparseOperator.bmat([[None, None], [None, None]])
+        SparseDecoupledTensor.bmat([[None, None], [None, None]])
 
     with pytest.raises(TypeError):
-        SparseOperator.bmat([a, 3], [None, a])
+        SparseDecoupledTensor.bmat([a, 3], [None, a])

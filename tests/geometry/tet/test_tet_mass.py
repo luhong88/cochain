@@ -4,12 +4,12 @@ import skfem as skfem
 import torch as t
 from skfem.helpers import dot
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.geometry.tet import tet_masses
 from cochain.geometry.tet.tet_geometry import get_tet_signed_vols
 
 
-def test_mass_1_with_skfem(two_tets_mesh: SimplicialComplex):
+def test_mass_1_with_skfem(two_tets_mesh: SimplicialMesh):
     skfem_mesh = skfem.MeshTet(
         two_tets_mesh.vert_coords.T.cpu().detach().numpy(),
         two_tets_mesh.tets.T.cpu().detach().numpy(),
@@ -37,7 +37,7 @@ def test_mass_1_with_skfem(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(cochain_mass_1_eigs, skfem_mass_1_eigs_torch)
 
 
-def test_mass_2_with_skfem(two_tets_mesh: SimplicialComplex):
+def test_mass_2_with_skfem(two_tets_mesh: SimplicialMesh):
     skfem_mesh = skfem.MeshTet(
         two_tets_mesh.vert_coords.T.cpu().detach().numpy(),
         two_tets_mesh.tets.T.cpu().detach().numpy(),
@@ -74,7 +74,7 @@ def test_mass_2_with_skfem(two_tets_mesh: SimplicialComplex):
         tet_masses.mass_2,
     ],
 )
-def test_mass_matrix_symmetry(mass_matrix, two_tets_mesh: SimplicialComplex):
+def test_mass_matrix_symmetry(mass_matrix, two_tets_mesh: SimplicialMesh):
     mass = mass_matrix(two_tets_mesh)
     mass_T = mass.T
     t.testing.assert_close(mass.to_dense(), mass_T.to_dense())
@@ -87,13 +87,13 @@ def test_mass_matrix_symmetry(mass_matrix, two_tets_mesh: SimplicialComplex):
         tet_masses.mass_2,
     ],
 )
-def test_mass_matrix_positive_definite(mass_matrix, two_tets_mesh: SimplicialComplex):
+def test_mass_matrix_positive_definite(mass_matrix, two_tets_mesh: SimplicialMesh):
     mass = mass_matrix(two_tets_mesh).to_dense()
     eigs = t.linalg.eigvalsh(mass)
     assert eigs.min() >= 1e-6
 
 
-def test_mass_0_matrix_total_vol_partition(two_tets_mesh: SimplicialComplex):
+def test_mass_0_matrix_total_vol_partition(two_tets_mesh: SimplicialMesh):
     """
     The sum of the diagonal 0-form mass matrices should be equal to the
     total volume of the tet.
@@ -105,7 +105,7 @@ def test_mass_0_matrix_total_vol_partition(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(total_mass, total_vol)
 
 
-def test_mass_3_matrix_total_vol_partition(two_tets_mesh: SimplicialComplex):
+def test_mass_3_matrix_total_vol_partition(two_tets_mesh: SimplicialMesh):
     """
     The sum of the inverse of the diagonal 3-form mass matrices should be equal
     to the total volume of the tet.
@@ -117,10 +117,10 @@ def test_mass_3_matrix_total_vol_partition(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(total_mass, total_vol)
 
 
-def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialComplex):
+def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialMesh):
     mass_1 = tet_masses.mass_1(two_tets_mesh)
     mass_1_mask = t.zeros_like(mass_1.to_dense(), dtype=t.long)
-    mass_1_mask[mass_1.sp_topo.idx_coo.unbind(0)] = 1
+    mass_1_mask[mass_1.pattern.idx_coo.unbind(0)] = 1
 
     true_mass_1_mask = t.tensor(
         [
@@ -140,10 +140,10 @@ def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(mass_1_mask, true_mass_1_mask)
 
 
-def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialComplex):
+def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialMesh):
     mass_2 = tet_masses.mass_2(two_tets_mesh)
     mass_2_mask = t.zeros_like(mass_2.to_dense(), dtype=t.long)
-    mass_2_mask[mass_2.sp_topo.idx_coo.unbind(0)] = 1
+    mass_2_mask[mass_2.pattern.idx_coo.unbind(0)] = 1
 
     true_mass_2_mask = t.tensor(
         [
@@ -161,7 +161,7 @@ def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(mass_2_mask, true_mass_2_mask)
 
 
-def test_mass_1_patch(two_tets_mesh: SimplicialComplex):
+def test_mass_1_patch(two_tets_mesh: SimplicialMesh):
     mass_1 = tet_masses.mass_1(two_tets_mesh)
 
     const_field = t.tensor([[1.0, 3.0, 2.0]], dtype=two_tets_mesh.vert_coords.dtype)
@@ -182,7 +182,7 @@ def test_mass_1_patch(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(energy, true_energy)
 
 
-def test_mass_2_patch(two_tets_mesh: SimplicialComplex):
+def test_mass_2_patch(two_tets_mesh: SimplicialMesh):
     mass_2 = tet_masses.mass_2(two_tets_mesh)
 
     const_field = t.tensor([[1.0, 3.0, 2.0]], dtype=two_tets_mesh.vert_coords.dtype)

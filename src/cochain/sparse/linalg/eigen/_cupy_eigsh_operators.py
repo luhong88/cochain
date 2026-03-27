@@ -5,22 +5,22 @@ import torch as t
 from cuda.core.experimental import Device
 from jaxtyping import Float, Integer
 
-from ...operators import SparseTopology
+from ...decoupled_tensor import SparsityPattern
 from ..solvers.nvmath_wrapper import DirectSolverConfig
 from ._inv_operator import BaseNVMathInvSymSpOp
 
 
 def sp_op_comps_to_cp_csr(
     A_val: Float[t.Tensor, " nnz"],
-    A_sp_topo: Integer[SparseTopology, "r c"],
+    A_pattern: Integer[SparsityPattern, "r c"],
 ) -> Float[cp_sp.csr_matrix, "r c"]:
     return cp_sp.csr_matrix(
         (
             cp.from_dlpack(A_val.detach().contiguous()),
-            cp.from_dlpack(A_sp_topo.idx_col_int32.detach().contiguous()),
-            cp.from_dlpack(A_sp_topo.idx_crow_int32.detach().contiguous()),
+            cp.from_dlpack(A_pattern.idx_col_int32.detach().contiguous()),
+            cp.from_dlpack(A_pattern.idx_crow_int32.detach().contiguous()),
         ),
-        shape=tuple(A_sp_topo.shape),
+        shape=tuple(A_pattern.shape),
     )
 
 
@@ -33,7 +33,7 @@ class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
     def __init__(
         self,
         A_val: Float[t.Tensor, " nnz"],
-        A_sp_topo: Integer[SparseTopology, "r c"],
+        A_pattern: Integer[SparsityPattern, "r c"],
         sigma: float,
         config: DirectSolverConfig,
     ):
@@ -41,7 +41,7 @@ class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
 
         # Prepare Cupy arrays.
         with cp.cuda.ExternalStream(t_stream.cuda_stream, t_stream.device_index):
-            A_cp = sp_op_comps_to_cp_csr(A_val, A_sp_topo)
+            A_cp = sp_op_comps_to_cp_csr(A_val, A_pattern)
 
             diag_cp = sigma * cp_sp.identity(
                 A_cp.shape[0], dtype=A_cp.dtype, format="csr"

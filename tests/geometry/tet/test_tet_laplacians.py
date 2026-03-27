@@ -3,7 +3,7 @@ from functools import partial
 import pytest
 import torch as t
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.geometry.tet import tet_laplacians, tet_masses
 
 
@@ -20,7 +20,7 @@ from cochain.geometry.tet import tet_laplacians, tet_masses
     ],
 )
 def test_sphere_homology_group_dims(
-    weak_laplacian, betti, two_tets_mesh: SimplicialComplex
+    weak_laplacian, betti, two_tets_mesh: SimplicialMesh
 ):
     operator = weak_laplacian(two_tets_mesh).to_dense()
     dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
@@ -40,14 +40,14 @@ def test_sphere_homology_group_dims(
     ],
 )
 def test_torus_homology_group_dims(
-    weak_laplacian, betti, solid_torus_mesh: SimplicialComplex
+    weak_laplacian, betti, solid_torus_mesh: SimplicialMesh
 ):
     operator = weak_laplacian(solid_torus_mesh).to_dense()
     dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
     t.testing.assert_close(dim_ker, t.tensor(betti))
 
 
-def test_laplacian_0_equivalence(two_tets_mesh: SimplicialComplex):
+def test_laplacian_0_equivalence(two_tets_mesh: SimplicialMesh):
     """
     Check that the weak 0-Laplacians constructed using the cotan formula and
     the mass-1 matrix are equivalent (for a well-centered and Delaunay mesh)
@@ -72,7 +72,7 @@ def test_laplacian_0_equivalence(two_tets_mesh: SimplicialComplex):
         partial(tet_laplacians.weak_laplacian_3, method="inv_star"),
     ],
 )
-def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialComplex):
+def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialMesh):
     """
     Test that the weak Laplacians are symmetric.
     """
@@ -93,7 +93,7 @@ def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialComplex):
         partial(tet_laplacians.weak_laplacian_3, method="inv_star"),
     ],
 )
-def test_laplacian_PSD(weak_laplacian, two_tets_mesh: SimplicialComplex):
+def test_laplacian_PSD(weak_laplacian, two_tets_mesh: SimplicialMesh):
     """
     Test that the stiffness matrices are positive semi-definite.
     """
@@ -110,7 +110,7 @@ def test_laplacian_PSD(weak_laplacian, two_tets_mesh: SimplicialComplex):
         partial(tet_laplacians.weak_laplacian_0, method="consistent"),
     ],
 )
-def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialComplex):
+def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialMesh):
     l0 = weak_laplacian(two_tets_mesh)
     row_sum = l0.to_dense().sum(dim=-1)
     t.testing.assert_close(row_sum, t.zeros_like(row_sum))
@@ -133,7 +133,7 @@ def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialComplex):
     ],
 )
 def test_laplacian_orthogonality(
-    div_grad, curl_curl, mass, two_tets_mesh: SimplicialComplex
+    div_grad, curl_curl, mass, two_tets_mesh: SimplicialMesh
 ):
     dg = div_grad(two_tets_mesh).to_dense()
     cc = curl_curl(two_tets_mesh).to_dense()
@@ -154,7 +154,7 @@ def test_laplacian_orthogonality(
     )
 
 
-def test_laplacian_1_curl_free(two_tets_mesh: SimplicialComplex):
+def test_laplacian_1_curl_free(two_tets_mesh: SimplicialMesh):
     """
     The curl curl component of the 1-Laplacian acting on a curl-free 1-cochain/
     1-form produces 0.
@@ -173,7 +173,7 @@ def test_laplacian_1_curl_free(two_tets_mesh: SimplicialComplex):
 
 
 # TODO: update to use custom solver wrapper
-def test_laplacian_1_div_free(two_tets_mesh: SimplicialComplex):
+def test_laplacian_1_div_free(two_tets_mesh: SimplicialMesh):
     """
     The div grad component of the 1-Laplacian acting on a div-free 1-cochain/
     1-form produces 0.
@@ -194,7 +194,7 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(x1_zero, t.zeros_like(x1_zero))
 
 
-def test_laplacian_2_curl_free(two_tets_mesh: SimplicialComplex):
+def test_laplacian_2_curl_free(two_tets_mesh: SimplicialMesh):
     """
     The curl curl component of the 2-Laplacian acting on a curl-free 2-cochain/
     2-form produces 0.
@@ -218,7 +218,7 @@ def test_laplacian_2_curl_free(two_tets_mesh: SimplicialComplex):
 
 
 # TODO: update to use custom solver wrapper
-def test_laplacian_2_div_free(two_tets_mesh: SimplicialComplex):
+def test_laplacian_2_div_free(two_tets_mesh: SimplicialMesh):
     """
     The div grad component of the 2-Laplacian acting on a div-free 2-cochain/
     2-form produces 0.
@@ -236,7 +236,7 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialComplex):
     t.testing.assert_close(x2_zero, t.zeros_like(x2_zero))
 
 
-def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialComplex):
+def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialMesh):
     """
     Check that the 1-codifferential and the 0-coboundary operators are adjoints
     with respect to the mass matrix-weighted inner product.
@@ -265,7 +265,7 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialComplex):
 
 
 # TODO: update to use custom solver wrapper
-def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialComplex):
+def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialMesh):
     """
     Check that the 2-codifferential and the 1-coboundary operators are adjoints
     with respect to the mass matrix-weighted inner product.
@@ -292,7 +292,7 @@ def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialComplex):
 
 
 # TODO: update to use custom solver wrapper
-def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialComplex):
+def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialMesh):
     """
     Check that the 3-codifferential and the 2-coboundary operators are adjoints
     with respect to the mass matrix-weighted inner product.
