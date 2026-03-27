@@ -57,6 +57,25 @@ class SimplicialMesh:
         for tensor in self.splx:
             assert tensor.dtype == int_dtype
 
+    def _apply(self, func):
+        """
+        Apply a function (recursively) to all tensor-like attributes.
+        """
+        for key, value in self.__dict__.items():
+            if _is_tensor_like(value):
+                setattr(self, key, func(value))
+            elif isinstance(value, Sequence):
+                setattr(
+                    self,
+                    key,
+                    tuple(func(v) if _is_tensor_like(v) else v for v in value),
+                )
+        return self
+
+    # TODO: also implement .cuda() and .cpu()
+    def to(self, *args, **kwargs):
+        return self._apply(lambda x: x.to(*args, **kwargs))
+
     @property
     def dtype(self) -> t.dtype:
         return self.vert_coords.dtype
@@ -101,6 +120,32 @@ class SimplicialMesh:
     def n_splx(self) -> tuple[int, int, int, int]:
         return (self.n_verts, self.n_edges, self.n_tris, self.n_tets)
 
+    @property
+    def dim(self) -> int:
+        return max(
+            1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
+        )
+
+    @cached_property
+    def edge_faces(self) -> GlobalFaces:
+        return enumerate_global_faces(self.splx[self.dim], self.edges)
+
+    @cached_property
+    def tri_faces(self) -> GlobalFaces:
+        return enumerate_global_faces(self.splx[self.dim], self.tris)
+
+    @property
+    def dual_cbd(
+        self,
+    ) -> tuple[
+        Float[SparseDecoupledTensor, "dual_edge dual_vert"],
+        Float[SparseDecoupledTensor, "dual_tri dual_edge"],
+        Float[SparseDecoupledTensor, "dual_tet dual_tri"],
+    ]:
+        # the k-th coboundary operator d_k* on the dual complex is given by
+        # (-1)^k * d_{n-k-1}.T, where n is the dimension of the simplicial complex.
+        return tuple(self.cbd[self.dim - k - 1].T * ((-1.0) ** k) for k in range(3))
+
     @cached_property
     def bd_mask(
         self,
@@ -127,51 +172,6 @@ class SimplicialMesh:
     @property
     def bd_tet_mask(self) -> Bool[t.Tensor, " tet"]:
         return self.bd_mask[3]
-
-    @property
-    def dim(self) -> int:
-        return max(
-            1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
-        )
-
-    @property
-    def dual_cbd(
-        self,
-    ) -> tuple[
-        Float[SparseDecoupledTensor, "dual_edge dual_vert"],
-        Float[SparseDecoupledTensor, "dual_tri dual_edge"],
-        Float[SparseDecoupledTensor, "dual_tet dual_tri"],
-    ]:
-        # the k-th coboundary operator d_k* on the dual complex is given by
-        # (-1)^k * d_{n-k-1}.T, where n is the dimension of the simplicial complex.
-        return tuple(self.cbd[self.dim - k - 1].T * ((-1.0) ** k) for k in range(3))
-
-    def _apply(self, func):
-        """
-        Apply a function (recursively) to all tensor-like attributes.
-        """
-        for key, value in self.__dict__.items():
-            if _is_tensor_like(value):
-                setattr(self, key, func(value))
-            elif isinstance(value, Sequence):
-                setattr(
-                    self,
-                    key,
-                    tuple(func(v) if _is_tensor_like(v) else v for v in value),
-                )
-        return self
-
-    # TODO: also implement .cuda() and .cpu()
-    def to(self, *args, **kwargs):
-        return self._apply(lambda x: x.to(*args, **kwargs))
-
-    @cached_property
-    def edge_faces(self) -> GlobalFaces:
-        return enumerate_global_faces(self.splx[self.dim], self.edges)
-
-    @cached_property
-    def tri_faces(self) -> GlobalFaces:
-        return enumerate_global_faces(self.splx[self.dim], self.tris)
 
     # TODO: write test for this method
     def is_pure(self) -> bool:
