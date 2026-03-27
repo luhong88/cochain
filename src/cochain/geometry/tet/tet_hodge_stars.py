@@ -34,7 +34,7 @@ def star_2(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
 
     # For each tri, find all tet containing the tri as a face, and sum together
     # the tet-tri pair dual edge lengths.
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tet_tri_idx
+    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tri_faces.idx
 
     diag = t.zeros(
         tet_mesh.n_tris,
@@ -95,7 +95,7 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
 
     # For each edge, find all tet containing the edge as a face, and sum together
     # the subareas of the two barycentric triangles.
-    all_canon_edges_idx = tet_mesh.tet_edge_idx
+    all_canon_edges_idx = tet_mesh.edge_faces.idx
 
     diag = t.zeros(
         tet_mesh.n_edges,

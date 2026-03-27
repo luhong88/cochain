@@ -49,7 +49,7 @@ def _bary_whitney_tri_cochain_1(
     # W_ij = λ_i∇λ_j - λ_j∇λ_i for (i, j) = (0, 1), (0, 2), (1, 2)
     # Note that i, j switch positions for the second term.
     local_edge_idx = enumerate_local_faces(
-        simp_dim=2, face_dim=1, device=bary_coords.device
+        splx_dim=2, face_dim=1, device=bary_coords.device
     )
     basis: Float[t.Tensor, "tri pt edge=3 coord=3"] = (
         bary_coords_shaped[:, :, local_edge_idx[:, 0]]
@@ -131,7 +131,7 @@ def _bary_whitney_tet_cochain_1(
     # W_ij = λ_i∇λ_j - λ_j∇λ_i
     # Note that i, j switch positions for the second term.
     local_edge_idx = enumerate_local_faces(
-        simp_dim=3, face_dim=1, device=bary_coords.device
+        splx_dim=3, face_dim=1, device=bary_coords.device
     )
     basis: Float[t.Tensor, "tet pt edge=6 coord=3"] = (
         bary_coords_shaped[:, :, local_edge_idx[:, 0]]
@@ -170,7 +170,7 @@ def _bary_whitney_tet_cochain_2(
 
     # W_ijk = 2(λ_i ∇λ_jx∇λ_k + λ_j ∇λ_kx∇λ_i + λ_k ∇λ_ix∇ λ_j)
     local_tri_idx = enumerate_local_faces(
-        simp_dim=3, face_dim=2, device=bary_coords.device
+        splx_dim=3, face_dim=2, device=bary_coords.device
     )
     perm_i = local_tri_idx[:, 0]
     perm_j = local_tri_idx[:, 1]
@@ -260,8 +260,8 @@ def _bary_whitney_tri(
         case 1:
             return _bary_whitney_tri_cochain_1(
                 cochain_1=k_cochain,
-                tri_edge_idx=mesh.tri_edge_idx,
-                tri_edge_orientations=mesh.tri_edge_orientations,
+                tri_edge_idx=mesh.edge_faces.idx,
+                tri_edge_orientations=mesh.edge_faces.parity,
                 bary_coords=bary_coords,
                 bary_coords_grad=bary_coords_grad,
             )
@@ -300,16 +300,16 @@ def _bary_whitney_tet(
         case 1:
             return _bary_whitney_tet_cochain_1(
                 cochain_1=k_cochain,
-                tet_edge_idx=mesh.tet_edge_idx,
-                tet_edge_orientations=mesh.tet_edge_orientations,
+                tet_edge_idx=mesh.edge_faces.idx,
+                tet_edge_orientations=mesh.edge_faces.parity,
                 bary_coords=bary_coords,
                 bary_coords_grad=bary_coords_grad,
             )
         case 2:
             return _bary_whitney_tet_cochain_2(
                 cochain_2=k_cochain,
-                tet_tri_idx=mesh.tet_tri_idx,
-                tet_tri_orientations=mesh.tet_tri_orientations,
+                tet_tri_idx=mesh.tri_faces.idx,
+                tet_tri_orientations=mesh.tri_faces.parity,
                 bary_coords=bary_coords,
                 bary_coords_grad=bary_coords_grad,
             )
@@ -472,7 +472,7 @@ def _barycentric_whitney_map_boundary(
     n_pts = bary_coords.size(-2)
 
     local_face_idx: Integer[t.LongTensor, "k_face k_vert"] = enumerate_local_faces(
-        simp_dim=m, face_dim=k, device=mesh.vert_coords.device
+        splx_dim=m, face_dim=k, device=mesh.vert_coords.device
     )
 
     # Find the global indices of all k-faces.

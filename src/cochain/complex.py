@@ -8,7 +8,7 @@ from jaxtyping import Bool, Float, Integer
 
 from .sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
 from .topology import boundaries, coboundaries, tet_topology, tri_topology
-from .utils.perm_parity import compute_lex_rel_orient
+from .utils.faces import GlobalFaces, enumerate_global_faces
 
 
 def _is_tensor_like(obj: Any) -> bool:
@@ -165,39 +165,13 @@ class SimplicialMesh:
     def to(self, *args, **kwargs):
         return self._apply(lambda x: x.to(*args, **kwargs))
 
-    # TODO: check that the tet topo properties work for non-tet meshes
-    # TODO: these should use canonical face orientations
     @cached_property
-    def tet_edge_idx(self) -> Integer[t.LongTensor, "tet 6"]:
-        return tet_topology.get_edge_face_idx(self.tets, self.edges)
+    def edge_faces(self) -> GlobalFaces:
+        return enumerate_global_faces(self.splx[self.dim], self.edges)
 
     @cached_property
-    def tet_edge_orientations(self) -> Float[t.Tensor, "tet 6"]:
-        return tet_topology.get_edge_face_orientations(self.tets)
-
-    @cached_property
-    def tet_tri_idx(self) -> Integer[t.LongTensor, "tet 4"]:
-        return tet_topology.get_tri_face_idx(self.tets, self.tris)
-
-    @cached_property
-    def tet_tri_orientations(self) -> Float[t.Tensor, "tet 4"]:
-        return tet_topology.get_tri_face_orientations(self.tets)
-
-    @cached_property
-    def tet_orientations(self) -> Float[t.Tensor, " tet"]:
-        return compute_lex_rel_orient(self.tets)
-
-    @cached_property
-    def tri_edge_idx(self) -> Integer[t.LongTensor, "tri 3"]:
-        return tri_topology.get_edge_face_idx(self.tris, self.edges)
-
-    @cached_property
-    def tri_edge_orientations(self) -> Float[t.Tensor, "tri 3"]:
-        return tri_topology.get_edge_face_orientations(self.tris)
-
-    @cached_property
-    def tri_orientations(self) -> Float[t.Tensor, " tri"]:
-        return compute_lex_rel_orient(self.tris)
+    def tri_faces(self) -> GlobalFaces:
+        return enumerate_global_faces(self.splx[self.dim], self.tris)
 
     # TODO: write test for this method
     def is_pure(self) -> bool:

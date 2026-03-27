@@ -144,8 +144,10 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # with the same orientation as the canonical 1-faces, no adjustment of edge
     # orientation signs is required.
     canon_edge_perm = [0, 1, 3, 4, 5, 2]
-    whitney_edge_signs = tet_mesh.tet_edge_orientations[:, canon_edge_perm]
-    whitney_edges_idx = tet_mesh.tet_edge_idx[:, canon_edge_perm]
+
+    edge_faces = tet_mesh.edge_faces
+    whitney_edge_signs = edge_faces.parity[:, canon_edge_perm]
+    whitney_edges_idx = edge_faces.idx[:, canon_edge_perm]
 
     # Multiply the Whitney 1-form inner product by the edge orientation signs
     # to get the contribution from canonical edges.
@@ -208,10 +210,10 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     #
     # Therefore, the canonical 2-face definitions and orientations need to be
     # adjusted prior for this function.
-    tri_face_idx = t.flip(tet_mesh.tet_tri_idx, dims=(-1,))
+    tri_face_idx = t.flip(tet_mesh.tri_faces.idx, dims=(-1,))
     tri_face_orientations = t.tensor(
         [[1.0, -1.0, 1.0, -1.0]], dtype=tet_mesh.dtype, device=tet_mesh.device
-    ) * t.flip(tet_mesh.tet_tri_orientations, dims=(-1,))
+    ) * t.flip(tet_mesh.tri_faces.parity, dims=(-1,))
 
     # First, compute the inner products of the Whitney 2-form basis functions.
     _, whitney_inner_prod_signed = whitney_2_form_inner_prods(

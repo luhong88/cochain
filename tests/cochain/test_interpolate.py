@@ -194,11 +194,11 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             bary_coords_grad = d_tri_areas_d_vert_coords / tri_areas
 
             local_edge_idx = enumerate_local_faces(
-                simp_dim=2, face_dim=1, device=device
+                splx_dim=2, face_dim=1, device=device
             )
 
-            cochain_1_at_edge_faces = cochain_1[mesh.tri_edge_idx]
-            sign_correction = mesh.tri_edge_orientations
+            cochain_1_at_edge_faces = cochain_1[mesh.edge_faces.idx]
+            sign_correction = mesh.edge_faces.parity
 
         case 3:
             tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
@@ -210,11 +210,11 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             )
 
             local_edge_idx = enumerate_local_faces(
-                simp_dim=3, face_dim=1, device=device
+                splx_dim=3, face_dim=1, device=device
             )
 
-            cochain_1_at_edge_faces = cochain_1[mesh.tet_edge_idx]
-            sign_correction = mesh.tet_edge_orientations
+            sign_correction = mesh.edge_faces.parity
+            cochain_1_at_edge_faces = cochain_1[mesh.edge_faces.idx]
 
         case _:
             raise ValueError()
@@ -288,10 +288,10 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     )
     bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
 
-    local_tri_idx = enumerate_local_faces(simp_dim=3, face_dim=2, device=device)
+    local_tri_idx = enumerate_local_faces(splx_dim=3, face_dim=2, device=device)
 
-    cochain_2_at_edge_faces = cochain_2[mesh.tet_tri_idx]
-    sign_correction = mesh.tet_tri_orientations
+    cochain_2_at_edge_faces = cochain_2[mesh.tri_faces.idx]
+    sign_correction = mesh.tri_faces.parity
 
     # Note that the scalar triple product can be more conveniently computed
     # using the matrix determinant; bary_coords_grad[:, local_tri_idx] has the

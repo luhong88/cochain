@@ -368,8 +368,8 @@ def d_mass_1_d_vert_coords(
     )
 
     # Scatter the gradients to a sparse tensor.
-    whitney_edge_signs = tri_mesh.tri_edge_orientations
-    whitney_edges_idx = tri_mesh.tri_edge_idx
+    whitney_edge_signs = tri_mesh.edge_faces.parity
+    whitney_edges_idx = tri_mesh.edge_faces.idx
 
     whitney_inner_prods_grad_flat_signed: Float[t.Tensor, "tri 27"] = (
         whitney_inner_prods_grad

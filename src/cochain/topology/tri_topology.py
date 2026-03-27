@@ -15,7 +15,7 @@ def get_edge_face_idx(
     the tri_mesh.edges list.
     """
     # Enumerate all unique edges via their vertex position in the tris.
-    local_edge_idx = enumerate_local_faces(simp_dim=2, face_dim=1, device=tris.device)
+    local_edge_idx = enumerate_local_faces(splx_dim=2, face_dim=1, device=tris.device)
 
     all_edges: Float[t.Tensor, "tri 3 2"] = tris[:, local_edge_idx]
 
@@ -38,7 +38,7 @@ def get_edge_face_orientations(
     Enumerate all edges for each tri and find their orientations and indices on
     the tri_mesh.edges list.
     """
-    local_edge_idx = enumerate_local_faces(simp_dim=2, face_dim=1, device=tris.device)
+    local_edge_idx = enumerate_local_faces(splx_dim=2, face_dim=1, device=tris.device)
 
     all_edges: Float[t.Tensor, "tri 3 2"] = tris[:, local_edge_idx]
 

@@ -106,8 +106,8 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
     # For each tri and each unique edge pair, find the orientations of the edges
     # and their indices on the list of unique, canonical edges (tri_mesh.edges).
-    whitney_edge_signs = tri_mesh.tri_edge_orientations
-    whitney_edges_idx = tri_mesh.tri_edge_idx
+    whitney_edge_signs = tri_mesh.edge_faces.parity
+    whitney_edges_idx = tri_mesh.edge_faces.idx
 
     # Multiply the Whitney 1-form inner product by the edge orientation signs
     # to get the contribution from canonical edges.

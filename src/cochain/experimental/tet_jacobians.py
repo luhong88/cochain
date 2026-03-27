@@ -164,8 +164,8 @@ def d_mass_1_d_vert_coords(
     )
 
     # Scatter the gradients to a sparse tensor.
-    whitney_edge_signs = tet_mesh.tet_edge_orientations
-    whitney_edges_idx = tet_mesh.tet_edge_idx
+    whitney_edges_idx = tet_mesh.edge_faces.idx
+    whitney_edge_signs = tet_mesh.edge_faces.parity
 
     whitney_inner_prods_grad_flat_signed: Float[t.Tensor, "tet 144"] = (
         whitney_inner_prods_grad
@@ -243,7 +243,7 @@ def d_mass_2_d_vert_coords(
     identity = t.eye(4, dtype=dtype, device=device)
 
     sign_corrections, whitney_inner_prods = whitney_2_form_inner_prods(
-        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.tet_tri_orientations
+        tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.tri_faces.parity
     )
     sign_corrections_shaped: Float[t.Tensor, "tet 4 4 1 1"] = (
         sign_corrections.view(-1, 1, 4) * sign_corrections.view(-1, 4, 1)
@@ -278,7 +278,7 @@ def d_mass_2_d_vert_coords(
         whitney_inner_prods_shaped * d_signed_vols_d_vert_coords / tet_signed_vols
     )
 
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tet_tri_idx
+    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tri_faces.idx
 
     # Assemble the mass matrix Jacobian.
     dMdV_idx_i = all_canon_tris_idx.view(-1, 4, 1, 1).expand(-1, 4, 4, 4).flatten()

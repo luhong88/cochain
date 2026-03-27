@@ -86,7 +86,7 @@ def _star_1_barycentric(
 
     # For each edge, find all tri containing the edge as a face, and sum together
     # the tri-edge pair dual edge lengths.
-    all_canon_edges_idx = tri_mesh.tri_edge_idx
+    all_canon_edges_idx = tri_mesh.edge_faces.idx
 
     diag = t.zeros(
         tri_mesh.n_edges,
