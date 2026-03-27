@@ -19,7 +19,7 @@ def test_const_1_form_integration(mesh, request, device):
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
-        const_form, "ch coord -> simp pt ch coord", simp=n_splx, pt=n_pts
+        const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
     discretized_cochain = de_rham.discretize(sampled_form)
 
@@ -43,7 +43,7 @@ def test_const_2_form_integration(mesh, request, device):
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
-        const_form, "ch coord -> simp pt ch coord", simp=n_splx, pt=n_pts
+        const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
     discretized_cochain = de_rham.discretize(sampled_form)
 
@@ -68,7 +68,7 @@ def test_const_3_form_integration(two_tets_mesh, device):
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
-        const_form, "ch coord -> simp pt ch coord", simp=n_splx, pt=n_pts
+        const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
     discretized_cochain = de_rham.discretize(sampled_form)
 
@@ -112,7 +112,7 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     )
 
     sampled_1_forms = repeat(
-        grad_1_forms, "basis coord -> simp pt basis coord", simp=n_1_splx, pt=n_1_pts
+        grad_1_forms, "basis coord -> splx pt basis coord", splx=n_1_splx, pt=n_1_pts
     )
 
     pi_d_form = de_rham_1.discretize(sampled_1_forms)
@@ -165,7 +165,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     sampled_1_forms = einsum(
         matrix_1_forms,
         pts_1,
-        "basis coord1 coord2, simp pt coord2 -> simp pt basis coord1",
+        "basis coord1 coord2, splx pt coord2 -> splx pt basis coord1",
     )
 
     # (2_splx, 1_splx) @ (1_splx, basis) -> (2_splx, basis)
@@ -191,7 +191,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     # fmt:on
 
     sampled_2_forms = repeat(
-        curl_2_forms, "basis coord -> simp pt basis coord", simp=n_2_splx, pt=n_2_pts
+        curl_2_forms, "basis coord -> splx pt basis coord", splx=n_2_splx, pt=n_2_pts
     )
 
     pi_d_form = de_rham_2.discretize(sampled_2_forms)
@@ -244,7 +244,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
     sampled_2_forms = einsum(
         matrix_2_forms,
         pts_2,
-        "basis coord1 coord2, simp pt coord2 -> simp pt basis coord1",
+        "basis coord1 coord2, splx pt coord2 -> splx pt basis coord1",
     )
 
     # (3_splx, 2_splx) @ (2_splx, basis) -> (3_splx, basis)
@@ -270,7 +270,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
     # fmt:on
 
     sampled_3_forms = repeat(
-        div_3_forms, "basis coord -> simp pt basis coord", simp=n_3_splx, pt=n_3_pts
+        div_3_forms, "basis coord -> splx pt basis coord", splx=n_3_splx, pt=n_3_pts
     )
 
     pi_d_form = de_rham_3.discretize(sampled_3_forms)

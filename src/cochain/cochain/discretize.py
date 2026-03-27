@@ -76,9 +76,9 @@ class DeRhamMap:
         # linear combination of the simplex vertex coordinates to identify
         # the sample points in the simplex, and these weights are the same
         # for the reference and physical simplices.
-        simp_vert_coords = self.mesh.vert_coords[self.mesh.splx[self.k]]
+        splx_vert_coords = self.mesh.vert_coords[self.mesh.splx[self.k]]
         sampled_points = einsum(
-            simp_vert_coords,
+            splx_vert_coords,
             self.bary_coords,
             "k_splx vert coord, pt vert -> k_splx pt coord",
         )
@@ -98,9 +98,9 @@ class DeRhamMap:
         # origin in the ref simplex, then the map can be written as ϕ(λ) = J@λ + v_0;
         # in particular, J is the jacobian and can be computed as the matrix of
         # the edge (column) vectors v_i - v_0.
-        simp_vert_coords = self.mesh.vert_coords[self.mesh.splx[self.k]]
+        splx_vert_coords = self.mesh.vert_coords[self.mesh.splx[self.k]]
         jacs: Float[t.Tensor, "k_splx edge coord=3"] = (
-            simp_vert_coords[:, 1:, :] - simp_vert_coords[:, [0], :]
+            splx_vert_coords[:, 1:, :] - splx_vert_coords[:, [0], :]
         )
 
         match self.k:

@@ -385,7 +385,7 @@ def test_1_form_interpolate_discretize_right_project(mesh, request, device):
     n_splx, n_pts, _ = pts.shape
 
     cochain_1 = de_rham.discretize(
-        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_splx, pt=n_pts)
+        k_forms=repeat(const_vec, "coord -> splx pt coord", splx=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 1-form via Whitney map.
@@ -455,7 +455,7 @@ def test_2_form_interpolate_discretize_right_project(mesh, request, device):
     n_splx, n_pts, _ = pts.shape
 
     cochain_2 = de_rham.discretize(
-        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_splx, pt=n_pts)
+        k_forms=repeat(const_vec, "coord -> splx pt coord", splx=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 2-form via Whitney map.
@@ -524,7 +524,7 @@ def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
     n_splx, n_pts, _ = pts.shape
 
     cochain_3 = de_rham.discretize(
-        k_forms=repeat(const_scalar, "coord -> simp pt coord", simp=n_splx, pt=n_pts)
+        k_forms=repeat(const_scalar, "coord -> splx pt coord", splx=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 3-form via Whitney map.

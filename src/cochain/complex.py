@@ -316,11 +316,11 @@ def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
 
     # Generate the batch tensor for each simplex dimension
     batch_tensor_dict = {
-        f"batch_{simp_type}": t.repeat_interleave(
+        f"batch_{splx_type}": t.repeat_interleave(
             t.arange(len(sc_batch), dtype=t.long, device=device),
-            repeats=n_splx_batch[simp_dim, 1:],
+            repeats=n_splx_batch[splx_dim, 1:],
         )
-        for simp_dim, simp_type in enumerate(["verts", "edges", "tris", "tets"])
+        for splx_dim, splx_type in enumerate(["verts", "edges", "tris", "tets"])
     }
 
     # Collate the coboundary operators into sparse block-diagonal forms.
@@ -346,11 +346,11 @@ def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
     simplices_batch = [
         t.vstack(
             [
-                getattr(sc, simp_type) + n_splx_cumsum_batch[0, idx]
+                getattr(sc, splx_type) + n_splx_cumsum_batch[0, idx]
                 for idx, sc in enumerate(sc_batch)
             ]
         )
-        for simp_type in ["edges", "tris", "tets"]
+        for splx_type in ["edges", "tris", "tets"]
     ]
 
     # Collate the vertex coordinates

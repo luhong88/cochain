@@ -16,7 +16,7 @@ def _polynomial_hash_splx_search(
     device = key_splx.device
 
     # Note that a k-simplex has k + 1 vertices.
-    simp_dim = key_splx.size(1) - 1
+    splx_dim = key_splx.size(1) - 1
     if key_splx.size(1) != query_splx.size(1):
         raise ValueError(
             "The 'key_splx' and 'query_splx' must have the same dimension."
@@ -31,11 +31,11 @@ def _polynomial_hash_splx_search(
     # +1 to ensure base > max digit
     max_vert_idx = max(key_splx_reduced.max(), query_splx_reduced.max()).to(dtype) + 1
 
-    exponent = t.arange(simp_dim, -1, -1, device=device, dtype=dtype)
+    exponent = t.arange(splx_dim, -1, -1, device=device, dtype=dtype)
     coef = t.pow(max_vert_idx, exponent).view(1, -1)
 
     max_allowed_hash_val = t.iinfo(dtype).max
-    worst_case_hash_val = float(max_vert_idx) ** (simp_dim + 1)
+    worst_case_hash_val = float(max_vert_idx) ** (splx_dim + 1)
     if worst_case_hash_val > max_allowed_hash_val:
         raise RuntimeError(
             "Potential polynomial hash overflow detected. Use method='lex_sort' instead."
@@ -126,9 +126,9 @@ def splx_search(
         return query_splx[..., 0]
 
     if method == "auto":
-        simp_dim = key_splx.size(-1) - 1
+        splx_dim = key_splx.size(-1) - 1
 
-        if simp_dim < 2:
+        if splx_dim < 2:
             method = "polynomial_hash"
         else:
             method = "lex_sort"
@@ -137,7 +137,7 @@ def splx_search(
 
     match method:
         case "lex_sort":
-            simp_idx_flat = _lex_splx_search(
+            splx_idx_flat = _lex_splx_search(
                 key_splx,
                 query_splx_flat,
                 sort_key_splx=sort_key_splx,
@@ -145,7 +145,7 @@ def splx_search(
                 sort_query_vert=sort_query_vert,
             )
         case "polynomial_hash":
-            simp_idx_flat = _polynomial_hash_splx_search(
+            splx_idx_flat = _polynomial_hash_splx_search(
                 key_splx,
                 query_splx_flat,
                 sort_key_splx=sort_key_splx,
@@ -155,6 +155,6 @@ def splx_search(
         case _:
             raise ValueError("Unrecognized 'method' argument.")
 
-    simp_idx_shaped = simp_idx_flat.view(*query_splx.shape[:-1])
+    splx_idx_shaped = splx_idx_flat.view(*query_splx.shape[:-1])
 
-    return simp_idx_shaped
+    return splx_idx_shaped

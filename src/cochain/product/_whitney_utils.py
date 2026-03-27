@@ -13,29 +13,29 @@ from ..utils.search import splx_search
 
 
 def compute_whitney_router(
-    simp_dim: int, form_deg: int, device: t.device, dtype: t.dtype = t.float
+    splx_dim: int, form_deg: int, device: t.device, dtype: t.dtype = t.float
 ) -> Float[t.Tensor, "face lambda *d_lambda"]:
     """
     Compute the coefficients required to construct the Whitney forms from the
     λ's and the dλ's.
     """
-    faces = enumerate_local_faces(simp_dim, form_deg, device="cpu").tolist()
+    faces = enumerate_local_faces(splx_dim, form_deg, device="cpu").tolist()
 
-    router_shape = (len(faces),) + (simp_dim + 1,) * (form_deg + 1)
+    router_shape = (len(faces),) + (splx_dim + 1,) * (form_deg + 1)
     router = t.zeros(router_shape, dtype=dtype, device=device)
 
-    for simp_idx, simp in enumerate(faces):
+    for splx_idx, splx in enumerate(faces):
         perms = t.tensor(
-            list(itertools.permutations(simp)), dtype=t.int64, device=device
+            list(itertools.permutations(splx)), dtype=t.int64, device=device
         )
         signs = compute_lex_rel_orient(perms).to(dtype=dtype, device=device)
-        router[simp_idx][perms.T.unbind(0)] = signs
+        router[splx_idx][perms.T.unbind(0)] = signs
 
     return router
 
 
 def compute_moments(
-    order: int, simp_dim: int, device: t.device, dtype: t.dtype = t.float
+    order: int, splx_dim: int, device: t.device, dtype: t.dtype = t.float
 ) -> t.Tensor:
     """
     For an n-simplex with unit area/volume and n + 1 barycentric coordinate functions
@@ -44,17 +44,17 @@ def compute_moments(
     int[prod_i[λ_i^m_i]dV] = (n! * prod_i[m_i!]) / (n + sum_i[m_i])!
 
     to compute the moment tensors. The output tensor is of shape
-    (simp_dim + 1,) * order.
+    (splx_dim + 1,) * order.
     """
-    verts = list(range(simp_dim + 1))
+    verts = list(range(splx_dim + 1))
     moments = t.zeros((len(verts),) * order)
 
     for lambdas in itertools.product(verts, repeat=order):
         exponents = [lambdas.count(i) for i in verts]
-        numerator = math.factorial(simp_dim) * math.prod(
+        numerator = math.factorial(splx_dim) * math.prod(
             [math.factorial(i) for i in exponents]
         )
-        denominator = math.factorial(simp_dim + sum(exponents))
+        denominator = math.factorial(splx_dim + sum(exponents))
         moments[lambdas] = numerator / denominator
 
     return moments.to(device=device, dtype=dtype)
@@ -62,26 +62,26 @@ def compute_moments(
 
 def compute_bc_grad_dot(
     mesh: SimplicialMesh,
-) -> tuple[Float[t.Tensor, "simp vert vert"], Float[t.Tensor, " simp"]]:
+) -> tuple[Float[t.Tensor, "splx vert vert"], Float[t.Tensor, " splx"]]:
     """
     A wrapper function for dispatching the correct bary_coord_grad_inner_prods()
     function for either tri or tet meshes.
     """
     match mesh.dim:
         case 2:
-            simp_size = tri_geometry.compute_tri_areas(mesh.vert_coords, mesh.tris)
-            simp_size_grad = tri_geometry.compute_d_tri_areas_d_vert_coords(
+            splx_size = tri_geometry.compute_tri_areas(mesh.vert_coords, mesh.tris)
+            splx_size_grad = tri_geometry.compute_d_tri_areas_d_vert_coords(
                 mesh.vert_coords, mesh.tris
             )
             bc_grad_dot = tri_geometry.bary_coord_grad_inner_prods(
-                simp_size.view(-1, 1, 1), simp_size_grad
+                splx_size.view(-1, 1, 1), splx_size_grad
             )
 
         case 3:
             signed_splx_size = tet_geometry.get_tet_signed_vols(
                 mesh.vert_coords, mesh.tets
             )
-            simp_size = t.abs(signed_splx_size)
+            splx_size = t.abs(signed_splx_size)
             signed_splx_size_grad = tet_geometry.d_tet_signed_vols_d_vert_coords(
                 mesh.vert_coords, mesh.tets
             )
@@ -92,7 +92,7 @@ def compute_bc_grad_dot(
         case _:
             raise NotImplementedError()
 
-    return bc_grad_dot, simp_size
+    return bc_grad_dot, splx_size
 
 
 def find_top_splx_faces(

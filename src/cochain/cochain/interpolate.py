@@ -237,7 +237,7 @@ def _bary_whitney_tet_cochain_3(
 
 def _bary_whitney_tri(
     k: int,
-    k_cochain: Float[t.Tensor, " simp *ch"],
+    k_cochain: Float[t.Tensor, " splx *ch"],
     bary_coords: Float[t.Tensor, "tri pt vert"],
     mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "tri pt *ch coord"]:
@@ -277,7 +277,7 @@ def _bary_whitney_tri(
 
 def _bary_whitney_tet(
     k: int,
-    k_cochain: Float[t.Tensor, " simp *ch"],
+    k_cochain: Float[t.Tensor, " splx *ch"],
     bary_coords: Float[t.Tensor, "tet pt vert"],
     mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "tet pt *ch coord"]:
@@ -444,7 +444,7 @@ def _bary_embed(
 
 def _barycentric_whitney_map_interior(
     k: int,
-    k_cochain: Float[t.Tensor, " simp *ch"],
+    k_cochain: Float[t.Tensor, " splx *ch"],
     bary_coords: Float[t.Tensor, "top_splx pt vert"],
     mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "top_splx pt *ch coord"]:
@@ -553,7 +553,7 @@ def _barycentric_whitney_map_boundary(
 def barycentric_whitney_map(
     k: int,
     k_cochain: Float[t.Tensor, " k_splx *ch"],
-    bary_coords: Float[t.Tensor, "simp pt vert"],
+    bary_coords: Float[t.Tensor, "splx pt vert"],
     mesh: SimplicialMesh,
     mode: Literal["interior", "boundary"],
     boundary_reduction: Literal["mean", "none"] = "none",
@@ -601,7 +601,7 @@ def barycentric_whitney_map(
 
     The input `k_cochain` is allowed to have an arbitrary number of trailing
     channel/batch dimensions. The `bary_coords` argument is allowed to have a trivial
-    first `simp` dimension, in which case the k-cochain is interpolated at the
+    first `splx` dimension, in which case the k-cochain is interpolated at the
     same fixed local barycentric coordinates over all target simplices.
     """
     if k == mesh.dim:

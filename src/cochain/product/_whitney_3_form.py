@@ -112,14 +112,14 @@ def triple_tensor_prod_3_form(
 
     moments = compute_moments(3, mesh.dim, device, dtype)
 
-    bc_grad_dot, simp_size = compute_bc_grad_dot(mesh)
+    bc_grad_dot, splx_size = compute_bc_grad_dot(mesh)
     ref_det_012 = _inv_metric_det_3_form(bc_grad_dot)
 
     mask_3_form = _compute_mask_3_form(device=device, dtype=dtype)
 
     einsum_str = _get_triple_tensor_prod_einsum_str_3_form(k, l)
 
-    prod1: Float[t.Tensor, " tet"] = simp_size * ref_det_012
+    prod1: Float[t.Tensor, " tet"] = splx_size * ref_det_012
     prod2: Float[t.Tensor, "k_face l_face m_face"] = t.einsum(
         einsum_str,
         k_form_router,

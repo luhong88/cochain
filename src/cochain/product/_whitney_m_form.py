@@ -6,8 +6,8 @@ from ._whitney_utils import compute_bc_grad_dot, compute_moments, compute_whitne
 
 
 def _inv_metric_det(
-    bc_grad_dot: Float[t.Tensor, "simp vert vert"], form_deg: int
-) -> Float[t.Tensor, " simp *d_lambda"]:
+    bc_grad_dot: Float[t.Tensor, "splx vert vert"], form_deg: int
+) -> Float[t.Tensor, " splx *d_lambda"]:
     """
     Compute the scalar inner products between wedge products of dλ's, which is
     equivalent to computing the determinant of the inner products of the gradients
@@ -147,7 +147,7 @@ def triple_tensor_prod(
 
     moments = compute_moments(3, mesh.dim, device, dtype)
 
-    bc_grad_dot, simp_size = compute_bc_grad_dot(mesh)
+    bc_grad_dot, splx_size = compute_bc_grad_dot(mesh)
     wedge_dot = _inv_metric_det(bc_grad_dot, k + l)
 
     einsum_str = _get_triple_tensor_prod_einsum_str(k, l)
@@ -157,7 +157,7 @@ def triple_tensor_prod(
         k_form_router,
         l_form_router,
         kl_form_router,
-        simp_size,
+        splx_size,
         moments,
         wedge_dot,
     )
