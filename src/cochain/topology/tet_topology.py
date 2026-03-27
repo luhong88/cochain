@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..utils.faces import enumerate_faces
+from ..utils.faces import enumerate_local_faces
 from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import splx_search
 
@@ -13,7 +13,7 @@ def get_edge_face_idx(
     """
     Enumerate all edges for each tet and find their indices on the tet_mesh.edges list.
     """
-    local_edge_idx = enumerate_faces(simp_dim=3, face_dim=1, device=tets.device)
+    local_edge_idx = enumerate_local_faces(simp_dim=3, face_dim=1, device=tets.device)
 
     # For each tet and each unique edge pair, find the orientations of the edges
     # and their indices on the list of unique, canonical edges (tet_mesh.edges).
@@ -38,7 +38,7 @@ def get_edge_face_orientations(
     Enumerate all edges for each tet and find their orientations relative to the
     canonical edges on the tet_mesh.edges list.
     """
-    local_edge_idx = enumerate_faces(simp_dim=3, face_dim=1, device=tets.device)
+    local_edge_idx = enumerate_local_faces(simp_dim=3, face_dim=1, device=tets.device)
 
     all_edges: Float[t.Tensor, "tet*6 2"] = tets[:, local_edge_idx].flatten(end_dim=-2)
 
@@ -55,7 +55,7 @@ def get_tri_face_idx(
     For each tet and each of its vertices, find the triangle face opposite to the
     vertex and its index in the tet_mesh.tris list.
     """
-    local_tri_idx = enumerate_faces(simp_dim=3, face_dim=2, device=tets.device)
+    local_tri_idx = enumerate_local_faces(simp_dim=3, face_dim=2, device=tets.device)
 
     all_tris: Integer[t.LongTensor, "tet*4 3"] = tets[:, local_tri_idx].flatten(
         end_dim=-2
@@ -76,7 +76,7 @@ def get_tri_face_idx(
 def get_tri_face_orientations(
     tets: Integer[t.LongTensor, "tet 4"],
 ) -> Float[t.Tensor, "tet 4"]:
-    local_tri_idx = enumerate_faces(simp_dim=3, face_dim=2, device=tets.device)
+    local_tri_idx = enumerate_local_faces(simp_dim=3, face_dim=2, device=tets.device)
 
     all_tris: Integer[t.LongTensor, "tet 4 3"] = tets[:, local_tri_idx]
 

@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..utils.faces import enumerate_faces
+from ..utils.faces import enumerate_local_faces
 from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import splx_search
 
@@ -15,7 +15,7 @@ def get_edge_face_idx(
     the tri_mesh.edges list.
     """
     # Enumerate all unique edges via their vertex position in the tris.
-    local_edge_idx = enumerate_faces(simp_dim=2, face_dim=1, device=tris.device)
+    local_edge_idx = enumerate_local_faces(simp_dim=2, face_dim=1, device=tris.device)
 
     all_edges: Float[t.Tensor, "tri*3 2"] = tris[:, local_edge_idx].flatten(end_dim=-2)
 
@@ -38,7 +38,7 @@ def get_edge_face_orientations(
     Enumerate all edges for each tri and find their orientations and indices on
     the tri_mesh.edges list.
     """
-    local_edge_idx = enumerate_faces(simp_dim=2, face_dim=1, device=tris.device)
+    local_edge_idx = enumerate_local_faces(simp_dim=2, face_dim=1, device=tris.device)
 
     all_edges: Float[t.Tensor, "tri*3 2"] = tris[:, local_edge_idx].flatten(end_dim=-2)
 

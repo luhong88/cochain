@@ -1,15 +1,15 @@
 import itertools
 
 import torch as t
-from jaxtyping import Integer
+from jaxtyping import Float, Integer
 
 
-def enumerate_faces(
+def enumerate_local_faces(
     simp_dim: int, face_dim: int, device: t.device
 ) -> Integer[t.LongTensor, "face vert"]:
     """
     For a simplex of dimension `simp_dim`, enumerate all faces of dimension
-    `face_dim` (up to vertex index permutation) in lex order.
+    `face_dim` (up to vertex index permutation) in local index lex order.
     """
     if face_dim > simp_dim:
         raise ValueError()

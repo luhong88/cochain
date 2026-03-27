@@ -135,7 +135,7 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # Note that, given the specific unique_edges definition used in this function
     # (related to the tet edge local ref frame definitions), the way the unique
     # 1-faces is enumerated in unique_edges differs from the canonical edge
-    # definition used in utils.faces.enumerate_faces(), which gives
+    # definition used in utils.faces.enumerate_local_faces(), which gives
     #
     # [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]
     #
@@ -192,7 +192,7 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
 
     # Note that, for the purpose of computing the mass-2 matrix, the definition
     # of triangle faces is different from the global, "canonical" definitions
-    # used in utils.faces.enumerate_faces(). More specifically, the canonical
+    # used in utils.faces.enumerate_local_faces(). More specifically, the canonical
     # triangle faces of a tet is defined locally as
     #
     # [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]

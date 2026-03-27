@@ -7,7 +7,7 @@ from jaxtyping import Float, Integer
 from ..complex import SimplicialMesh
 from ..geometry.tet import tet_geometry
 from ..geometry.tri import tri_geometry
-from ..utils.faces import enumerate_faces
+from ..utils.faces import enumerate_local_faces
 from ..utils.perm_parity import compute_lex_rel_orient
 from ..utils.search import splx_search
 
@@ -19,7 +19,7 @@ def compute_whitney_router(
     Compute the coefficients required to construct the Whitney forms from the
     λ's and the dλ's.
     """
-    faces = enumerate_faces(simp_dim, form_deg, device="cpu").tolist()
+    faces = enumerate_local_faces(simp_dim, form_deg, device="cpu").tolist()
 
     router_shape = (len(faces),) + (simp_dim + 1,) * (form_deg + 1)
     router = t.zeros(router_shape, dtype=dtype, device=device)
@@ -109,7 +109,7 @@ def find_top_splx_faces(
     k = face_dim
     # Identify the k-faces of the top level simplices and their sign corrections.
     k_faces: Float[t.Tensor, "top_splx k_face k+1"] = mesh.splx[mesh.dim][
-        :, enumerate_faces(mesh.dim, k, device=mesh.vert_coords.device)
+        :, enumerate_local_faces(mesh.dim, k, device=mesh.vert_coords.device)
     ]
     k_faces_flat = k_faces.view(-1, k + 1)
     k_faces_idx_flat = splx_search(

@@ -13,7 +13,7 @@ from ..geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
-from ..utils.faces import enumerate_faces
+from ..utils.faces import enumerate_local_faces
 from ..utils.search import splx_search
 
 
@@ -48,7 +48,9 @@ def _bary_whitney_tri_cochain_1(
 
     # W_ij = λ_i∇λ_j - λ_j∇λ_i for (i, j) = (0, 1), (0, 2), (1, 2)
     # Note that i, j switch positions for the second term.
-    local_edge_idx = enumerate_faces(simp_dim=2, face_dim=1, device=bary_coords.device)
+    local_edge_idx = enumerate_local_faces(
+        simp_dim=2, face_dim=1, device=bary_coords.device
+    )
     basis: Float[t.Tensor, "tri pt edge=3 coord=3"] = (
         bary_coords_shaped[:, :, local_edge_idx[:, 0]]
         * bary_coords_grad_shaped[:, :, local_edge_idx[:, 1], :]
@@ -126,9 +128,11 @@ def _bary_whitney_tet_cochain_1(
         bary_coords_grad, "tet vert coord -> tet 1 vert coord"
     )
 
-    # W_ij = λ_i∇λ_j - λ_j∇λ_i for ij = 01, 02, 12, 13, 23, 03
+    # W_ij = λ_i∇λ_j - λ_j∇λ_i
     # Note that i, j switch positions for the second term.
-    local_edge_idx = enumerate_faces(simp_dim=3, face_dim=1, device=bary_coords.device)
+    local_edge_idx = enumerate_local_faces(
+        simp_dim=3, face_dim=1, device=bary_coords.device
+    )
     basis: Float[t.Tensor, "tet pt edge=6 coord=3"] = (
         bary_coords_shaped[:, :, local_edge_idx[:, 0]]
         * bary_coords_grad_shaped[:, :, local_edge_idx[:, 1]]
@@ -136,8 +140,8 @@ def _bary_whitney_tet_cochain_1(
         * bary_coords_grad_shaped[:, :, local_edge_idx[:, 0]]
     )
 
-    # tet_edge_face_idx contains the index of edges 01, 02, 12, 13, 23, and 03 in
-    # the list of canonical edges of the tet mesh.
+    # tet_edge_face_idx contains the index of 1-faces in the list of canonical
+    # edges of the tet mesh.
     cochain_1_at_edge_faces: Float[t.Tensor, "tet edge=6 *ch"] = cochain_1[tet_edge_idx]
 
     # If the edges are not in their canonical orientation, then the corresponding
@@ -165,8 +169,9 @@ def _bary_whitney_tet_cochain_2(
     )
 
     # W_ijk = 2(λ_i ∇λ_jx∇λ_k + λ_j ∇λ_kx∇λ_i + λ_k ∇λ_ix∇ λ_j)
-    # for ijk in 123, 032, 013, 021
-    local_tri_idx = enumerate_faces(simp_dim=3, face_dim=2, device=bary_coords.device)
+    local_tri_idx = enumerate_local_faces(
+        simp_dim=3, face_dim=2, device=bary_coords.device
+    )
     perm_i = local_tri_idx[:, 0]
     perm_j = local_tri_idx[:, 1]
     perm_k = local_tri_idx[:, 2]
@@ -191,8 +196,8 @@ def _bary_whitney_tet_cochain_2(
         )
     )
 
-    # tet_tri_face_idx contains the index of triangles 123, 032, 013, 021 in
-    # the list of canonical triangles of the tet mesh.
+    # tet_tri_face_idx contains the index of 2-faces in the list of canonical
+    # triangles of the tet mesh.
     cochain_2_at_tri_faces: Float[t.Tensor, "tet tri=4"] = cochain_2[tet_tri_idx]
 
     # If the triangles are not in their canonical orientation, then the corresponding
@@ -466,7 +471,7 @@ def _barycentric_whitney_map_boundary(
     n_k_splx = mesh.splx[k].size(0)
     n_pts = bary_coords.size(-2)
 
-    local_face_idx: Integer[t.LongTensor, "k_face k_vert"] = enumerate_faces(
+    local_face_idx: Integer[t.LongTensor, "k_face k_vert"] = enumerate_local_faces(
         simp_dim=m, face_dim=k, device=mesh.vert_coords.device
     )
 
