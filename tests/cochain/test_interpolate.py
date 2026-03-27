@@ -15,7 +15,7 @@ from cochain.geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
-from cochain.utils.faces import enumerate_unique_faces
+from cochain.utils.faces import enumerate_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 
 
@@ -193,9 +193,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             )
             bary_coords_grad = d_tri_areas_d_vert_coords / tri_areas
 
-            local_edge_idx = enumerate_unique_faces(
-                simp_dim=2, face_dim=1, device=device
-            )
+            local_edge_idx = enumerate_faces(simp_dim=2, face_dim=1, device=device)
 
             cochain_1_at_edge_faces = cochain_1[mesh.tri_edge_idx]
             sign_correction = mesh.tri_edge_orientations
@@ -209,9 +207,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
                 -1, 1, 1
             )
 
-            local_edge_idx = enumerate_unique_faces(
-                simp_dim=3, face_dim=1, device=device
-            )
+            local_edge_idx = enumerate_faces(simp_dim=3, face_dim=1, device=device)
 
             cochain_1_at_edge_faces = cochain_1[mesh.tet_edge_idx]
             sign_correction = mesh.tet_edge_orientations
@@ -288,7 +284,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     )
     bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
 
-    local_tri_idx = enumerate_unique_faces(simp_dim=3, face_dim=2, device=device)
+    local_tri_idx = enumerate_faces(simp_dim=3, face_dim=2, device=device)
 
     cochain_2_at_edge_faces = cochain_2[mesh.tet_tri_idx]
     sign_correction = mesh.tet_tri_orientations
@@ -608,10 +604,10 @@ def test_1_form_tangential_continuity_on_tet_mesh(two_tets_mesh, device):
     )
 
     # For the two_tets_mesh, the triangles are defined as [[0, 1, 2, 4], [2, 1, 0, 3]],
-    # so the edges 01, 02, 12 are shared. By enumerate_unique_faces(), these three
-    # edges correspond to edge 0, 1, 2, and 2, 1, 0 on the two tets, respectively.
-    form_1_shared_edge_1 = form_1[0, [0, 1, 2]]
-    form_1_shared_edge_2 = form_1[1, [2, 1, 0]]
+    # so the edges 01, 02, 12 are shared. By enumerate_faces(), these three
+    # edges correspond to edge 0, 1, 3, and 3, 1, 0 on the two tets, respectively.
+    form_1_shared_edge_1 = form_1[0, [0, 1, 3]]
+    form_1_shared_edge_2 = form_1[1, [3, 1, 0]]
 
     shared_edge_vec = mesh.vert_coords[[1, 2, 2]] - mesh.vert_coords[[0, 0, 1]]
 
@@ -648,10 +644,10 @@ def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     )
 
     # For the two_tets_mesh, the triangles are defined as [[0, 1, 2, 4], [2, 1, 0, 3]],
-    # so the triangle 012 is shared. By enumerate_unique_faces(), this is the last
+    # so the triangle 012 is shared. By enumerate_faces(), this is the first
     # triangle face in each tet.
-    form_2_shared_tri_1 = form_2[0, -1]
-    form_2_shared_tri_2 = form_2[1, -1]
+    form_2_shared_tri_1 = form_2[0, 0]
+    form_2_shared_tri_2 = form_2[1, 0]
 
     shared_tri_normal_vec = t.cross(
         mesh.vert_coords[1] - mesh.vert_coords[0],

@@ -13,7 +13,7 @@ from ..geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
-from ..utils.faces import enumerate_unique_faces
+from ..utils.faces import enumerate_faces
 from ..utils.search import splx_search
 
 
@@ -48,9 +48,7 @@ def _bary_whitney_tri_cochain_1(
 
     # W_ij = λ_i∇λ_j - λ_j∇λ_i for (i, j) = (0, 1), (0, 2), (1, 2)
     # Note that i, j switch positions for the second term.
-    local_edge_idx = enumerate_unique_faces(
-        simp_dim=2, face_dim=1, device=bary_coords.device
-    )
+    local_edge_idx = enumerate_faces(simp_dim=2, face_dim=1, device=bary_coords.device)
     basis: Float[t.Tensor, "tri pt edge=3 coord=3"] = (
         bary_coords_shaped[:, :, local_edge_idx[:, 0]]
         * bary_coords_grad_shaped[:, :, local_edge_idx[:, 1], :]
@@ -130,9 +128,7 @@ def _bary_whitney_tet_cochain_1(
 
     # W_ij = λ_i∇λ_j - λ_j∇λ_i for ij = 01, 02, 12, 13, 23, 03
     # Note that i, j switch positions for the second term.
-    local_edge_idx = enumerate_unique_faces(
-        simp_dim=3, face_dim=1, device=bary_coords.device
-    )
+    local_edge_idx = enumerate_faces(simp_dim=3, face_dim=1, device=bary_coords.device)
     basis: Float[t.Tensor, "tet pt edge=6 coord=3"] = (
         bary_coords_shaped[:, :, local_edge_idx[:, 0]]
         * bary_coords_grad_shaped[:, :, local_edge_idx[:, 1]]
@@ -170,9 +166,7 @@ def _bary_whitney_tet_cochain_2(
 
     # W_ijk = 2(λ_i ∇λ_jx∇λ_k + λ_j ∇λ_kx∇λ_i + λ_k ∇λ_ix∇ λ_j)
     # for ijk in 123, 032, 013, 021
-    local_tri_idx = enumerate_unique_faces(
-        simp_dim=3, face_dim=2, device=bary_coords.device
-    )
+    local_tri_idx = enumerate_faces(simp_dim=3, face_dim=2, device=bary_coords.device)
     perm_i = local_tri_idx[:, 0]
     perm_j = local_tri_idx[:, 1]
     perm_k = local_tri_idx[:, 2]
@@ -472,7 +466,7 @@ def _barycentric_whitney_map_boundary(
     n_k_splx = mesh.splx[k].size(0)
     n_pts = bary_coords.size(-2)
 
-    local_face_idx: Integer[t.LongTensor, "k_face k_vert"] = enumerate_unique_faces(
+    local_face_idx: Integer[t.LongTensor, "k_face k_vert"] = enumerate_faces(
         simp_dim=m, face_dim=k, device=mesh.vert_coords.device
     )
 
