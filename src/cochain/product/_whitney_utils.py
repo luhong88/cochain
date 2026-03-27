@@ -97,9 +97,7 @@ def compute_bc_grad_dot(
 
 def find_top_splx_faces(
     face_dim: int,
-    mesh_dim: int,
     mesh: SimplicialMesh,
-    simp_map: dict[int, Integer[t.Tensor, "simp vert"]],
 ) -> tuple[
     Integer[t.LongTensor, "top_splx k_face"], Float[t.Tensor, "top_splx k_face"]
 ]:
@@ -110,12 +108,12 @@ def find_top_splx_faces(
     """
     k = face_dim
     # Identify the k-faces of the top level simplices and their sign corrections.
-    k_faces: Float[t.Tensor, "top_splx k_face k+1"] = simp_map[mesh_dim][
-        :, enumerate_faces(mesh_dim, k, device=mesh.vert_coords.device)
+    k_faces: Float[t.Tensor, "top_splx k_face k+1"] = mesh.splx[mesh.dim][
+        :, enumerate_faces(mesh.dim, k, device=mesh.vert_coords.device)
     ]
     k_faces_flat = k_faces.view(-1, k + 1)
     k_faces_idx_flat = splx_search(
-        key_splx=simp_map[k],
+        key_splx=mesh.splx[k],
         query_splx=k_faces_flat,
         sort_key_splx=True if k == mesh.dim else False,
         sort_key_vert=True if k == mesh.dim else False,
@@ -131,7 +129,7 @@ def find_top_splx_faces(
     # for the permutation parity of the unsorted faces (induced parity), and one
     # for the permutation parity of the unsorted parental (global parity).
     if k == mesh.dim:
-        k_face_parity_global = compute_lex_rel_orient(simp_map[k][k_faces_idx_flat])
+        k_face_parity_global = compute_lex_rel_orient(mesh.splx[k][k_faces_idx_flat])
     else:
         k_face_parity_global = t.ones(
             1, dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device

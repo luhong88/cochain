@@ -30,7 +30,7 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         m = k + l
 
         # Identify the k-faces of the top level simplices and their sign corrections.
-        k_face_idx, k_face_parity = find_top_splx_faces(k, mesh.dim, mesh, mesh.splx)
+        k_face_idx, k_face_parity = find_top_splx_faces(k, mesh)
 
         self.k_face_idx: Integer[t.LongTensor, "top_splx k_face"]
         self.register_buffer("k_face_idx", k_face_idx)
@@ -39,7 +39,7 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         self.register_buffer("k_face_parity", k_face_parity)
 
         # Identify the l-faces of the top level simplices and their sign corrections.
-        l_face_idx, l_face_parity = find_top_splx_faces(l, mesh.dim, mesh, mesh.splx)
+        l_face_idx, l_face_parity = find_top_splx_faces(l, mesh)
 
         self.l_face_idx: Integer[t.LongTensor, "top_splx l_face"]
         self.register_buffer("l_face_idx", l_face_idx)
@@ -48,7 +48,7 @@ class WhitneyWedgeL2Projector(t.nn.Module):
         self.register_buffer("l_face_parity", l_face_parity)
 
         # Identify the (k+l)-faces of the top level simplices and their sign corrections.
-        m_face_idx, m_face_parity = find_top_splx_faces(m, mesh.dim, mesh, mesh.splx)
+        m_face_idx, m_face_parity = find_top_splx_faces(m, mesh)
 
         self.m_face_idx: Integer[t.LongTensor, "top_splx m_face"]
         self.register_buffer("m_face_idx", m_face_idx)
