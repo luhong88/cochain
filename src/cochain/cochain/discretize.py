@@ -4,7 +4,7 @@ import torch as t
 from einops import einsum
 from jaxtyping import Float
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from ..utils import quadrature
 
 
@@ -40,7 +40,7 @@ class DeRhamMap:
 
     k: int
     quad_degree: int
-    mesh: SimplicialComplex
+    mesh: SimplicialMesh
     allow_neg_weights: bool = True
 
     def __post_init__(self):
@@ -68,7 +68,7 @@ class DeRhamMap:
         self.bary_coords = bary_coords
         self.weights = weights
 
-    def sample_points(self) -> Float[t.Tensor, "k_simp pt coord=3"]:
+    def sample_points(self) -> Float[t.Tensor, "k_splx pt coord=3"]:
         if not hasattr(self, "bary_coords"):
             self._get_quad_rule()
 
@@ -76,19 +76,19 @@ class DeRhamMap:
         # linear combination of the simplex vertex coordinates to identify
         # the sample points in the simplex, and these weights are the same
         # for the reference and physical simplices.
-        simp_vert_coords = self.mesh.vert_coords[self.mesh.simplices[self.k]]
+        simp_vert_coords = self.mesh.vert_coords[self.mesh.splx[self.k]]
         sampled_points = einsum(
             simp_vert_coords,
             self.bary_coords,
-            "k_simp vert coord, pt vert -> k_simp pt coord",
+            "k_splx vert coord, pt vert -> k_splx pt coord",
         )
 
         return sampled_points
 
     def discretize(
         self,
-        k_forms: Float[t.Tensor, "k_simp pt *ch coord"],
-    ) -> Float[t.Tensor, " k_simp *ch"]:
+        k_forms: Float[t.Tensor, "k_splx pt *ch coord"],
+    ) -> Float[t.Tensor, " k_splx *ch"]:
         if not hasattr(self, "bary_coords"):
             self._get_quad_rule()
 
@@ -98,8 +98,8 @@ class DeRhamMap:
         # origin in the ref simplex, then the map can be written as ϕ(λ) = J@λ + v_0;
         # in particular, J is the jacobian and can be computed as the matrix of
         # the edge (column) vectors v_i - v_0.
-        simp_vert_coords = self.mesh.vert_coords[self.mesh.simplices[self.k]]
-        jacs: Float[t.Tensor, "k_simp edge coord=3"] = (
+        simp_vert_coords = self.mesh.vert_coords[self.mesh.splx[self.k]]
+        jacs: Float[t.Tensor, "k_splx edge coord=3"] = (
             simp_vert_coords[:, 1:, :] - simp_vert_coords[:, [0], :]
         )
 
@@ -112,10 +112,10 @@ class DeRhamMap:
                 pullback = einsum(
                     jacs,
                     k_forms,
-                    "k_simp edge coord, k_simp pt ... coord -> k_simp pt ...",
+                    "k_splx edge coord, k_splx pt ... coord -> k_splx pt ...",
                 )
                 circulation = einsum(
-                    pullback, self.weights, "k_simp pt ..., pt -> k_simp ..."
+                    pullback, self.weights, "k_splx pt ..., pt -> k_splx ..."
                 )
                 return circulation
 
@@ -127,15 +127,15 @@ class DeRhamMap:
                 # vectors {v1 - v0, v2 - v0}, and the pullback is the dot product
                 # between the proxy 1-form and the triangle normal vector (oriented
                 # to satisfy the right-hand rule and scaled to the triangle area).
-                area_normal: Float[t.Tensor, "k_simp coord=3"] = 0.5 * t.cross(
+                area_normal: Float[t.Tensor, "k_splx coord=3"] = 0.5 * t.cross(
                     jacs[:, 0, :], jacs[:, 1, :], dim=-1
                 )
                 pullback = einsum(
                     area_normal,
                     k_forms,
-                    "k_simp coord, k_simp pt ... coord -> k_simp pt ...",
+                    "k_splx coord, k_splx pt ... coord -> k_splx pt ...",
                 )
-                flux = einsum(pullback, self.weights, "k_simp pt ..., pt -> k_simp ...")
+                flux = einsum(pullback, self.weights, "k_splx pt ..., pt -> k_splx ...")
                 return flux
 
             case 3:
@@ -143,13 +143,13 @@ class DeRhamMap:
                 # the 3-form (a scalar) and the determinant of the Jacobian (scaled
                 # to the tet volume by the 1/6 factor). Note that, for 3-forms,
                 # the coord dimension is trivial.
-                signed_vol: Float[t.Tensor, " k_simp"] = t.linalg.det(jacs) / 6.0
+                signed_vol: Float[t.Tensor, " k_splx"] = t.linalg.det(jacs) / 6.0
                 pullback = einsum(
                     signed_vol,
                     k_forms,
-                    "k_simp, k_simp pt ... coord -> k_simp pt ...",
+                    "k_splx, k_splx pt ... coord -> k_splx pt ...",
                 )
                 density = einsum(
-                    pullback, self.weights, "k_simp pt ..., pt -> k_simp ..."
+                    pullback, self.weights, "k_splx pt ..., pt -> k_splx ..."
                 )
                 return density

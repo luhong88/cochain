@@ -36,7 +36,7 @@ def test_interpolate_discretize_left_inverse(mesh, k, quad, device, request):
     map to discretize the k-form, gives back the same k-cochain.
     """
     mesh = request.getfixturevalue(mesh).to(device)
-    k_cochain_true = t.randn(mesh.simplices[k].size(0)).to(device)
+    k_cochain_true = t.randn(mesh.splx[k].size(0)).to(device)
 
     # First, interpolate the discrete k-cochain
     bary_coords, weights = quad(
@@ -129,10 +129,10 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     d_w_cochain = einsum(
         bary_coords_grad,
         cochain_0_at_vert_faces,
-        "top_simp vert coord, top_simp vert ch -> top_simp ch coord",
+        "top_splx vert coord, top_splx vert ch -> top_splx ch coord",
     )
     d_w_cochain_formed = repeat(
-        d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
+        d_w_cochain, "top_splx ch coord -> top_splx pt ch coord", pt=bary_coords.size(0)
     )
 
     # Check that the two approaches give the same results.
@@ -234,10 +234,10 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
         basis,
         sign_correction,
         cochain_1_at_edge_faces,
-        "top_simp edge coord, top_simp edge, top_simp edge ch -> top_simp ch coord",
+        "top_splx edge coord, top_splx edge, top_splx edge ch -> top_splx ch coord",
     )
     d_w_cochain_formed = repeat(
-        d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
+        d_w_cochain, "top_splx ch coord -> top_splx pt ch coord", pt=bary_coords.size(0)
     )
 
     # Check that the two approaches give the same results.
@@ -319,10 +319,10 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
         basis,
         sign_correction,
         cochain_2_at_edge_faces,
-        "top_simp tri coord, top_simp tri, top_simp tri ch -> top_simp ch coord",
+        "top_splx tri coord, top_splx tri, top_splx tri ch -> top_splx ch coord",
     )
     d_w_cochain_formed = repeat(
-        d_w_cochain, "top_simp ch coord -> top_simp pt ch coord", pt=bary_coords.size(0)
+        d_w_cochain, "top_splx ch coord -> top_splx pt ch coord", pt=bary_coords.size(0)
     )
 
     # Check that the two approaches give the same results.
@@ -382,10 +382,10 @@ def test_1_form_interpolate_discretize_right_project(mesh, request, device):
     # Discretize the constant 1-form via de Rham map.
     de_rham = DeRhamMap(k=1, quad_degree=3, mesh=mesh)
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     cochain_1 = de_rham.discretize(
-        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 1-form via Whitney map.
@@ -452,10 +452,10 @@ def test_2_form_interpolate_discretize_right_project(mesh, request, device):
     # Discretize the constant 2-form via de Rham map.
     de_rham = DeRhamMap(k=2, quad_degree=3, mesh=mesh)
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     cochain_2 = de_rham.discretize(
-        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+        k_forms=repeat(const_vec, "coord -> simp pt coord", simp=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 2-form via Whitney map.
@@ -521,10 +521,10 @@ def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
     # Discretize the constant 3-form via de Rham map.
     de_rham = DeRhamMap(k=3, quad_degree=3, mesh=mesh)
     pts = de_rham.sample_points()
-    n_simps, n_pts, _ = pts.shape
+    n_splx, n_pts, _ = pts.shape
 
     cochain_3 = de_rham.discretize(
-        k_forms=repeat(const_scalar, "coord -> simp pt coord", simp=n_simps, pt=n_pts)
+        k_forms=repeat(const_scalar, "coord -> simp pt coord", simp=n_splx, pt=n_pts)
     )
 
     # Interpolate the discretized 3-form via Whitney map.

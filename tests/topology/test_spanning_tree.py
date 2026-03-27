@@ -1,6 +1,6 @@
 import torch as t
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.geometry.tri.tri_hodge_stars import star_1
 from cochain.geometry.tri.tri_laplacians import (
     laplacian_1,
@@ -11,7 +11,7 @@ from cochain.topology.spanning_tree import compute_cotree_mask, compute_tree_mas
 from cochain.topology.topo_laplacians import laplacian_k
 
 
-def test_cbd_0_rank(finer_flat_annulus_mesh: SimplicialComplex, device):
+def test_cbd_0_rank(finer_flat_annulus_mesh: SimplicialMesh, device):
     """
     The tree decomposition for the down 1-Laplacian of a triangular mesh identifies
     the same number of edges as the rank of the 0-coboundary operator (assuming
@@ -32,7 +32,7 @@ def test_cbd_0_rank(finer_flat_annulus_mesh: SimplicialComplex, device):
     t.testing.assert_close(cbd_0_rank, n_tree_edge)
 
 
-def test_cbd_1_rank(icosphere_mesh: SimplicialComplex, device):
+def test_cbd_1_rank(icosphere_mesh: SimplicialMesh, device):
     """
     The cotree decomposition for the up 1-Laplacian of a triangular mesh identifies
     the same number of edges as the rank of the 1-coboundary operator (assuming
@@ -53,7 +53,7 @@ def test_cbd_1_rank(icosphere_mesh: SimplicialComplex, device):
     t.testing.assert_close(cbd_1_rank, n_cotree_edge)
 
 
-def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialComplex, device):
+def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     """
     The 1-Laplacian after tree-cotree gauge fixing should be strictly positive
     definite.
@@ -84,7 +84,7 @@ def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialComplex, device):
     assert min_eig > 0.0
 
 
-def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialComplex, device):
+def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     mesh = icosphere_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
@@ -97,7 +97,7 @@ def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialComplex, devi
     assert min_eig > 0.0
 
 
-def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialComplex, device):
+def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     mesh = icosphere_mesh.to(device)
 
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
@@ -111,7 +111,7 @@ def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialComplex, device
 
 
 def test_l1_positive_definite_absolute_bc(
-    finer_flat_annulus_mesh: SimplicialComplex, device
+    finer_flat_annulus_mesh: SimplicialMesh, device
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
@@ -135,7 +135,7 @@ def test_l1_positive_definite_absolute_bc(
 
 
 def test_l1_down_positive_definite_absolute_bc(
-    finer_flat_annulus_mesh: SimplicialComplex, device
+    finer_flat_annulus_mesh: SimplicialMesh, device
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
@@ -150,7 +150,7 @@ def test_l1_down_positive_definite_absolute_bc(
 
 
 def test_l1_up_positive_definite_absolute_bc(
-    finer_flat_annulus_mesh: SimplicialComplex, device
+    finer_flat_annulus_mesh: SimplicialMesh, device
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
@@ -165,7 +165,7 @@ def test_l1_up_positive_definite_absolute_bc(
 
 
 def test_l1_positive_definite_relative_bc(
-    finer_flat_annulus_mesh: SimplicialComplex, device
+    finer_flat_annulus_mesh: SimplicialMesh, device
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
@@ -198,7 +198,7 @@ def test_l1_positive_definite_relative_bc(
 
 
 def test_l1_down_positive_definite_relative_bc(
-    finer_flat_annulus_mesh: SimplicialComplex, device
+    finer_flat_annulus_mesh: SimplicialMesh, device
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
@@ -219,7 +219,7 @@ def test_l1_down_positive_definite_relative_bc(
 
 
 def test_l1_up_positive_definite_relative_bc(
-    finer_flat_annulus_mesh: SimplicialComplex, device
+    finer_flat_annulus_mesh: SimplicialMesh, device
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
@@ -240,9 +240,7 @@ def test_l1_up_positive_definite_relative_bc(
     assert min_eig > 0.0
 
 
-def test_l1_gauge_fix_condition_number(
-    finer_flat_annulus_mesh: SimplicialComplex, device
-):
+def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, device):
     """
     In general, using a maximum spanning tree weighted by edge mass should result
     in a gauge-fixed linear system with better condition number than a purely

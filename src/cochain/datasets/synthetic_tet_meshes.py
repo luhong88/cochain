@@ -3,11 +3,11 @@ import pytetwild
 import pyvista as pv
 import torch as t
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 
 
-def load_regular_tet_mesh() -> SimplicialComplex:
-    return SimplicialComplex.from_tet_mesh(
+def load_regular_tet_mesh() -> SimplicialMesh:
+    return SimplicialMesh.from_tet_mesh(
         vert_coords=t.tensor(
             [[1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0]]
         ),
@@ -15,11 +15,11 @@ def load_regular_tet_mesh() -> SimplicialComplex:
     )
 
 
-def load_two_tets_mesh() -> SimplicialComplex:
+def load_two_tets_mesh() -> SimplicialMesh:
     """
     A simple 3D mesh embedded composed of two tetrahedra sharing one triangle.
     """
-    return SimplicialComplex.from_tet_mesh(
+    return SimplicialMesh.from_tet_mesh(
         vert_coords=t.tensor(
             [
                 [-0.5, -0.5, 0.0],
@@ -33,7 +33,7 @@ def load_two_tets_mesh() -> SimplicialComplex:
     )
 
 
-def load_bcc_mesh(dim: int = 5) -> SimplicialComplex:
+def load_bcc_mesh(dim: int = 5) -> SimplicialMesh:
     """
     Generates a block of tets based on a BCC lattice.
     """
@@ -44,7 +44,7 @@ def load_bcc_mesh(dim: int = 5) -> SimplicialComplex:
 
     tet_grid = grid.triangulate()
 
-    return SimplicialComplex.from_tet_mesh(
+    return SimplicialMesh.from_tet_mesh(
         vert_coords=t.from_numpy(tet_grid.points).to(dtype=t.float),
         tets=t.from_numpy(tet_grid.cells.reshape(-1, 5)[:, 1:].copy()).to(dtype=t.long),
     )
@@ -56,7 +56,7 @@ def load_solid_torus(
     u_res: int,
     v_res: int,
     edge_length_frac: float,
-) -> SimplicialComplex:
+) -> SimplicialMesh:
     # Generate the torus surface mesh, triangulate and clean with pyvista
     surface = pv.ParametricTorus(
         ringradius=major_r, crosssectionradius=minor_r, u_res=u_res, v_res=v_res
@@ -73,7 +73,7 @@ def load_solid_torus(
         v_surf, f_surf, edge_length_fac=edge_length_frac
     )
 
-    mesh = SimplicialComplex.from_tet_mesh(
+    mesh = SimplicialMesh.from_tet_mesh(
         vert_coords=t.from_numpy(v_tet).to(dtype=t.float),
         tets=t.from_numpy(t_tet).to(dtype=t.long),
     )

@@ -3,7 +3,7 @@ from jaxtyping import Float, Integer
 
 from ..utils.faces import enumerate_unique_faces
 from ..utils.perm_parity import compute_lex_rel_orient
-from ..utils.search import simplex_search
+from ..utils.search import splx_search
 
 
 def get_edge_face_idx(
@@ -19,10 +19,10 @@ def get_edge_face_idx(
 
     all_edges: Float[t.Tensor, "tri*3 2"] = tris[:, local_edge_idx].flatten(end_dim=-2)
 
-    canon_edges_idx = simplex_search(
-        key_simps=edges,
-        query_simps=all_edges,
-        sort_key_simp=False,
+    canon_edges_idx = splx_search(
+        key_splx=edges,
+        query_splx=all_edges,
+        sort_key_splx=False,
         sort_key_vert=False,
         sort_query_vert=True,
         method="polynomial_hash",

@@ -4,34 +4,32 @@ import torch as t
 from jaxtyping import Integer
 
 
-def _polynomial_hash_simplex_search(
-    key_simps: Integer[t.LongTensor, "key_simp vert"],
-    query_simps: Integer[t.LongTensor, "query_simp vert"],
+def _polynomial_hash_splx_search(
+    key_splx: Integer[t.LongTensor, "key_splx vert"],
+    query_splx: Integer[t.LongTensor, "query_splx vert"],
     *,
-    sort_key_simp: bool,
+    sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
-) -> Integer[t.LongTensor, " query_simp"]:
+) -> Integer[t.LongTensor, " query_splx"]:
     dtype = t.int64
-    device = key_simps.device
+    device = key_splx.device
 
     # Note that a k-simplex has k + 1 vertices.
-    simp_dim = key_simps.size(1) - 1
-    if key_simps.size(1) != query_simps.size(1):
+    simp_dim = key_splx.size(1) - 1
+    if key_splx.size(1) != query_splx.size(1):
         raise ValueError(
-            "The 'key_simps' and 'query_simps' must have the same dimension."
+            "The 'key_splx' and 'query_splx' must have the same dimension."
         )
 
-    key_simps_canon = key_simps.sort(dim=-1).values if sort_key_vert else key_simps
-    query_simps_canon = (
-        query_simps.sort(dim=-1).values if sort_query_vert else query_simps
-    )
+    key_splx_canon = key_splx.sort(dim=-1).values if sort_key_vert else key_splx
+    query_splx_canon = query_splx.sort(dim=-1).values if sort_query_vert else query_splx
 
-    min_vert_idx = min(key_simps_canon.min(), query_simps_canon.min())
-    key_simps_reduced = key_simps_canon - min_vert_idx
-    query_simps_reduced = query_simps_canon - min_vert_idx
+    min_vert_idx = min(key_splx_canon.min(), query_splx_canon.min())
+    key_splx_reduced = key_splx_canon - min_vert_idx
+    query_splx_reduced = query_splx_canon - min_vert_idx
     # +1 to ensure base > max digit
-    max_vert_idx = max(key_simps_reduced.max(), query_simps_reduced.max()).to(dtype) + 1
+    max_vert_idx = max(key_splx_reduced.max(), query_splx_reduced.max()).to(dtype) + 1
 
     exponent = t.arange(simp_dim, -1, -1, device=device, dtype=dtype)
     coef = t.pow(max_vert_idx, exponent).view(1, -1)
@@ -43,71 +41,67 @@ def _polynomial_hash_simplex_search(
             "Potential polynomial hash overflow detected. Use method='lex_sort' instead."
         )
 
-    key_simps_packed = t.sum(key_simps_reduced * coef, dim=-1)
-    query_simps_packed = t.sum(query_simps_reduced * coef, dim=-1)
+    key_splx_packed = t.sum(key_splx_reduced * coef, dim=-1)
+    query_splx_packed = t.sum(query_splx_reduced * coef, dim=-1)
 
-    if sort_key_simp:
-        key_simps_packed_sorted, key_simps_packed_sort_idx = key_simps_packed.sort()
-        query_simps_idx_sorted = t.searchsorted(
-            key_simps_packed_sorted, query_simps_packed
+    if sort_key_splx:
+        key_splx_packed_sorted, key_splx_packed_sort_idx = key_splx_packed.sort()
+        query_splx_idx_sorted = t.searchsorted(
+            key_splx_packed_sorted, query_splx_packed
         )
-        query_simps_idx = key_simps_packed_sort_idx[query_simps_idx_sorted]
+        query_splx_idx = key_splx_packed_sort_idx[query_splx_idx_sorted]
 
     else:
-        query_simps_idx = t.searchsorted(key_simps_packed, query_simps_packed)
+        query_splx_idx = t.searchsorted(key_splx_packed, query_splx_packed)
 
-    return query_simps_idx
+    return query_splx_idx
 
 
-def _lex_simplex_search(
-    key_simps: Integer[t.LongTensor, "key_simp vert"],
-    query_simps: Integer[t.LongTensor, "query_simp vert"],
+def _lex_splx_search(
+    key_splx: Integer[t.LongTensor, "key_splx vert"],
+    query_splx: Integer[t.LongTensor, "query_splx vert"],
     *,
-    sort_key_simp: bool,
+    sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
-) -> Integer[t.LongTensor, " query_simp"]:
-    if key_simps.size(1) != query_simps.size(1):
+) -> Integer[t.LongTensor, " query_splx"]:
+    if key_splx.size(1) != query_splx.size(1):
         raise ValueError(
-            "The 'key_simps' and 'query_simps' must have the same dimension."
+            "The 'key_splx' and 'query_splx' must have the same dimension."
         )
 
-    key_simps_canon = key_simps.sort(dim=-1).values if sort_key_vert else key_simps
-    query_simps_canon = (
-        query_simps.sort(dim=-1).values if sort_query_vert else query_simps
-    )
+    key_splx_canon = key_splx.sort(dim=-1).values if sort_key_vert else key_splx
+    query_splx_canon = query_splx.sort(dim=-1).values if sort_query_vert else query_splx
 
-    combined_simps = t.vstack((key_simps_canon, query_simps_canon))
-    _, combined_simp_ids = combined_simps.unique(
-        dim=0, sorted=True, return_inverse=True
-    )
+    combined_splx = t.vstack((key_splx_canon, query_splx_canon))
+    _, combined_splx_ids = combined_splx.unique(dim=0, sorted=True, return_inverse=True)
 
-    n_key_simps = key_simps_canon.size(0)
-    key_simp_ids = combined_simp_ids[:n_key_simps]
-    query_simp_ids = combined_simp_ids[n_key_simps:]
+    n_key_splx = key_splx_canon.size(0)
+    key_splx_ids = combined_splx_ids[:n_key_splx]
+    query_splx_ids = combined_splx_ids[n_key_splx:]
 
-    if sort_key_simp:
-        key_simp_ids_sorted, key_simps_id_sort_idx = key_simp_ids.sort()
-        query_simps_idx_sorted = t.searchsorted(key_simp_ids_sorted, query_simp_ids)
-        query_simps_idx = key_simps_id_sort_idx[query_simps_idx_sorted]
+    if sort_key_splx:
+        key_splx_ids_sorted, key_splx_id_sort_idx = key_splx_ids.sort()
+        query_splx_idx_sorted = t.searchsorted(key_splx_ids_sorted, query_splx_ids)
+        query_splx_idx = key_splx_id_sort_idx[query_splx_idx_sorted]
 
     else:
-        query_simps_idx = t.searchsorted(key_simp_ids, query_simp_ids)
+        query_splx_idx = t.searchsorted(key_splx_ids, query_splx_ids)
 
-    return query_simps_idx
+    return query_splx_idx
 
 
-def simplex_search(
-    key_simps: Integer[t.LongTensor, "key_simp vert"],
-    query_simps: Integer[t.LongTensor, "*b query_simp vert"],
+def splx_search(
+    key_splx: Integer[t.LongTensor, "key_splx vert"],
+    query_splx: Integer[t.LongTensor, "*b query_splx vert"],
     *,
-    sort_key_simp: bool,
+    sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
     method: Literal["lex_sort", "polynomial_hash", "auto"] = "auto",
-) -> Integer[t.LongTensor, "*b query_simp"]:
+) -> Integer[t.LongTensor, "*b query_splx"]:
     """
-    Search for simplices in `query_simps` in the `key_simps`. It uses polynomial
+    Search for simplices in `query_splx` in the `key_splx`. It uses polynomial
     rolling hash to convert the simplex vert index tuples into integers and use
     `searchsorted()` to perform the search.
 
@@ -118,49 +112,49 @@ def simplex_search(
     use polynomial hashing if k < 2 and lex sort if k >= 2.
 
     This function has the following requirements:
-    * `query_simps` must be a subset of `key_simps` (up to vertex permutation).
-    * `key_simps` cannot contain duplicates, but `query_simps` can.
-    * Each simplex in `key_simps` and `query_simps` must be represented by vertex
+    * `query_splx` must be a subset of `key_splx` (up to vertex permutation).
+    * `key_splx` cannot contain duplicates, but `query_splx` can.
+    * Each simplex in `key_splx` and `query_splx` must be represented by vertex
     indices in ascending order; if this is not true, set `sort_key_vert=True` and/or
     `sort_query_vert=True`.
-    * The simplices in `key_simps` must be sorted in lex order; i.e., the simplices
-    in `key_simps` need to be aranged (in ascending order) based on the first vertex
+    * The simplices in `key_splx` must be sorted in lex order; i.e., the simplices
+    in `key_splx` need to be aranged (in ascending order) based on the first vertex
     index, with tie breaks based on the second vertex index, and so on. If this is
-    not true, set `sort_key_simp=True`.
+    not true, set `sort_key_splx=True`.
     """
-    if query_simps.size(-2) == 0:
-        return query_simps[..., 0]
+    if query_splx.size(-2) == 0:
+        return query_splx[..., 0]
 
     if method == "auto":
-        simp_dim = key_simps.size(-1) - 1
+        simp_dim = key_splx.size(-1) - 1
 
         if simp_dim < 2:
             method = "polynomial_hash"
         else:
             method = "lex_sort"
 
-    query_simps_flat = query_simps.flatten(end_dim=-2)
+    query_splx_flat = query_splx.flatten(end_dim=-2)
 
     match method:
         case "lex_sort":
-            simp_idx_flat = _lex_simplex_search(
-                key_simps,
-                query_simps_flat,
-                sort_key_simp=sort_key_simp,
+            simp_idx_flat = _lex_splx_search(
+                key_splx,
+                query_splx_flat,
+                sort_key_splx=sort_key_splx,
                 sort_key_vert=sort_key_vert,
                 sort_query_vert=sort_query_vert,
             )
         case "polynomial_hash":
-            simp_idx_flat = _polynomial_hash_simplex_search(
-                key_simps,
-                query_simps_flat,
-                sort_key_simp=sort_key_simp,
+            simp_idx_flat = _polynomial_hash_splx_search(
+                key_splx,
+                query_splx_flat,
+                sort_key_splx=sort_key_splx,
                 sort_key_vert=sort_key_vert,
                 sort_query_vert=sort_query_vert,
             )
         case _:
             raise ValueError("Unrecognized 'method' argument.")
 
-    simp_idx_shaped = simp_idx_flat.view(*query_simps.shape[:-1])
+    simp_idx_shaped = simp_idx_flat.view(*query_splx.shape[:-1])
 
     return simp_idx_shaped

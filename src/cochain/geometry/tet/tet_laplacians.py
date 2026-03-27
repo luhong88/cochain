@@ -3,7 +3,7 @@ from typing import Literal
 import torch as t
 from jaxtyping import Float
 
-from ...complex import SimplicialComplex
+from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tet_hodge_stars import star_1, star_2
 from .tet_masses import mass_0, mass_1, mass_2, mass_3
@@ -23,7 +23,7 @@ from .tet_stiffness import stiffness_matrix
 
 
 def weak_laplacian_0(
-    tet_mesh: SimplicialComplex, method: Literal["cotan", "consistent"]
+    tet_mesh: SimplicialMesh, method: Literal["cotan", "consistent"]
 ) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the weak 0-Laplacian (vertex Laplacian)
@@ -48,7 +48,7 @@ def weak_laplacian_0(
 
 
 def weak_laplacian_1_div_grad(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the div grad component of the weak 1-Laplacian
@@ -64,7 +64,7 @@ def weak_laplacian_1_div_grad(
 
 
 def weak_laplacian_1_curl_curl(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the curl curl component of the weak 1-Laplacian
@@ -79,7 +79,7 @@ def weak_laplacian_1_curl_curl(
 
 
 def weak_laplacian_1(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the weak 1-Laplacian (edge/vector Laplacian)
@@ -92,7 +92,7 @@ def weak_laplacian_1(
 
 # TODO: update docstring to remove reference to cholesky
 def weak_laplacian_2_curl_curl(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
     method: Literal[
         "dense",
         "solver",
@@ -138,7 +138,7 @@ def weak_laplacian_2_curl_curl(
 
 
 def weak_laplacian_2_div_grad(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "tri tri"]:
     """
     Compute the div grad component of the weak 1-Laplacian
@@ -153,7 +153,7 @@ def weak_laplacian_2_div_grad(
 
 
 def weak_laplacian_2(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
     method: Literal[
         "dense",
         "solver",
@@ -187,7 +187,7 @@ def weak_laplacian_2(
 
 # TODO: update docstring to remove reference to cholesky
 def weak_laplacian_3(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
     method: Literal[
         "dense",
         "solver",

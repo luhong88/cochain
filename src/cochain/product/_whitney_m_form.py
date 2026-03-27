@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from ._whitney_utils import compute_bc_grad_dot, compute_moments, compute_whitney_router
 
 
@@ -29,11 +29,11 @@ def _inv_metric_det(
         # | <grad[λ_i], grad[λ_k]> <grad[λ_i], grad[λ_l]> |
         # | <grad[λ_j], grad[λ_k]> <grad[λ_j], grad[λ_l]> |
         case 2:
-            n_simp = bc_grad_dot.size(0)
+            n_splx = bc_grad_dot.size(0)
             n_vert = bc_grad_dot.size(-1)
 
             d_bc_wedge_dot = t.zeros(
-                n_simp,
+                n_splx,
                 n_vert,
                 n_vert,
                 n_vert,
@@ -53,11 +53,11 @@ def _inv_metric_det(
         # | <grad[λ_j], grad[λ_a]> <grad[λ_j], grad[λ_b]> <grad[λ_j], grad[λ_c]> |
         # | <grad[λ_k], grad[λ_a]> <grad[λ_k], grad[λ_b]> <grad[λ_k], grad[λ_c]> |
         case 3:
-            n_simp = bc_grad_dot.size(0)
+            n_splx = bc_grad_dot.size(0)
             n_vert = bc_grad_dot.size(-1)
 
             d_bc_wedge_dot = t.zeros(
-                n_simp,
+                n_splx,
                 n_vert,
                 n_vert,
                 n_vert,
@@ -128,8 +128,8 @@ def _get_triple_tensor_prod_einsum_str(k: int, l: int) -> str:
 def triple_tensor_prod(
     k: int,
     l: int,
-    mesh: SimplicialComplex,
-) -> Float[t.Tensor, "top_simp k_face l_face m_face"]:
+    mesh: SimplicialMesh,
+) -> Float[t.Tensor, "top_splx k_face l_face m_face"]:
     """
     Compute the triple product tensor T_ijk required for computing the load vector.
 

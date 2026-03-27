@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from ..geometry.tri.tri_geometry import (
     bary_coord_grad_inner_prods,
     compute_d_tri_areas_d_vert_coords,
@@ -84,7 +84,7 @@ def _d2_tri_areas_d2_vert_coords(
 
 
 def d_inv_star_2_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "tri vert 3"]:
     """
     Compute the Jacobian of the inverse Hodge 2-star matrix (diagonal elements)
@@ -108,7 +108,7 @@ def d_inv_star_2_d_vert_coords(
 
 
 def d_star_2_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "tri vert 3"]:
     """
     Compute the Jacobian of the Hodge 2-star matrix (diagonal elements) with respect
@@ -127,7 +127,7 @@ def d_star_2_d_vert_coords(
 
 
 def d_star_1_circumcentric_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "edge vert 3"]:
     """
     Compute the Jacobian of the Hodge 1-star matrix (diagonal elements) with respect
@@ -181,7 +181,7 @@ def d_star_1_circumcentric_d_vert_coords(
 
 
 def d_inv_star_1_circumcentric_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "edge vert 3"]:
     """
     Compute the Jacobian of the inverse Hodge 1-star matrix (diagonal elements)
@@ -200,7 +200,7 @@ def d_inv_star_1_circumcentric_d_vert_coords(
 
 
 def d_star_0_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "vert vert 3"]:
     """
     Compute the Jacobian of the Hodge 0-star matrix (diagonal elements) with respect
@@ -253,7 +253,7 @@ def d_star_0_d_vert_coords(
 
 
 def d_inv_star_0_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "vert vert 3"]:
     """
     Compute the Jacobian of the inverse Hodge 0-star matrix (diagonal elements)
@@ -272,7 +272,7 @@ def d_inv_star_0_d_vert_coords(
 
 
 def d_mass_1_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "edge edge vert 3"]:
     """
     Compute the Jacobian of the 1-form mass matrix wrt the vertex coordinates.
@@ -500,7 +500,7 @@ def _d_cotan_weights_d_vert_coords(
 
 
 def d_stiffness_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "vert vert vert 3"]:
     """
     Compute the jacobian of the stiffness matrix/cotan Laplacian with respect to

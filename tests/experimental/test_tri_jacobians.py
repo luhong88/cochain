@@ -1,7 +1,7 @@
 import pytest
 import torch as t
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.experimental import tri_jacobians
 from cochain.geometry.tri import tri_hodge_stars, tri_masses
 from cochain.geometry.tri.tri_stiffness import stiffness_matrix
@@ -18,14 +18,12 @@ from cochain.geometry.tri.tri_stiffness import stiffness_matrix
         (tri_hodge_stars.star_2, tri_jacobians.d_star_2_d_vert_coords),
     ],
 )
-def test_star_jacobian(star, d_star_d_vert_coords, hollow_tet_mesh: SimplicialComplex):
+def test_star_jacobian(star, d_star_d_vert_coords, hollow_tet_mesh: SimplicialMesh):
     vert_coords = hollow_tet_mesh.vert_coords.clone()
     tris = hollow_tet_mesh.tris.clone()
 
     autograd_jacobian = t.autograd.functional.jacobian(
-        lambda vert_coords: star(
-            SimplicialComplex.from_tri_mesh(vert_coords, tris)
-        ).val,
+        lambda vert_coords: star(SimplicialMesh.from_tri_mesh(vert_coords, tris)).val,
         vert_coords,
     )
 
@@ -46,14 +44,14 @@ def test_star_jacobian(star, d_star_d_vert_coords, hollow_tet_mesh: SimplicialCo
     ],
 )
 def test_inv_star_jacobian(
-    star, d_inv_star_d_vert_coords, hollow_tet_mesh: SimplicialComplex
+    star, d_inv_star_d_vert_coords, hollow_tet_mesh: SimplicialMesh
 ):
     vert_coords = hollow_tet_mesh.vert_coords.clone()
     tris = hollow_tet_mesh.tris.clone()
 
     autograd_jacobian = t.autograd.functional.jacobian(
         lambda vert_coords: star(
-            SimplicialComplex.from_tri_mesh(vert_coords, tris)
+            SimplicialMesh.from_tri_mesh(vert_coords, tris)
         ).inv.val,
         vert_coords,
     )
@@ -63,7 +61,7 @@ def test_inv_star_jacobian(
     t.testing.assert_close(autograd_jacobian, analytical_jacobian)
 
 
-def tet_mass_1_aurograd(two_tris_mesh: SimplicialComplex):
+def tet_mass_1_aurograd(two_tris_mesh: SimplicialMesh):
     two_tris_mesh.vert_coords.requires_grad = True
     mass_1 = tri_masses.mass_1(two_tris_mesh).to_dense()
     y = (mass_1**2).sum()
@@ -77,7 +75,7 @@ def tet_mass_1_aurograd(two_tris_mesh: SimplicialComplex):
     assert t.allclose(custom_grad, auto_grad, atol=1e-4)
 
 
-def test_stiffness_autograd(two_tris_mesh: SimplicialComplex):
+def test_stiffness_autograd(two_tris_mesh: SimplicialMesh):
     """
     Check that the custom gradient matches the automatic gradient for the stiffness
     matrix.

@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...complex import SimplicialComplex
+from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from .tet_geometry import (
     bary_coord_grad_inner_prods,
@@ -36,7 +36,7 @@ def mass_0_consistent(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagDecoupledTensor, "vert vert"]:
+def mass_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
     Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
     barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
@@ -59,7 +59,7 @@ def mass_0(tet_mesh: SimplicialComplex) -> Float[DiagDecoupledTensor, "vert vert
     return DiagDecoupledTensor.from_tensor(diag)
 
 
-def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseDecoupledTensor, "edge edge"]:
+def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
 
@@ -162,7 +162,7 @@ def mass_1(tet_mesh: SimplicialComplex) -> Float[SparseDecoupledTensor, "edge ed
     return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseDecoupledTensor, "tri tri"]:
+def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     """
     Compute the Galerkin triangle/2-form mass matrix.
 
@@ -201,7 +201,7 @@ def mass_2(tet_mesh: SimplicialComplex) -> Float[SparseDecoupledTensor, "tri tri
     return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_3(tet_mesh: SimplicialComplex) -> Float[DiagDecoupledTensor, "tet tet"]:
+def mass_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tet tet"]:
     """
     Compute the diagonal of the tet/3-form mass matrix, which is a diagonal matrix
     containing the inverse of the unsigned tet volumes, which is equivalent to

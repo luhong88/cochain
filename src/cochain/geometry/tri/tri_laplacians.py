@@ -2,7 +2,7 @@ from typing import Literal
 
 from jaxtyping import Float
 
-from ...complex import SimplicialComplex
+from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tri_hodge_stars import star_0, star_1, star_2
 from .tri_stiffness import stiffness_matrix
@@ -25,7 +25,7 @@ from .tri_stiffness import stiffness_matrix
 
 
 def codifferential_1(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[SparseDecoupledTensor, "vert edge"]:
     """
@@ -42,7 +42,7 @@ def codifferential_1(
 
 
 def codifferential_2(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[SparseDecoupledTensor, "edge tri"]:
     """
@@ -59,7 +59,7 @@ def codifferential_2(
 
 
 def laplacian_0(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
 ) -> Float[SparseDecoupledTensor, "vert vert"]:
@@ -86,7 +86,7 @@ def laplacian_0(
 
 
 def laplacian_1_div_grad(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
@@ -104,7 +104,7 @@ def laplacian_1_div_grad(
 
 
 def laplacian_1_curl_curl(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
@@ -122,7 +122,7 @@ def laplacian_1_curl_curl(
 
 
 def laplacian_1(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
     codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
@@ -143,7 +143,7 @@ def laplacian_1(
 
 
 def laplacian_2(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
 ) -> Float[SparseDecoupledTensor, "tri tri"]:

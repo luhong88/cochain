@@ -3,7 +3,7 @@ import itertools
 import torch as t
 from jaxtyping import Float
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from ..utils.perm_parity import compute_lex_rel_orient
 from ._whitney_utils import compute_bc_grad_dot, compute_moments, compute_whitney_router
 
@@ -98,7 +98,7 @@ def _get_triple_tensor_prod_einsum_str_3_form(k: int, l: int) -> str:
 def triple_tensor_prod_3_form(
     k: int,
     l: int,
-    mesh: SimplicialComplex,
+    mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "tet k_face l_face 3_face"]:
     """
     A specialized version of triple_tensor_prod() for when k + l = 3.

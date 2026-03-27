@@ -16,13 +16,13 @@ def _is_tensor_like(obj: Any) -> bool:
 
 
 @dataclass
-class SimplicialComplex:
+class SimplicialMesh:
     cbd: tuple[
         Float[SparseDecoupledTensor, "edge vert"],
         Float[SparseDecoupledTensor, "tri edge"],
         Float[SparseDecoupledTensor, "tet tri"],
     ]
-    simplices: tuple[
+    splx: tuple[
         Integer[t.LongTensor, "edge 2"],
         Integer[t.LongTensor, "tri 3"],
         Integer[t.LongTensor, "tet 4"],
@@ -33,7 +33,7 @@ class SimplicialComplex:
         # The list of vertices contains only redundant information, but we
         # materialize it anyways so that simplices[0] gives the list of 0-simplices.
         verts = t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
-        self.simplices = (verts,) + self.simplices
+        self.splx = (verts,) + self.splx
 
         # Check for dim consistency in coboundary operators.
         assert self.cbd[0].shape[0] == self.cbd[1].shape[1]
@@ -45,21 +45,41 @@ class SimplicialComplex:
         assert self.tris.shape[0] == self.cbd[1].shape[0]
         assert self.tets.shape[0] == self.cbd[2].shape[0]
 
+        # Check for device consistency
+        for tensor in self.cbd + self.splx:
+            assert tensor.device == self.device
+
+        # Check for dtype consistency
+        for tensor in self.cbd:
+            assert tensor.dtype == self.dtype
+
+        int_dtype = self.splx[0].dtype
+        for tensor in self.splx:
+            assert tensor.dtype == int_dtype
+
+    @property
+    def dtype(self) -> t.dtype:
+        return self.vert_coords.dtype
+
+    @property
+    def device(self) -> t.device:
+        return self.vert_coords.device
+
     @property
     def verts(self) -> Integer[t.LongTensor, "vert 1"]:
-        return self.simplices[0]
+        return self.splx[0]
 
     @property
     def edges(self) -> Integer[t.LongTensor, "edge 2"]:
-        return self.simplices[1]
+        return self.splx[1]
 
     @property
     def tris(self) -> Integer[t.LongTensor, "tri 3"]:
-        return self.simplices[2]
+        return self.splx[2]
 
     @property
     def tets(self) -> Integer[t.LongTensor, "tet 4"]:
-        return self.simplices[3]
+        return self.splx[3]
 
     @property
     def n_verts(self) -> int:
@@ -76,6 +96,10 @@ class SimplicialComplex:
     @property
     def n_tets(self) -> int:
         return self.cbd[2].shape[0]
+
+    @property
+    def n_splx(self) -> tuple[int, int, int, int]:
+        return (self.n_verts, self.n_edges, self.n_tris, self.n_tets)
 
     @cached_property
     def bd_mask(
@@ -219,7 +243,7 @@ class SimplicialComplex:
 
         return cls(
             cbd=(cbd_0, cbd_1, cbd_2),
-            simplices=(unique_canon_edges, tris, tets),
+            splx=(unique_canon_edges, tris, tets),
             vert_coords=vert_coords,
         )
 
@@ -248,24 +272,12 @@ class SimplicialComplex:
 
         return cls(
             cbd=(cbd_0, cbd_1, cbd_2),
-            simplices=(unique_canon_edges, unique_canon_tris, tets),
+            splx=(unique_canon_edges, unique_canon_tris, tets),
             vert_coords=vert_coords,
         )
 
-    @classmethod
-    def from_graph(cls, edges: t.Tensor, n_verts: int, **kwargs):
-        """
-        Creates a Simplicial2Complex object from a standard graph (i.e., a pure
-        1-complex with no tris)
-        """
-        raise NotImplementedError()
 
-    @classmethod
-    def from_simplex_lists(cls, n_verts: int, tris=None, edges=None, **kwargs):
-        raise NotImplementedError()
-
-
-class SimplicialBatch(SimplicialComplex):
+class SimplicialBatch(SimplicialMesh):
     """
     A "batch" of complexes, represented as a single large, disconnected complex.
     This is what the DataLoader returns.
@@ -296,7 +308,7 @@ class SimplicialBatch(SimplicialComplex):
 
 
 # TODO: update to use SparseDecoupledTensor
-def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
+def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
     """
     This function takes in a list of `SimplicialComplex` objects and collate them
     into a single batched complex.
@@ -315,7 +327,7 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
     dtype = sc_batch[0].cbd[0].dtype
 
     # Generate a cumsum n_sc list for each simplex dimension
-    n_simp_batch = t.tensor(
+    n_splx_batch = t.tensor(
         [
             [0] + [sc.n_verts for sc in sc_batch],
             [0] + [sc.n_edges for sc in sc_batch],
@@ -326,13 +338,13 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
         device=device,
     )
 
-    n_simp_cumsum_batch = t.cumsum(n_simp_batch, dim=-1, dtype=t.long)
+    n_splx_cumsum_batch = t.cumsum(n_splx_batch, dim=-1, dtype=t.long)
 
     # Generate the batch tensor for each simplex dimension
     batch_tensor_dict = {
         f"batch_{simp_type}": t.repeat_interleave(
             t.arange(len(sc_batch), dtype=t.long, device=device),
-            repeats=n_simp_batch[simp_dim, 1:],
+            repeats=n_splx_batch[simp_dim, 1:],
         )
         for simp_dim, simp_type in enumerate(["verts", "edges", "tris", "tets"])
     }
@@ -344,12 +356,12 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
             indices=t.hstack(
                 [
                     sc.cbd[dim].indices()
-                    + n_simp_cumsum_batch[[dim + 1, dim], idx][:, None]
+                    + n_splx_cumsum_batch[[dim + 1, dim], idx][:, None]
                     for idx, sc in enumerate(sc_batch)
                 ]
             ),
             values=t.hstack([sc.cbd[dim].values() for sc in sc_batch]),
-            size=(n_simp_cumsum_batch[dim + 1, -1], n_simp_cumsum_batch[dim, -1]),
+            size=(n_splx_cumsum_batch[dim + 1, -1], n_splx_cumsum_batch[dim, -1]),
             dtype=dtype,
             device=device,
         ).coalesce()
@@ -360,7 +372,7 @@ def collate_fn(sc_batch: Sequence[SimplicialComplex]) -> SimplicialBatch:
     simplices_batch = [
         t.vstack(
             [
-                getattr(sc, simp_type) + n_simp_cumsum_batch[0, idx]
+                getattr(sc, simp_type) + n_splx_cumsum_batch[0, idx]
                 for idx, sc in enumerate(sc_batch)
             ]
         )

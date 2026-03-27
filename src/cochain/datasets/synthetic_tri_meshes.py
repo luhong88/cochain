@@ -3,14 +3,14 @@ import pyvista as pv
 import torch as t
 from scipy.spatial import Delaunay
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 
 
-def load_two_tris_mesh() -> SimplicialComplex:
+def load_two_tris_mesh() -> SimplicialMesh:
     """
     A simple 2D mesh embedded in R^3 composed of two triangles sharing one edge.
     """
-    return SimplicialComplex.from_tri_mesh(
+    return SimplicialMesh.from_tri_mesh(
         vert_coords=t.tensor(
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         ),
@@ -18,11 +18,11 @@ def load_two_tris_mesh() -> SimplicialComplex:
     )
 
 
-def load_two_disjoint_tris_mesh() -> SimplicialComplex:
+def load_two_disjoint_tris_mesh() -> SimplicialMesh:
     """
     Similar to the two tris mesh, but the two triangles are disjoint.
     """
-    return SimplicialComplex.from_tri_mesh(
+    return SimplicialMesh.from_tri_mesh(
         vert_coords=t.tensor(
             [
                 [0.0, 0.0, 0.0],
@@ -37,11 +37,11 @@ def load_two_disjoint_tris_mesh() -> SimplicialComplex:
     )
 
 
-def load_square_mesh() -> SimplicialComplex:
+def load_square_mesh() -> SimplicialMesh:
     """
     A simple triangulated square consisting of 4 triangles in the z = 0 plane.
     """
-    return SimplicialComplex.from_tri_mesh(
+    return SimplicialMesh.from_tri_mesh(
         vert_coords=t.tensor(
             [
                 [0.0, 0.0, 0.0],
@@ -55,12 +55,12 @@ def load_square_mesh() -> SimplicialComplex:
     )
 
 
-def load_tent_mesh() -> SimplicialComplex:
+def load_tent_mesh() -> SimplicialMesh:
     """
     Similar to the square mesh, but the central vertex is elevated above the z=0
     plane.
     """
-    return SimplicialComplex.from_tri_mesh(
+    return SimplicialMesh.from_tri_mesh(
         vert_coords=t.tensor(
             [
                 [0.5, 0.5, 1.0],
@@ -74,11 +74,11 @@ def load_tent_mesh() -> SimplicialComplex:
     )
 
 
-def load_hollow_tet_mesh() -> SimplicialComplex:
+def load_hollow_tet_mesh() -> SimplicialMesh:
     """
     A simple 2D mesh for the boundary of a tetrahedron.
     """
-    return SimplicialComplex.from_tri_mesh(
+    return SimplicialMesh.from_tri_mesh(
         vert_coords=t.tensor(
             [
                 [0.0, 0.0, 2.0],
@@ -96,7 +96,7 @@ def load_flat_annulus_mesh(
     r_out: float = 1.0,
     n_segments_in: int = 5,
     n_segments_out: int = 10,
-) -> SimplicialComplex:
+) -> SimplicialMesh:
     """
     Generates a 2D annulus mesh using Delaunay triangulation. The mesh is created
     from points on two concentric circles.
@@ -135,7 +135,7 @@ def load_flat_annulus_mesh(
     keep_mask = np.any(all_triangles >= n_segments_in, axis=1)
     annulus_tris = all_triangles[keep_mask]
 
-    annulus_mesh = SimplicialComplex.from_tri_mesh(
+    annulus_mesh = SimplicialMesh.from_tri_mesh(
         t.from_numpy(vert_coords_3d).to(dtype=t.float),
         t.from_numpy(annulus_tris).to(dtype=t.long),
     )
@@ -162,7 +162,7 @@ def load_finer_flat_annulus_mesh(
         c_res=circum_res,
     ).triangulate()
 
-    mesh = SimplicialComplex.from_tri_mesh(
+    mesh = SimplicialMesh.from_tri_mesh(
         t.from_numpy(np.array(pv_mesh.points)).to(dtype=t.float),
         t.from_numpy(np.array(pv_mesh.regular_faces)).to(dtype=t.long),
     )

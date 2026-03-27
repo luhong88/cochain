@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ...complex import SimplicialComplex
+from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tri_geometry import (
     bary_coord_grad_inner_prods,
@@ -35,7 +35,7 @@ def mass_0_consistent(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     return SparseDecoupledTensor.from_tensor(mass)
 
 
-def mass_1(tri_mesh: SimplicialComplex) -> Float[SparseDecoupledTensor, "edge edge"]:
+def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
     Compute the Galerkin edge/1-form mass matrix.
 

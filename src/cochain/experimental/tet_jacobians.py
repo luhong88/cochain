@@ -1,7 +1,7 @@
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from ..geometry.tet.tet_geometry import (
     bary_coord_grad_inner_prods,
     d_tet_signed_vols_d_vert_coords,
@@ -60,7 +60,7 @@ def _d2_tet_signed_vols_d2_vert_coords(
 
 
 def d_mass_1_d_vert_coords(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "edge edge vert 3"]:
     """
     Compute the Jacobian of the 1-form mass matrix wrt the vertex coordinates.
@@ -187,7 +187,7 @@ def d_mass_1_d_vert_coords(
 
 
 def d_mass_2_d_vert_coords(
-    tet_mesh: SimplicialComplex,
+    tet_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "tri tri vert 3"]:
     """
     Compute the Jacobian of the 2-form mass matrix wrt the vertex coordinates.
@@ -434,7 +434,7 @@ def _d_cotan_weights_d_vert_coords(
 
 
 def d_stiffness_d_vert_coords(
-    tri_mesh: SimplicialComplex,
+    tri_mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "vert vert vert 3"]:
     """
     Compute the jacobian of the stiffness matrix/cotan Laplacian with respect to

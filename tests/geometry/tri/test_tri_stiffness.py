@@ -1,11 +1,11 @@
 import igl
 import torch as t
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.geometry.tri.tri_stiffness import stiffness_matrix
 
 
-def test_stiffness_with_igl(two_tris_mesh: SimplicialComplex):
+def test_stiffness_with_igl(two_tris_mesh: SimplicialMesh):
     """
     Validate the stiffness matrix calculation using the external library `libigl`,
     which performs the same calculation with the `cotmatrix()` function.
@@ -22,7 +22,7 @@ def test_stiffness_with_igl(two_tris_mesh: SimplicialComplex):
     t.testing.assert_close(igl_cotan_laplacian, cochain_cotan_laplacian)
 
 
-def test_stiffness_kernel(icosphere_mesh: SimplicialComplex):
+def test_stiffness_kernel(icosphere_mesh: SimplicialMesh):
     """
     The stiffness matrix acting on a constant function over the vertices should
     return the zero vector. This can be checked by comparing the row sum of the
@@ -33,7 +33,7 @@ def test_stiffness_kernel(icosphere_mesh: SimplicialComplex):
     t.testing.assert_close(row_sum, t.zeros_like(row_sum))
 
 
-def test_stiffness_symmetry(icosphere_mesh: SimplicialComplex):
+def test_stiffness_symmetry(icosphere_mesh: SimplicialMesh):
     """
     The stifness matrix should be a symmetric matrix.
     """
@@ -42,7 +42,7 @@ def test_stiffness_symmetry(icosphere_mesh: SimplicialComplex):
     t.testing.assert_close(sphere_S_dense, sphere_S_dense.T)
 
 
-def test_stiffness_PSD(icosphere_mesh: SimplicialComplex):
+def test_stiffness_PSD(icosphere_mesh: SimplicialMesh):
     """
     The stiffness matrix should be a positive semi-definite matrix.
     """
@@ -52,7 +52,7 @@ def test_stiffness_PSD(icosphere_mesh: SimplicialComplex):
     assert eigs.min() >= -1e-6
 
 
-def test_stiffness_planar(square_mesh: SimplicialComplex):
+def test_stiffness_planar(square_mesh: SimplicialMesh):
     """
     The stiffness matrix acting on a planar mesh coordinates should result in
     zero (for interior vertices).

@@ -5,13 +5,13 @@ import numpy as np
 import skfem as skfem
 import torch as t
 
-from cochain.complex import SimplicialComplex
+from cochain.complex import SimplicialMesh
 from cochain.geometry.tri import tri_geometry, tri_hodge_stars
 
 # Test 0-, 1-, and 2-star operators on a watertight mesh and a mesh with boundaries.
 
 
-def test_star_0_on_tent(tent_mesh: SimplicialComplex):
+def test_star_0_on_tent(tent_mesh: SimplicialMesh):
     s0 = tri_hodge_stars.star_0(tent_mesh).val
 
     # All triangles in this mesh have the same area
@@ -21,7 +21,7 @@ def test_star_0_on_tent(tent_mesh: SimplicialComplex):
     t.testing.assert_close(s0, true_s0)
 
 
-def test_star_0_on_tet(hollow_tet_mesh: SimplicialComplex):
+def test_star_0_on_tet(hollow_tet_mesh: SimplicialMesh):
     s0 = tri_hodge_stars.star_0(hollow_tet_mesh).val.cpu().detach().numpy()
 
     true_s0 = igl.massmatrix(
@@ -33,7 +33,7 @@ def test_star_0_on_tet(hollow_tet_mesh: SimplicialComplex):
     np.testing.assert_allclose(s0, true_s0)
 
 
-def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialComplex):
+def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialMesh):
     s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="circumcentric").val
 
     # Find the tangent of the angle between a base edge and side edge
@@ -48,7 +48,7 @@ def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialComplex):
     t.testing.assert_close(s1, true_s1)
 
 
-def test_star_1_barycentric_on_tent(tent_mesh: SimplicialComplex):
+def test_star_1_barycentric_on_tent(tent_mesh: SimplicialMesh):
     s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="barycentric").val
 
     face_bary = t.tensor([1.5, 0.5, 1.0]) / 3.0
@@ -65,7 +65,7 @@ def test_star_1_barycentric_on_tent(tent_mesh: SimplicialComplex):
     t.testing.assert_close(s1, true_s1)
 
 
-def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialComplex):
+def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialMesh):
     s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex="circumcentric").val
 
     # extract the Hodge 1-star from `igl.cotmatrix()`.
@@ -82,7 +82,7 @@ def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialComplex):
     t.testing.assert_close(s1, true_s1)
 
 
-def test_star_2_on_tent(tent_mesh: SimplicialComplex):
+def test_star_2_on_tent(tent_mesh: SimplicialMesh):
     s2 = tri_hodge_stars.star_2(tent_mesh).val
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
@@ -91,7 +91,7 @@ def test_star_2_on_tent(tent_mesh: SimplicialComplex):
     t.testing.assert_close(s2, true_s2)
 
 
-def test_star_2_on_tet(hollow_tet_mesh: SimplicialComplex):
+def test_star_2_on_tet(hollow_tet_mesh: SimplicialMesh):
     s2 = tri_hodge_stars.star_2(hollow_tet_mesh).val.cpu().detach().numpy()
 
     true_s2 = 2.0 / igl.doublearea(
@@ -102,7 +102,7 @@ def test_star_2_on_tet(hollow_tet_mesh: SimplicialComplex):
     np.testing.assert_allclose(s2, true_s2)
 
 
-def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialComplex):
+def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialMesh):
     tri_areas = tri_geometry.compute_tri_areas(
         flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
     )
@@ -118,7 +118,7 @@ def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialComplex):
     t.testing.assert_close(tri_areas, true_tri_areas)
 
 
-def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialComplex):
+def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialMesh):
     # Note that this function does not return the Jacobian; rather, for each
     # triangle, it returns the gradient of its area wrt each of its three verticies.
     dAdV = tri_geometry.compute_d_tri_areas_d_vert_coords(

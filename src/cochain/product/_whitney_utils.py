@@ -4,12 +4,12 @@ import math
 import torch as t
 from jaxtyping import Float, Integer
 
-from ..complex import SimplicialComplex
+from ..complex import SimplicialMesh
 from ..geometry.tet import tet_geometry
 from ..geometry.tri import tri_geometry
 from ..utils.faces import enumerate_faces
 from ..utils.perm_parity import compute_lex_rel_orient
-from ..utils.search import simplex_search
+from ..utils.search import splx_search
 
 
 def compute_whitney_router(
@@ -61,7 +61,7 @@ def compute_moments(
 
 
 def compute_bc_grad_dot(
-    mesh: SimplicialComplex,
+    mesh: SimplicialMesh,
 ) -> tuple[Float[t.Tensor, "simp vert vert"], Float[t.Tensor, " simp"]]:
     """
     A wrapper function for dispatching the correct bary_coord_grad_inner_prods()
@@ -78,15 +78,15 @@ def compute_bc_grad_dot(
             )
 
         case 3:
-            signed_simp_size = tet_geometry.get_tet_signed_vols(
+            signed_splx_size = tet_geometry.get_tet_signed_vols(
                 mesh.vert_coords, mesh.tets
             )
-            simp_size = t.abs(signed_simp_size)
-            signed_simp_size_grad = tet_geometry.d_tet_signed_vols_d_vert_coords(
+            simp_size = t.abs(signed_splx_size)
+            signed_splx_size_grad = tet_geometry.d_tet_signed_vols_d_vert_coords(
                 mesh.vert_coords, mesh.tets
             )
             bc_grad_dot = tet_geometry.bary_coord_grad_inner_prods(
-                signed_simp_size.view(-1, 1, 1), signed_simp_size_grad
+                signed_splx_size.view(-1, 1, 1), signed_splx_size_grad
             )
 
         case _:
@@ -95,13 +95,13 @@ def compute_bc_grad_dot(
     return bc_grad_dot, simp_size
 
 
-def find_top_simp_faces(
+def find_top_splx_faces(
     face_dim: int,
     mesh_dim: int,
-    mesh: SimplicialComplex,
+    mesh: SimplicialMesh,
     simp_map: dict[int, Integer[t.Tensor, "simp vert"]],
 ) -> tuple[
-    Integer[t.LongTensor, "top_simp k_face"], Float[t.Tensor, "top_simp k_face"]
+    Integer[t.LongTensor, "top_splx k_face"], Float[t.Tensor, "top_splx k_face"]
 ]:
     """
     Given a simplicial n-complex, for each top level n-simplex, find all of its
@@ -110,14 +110,14 @@ def find_top_simp_faces(
     """
     k = face_dim
     # Identify the k-faces of the top level simplices and their sign corrections.
-    k_faces: Float[t.Tensor, "top_simp k_face k+1"] = simp_map[mesh_dim][
+    k_faces: Float[t.Tensor, "top_splx k_face k+1"] = simp_map[mesh_dim][
         :, enumerate_faces(mesh_dim, k, device=mesh.vert_coords.device)
     ]
     k_faces_flat = k_faces.view(-1, k + 1)
-    k_faces_idx_flat = simplex_search(
-        key_simps=simp_map[k],
-        query_simps=k_faces_flat,
-        sort_key_simp=True if k == mesh.dim else False,
+    k_faces_idx_flat = splx_search(
+        key_splx=simp_map[k],
+        query_splx=k_faces_flat,
+        sort_key_splx=True if k == mesh.dim else False,
         sort_key_vert=True if k == mesh.dim else False,
         sort_query_vert=True,
     )

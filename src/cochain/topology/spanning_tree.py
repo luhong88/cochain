@@ -5,7 +5,7 @@ from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
 
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
-from cochain.utils.search import simplex_search
+from cochain.utils.search import splx_search
 
 
 def _minimum_spanning_tree(
@@ -141,10 +141,10 @@ def compute_tree_mask(
     # use the indices to retrieve the edge weights from the provided mass (or hodge
     # star) matrices.
     edges = adjacency.pattern.idx_coo.T
-    edge_idx = simplex_search(
-        key_simps=canon_edges,
-        query_simps=edges,
-        sort_key_simp=True,
+    edge_idx = splx_search(
+        key_splx=canon_edges,
+        query_splx=edges,
+        sort_key_splx=True,
         sort_key_vert=False,
         sort_query_vert=True,
     )
@@ -169,10 +169,10 @@ def compute_tree_mask(
         keep_super_node=False,
     ).T
 
-    mst_idx = simplex_search(
-        key_simps=canon_edges,
-        query_simps=mst,
-        sort_key_simp=True,
+    mst_idx = splx_search(
+        key_splx=canon_edges,
+        query_splx=mst,
+        sort_key_splx=True,
         sort_key_vert=False,
         sort_query_vert=True,
     )
@@ -260,10 +260,10 @@ def compute_cotree_mask(
     dual_edges = adjacency.pattern.idx_coo.T
     edge_face_idx, edge_coface_idx = _cbd_to_coface(cbd_1, degree=2)
     primal_edge_idx = edge_face_idx[
-        simplex_search(
-            key_simps=edge_coface_idx,
-            query_simps=dual_edges,
-            sort_key_simp=True,
+        splx_search(
+            key_splx=edge_coface_idx,
+            query_splx=dual_edges,
+            sort_key_splx=True,
             sort_key_vert=False,
             sort_query_vert=True,
         )
@@ -295,10 +295,10 @@ def compute_cotree_mask(
     # Again, need to convert the dual edge representation as a pair of dual vertices
     # (primal triangles) to the corresponding primal edge indices.
     mst_idx = edge_face_idx[
-        simplex_search(
-            key_simps=edge_coface_idx,
-            query_simps=mst,
-            sort_key_simp=True,
+        splx_search(
+            key_splx=edge_coface_idx,
+            query_splx=mst,
+            sort_key_splx=True,
             sort_key_vert=False,
             sort_query_vert=True,
         )
