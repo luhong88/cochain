@@ -7,7 +7,7 @@ import torch as t
 from jaxtyping import Bool, Float, Integer
 
 from .sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
-from .topology import boundaries, coboundaries, tet_topology, tri_topology
+from .topology import boundaries, coboundaries
 from .utils.faces import GlobalFaces, enumerate_global_faces
 
 
