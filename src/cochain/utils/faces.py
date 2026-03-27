@@ -50,6 +50,11 @@ def enumerate_global_faces(
     k_faces: Float[t.Tensor, "m_splx k_face k+1"] = m_splx[
         :, enumerate_local_faces(splx_dim=m, face_dim=k, device=device)
     ]
+    # If m is the mesh dimension, then the key splx/vert requires sorting only
+    # if k == m, because all but the top-level simplices are already lex-sorted.
+    # If m is less than the mesh dimension, then the key splx/vert never requires
+    # sorting (and the if-else ternary expression is unnecessary and potentially
+    # wasteful).
     k_faces_idx: Integer[t.LongTensor, "m_splx k_face"] = splx_search(
         key_splx=k_splx,
         query_splx=k_faces,
