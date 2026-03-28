@@ -1,3 +1,5 @@
+from typing import Literal
+
 import torch as t
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
@@ -11,11 +13,11 @@ from ...geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
-from ...sparse.decoupled_tensor import SparseDecoupledTensor
+from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ...utils.faces import enumerate_local_faces
 
 
-def _element_based_tri_cross_mass_matrix(
+def _element_based_tri_mixed_mass_matrix(
     n_edges: int,
     tri_edge_idx: Integer[t.LongTensor, "tri local_edge=3"],
     tri_edge_orientations: Float[t.Tensor, "tri local_edge=3"],
@@ -84,11 +86,11 @@ def _element_based_tri_cross_mass_matrix(
     return SparseDecoupledTensor.from_tensor(cross_mass)
 
 
-def _element_based_tet_cross_mass_matrix(
+def _element_based_tet_mixed_mass_matrix(
     n_edges: int,
     tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
     tet_edge_orientations: Float[t.Tensor, "tet local_edge=6"],
-    tet_signed_vols: Float[t.Tensor, " tet"],
+    tet_unsigned_vols: Float[t.Tensor, " tet"],
     bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
 ) -> Float[SparseDecoupledTensor, "tri*coord global_edge"]:
     """
@@ -103,7 +105,7 @@ def _element_based_tet_cross_mass_matrix(
     # int[W_ij*dA] = A*(∇λ_j - ∇λ_i)/(d+1), d = 3
     basis_int = (
         einsum(
-            tet_signed_vols,
+            tet_unsigned_vols,
             tet_edge_orientations,
             bary_coords_grad[:, local_edge_idx[:, 1], :]
             - bary_coords_grad[:, local_edge_idx[:, 0], :],
@@ -112,7 +114,7 @@ def _element_based_tet_cross_mass_matrix(
         / 4.0
     )
 
-    n_tets = tet_signed_vols.size(0)
+    n_tets = tet_unsigned_vols.size(0)
     n_coords = 3
     n_edges_per_tet = 6
 
@@ -143,3 +145,80 @@ def _element_based_tet_cross_mass_matrix(
     ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(cross_mass)
+
+
+def _element_based_tri_vector_mass_matrix(
+    tri_areas: Float[t.Tensor, " tri"],
+) -> Float[DiagDecoupledTensor, "tri*coord tri*coord"]:
+    """
+    Compute the vector mass matrix containing the inner products between the
+    per-triangle, piecewise-constant Cartesian basis vectors, which is simply
+    the area-scaled identity matrix.
+    """
+    val = repeat(tri_areas, "tri -> (tri coord)", coord=3)
+
+    return DiagDecoupledTensor(val)
+
+
+def _element_based_tet_vector_mass_matrix(
+    tet_unsigned_vols: Float[t.Tensor, " tet"],
+) -> Float[DiagDecoupledTensor, "tri*coord tri*coord"]:
+    """
+    Compute the vector mass matrix containing the inner products between the
+    per-tet, piecewise-constant Cartesian basis vectors, which is simply
+    the volume-scaled identity matrix.
+    """
+    val = repeat(tet_unsigned_vols, "tet -> (tet coord)", coord=3)
+
+    return DiagDecoupledTensor(val)
+
+
+def _element_based_galerkin_flat(
+    vec_field: Float[t.Tensor, "top_splx coord"],
+    mass_1: Float[SparseDecoupledTensor, "edge edge"]
+    | Float[DiagDecoupledTensor, "edge edge"],
+    mass_mixed: Float[SparseDecoupledTensor, "top_splx*coord edge"],
+    method: Literal["dense", "solver", "inv_star"],
+) -> Float[t.Tensor, " edge=3"]:
+    """
+    Compute the flat of a piecewise constant vector field defined over the top-level
+    simplices of the mesh using the Galerkin projection method.
+
+    Formula: M_1@η = P.T@v, where M_1 is the edge mass matrix, η is the 1-cochain,
+    P is the mixed mass matrix, and v is the vector field.
+    """
+    rhs = mass_mixed.T @ vec_field.flatten()
+
+    match method:
+        case "dense":
+            return t.linalg.solve(mass_1.to_dense(), rhs)
+
+        case "inv_star":
+            return mass_1.inv @ rhs
+
+        case "solver":
+            raise NotImplementedError()
+
+        case _:
+            raise ValueError()
+
+
+def _element_based_galerkin_sharp(
+    cochain_1: Float[t.Tensor, " edge"],
+    mass_vec: Float[DiagDecoupledTensor, "top_splx*coord top_splx*coord"],
+    mass_mixed: Float[SparseDecoupledTensor, "top_splx*coord edge"],
+) -> Float[t.Tensor, "top_splx coord=3"]:
+    """
+    Compute the sharp of a 1-cochain using the Galerkin projection method. The
+    resulting vector field is piecewise constant and defined over the top-level
+    simplices of the mesh.
+
+    Formula: M_V@v = P@η, where M_V is the vector mass matrix, v is the vector field,
+    P is the mixed mass matrix, and η is the 1-cochain.
+    """
+
+    return rearrange(
+        mass_vec.inv @ mass_mixed @ cochain_1,
+        "(top_splx coord) -> top_splx coord",
+        coord=3,
+    )
