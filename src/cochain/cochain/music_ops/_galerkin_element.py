@@ -28,6 +28,10 @@ def _element_based_tri_mixed_mass_matrix(
     Compute the cross/mixed mass matrix containing the inner products between the
     per-triangle, piecewise-constant Cartesian basis vectors and the (sharp of the)
     Whitney basis functions of 1-forms (of the lowest order) on a triangular mesh.
+
+    More specifically, the basis vectors are (ϕ_i*e_1, ϕ_i*e_2, ϕ_i*e_3), where
+    ϕ_i is the indicator function for triangle i, and the e's are the standard
+    Cartesian basis vectors.
     """
     local_edge_idx = enumerate_local_faces(
         splx_dim=2, face_dim=1, device=bary_coords_grad.device
