@@ -17,6 +17,89 @@ from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTenso
 from ...utils.faces import enumerate_local_faces
 
 
+def _vertex_based_tri_mixed_mass_matrix(
+    n_verts: int,
+    n_edges: int,
+    tris: Integer[t.LongTensor, "tri local_vert=3"],
+    tri_edge_idx: Integer[t.LongTensor, "tri local_edge=3"],
+    tri_edge_orientations: Float[t.Tensor, "tri local_edge=3"],
+    tri_areas: Float[t.Tensor, " tri"],
+    bary_coords_grad: Float[t.Tensor, "tri local_vert=3 coord=3"],
+) -> Float[SparseDecoupledTensor, "global_vert*coord global_edge"]:
+    """
+    Compute the cross/mixed mass matrix. For each triangle,
+
+    P_(ix)_(jk) = int[(λ_i*e_x)(λ_j*∇λ_k - λ_k*∇λ_j)dA]
+                = <e_x, M_ij * ∇λ_k - M_ik * ∇λ_j>
+
+    where x index over the Cartesian basis vectors anchored at the vertices and
+    (i, j, k) index over the vertices in a triangle, and M is the local, per-tri
+    consistent mass-0 matrix.
+    """
+    ref_local_mass_0 = ((t.ones(3, 3) + t.eye(3)) / 12.0).to(
+        dtype=tri_areas.dtype, device=tri_areas.device
+    )
+    local_mass_0: Float[t.Tensor, "tri vert=3 vert=3"] = tri_areas.view(
+        -1, 1, 1
+    ) * ref_local_mass_0.view(1, 3, 3)
+
+    local_edge_idx: Integer[t.LongTensor, "edge=3 vert=2"] = enumerate_local_faces(
+        splx_dim=2, face_dim=1, device=bary_coords_grad.device
+    )
+
+    local_int = einsum(
+        local_mass_0,
+        bary_coords_grad,
+        "tri v_i v_j, tri v_k coord -> tri v_i v_j v_k coord",
+    ) - einsum(
+        local_mass_0,
+        bary_coords_grad,
+        "tri v_i v_k, tri v_j coord -> tri v_i v_j v_k coord",
+    )
+
+    # local_int contains all possible pairing of vertices (v_i) and edges (v_j, v_k),
+    # but we only need the 3 unique edge faces and the orientation sign correction
+    # in preparation for scatter-add to global canonical edges.
+    local_int_canon_edges = einsum(
+        tri_edge_orientations,
+        local_int[:, :, local_edge_idx[:, 0], local_edge_idx[:, 1], :],
+        "tri e_jk, tri v_i e_jk coord -> tri v_i coord e_jk",
+    )
+
+    n_coords = 3
+    n_verts_per_tri = 3
+    n_edges_per_tri = 3
+
+    row_idx_shaped = repeat(n_coords * tris, "tri v_i -> tri v_i coord", coord=n_coords)
+    offset = t.tensor(
+        [[[0, 1, 2]]], dtype=row_idx_shaped.dtype, device=row_idx_shaped.device
+    )
+    row_idx = repeat(
+        row_idx_shaped + offset,
+        "tri v_i coord -> (tri v_i coord e_jk)",
+        e_jk=n_edges_per_tri,
+    )
+
+    col_idx = repeat(
+        tri_edge_idx,
+        "tri e_jk -> (tri v_i coord e_jk)",
+        v_i=n_verts_per_tri,
+        coord=n_coords,
+    )
+
+    coo_idx = t.stack((row_idx, col_idx))
+
+    cross_mass = t.sparse_coo_tensor(
+        indices=coo_idx,
+        values=local_int_canon_edges.flatten(),
+        size=(n_verts * n_coords, n_edges),
+        dtype=bary_coords_grad.dtype,
+        device=bary_coords_grad.device,
+    ).coalesce()
+
+    return SparseDecoupledTensor.from_tensor(cross_mass)
+
+
 def _vertex_based_vector_mass_matrix(
     mass_0: Float[SparseDecoupledTensor, "vert vert"],
 ) -> Float[SparseDecoupledTensor, "vert*coord vert*coord"]:
