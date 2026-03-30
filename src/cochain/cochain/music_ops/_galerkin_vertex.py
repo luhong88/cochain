@@ -186,7 +186,7 @@ def _vertex_based_tet_mixed_mass_matrix(
     return SparseDecoupledTensor.from_tensor(cross_mass)
 
 
-def _vertex_based_vector_mass_matrix(
+def _vertex_based_consistent_vector_mass_matrix(
     mass_0: Float[SparseDecoupledTensor, "vert vert"],
 ) -> Float[SparseDecoupledTensor, "vert*coord vert*coord"]:
     """
@@ -196,8 +196,8 @@ def _vertex_based_vector_mass_matrix(
 
     M_V_(ix)(jy) = int[(λ_i*e_x)(λ_j*e_y) dV] = δ_xy*M_ij
 
-    where M_ij is the consistent mass-0 matrix. Note that this works identically
-    on both tri and tet meshes.
+    where M_ij is the (global) consistent mass-0 matrix. Note that this works
+    identically on both tri and tet meshes.
 
     Example:
     -----
@@ -220,8 +220,6 @@ def _vertex_based_vector_mass_matrix(
       b 0 0 | b 0 0 | a 0 0
       0 b 0 | 0 b 0 | 0 a 0
       0 0 b | 0 0 b | 0 0 a
-
-
     """
     n_coords = 3
 
@@ -246,3 +244,85 @@ def _vertex_based_vector_mass_matrix(
     ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(m_v)
+
+
+def _vertex_based_diag_vector_mass_matrix(
+    star_0: Float[DiagDecoupledTensor, "vert vert"],
+) -> Float[DiagDecoupledTensor, "vert*coord vert*coord"]:
+    """
+    An approximation of _vertex_based_vector_mass_matrix() by replacing the
+    consistent mass-0 matrix with the diagonal Hodge start-0 matrix, which results
+    in a diagonal vector mass matrix.
+    """
+    val = repeat(star_0.val, "vert -> (vert coord)", coord=3)
+    return DiagDecoupledTensor(val)
+
+
+def _vertex_based_galerkin_flat(
+    vec_field: Float[t.Tensor, "vert coord"],
+    mass_1: Float[SparseDecoupledTensor, "edge edge"]
+    | Float[DiagDecoupledTensor, "edge edge"],
+    mass_mixed: Float[SparseDecoupledTensor, "vert*coord edge"],
+    method: Literal["dense", "solver", "inv_star"],
+) -> Float[t.Tensor, " edge"]:
+    """
+    Compute the flat of a vector field defined over the vertices of the mesh using
+    the Galerkin projection method.
+
+    Formula: M_0@η = P.T@v, where M_0 is the vert mass matrix, η is the 1-cochain,
+    P is the mixed mass matrix, and v is the vector field.
+    """
+    rhs = mass_mixed.T @ vec_field.flatten()
+
+    match method:
+        case "dense":
+            return t.linalg.solve(mass_1.to_dense(), rhs)
+
+        case "inv_star":
+            return mass_1.inv @ rhs
+
+        case "solver":
+            raise NotImplementedError()
+
+        case _:
+            raise ValueError()
+
+
+def _vertex_based_galerkin_sharp(
+    cochain_1: Float[t.Tensor, " edge"],
+    mass_vec: Float[SparseDecoupledTensor, "vert*coord vert*coord"]
+    | Float[DiagDecoupledTensor, "vert*coord vert*coord"],
+    mass_mixed: Float[SparseDecoupledTensor, "vert*coord edge"],
+    method: Literal["dense", "solver", "inv_star"],
+) -> Float[t.Tensor, "vert coord=3"]:
+    """
+    Compute the sharp of a 1-cochain using the Galerkin projection method. The
+    resulting vector field is associated with the vertices of the mesh.
+
+    Formula: M_V@v = P@η, where M_V is the vector mass matrix, v is the vector field,
+    P is the mixed mass matrix, and η is the 1-cochain.
+
+    Note that, unlike the element-based approach, M_V may not be diagonal using
+    the vertex-based approach. If M_V is derived from the consistent mass-0 matrix,
+    then it is not diagonal and the `method` argument must be either "dense" or
+    "solver"; if M_V is derived from the diagonal Hodge star-0, then it is diagonal
+    and the `method` argument should be "inv_star".
+    """
+    rhs = mass_mixed @ cochain_1
+
+    match method:
+        case "dense":
+            return t.linalg.solve(mass_vec.to_dense(), rhs)
+
+        case "inv_star":
+            return rearrange(
+                mass_vec.inv @ rhs,
+                "(top_splx coord) -> top_splx coord",
+                coord=3,
+            )
+
+        case "solver":
+            raise NotImplementedError()
+
+        case _:
+            raise ValueError()

@@ -160,7 +160,6 @@ def _element_based_tri_vector_mass_matrix(
     the area-scaled identity matrix.
     """
     val = repeat(tri_areas, "tri -> (tri coord)", coord=3)
-
     return DiagDecoupledTensor(val)
 
 
@@ -173,7 +172,6 @@ def _element_based_tet_vector_mass_matrix(
     the volume-scaled identity matrix.
     """
     val = repeat(tet_unsigned_vols, "tet -> (tet coord)", coord=3)
-
     return DiagDecoupledTensor(val)
 
 
@@ -183,7 +181,7 @@ def _element_based_galerkin_flat(
     | Float[DiagDecoupledTensor, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "top_splx*coord edge"],
     method: Literal["dense", "solver", "inv_star"],
-) -> Float[t.Tensor, " edge=3"]:
+) -> Float[t.Tensor, " edge"]:
     """
     Compute the flat of a piecewise constant vector field defined over the top-level
     simplices of the mesh using the Galerkin projection method.
