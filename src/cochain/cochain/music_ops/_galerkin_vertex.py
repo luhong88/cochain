@@ -36,15 +36,13 @@ def _vertex_based_tri_mixed_mass_matrix(
     (i, j, k) index over the vertices in a triangle, and M is the local, per-tri
     consistent mass-0 matrix.
     """
+    # Note that, for this calculation, the local, per-triangle mass matrix is
+    # required instead of the global mass matrices computed in geometry.tri.
     ref_local_mass_0 = ((t.ones(3, 3) + t.eye(3)) / 12.0).to(
         dtype=tri_areas.dtype, device=tri_areas.device
     )
-    local_mass_0: Float[t.Tensor, "tri vert=3 vert=3"] = tri_areas.view(
-        -1, 1, 1
-    ) * ref_local_mass_0.view(1, 3, 3)
-
-    local_edge_idx: Integer[t.LongTensor, "edge=3 vert=2"] = enumerate_local_faces(
-        splx_dim=2, face_dim=1, device=bary_coords_grad.device
+    local_mass_0: Float[t.Tensor, "tri vert=3 vert=3"] = einsum(
+        tri_areas, ref_local_mass_0, "tri, v_i v_j -> tri v_i v_j"
     )
 
     local_int = einsum(
@@ -60,6 +58,10 @@ def _vertex_based_tri_mixed_mass_matrix(
     # local_int contains all possible pairing of vertices (v_i) and edges (v_j, v_k),
     # but we only need the 3 unique edge faces and the orientation sign correction
     # in preparation for scatter-add to global canonical edges.
+    local_edge_idx: Integer[t.LongTensor, "edge=3 vert=2"] = enumerate_local_faces(
+        splx_dim=2, face_dim=1, device=bary_coords_grad.device
+    )
+
     local_int_canon_edges = einsum(
         tri_edge_orientations,
         local_int[:, :, local_edge_idx[:, 0], local_edge_idx[:, 1], :],
@@ -70,6 +72,11 @@ def _vertex_based_tri_mixed_mass_matrix(
     n_verts_per_tri = 3
     n_edges_per_tri = 3
 
+    # Scatter-add the local_int_canon_edges to convert the (local vert, local edge)
+    # relation to the (global vert, global edge) representation.
+
+    # The row index iterates over the flattened (global vert, coordinate basis) dim.
+    # The col index iterates over the global edge dim.
     row_idx_shaped = repeat(n_coords * tris, "tri v_i -> tri v_i coord", coord=n_coords)
     offset = t.tensor(
         [[[0, 1, 2]]], dtype=row_idx_shaped.dtype, device=row_idx_shaped.device
@@ -87,10 +94,89 @@ def _vertex_based_tri_mixed_mass_matrix(
         coord=n_coords,
     )
 
-    coo_idx = t.stack((row_idx, col_idx))
+    cross_mass = t.sparse_coo_tensor(
+        indices=t.stack((row_idx, col_idx)),
+        values=local_int_canon_edges.flatten(),
+        size=(n_verts * n_coords, n_edges),
+        dtype=bary_coords_grad.dtype,
+        device=bary_coords_grad.device,
+    ).coalesce()
+
+    return SparseDecoupledTensor.from_tensor(cross_mass)
+
+
+def _vertex_based_tet_mixed_mass_matrix(
+    n_verts: int,
+    n_edges: int,
+    tets: Integer[t.LongTensor, "tri local_vert=3"],
+    tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
+    tet_edge_orientations: Float[t.Tensor, "tet local_edge=6"],
+    tet_unsigned_vols: Float[t.Tensor, " tet"],
+    bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
+) -> Float[SparseDecoupledTensor, "global_vert*coord global_edge"]:
+    """
+    Compute the cross/mixed mass matrix for a tet mesh.
+    """
+    # Note that, for this calculation, the local, per-tet mass matrix is
+    # required instead of the global mass matrices computed in geometry.tet.
+    ref_local_mass_0 = ((t.ones(4, 4) + t.eye(4)) / 20.0).to(
+        dtype=tet_unsigned_vols.dtype, device=tet_unsigned_vols.device
+    )
+    local_mass_0: Float[t.Tensor, "tet vert=4 vert=4"] = einsum(
+        tet_unsigned_vols, ref_local_mass_0, "tet, v_i v_j -> tet v_i v_j"
+    )
+
+    local_int = einsum(
+        local_mass_0,
+        bary_coords_grad,
+        "tet v_i v_j, tet v_k coord -> tet v_i v_j v_k coord",
+    ) - einsum(
+        local_mass_0,
+        bary_coords_grad,
+        "tet v_i v_k, tet v_j coord -> tet v_i v_j v_k coord",
+    )
+
+    # local_int contains all possible pairing of vertices (v_i) and edges (v_j, v_k),
+    # but we only need the 6 unique edge faces and the orientation sign correction
+    # in preparation for scatter-add to global canonical edges.
+    local_edge_idx: Integer[t.LongTensor, "edge=6 vert=2"] = enumerate_local_faces(
+        splx_dim=3, face_dim=1, device=bary_coords_grad.device
+    )
+
+    local_int_canon_edges = einsum(
+        tet_edge_orientations,
+        local_int[:, :, local_edge_idx[:, 0], local_edge_idx[:, 1], :],
+        "tet e_jk, tet v_i e_jk coord -> tet v_i coord e_jk",
+    )
+
+    n_coords = 3
+    n_verts_per_tet = 4
+    n_edges_per_tet = 6
+
+    # Scatter-add the local_int_canon_edges to convert the (local vert, local edge)
+    # relation to the (global vert, global edge) representation.
+
+    # The row index iterates over the flattened (global vert, coordinate basis) dim.
+    # The col index iterates over the global edge dim.
+    row_idx_shaped = repeat(n_coords * tets, "tet v_i -> tet v_i coord", coord=n_coords)
+    offset = t.tensor(
+        [[[0, 1, 2]]], dtype=row_idx_shaped.dtype, device=row_idx_shaped.device
+    )
+    row_idx = repeat(
+        row_idx_shaped + offset,
+        "tet v_i coord -> (tet v_i coord e_jk)",
+        e_jk=n_edges_per_tet,
+    )
+
+    col_idx = repeat(
+        tet_edge_idx,
+        "tet e_jk -> (tet v_i coord e_jk)",
+        v_i=n_verts_per_tet,
+        coord=n_coords,
+    )
 
     cross_mass = t.sparse_coo_tensor(
-        indices=coo_idx,
+        indices=t.stack((row_idx, col_idx)),
         values=local_int_canon_edges.flatten(),
         size=(n_verts * n_coords, n_edges),
         dtype=bary_coords_grad.dtype,
