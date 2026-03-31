@@ -4,7 +4,10 @@ from jaxtyping import Float, Integer
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
 from ..tri.tri_geometry import compute_tri_areas
-from .tet_masses import mass_0, mass_3
+from .tet_geometry import (
+    get_tet_signed_vols,
+)
+from .tet_masses import mass_3
 
 star_3 = mass_3
 
@@ -118,4 +121,24 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
     return DiagDecoupledTensor.from_tensor(diag)
 
 
-star_0 = mass_0
+def star_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
+    """
+    Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
+    barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
+    function returns the diagonal elements.
+
+    The barycentric dual volume for each vertex is the sum of 1/4 of the volumes
+    of all tetrahedra that share the vertex as a face.
+    """
+    n_verts = tet_mesh.n_verts
+
+    tet_vol = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+
+    diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
+    diag.scatter_add_(
+        dim=0,
+        index=tet_mesh.tets.flatten(),
+        src=t.repeat_interleave(tet_vol / 4.0, 4),
+    )
+
+    return DiagDecoupledTensor.from_tensor(diag)

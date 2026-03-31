@@ -11,7 +11,7 @@ from .tet_geometry import (
 )
 
 
-def mass_0_consistent(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
+def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
     """
@@ -34,29 +34,6 @@ def mass_0_consistent(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(mass)
-
-
-def mass_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
-    """
-    Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
-    barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
-    function returns the diagonal elements.
-
-    The barycentric dual volume for each vertex is the sum of 1/4 of the volumes
-    of all tetrahedra that share the vertex as a face.
-    """
-    n_verts = tet_mesh.n_verts
-
-    tet_vol = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
-
-    diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
-    diag.scatter_add_(
-        dim=0,
-        index=tet_mesh.tets.flatten(),
-        src=t.repeat_interleave(tet_vol / 4.0, 4),
-    )
-
-    return DiagDecoupledTensor.from_tensor(diag)
 
 
 def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"]:

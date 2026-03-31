@@ -5,8 +5,8 @@ from jaxtyping import Float
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
-from .tet_hodge_stars import star_1, star_2
-from .tet_masses import mass_0, mass_1, mass_2, mass_3
+from .tet_hodge_stars import star_0, star_1, star_2
+from .tet_masses import mass_1, mass_2, mass_3
 from .tet_stiffness import stiffness_matrix
 
 # For the weak k-Laplacian,
@@ -58,7 +58,7 @@ def weak_laplacian_1_div_grad(
     d0_T = d0.T
 
     m_1 = mass_1(tet_mesh)
-    inv_m_0 = mass_0(tet_mesh).inv
+    inv_m_0 = star_0(tet_mesh).inv
 
     return m_1 @ d0 @ inv_m_0 @ d0_T @ m_1
 

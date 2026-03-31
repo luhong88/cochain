@@ -110,7 +110,7 @@ def vector_mass(
                 star_0 = tri_hodge_stars.star_0(mesh)
                 return _galerkin_vertex.vertex_based_diag_vector_mass_matrix(star_0)
             else:
-                mass_0 = tri_masses.mass_0_consistent(mesh)
+                mass_0 = tri_masses.mass_0(mesh)
                 return _galerkin_vertex.vertex_based_consistent_vector_mass_matrix(
                     mass_0
                 )
@@ -120,7 +120,7 @@ def vector_mass(
                 star_0 = tet_hodge_stars.star_0(mesh)
                 return _galerkin_vertex.vertex_based_diag_vector_mass_matrix(star_0)
             else:
-                mass_0 = tet_masses.mass_0_consistent(mesh)
+                mass_0 = tet_masses.mass_0(mesh)
                 return _galerkin_vertex.vertex_based_consistent_vector_mass_matrix(
                     mass_0
                 )

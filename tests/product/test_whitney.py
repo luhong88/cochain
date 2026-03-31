@@ -15,7 +15,7 @@ def _compute_mass_matrix(mesh: SimplicialMesh, k: int):
         case 2:
             match k:
                 case 0:
-                    mass = tri_masses.mass_0_consistent(mesh)
+                    mass = tri_masses.mass_0(mesh)
                 case 1:
                     mass = tri_masses.mass_1(mesh)
                 case 2:
@@ -25,7 +25,7 @@ def _compute_mass_matrix(mesh: SimplicialMesh, k: int):
         case 3:
             match k:
                 case 0:
-                    mass = tet_masses.mass_0_consistent(mesh)
+                    mass = tet_masses.mass_0(mesh)
                 case 1:
                     mass = tet_masses.mass_1(mesh)
                 case 2:

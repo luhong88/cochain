@@ -5,7 +5,7 @@ import torch as t
 from skfem.helpers import dot
 
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tet import tet_masses
+from cochain.geometry.tet import tet_hodge_stars, tet_masses
 from cochain.geometry.tet.tet_geometry import get_tet_signed_vols
 
 
@@ -98,7 +98,7 @@ def test_mass_0_matrix_total_vol_partition(two_tets_mesh: SimplicialMesh):
     The sum of the diagonal 0-form mass matrices should be equal to the
     total volume of the tet.
     """
-    total_mass = tet_masses.mass_0(two_tets_mesh).tr
+    total_mass = tet_hodge_stars.star_0(two_tets_mesh).tr
     total_vol = t.sum(
         t.abs(get_tet_signed_vols(two_tets_mesh.vert_coords, two_tets_mesh.tets))
     )

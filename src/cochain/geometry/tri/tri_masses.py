@@ -10,7 +10,7 @@ from .tri_geometry import (
 )
 
 
-def mass_0_consistent(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
+def mass_0(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
     """
