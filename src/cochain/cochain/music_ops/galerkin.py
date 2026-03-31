@@ -15,10 +15,17 @@ from ...geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
+from ...sparse.decoupled_tensor import (
+    BaseDecoupledTensor,
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+)
 from . import _galerkin_element, _galerkin_vertex
 
 
-def mixed_mass(mesh: SimplicialMesh, mode: Literal["element", "vertex"]):
+def mixed_mass(
+    mesh: SimplicialMesh, mode: Literal["element", "vertex"]
+) -> Float[SparseDecoupledTensor, "splx*coord edge"]:
     if mesh.dim == 2:
         tri_areas = rearrange(
             compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
@@ -91,7 +98,7 @@ def mixed_mass(mesh: SimplicialMesh, mode: Literal["element", "vertex"]):
 
 def vector_mass(
     mesh: SimplicialMesh, mode: Literal["element", "vertex"], diagonal: bool
-):
+) -> Float[BaseDecoupledTensor, "splx*coord splx*coord"]:
     if mode == "element":
         if mesh.dim == 2:
             tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
@@ -124,3 +131,50 @@ def vector_mass(
                 return _galerkin_vertex.vertex_based_consistent_vector_mass_matrix(
                     mass_0
                 )
+
+
+def galerkin_flat(
+    vec_field: Float[t.Tensor, "splx coord"],
+    mass_1: Float[BaseDecoupledTensor, "edge edge"],
+    mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
+    mode: Literal["element", "vertex"],
+    method: Literal["dense", "solver", "inv_star"],
+) -> Float[t.Tensor, " edge"]:
+    match mode:
+        case "element":
+            return _galerkin_element.element_based_galerkin_flat(
+                vec_field, mass_1, mass_mixed, method
+            )
+
+        case "vertex":
+            return _galerkin_vertex.vertex_based_galerkin_flat(
+                vec_field, mass_1, mass_mixed, method
+            )
+
+        case _:
+            raise ValueError()
+
+
+def galerkin_sharp(
+    cochain_1: Float[t.Tensor, " edge"],
+    mass_vec: Float[BaseDecoupledTensor, "splx*coord splx*coord"],
+    mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
+    mode: Literal["element", "vertex"],
+    method: Literal["dense", "solver", "inv_star"] | None,
+) -> Float[t.Tensor, "splx coord=3"]:
+    match mode:
+        case "element":
+            return _galerkin_element.element_based_galerkin_sharp(
+                cochain_1, mass_vec, mass_mixed
+            )
+
+        case "vertex":
+            if method is None:
+                raise ValueError()
+
+            return _galerkin_vertex.vertex_based_galerkin_sharp(
+                cochain_1, mass_vec, mass_mixed, method
+            )
+
+        case _:
+            raise ValueError()

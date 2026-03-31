@@ -4,7 +4,11 @@ import torch as t
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
 
-from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
+from ...sparse.decoupled_tensor import (
+    BaseDecoupledTensor,
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+)
 from ...utils.faces import enumerate_local_faces
 
 
@@ -251,8 +255,7 @@ def vertex_based_diag_vector_mass_matrix(
 
 def vertex_based_galerkin_flat(
     vec_field: Float[t.Tensor, "vert coord"],
-    mass_1: Float[SparseDecoupledTensor, "edge edge"]
-    | Float[DiagDecoupledTensor, "edge edge"],
+    mass_1: Float[BaseDecoupledTensor, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "vert*coord edge"],
     method: Literal["dense", "solver", "inv_star"],
 ) -> Float[t.Tensor, " edge"]:
@@ -281,8 +284,7 @@ def vertex_based_galerkin_flat(
 
 def vertex_based_galerkin_sharp(
     cochain_1: Float[t.Tensor, " edge"],
-    mass_vec: Float[SparseDecoupledTensor, "vert*coord vert*coord"]
-    | Float[DiagDecoupledTensor, "vert*coord vert*coord"],
+    mass_vec: Float[BaseDecoupledTensor, "vert*coord vert*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "vert*coord edge"],
     method: Literal["dense", "solver", "inv_star"],
 ) -> Float[t.Tensor, "vert coord=3"]:

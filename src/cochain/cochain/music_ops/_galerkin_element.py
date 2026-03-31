@@ -4,7 +4,11 @@ import torch as t
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
 
-from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
+from ...sparse.decoupled_tensor import (
+    BaseDecoupledTensor,
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+)
 from ...utils.faces import enumerate_local_faces
 
 
@@ -168,8 +172,7 @@ def element_based_tet_vector_mass_matrix(
 
 def element_based_galerkin_flat(
     vec_field: Float[t.Tensor, "top_splx coord"],
-    mass_1: Float[SparseDecoupledTensor, "edge edge"]
-    | Float[DiagDecoupledTensor, "edge edge"],
+    mass_1: Float[BaseDecoupledTensor, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "top_splx*coord edge"],
     method: Literal["dense", "solver", "inv_star"],
 ) -> Float[t.Tensor, " edge"]:
