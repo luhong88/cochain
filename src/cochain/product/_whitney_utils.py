@@ -78,12 +78,14 @@ def compute_bc_grad_dot(
             )
 
         case 3:
-            signed_splx_size = tet_geometry.get_tet_signed_vols(
+            signed_splx_size = tet_geometry.compute_tet_signed_vols(
                 mesh.vert_coords, mesh.tets
             )
             splx_size = t.abs(signed_splx_size)
-            signed_splx_size_grad = tet_geometry.d_tet_signed_vols_d_vert_coords(
-                mesh.vert_coords, mesh.tets
+            signed_splx_size_grad = (
+                tet_geometry.dompute_d_tet_signed_vols_d_vert_coords(
+                    mesh.vert_coords, mesh.tets
+                )
             )
             bc_grad_dot = tet_geometry.bary_coord_grad_inner_prods(
                 signed_splx_size.view(-1, 1, 1), signed_splx_size_grad

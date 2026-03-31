@@ -6,8 +6,8 @@ from jaxtyping import Float, Integer
 
 from ..complex import SimplicialMesh
 from ..geometry.tet.tet_geometry import (
-    d_tet_signed_vols_d_vert_coords,
-    get_tet_signed_vols,
+    compute_tet_signed_vols,
+    dompute_d_tet_signed_vols_d_vert_coords,
 )
 from ..geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
@@ -282,10 +282,10 @@ def _bary_whitney_tet(
     mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "tet pt *ch coord"]:
     if k in [1, 2, 3]:
-        tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
+        tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
 
     if k in [1, 2]:
-        d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
+        d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
             mesh.vert_coords, mesh.tets
         )
         bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"] = (

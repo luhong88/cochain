@@ -3,7 +3,7 @@ import torch as t
 from einops import einsum, repeat
 
 from cochain.cochain.discretize import DeRhamMap
-from cochain.geometry.tet.tet_geometry import get_tet_signed_vols
+from cochain.geometry.tet.tet_geometry import compute_tet_signed_vols
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -72,7 +72,7 @@ def test_const_3_form_integration(two_tets_mesh, device):
     )
     discretized_cochain = de_rham.discretize(sampled_form)
 
-    tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
+    tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
     dot_prod = einsum(tet_signed_vols, const_form, "tet, ch coord -> tet ch")
 
     t.testing.assert_close(discretized_cochain, dot_prod)
@@ -564,7 +564,7 @@ def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
     )
 
     # Since 3-forms are scalar-valued, the vec_basis dimension is trivial.
-    tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets).unsqueeze(-1)
+    tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets).unsqueeze(-1)
 
     dot_prod = einsum(
         scalar_basis_int,

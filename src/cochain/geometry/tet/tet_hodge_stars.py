@@ -5,7 +5,7 @@ from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
 from ..tri.tri_geometry import compute_tri_areas
 from .tet_geometry import (
-    get_tet_signed_vols,
+    compute_tet_signed_vols,
 )
 from .tet_masses import mass_3
 
@@ -132,7 +132,7 @@ def star_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
     n_verts = tet_mesh.n_verts
 
-    tet_vol = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    tet_vol = t.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
     diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
     diag.scatter_add_(
