@@ -1,8 +1,8 @@
 from typing import Literal
 
 import torch as t
-from einops import einsum, rearrange, repeat
-from jaxtyping import Float, Integer
+from einops import rearrange
+from jaxtyping import Float
 
 from ...complex import SimplicialMesh
 from ...geometry.tet import tet_hodge_stars, tet_masses
@@ -17,7 +17,6 @@ from ...geometry.tri.tri_geometry import (
 )
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
-    DiagDecoupledTensor,
     SparseDecoupledTensor,
 )
 from . import _galerkin_element, _galerkin_vertex
@@ -92,9 +91,6 @@ def mixed_mass(
                 bary_coords_grad=bary_coords_grad,
             )
 
-    else:
-        raise ValueError()
-
 
 def vector_mass(
     mesh: SimplicialMesh, mode: Literal["element", "vertex"], diagonal: bool
@@ -131,6 +127,9 @@ def vector_mass(
                 return _galerkin_vertex.vertex_based_consistent_vector_mass_matrix(
                     mass_0
                 )
+
+    else:
+        raise ValueError()
 
 
 def galerkin_flat(

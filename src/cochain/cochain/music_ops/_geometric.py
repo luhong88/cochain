@@ -1,0 +1,114 @@
+from typing import Literal
+
+import torch as t
+from einops import einsum, rearrange, repeat
+from jaxtyping import Float, Integer
+
+
+def vertex_based_geometric_flat(
+    vec_field: Float[t.Tensor, "global_vert coord=3"],
+    vert_coords: Float[t.Tensor, "global_vert coord=3"],
+    edges: Integer[t.LongTensor, "global_edge local_vert=2"],
+) -> Float[t.Tensor, " global_edge"]:
+    """
+    Compute the flat of a vector field associated with the mesh vertices by taking
+    the dot product between the mean of the field at the two vertices of each
+    edge with the edge vector. Note that this function works identically for both
+    tri and tet meshes.
+    """
+    edge_verts = vert_coords[edges]
+    edge_vecs = edge_verts[:, 1] - edge_verts[:, 0]
+
+    vec_field_mean = vec_field[edges].mean(dim=1)
+
+    dot_prod = einsum(edge_vecs, vec_field_mean, "edge coord, edge coord -> edge")
+
+    return dot_prod
+
+
+def element_based_tri_geometric_flat(
+    vec_field: Float[t.Tensor, "tri coord=3"],
+    vert_coords: Float[t.Tensor, "global_vert coord=3"],
+    tri_edge_idx: Integer[t.LongTensor, "tri local_edge=3"],
+    edges: Integer[t.LongTensor, "global_edge local_vert=2"],
+) -> Float[t.Tensor, " global_edge"]:
+    """
+    Compute the flat of a piecewise constant vector field associated with the tris
+    of the mesh by taking the dot product between the mean of the field across all
+    cofaces of each edge with the edge vector.
+    """
+    n_coords = 3
+    n_edges_per_tri = 3
+    n_edges = edges.size(0)
+
+    # Reshape vec_field and tri_edge_idx in preparation for scatter reduce.
+    vec_field_shaped = repeat(
+        vec_field, "tri coord -> (tri edge) coord", edge=n_edges_per_tri
+    )
+    tri_edge_idx_shaped = repeat(
+        tri_edge_idx, "tri edge -> (tri edge) coord", coord=n_coords
+    )
+
+    vec_field_mean = t.zeros(
+        (n_edges, n_coords), dtype=vec_field.dtype, device=vec_field.device
+    )
+
+    # self[idx[tri_by_edge][coord]][coord] += src[tri_by_edge][coord]
+    vec_field_mean.scatter_reduce_(
+        dim=0,
+        index=tri_edge_idx_shaped,
+        src=vec_field_shaped,
+        reduce="mean",
+        include_self=False,
+    )
+
+    edge_verts = vert_coords[edges]
+    edge_vecs = edge_verts[:, 1] - edge_verts[:, 0]
+
+    dot_prod = einsum(edge_vecs, vec_field_mean, "edge coord, edge coord -> edge")
+
+    return dot_prod
+
+
+def element_based_tet_geometric_flat(
+    vec_field: Float[t.Tensor, "tet coord=4"],
+    vert_coords: Float[t.Tensor, "global_vert coord=4"],
+    tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
+    edges: Integer[t.LongTensor, "global_edge local_vert=2"],
+) -> Float[t.Tensor, " global_edge"]:
+    """
+    Compute the flat of a piecewise constant vector field associated with the tets
+    of the mesh by taking the dot product between the mean of the field across all
+    cofaces of each edge with the edge vector.
+    """
+    n_coords = 3
+    n_edges_per_tet = 6
+    n_edges = edges.size(0)
+
+    # Reshape vec_field and tet_edge_idx in preparation for scatter reduce.
+    vec_field_shaped = repeat(
+        vec_field, "tet coord -> (tet edge) coord", edge=n_edges_per_tet
+    )
+    tet_edge_idx_shaped = repeat(
+        tet_edge_idx, "tet edge -> (tet edge) coord", coord=n_coords
+    )
+
+    vec_field_mean = t.zeros(
+        (n_edges, n_coords), dtype=vec_field.dtype, device=vec_field.device
+    )
+
+    # self[idx[tet_by_edge][coord]][coord] += src[tet_by_edge][coord]
+    vec_field_mean.scatter_reduce_(
+        dim=0,
+        index=tet_edge_idx_shaped,
+        src=vec_field_shaped,
+        reduce="mean",
+        include_self=False,
+    )
+
+    edge_verts = vert_coords[edges]
+    edge_vecs = edge_verts[:, 1] - edge_verts[:, 0]
+
+    dot_prod = einsum(edge_vecs, vec_field_mean, "edge coord, edge coord -> edge")
+
+    return dot_prod

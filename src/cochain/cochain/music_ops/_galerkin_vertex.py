@@ -103,7 +103,7 @@ def vertex_based_tri_mixed_mass_matrix(
 def vertex_based_tet_mixed_mass_matrix(
     n_verts: int,
     n_edges: int,
-    tets: Integer[t.LongTensor, "tri local_vert=3"],
+    tets: Integer[t.LongTensor, "tet local_vert=4"],
     tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
     tet_edge_orientations: Float[t.Tensor, "tet local_edge=6"],
     tet_unsigned_vols: Float[t.Tensor, " tet"],
