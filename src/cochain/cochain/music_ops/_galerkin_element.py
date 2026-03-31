@@ -4,20 +4,11 @@ import torch as t
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
 
-from ...complex import SimplicialMesh
-from ...geometry.tet.tet_geometry import (
-    d_tet_signed_vols_d_vert_coords,
-    get_tet_signed_vols,
-)
-from ...geometry.tri.tri_geometry import (
-    compute_d_tri_areas_d_vert_coords,
-    compute_tri_areas,
-)
 from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ...utils.faces import enumerate_local_faces
 
 
-def _element_based_tri_mixed_mass_matrix(
+def element_based_tri_mixed_mass_matrix(
     n_edges: int,
     tri_edge_idx: Integer[t.LongTensor, "tri local_edge=3"],
     tri_edge_orientations: Float[t.Tensor, "tri local_edge=3"],
@@ -90,7 +81,7 @@ def _element_based_tri_mixed_mass_matrix(
     return SparseDecoupledTensor.from_tensor(cross_mass)
 
 
-def _element_based_tet_mixed_mass_matrix(
+def element_based_tet_mixed_mass_matrix(
     n_edges: int,
     tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
     tet_edge_orientations: Float[t.Tensor, "tet local_edge=6"],
@@ -151,7 +142,7 @@ def _element_based_tet_mixed_mass_matrix(
     return SparseDecoupledTensor.from_tensor(cross_mass)
 
 
-def _element_based_tri_vector_mass_matrix(
+def element_based_tri_vector_mass_matrix(
     tri_areas: Float[t.Tensor, " tri"],
 ) -> Float[DiagDecoupledTensor, "tri*coord tri*coord"]:
     """
@@ -163,7 +154,7 @@ def _element_based_tri_vector_mass_matrix(
     return DiagDecoupledTensor(val)
 
 
-def _element_based_tet_vector_mass_matrix(
+def element_based_tet_vector_mass_matrix(
     tet_unsigned_vols: Float[t.Tensor, " tet"],
 ) -> Float[DiagDecoupledTensor, "tri*coord tri*coord"]:
     """
@@ -175,7 +166,7 @@ def _element_based_tet_vector_mass_matrix(
     return DiagDecoupledTensor(val)
 
 
-def _element_based_galerkin_flat(
+def element_based_galerkin_flat(
     vec_field: Float[t.Tensor, "top_splx coord"],
     mass_1: Float[SparseDecoupledTensor, "edge edge"]
     | Float[DiagDecoupledTensor, "edge edge"],
@@ -205,7 +196,7 @@ def _element_based_galerkin_flat(
             raise ValueError()
 
 
-def _element_based_galerkin_sharp(
+def element_based_galerkin_sharp(
     cochain_1: Float[t.Tensor, " edge"],
     mass_vec: Float[DiagDecoupledTensor, "top_splx*coord top_splx*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "top_splx*coord edge"],

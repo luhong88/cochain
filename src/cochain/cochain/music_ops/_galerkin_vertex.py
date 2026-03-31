@@ -4,20 +4,11 @@ import torch as t
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
 
-from ...complex import SimplicialMesh
-from ...geometry.tet.tet_geometry import (
-    d_tet_signed_vols_d_vert_coords,
-    get_tet_signed_vols,
-)
-from ...geometry.tri.tri_geometry import (
-    compute_d_tri_areas_d_vert_coords,
-    compute_tri_areas,
-)
 from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ...utils.faces import enumerate_local_faces
 
 
-def _vertex_based_tri_mixed_mass_matrix(
+def vertex_based_tri_mixed_mass_matrix(
     n_verts: int,
     n_edges: int,
     tris: Integer[t.LongTensor, "tri local_vert=3"],
@@ -105,7 +96,7 @@ def _vertex_based_tri_mixed_mass_matrix(
     return SparseDecoupledTensor.from_tensor(cross_mass)
 
 
-def _vertex_based_tet_mixed_mass_matrix(
+def vertex_based_tet_mixed_mass_matrix(
     n_verts: int,
     n_edges: int,
     tets: Integer[t.LongTensor, "tri local_vert=3"],
@@ -186,7 +177,7 @@ def _vertex_based_tet_mixed_mass_matrix(
     return SparseDecoupledTensor.from_tensor(cross_mass)
 
 
-def _vertex_based_consistent_vector_mass_matrix(
+def vertex_based_consistent_vector_mass_matrix(
     mass_0: Float[SparseDecoupledTensor, "vert vert"],
 ) -> Float[SparseDecoupledTensor, "vert*coord vert*coord"]:
     """
@@ -246,7 +237,7 @@ def _vertex_based_consistent_vector_mass_matrix(
     return SparseDecoupledTensor.from_tensor(m_v)
 
 
-def _vertex_based_diag_vector_mass_matrix(
+def vertex_based_diag_vector_mass_matrix(
     star_0: Float[DiagDecoupledTensor, "vert vert"],
 ) -> Float[DiagDecoupledTensor, "vert*coord vert*coord"]:
     """
@@ -258,7 +249,7 @@ def _vertex_based_diag_vector_mass_matrix(
     return DiagDecoupledTensor(val)
 
 
-def _vertex_based_galerkin_flat(
+def vertex_based_galerkin_flat(
     vec_field: Float[t.Tensor, "vert coord"],
     mass_1: Float[SparseDecoupledTensor, "edge edge"]
     | Float[DiagDecoupledTensor, "edge edge"],
@@ -288,7 +279,7 @@ def _vertex_based_galerkin_flat(
             raise ValueError()
 
 
-def _vertex_based_galerkin_sharp(
+def vertex_based_galerkin_sharp(
     cochain_1: Float[t.Tensor, " edge"],
     mass_vec: Float[SparseDecoupledTensor, "vert*coord vert*coord"]
     | Float[DiagDecoupledTensor, "vert*coord vert*coord"],
