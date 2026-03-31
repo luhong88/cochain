@@ -8,6 +8,7 @@ def get_k_splx_barycenters(
     return t.tensor([[[1.0 / (k + 1.0)] * (k + 1)]], dtype=dtype, device=device)
 
 
+# TODO: consider backward numerical safety
 def get_tri_circumcenters(
     tris: Integer[t.LongTensor, "tri vert=3"],
     vert_coords: Float[t.Tensor, "vert coord=3"],
