@@ -4,8 +4,8 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ..complex import SimplicialMesh
-from ..utils.perm_parity import compute_lex_rel_orient
+from ...complex import SimplicialMesh
+from ...utils.perm_parity import compute_lex_rel_orient
 from ._whitney_utils import compute_bc_grad_dot, compute_moments, compute_whitney_router
 
 

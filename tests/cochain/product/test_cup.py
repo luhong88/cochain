@@ -3,9 +3,9 @@ import itertools
 import pytest
 import torch
 
+from cochain.cochain.product.cup import AntisymmetricCupProduct, CupProduct
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tri.tri_geometry import compute_tri_areas
-from cochain.product.cup import AntisymmetricCupProduct, CupProduct
 
 
 def test_cup_product_patch(square_mesh: SimplicialMesh, device):

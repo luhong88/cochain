@@ -4,7 +4,7 @@ import torch
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
-from ..complex import SimplicialMesh
+from ...complex import SimplicialMesh
 from ._whitney_3_form import triple_tensor_prod_3_form
 from ._whitney_m_form import triple_tensor_prod
 from ._whitney_utils import find_top_splx_faces

@@ -3,11 +3,11 @@ import itertools
 import pytest
 import torch
 
+from cochain.cochain.product.cup import AntisymmetricCupProduct
+from cochain.cochain.product.whitney import WhitneyWedgeL2Projector
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tet import tet_masses
 from cochain.geometry.tri import tri_hodge_stars, tri_masses
-from cochain.product.cup import AntisymmetricCupProduct
-from cochain.product.whitney import WhitneyWedgeL2Projector
 
 
 def _compute_mass_matrix(mesh: SimplicialMesh, k: int):

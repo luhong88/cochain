@@ -4,9 +4,9 @@ import torch
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
-from ..complex import SimplicialMesh
-from ..utils.perm_parity import compute_lex_rel_orient
-from ..utils.search import splx_search
+from ...complex import SimplicialMesh
+from ...utils.perm_parity import compute_lex_rel_orient
+from ...utils.search import splx_search
 from ._face_perm_lut import compute_face_perm_lut
 
 

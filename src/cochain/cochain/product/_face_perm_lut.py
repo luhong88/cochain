@@ -5,7 +5,7 @@ import torch
 from jaxtyping import Integer
 from torch import LongTensor
 
-from cochain.utils.perm_parity import compute_lex_rel_orient
+from ...utils.perm_parity import compute_lex_rel_orient
 
 
 @dataclass
