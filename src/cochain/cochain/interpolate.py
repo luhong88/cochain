@@ -6,8 +6,8 @@ from jaxtyping import Float, Integer
 
 from ..complex import SimplicialMesh
 from ..geometry.tet.tet_geometry import (
-    d_tet_signed_vols_d_vert_coords,
-    get_tet_signed_vols,
+    compute_tet_signed_vols,
+    dompute_d_tet_signed_vols_d_vert_coords,
 )
 from ..geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
@@ -36,8 +36,8 @@ def _bary_whitney_tri_cochain_0(
 
 def _bary_whitney_tri_cochain_1(
     cochain_1: Float[t.Tensor, " edge *ch"],
-    tri_edge_idx: Integer[t.LongTensor, "tri vert=3"],
-    tri_edge_orientations: Float[t.Tensor, "tri vert=3"],
+    tri_edge_idx: Integer[t.LongTensor, "tri edge=3"],
+    tri_edge_orientations: Float[t.Tensor, "tri edge=3"],
     bary_coords: Float[t.Tensor, "tri pt vert=3"],
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
 ) -> Float[t.Tensor, "tri pt *ch coord=3"]:
@@ -101,8 +101,8 @@ def _bary_whitney_tri_cochain_2(
 
 def _bary_whitney_tet_cochain_0(
     cochain_0: Float[t.Tensor, " vert *ch"],
-    tets: Integer[t.LongTensor, "tet 4"],
-    bary_coords: Float[t.Tensor, "tet pt 4"],
+    tets: Integer[t.LongTensor, "tet vert=4"],
+    bary_coords: Float[t.Tensor, "tet pt vert=4"],
 ) -> Float[t.Tensor, "tet pt *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2, 3.
     basis = bary_coords
@@ -282,10 +282,10 @@ def _bary_whitney_tet(
     mesh: SimplicialMesh,
 ) -> Float[t.Tensor, "tet pt *ch coord"]:
     if k in [1, 2, 3]:
-        tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
+        tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
 
     if k in [1, 2]:
-        d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
+        d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
             mesh.vert_coords, mesh.tets
         )
         bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"] = (

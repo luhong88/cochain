@@ -4,8 +4,8 @@ from jaxtyping import Float, Integer
 from ..complex import SimplicialMesh
 from ..geometry.tet.tet_geometry import (
     bary_coord_grad_inner_prods,
-    d_tet_signed_vols_d_vert_coords,
-    get_tet_signed_vols,
+    compute_tet_signed_vols,
+    dompute_d_tet_signed_vols_d_vert_coords,
     tet_face_vector_areas,
     whitney_2_form_inner_prods,
 )
@@ -79,10 +79,12 @@ def d_mass_1_d_vert_coords(
     # its Jacobian wrt vertex p is given by
     #     grad_p[D_xy] = (hess_xp[V]*grad_y[V] + hess_yp[V]*grad_x[V])/V**2
     #                    - 2*D_xy*grad_p[V])/V
-    tet_signed_vols: Float[t.Tensor, " tet"] = get_tet_signed_vols(vert_coords, tets)
+    tet_signed_vols: Float[t.Tensor, " tet"] = compute_tet_signed_vols(
+        vert_coords, tets
+    )
     tet_signs = tet_signed_vols.sign()
     d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 4 3"] = (
-        d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+        dompute_d_tet_signed_vols_d_vert_coords(vert_coords, tets)
     )
 
     tet_vol_vhp: Float[t.Tensor, "tet x=4 y=4 p=4 3"] = (
@@ -230,14 +232,14 @@ def d_mass_2_d_vert_coords(
     # where "c" is the centroid of the tet.
 
     # First, collect all the constituent terms required to compute the Jacobian.
-    tet_signed_vols: Float[t.Tensor, "tet 1 1 1 1"] = get_tet_signed_vols(
+    tet_signed_vols: Float[t.Tensor, "tet 1 1 1 1"] = compute_tet_signed_vols(
         vert_coords, tets
     ).view(-1, 1, 1, 1, 1)
 
     tet_vols = t.abs(tet_signed_vols)
 
     d_signed_vols_d_vert_coords: Float[t.Tensor, "tet 1 1 4 3"] = (
-        d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+        dompute_d_tet_signed_vols_d_vert_coords(vert_coords, tets)
     ).view(-1, 1, 1, 4, 3)
 
     identity = t.eye(4, dtype=dtype, device=device)
@@ -321,7 +323,9 @@ def _d_cotan_weights_d_vert_coords(
     norm_tri_ho_shaped: Float[t.Tensor, "tet 6 1 3"] = norm_tri_ho.view(-1, 6, 1, 3)
     weight_o_shaped: Float[t.Tensor, "tet 6 1 1"] = weight_o.view(-1, 6, 1, 1)
 
-    tet_signed_vols: Float[t.Tensor, " tet"] = get_tet_signed_vols(vert_coords, tets)
+    tet_signed_vols: Float[t.Tensor, " tet"] = compute_tet_signed_vols(
+        vert_coords, tets
+    )
     tet_signs = tet_signed_vols.sign()
 
     vols_shaped: Float[t.Tensor, "tet 1 1 1"] = t.abs(tet_signed_vols).view(-1, 1, 1, 1)
@@ -329,7 +333,8 @@ def _d_cotan_weights_d_vert_coords(
     # Multiply the gradient of the signed volumes with the signs of the volumes
     # to get the gradient of the unsigned/absolute volumes.
     vol_grad: Float[t.Tensor, "tet 1 4 3"] = (
-        d_tet_signed_vols_d_vert_coords(vert_coords, tets) * tet_signs.view(-1, 1, 1)
+        dompute_d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+        * tet_signs.view(-1, 1, 1)
     ).view(-1, 1, 4, 3)
 
     # Compute the "Jacobian" of the th x o normal vector wrt each vertex in the

@@ -4,7 +4,7 @@ from jaxtyping import Float, Integer
 from ...utils.constants import EPS
 
 
-def get_tet_signed_vols(
+def compute_tet_signed_vols(
     vert_coords: Float[t.Tensor, "vert coord=3"],
     tets: Integer[t.LongTensor, "tet vert=4"],
 ) -> Float[t.Tensor, " tet"]:
@@ -32,7 +32,7 @@ def get_tet_signed_vols(
     return tet_signed_vols
 
 
-def d_tet_signed_vols_d_vert_coords(
+def dompute_d_tet_signed_vols_d_vert_coords(
     vert_coords: Float[t.Tensor, "vert coord=3"],
     tets: Integer[t.LongTensor, "tet vert=4"],
 ) -> Float[t.Tensor, "tet vert=4 coord=3"]:
@@ -89,7 +89,7 @@ def tet_face_vector_areas(
     """
     i, j, k, l = 0, 1, 2, 3
 
-    tet_vols = t.abs(get_tet_signed_vols(vert_coords, tets))
+    tet_vols = t.abs(compute_tet_signed_vols(vert_coords, tets))
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
@@ -155,7 +155,9 @@ def whitney_2_form_inner_prods(
 
     tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
 
-    tet_signed_vols: Float[t.Tensor, " tet"] = get_tet_signed_vols(vert_coords, tets)
+    tet_signed_vols: Float[t.Tensor, " tet"] = compute_tet_signed_vols(
+        vert_coords, tets
+    )
     tet_vols = t.abs(tet_signed_vols)
     tet_signs = t.sign(tet_signed_vols)
 

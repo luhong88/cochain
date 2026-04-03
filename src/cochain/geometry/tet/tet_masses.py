@@ -5,17 +5,17 @@ from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from .tet_geometry import (
     bary_coord_grad_inner_prods,
-    d_tet_signed_vols_d_vert_coords,
-    get_tet_signed_vols,
+    compute_tet_signed_vols,
+    dompute_d_tet_signed_vols_d_vert_coords,
     whitney_2_form_inner_prods,
 )
 
 
-def mass_0_consistent(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
+def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
     """
-    tet_vols = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    tet_vols = t.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
     ref_local_mass_0 = ((t.ones(4, 4) + t.eye(4)) / 20.0).to(
         dtype=tet_mesh.vert_coords.dtype, device=tet_mesh.vert_coords.device
@@ -34,29 +34,6 @@ def mass_0_consistent(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(mass)
-
-
-def mass_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
-    """
-    Compute the "lumped" vertex/0-form mass matrix, which is equivalent to the
-    barycentric 0-star. Since the lumped vertex mass matrix is diagonal, this
-    function returns the diagonal elements.
-
-    The barycentric dual volume for each vertex is the sum of 1/4 of the volumes
-    of all tetrahedra that share the vertex as a face.
-    """
-    n_verts = tet_mesh.n_verts
-
-    tet_vol = t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
-
-    diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
-    diag.scatter_add_(
-        dim=0,
-        index=tet_mesh.tets.flatten(),
-        src=t.repeat_interleave(tet_vol / 4.0, 4),
-    )
-
-    return DiagDecoupledTensor.from_tensor(diag)
 
 
 def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"]:
@@ -81,8 +58,10 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     n_tets = tet_mesh.n_tets
     n_edges = tet_mesh.n_edges
 
-    tet_signed_vols = get_tet_signed_vols(vert_coords, tets).view(-1, 1, 1)
-    d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(vert_coords, tets)
+    tet_signed_vols = compute_tet_signed_vols(vert_coords, tets).view(-1, 1, 1)
+    d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
+        vert_coords, tets
+    )
 
     # For each tet ijkl, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
@@ -241,5 +220,5 @@ def mass_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tet tet"]:
     the 3-star.
     """
     return DiagDecoupledTensor.from_tensor(
-        1.0 / t.abs(get_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+        1.0 / t.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
     )

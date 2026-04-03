@@ -4,7 +4,7 @@ import pytest
 import torch as t
 
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tet import tet_laplacians, tet_masses
+from cochain.geometry.tet import tet_hodge_stars, tet_laplacians, tet_masses
 
 
 @pytest.mark.parametrize(
@@ -241,7 +241,7 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialMesh):
     Check that the 1-codifferential and the 0-coboundary operators are adjoints
     with respect to the mass matrix-weighted inner product.
     """
-    m0 = tet_masses.mass_0(two_tets_mesh)
+    m0 = tet_hodge_stars.star_0(two_tets_mesh)
     inv_m0 = m0.inv
 
     m1 = tet_masses.mass_1(two_tets_mesh)

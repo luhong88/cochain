@@ -8,9 +8,10 @@ from .tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
+from .tri_hodge_stars import star_2
 
 
-def mass_0_consistent(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
+def mass_0(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
     """
@@ -134,3 +135,6 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(mass)
+
+
+mass_2 = star_2

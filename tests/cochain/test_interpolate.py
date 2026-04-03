@@ -8,8 +8,8 @@ from jaxtyping import Float, Integer
 from cochain.cochain.discretize import DeRhamMap
 from cochain.cochain.interpolate import barycentric_whitney_map
 from cochain.geometry.tet.tet_geometry import (
-    d_tet_signed_vols_d_vert_coords,
-    get_tet_signed_vols,
+    compute_tet_signed_vols,
+    dompute_d_tet_signed_vols_d_vert_coords,
 )
 from cochain.geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
@@ -17,6 +17,8 @@ from cochain.geometry.tri.tri_geometry import (
 )
 from cochain.utils.faces import enumerate_local_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
+
+# TODO: test gradients
 
 
 @pytest.mark.parametrize(
@@ -112,8 +114,8 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
             cochain_0_at_vert_faces = cochain_0[mesh.tris]
 
         case 3:
-            tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
+            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
                 mesh.vert_coords, mesh.tets
             )
             bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(
@@ -201,8 +203,8 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             sign_correction = mesh.edge_faces.parity
 
         case 3:
-            tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
+            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
                 mesh.vert_coords, mesh.tets
             )
             bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(
@@ -282,8 +284,8 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     # repeat the same logic as in _bary_whitney_tri_cochain_2() and
     # _bary_whitney_tet_cochain_2(), but with the original basis function W_ijk(p)
     # replaced by ∇ ⋅ W_ijk(p).
-    tet_signed_vols = get_tet_signed_vols(mesh.vert_coords, mesh.tets)
-    d_signed_vols_d_vert_coords = d_tet_signed_vols_d_vert_coords(
+    tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+    d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
         mesh.vert_coords, mesh.tets
     )
     bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
