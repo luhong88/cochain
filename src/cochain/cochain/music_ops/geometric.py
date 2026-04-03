@@ -40,7 +40,7 @@ def geometric_flat(
                 edges=mesh.edges,
             )
 
-        case ("vertex", _):
+        case ("vertex", dim) if dim in [2, 3]:
             return _geometric_vertex.vertex_based_geometric_flat(
                 vec_field=vec_field, vert_coords=mesh.vert_coords, edges=mesh.edges
             )
@@ -76,6 +76,9 @@ def geometric_sharp(
             bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"] = (
                 d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
             )
+
+        case _:
+            raise ValueError()
 
     match (mode, mesh.dim):
         case ("element", 2):

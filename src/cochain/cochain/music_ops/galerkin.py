@@ -25,19 +25,32 @@ from . import _galerkin_element, _galerkin_vertex
 def mixed_mass(
     mesh: SimplicialMesh, mode: Literal["element", "vertex"]
 ) -> Float[SparseDecoupledTensor, "splx*coord edge"]:
-    if mesh.dim == 2:
-        tri_areas = rearrange(
-            compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
-        )
+    match mesh.dim:
+        case 2:
+            tri_areas = rearrange(
+                compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
+            )
 
-        d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
-            mesh.vert_coords, mesh.tris
-        )
-        bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"] = (
-            d_tri_areas_d_vert_coords / tri_areas
-        )
+            d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
+                mesh.vert_coords, mesh.tris
+            )
+            bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"] = (
+                d_tri_areas_d_vert_coords / tri_areas
+            )
 
-        if mode == "element":
+        case 3:
+            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            tet_unsigned_vols = t.abs(tet_signed_vols)
+
+            d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
+                mesh.vert_coords, mesh.tets
+            )
+            bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"] = (
+                d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
+            )
+
+    match (mode, mesh.dim):
+        case ("element", 2):
             return _galerkin_element.element_based_tri_mixed_mass_matrix(
                 n_edges=mesh.n_edges,
                 tri_edge_idx=mesh.edge_faces.idx,
@@ -46,7 +59,16 @@ def mixed_mass(
                 bary_coords_grad=bary_coords_grad,
             )
 
-        elif mode == "vertex":
+        case ("element", 3):
+            return _galerkin_element.element_based_tet_mixed_mass_matrix(
+                n_edges=mesh.n_edges,
+                tet_edge_idx=mesh.edge_faces.idx,
+                tet_edge_orientations=mesh.edge_faces.parity,
+                tet_unsigned_vols=tet_unsigned_vols,
+                bary_coords_grad=bary_coords_grad,
+            )
+
+        case ("vertex", 2):
             return _galerkin_vertex.vertex_based_tri_mixed_mass_matrix(
                 n_verts=mesh.n_verts,
                 n_edges=mesh.n_edges,
@@ -57,30 +79,7 @@ def mixed_mass(
                 bary_coords_grad=bary_coords_grad,
             )
 
-        else:
-            raise ValueError()
-
-    elif mesh.dim == 3:
-        tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-        tet_unsigned_vols = t.abs(tet_signed_vols)
-
-        d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
-            mesh.vert_coords, mesh.tets
-        )
-        bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"] = (
-            d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
-        )
-
-        if mode == "element":
-            return _galerkin_element.element_based_tet_mixed_mass_matrix(
-                n_edges=mesh.n_edges,
-                tet_edge_idx=mesh.edge_faces.idx,
-                tet_edge_orientations=mesh.edge_faces.parity,
-                tet_unsigned_vols=tet_unsigned_vols,
-                bary_coords_grad=bary_coords_grad,
-            )
-
-        elif mode == "vertex":
+        case ("vertex", 3):
             return _galerkin_vertex.vertex_based_tet_mixed_mass_matrix(
                 n_verts=mesh.n_verts,
                 n_edges=mesh.n_edges,
@@ -91,24 +90,26 @@ def mixed_mass(
                 bary_coords_grad=bary_coords_grad,
             )
 
+        case _:
+            raise ValueError()
+
 
 def vector_mass(
     mesh: SimplicialMesh, mode: Literal["element", "vertex"], diagonal: bool
 ) -> Float[BaseDecoupledTensor, "splx*coord splx*coord"]:
-    if mode == "element":
-        if mesh.dim == 2:
+    match (mode, mesh.dim):
+        case ("element", 2):
             tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
             return _galerkin_element.element_based_tri_vector_mass_matrix(tri_areas)
 
-        elif mesh.dim == 3:
+        case ("element", 3):
             tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
             tet_unsigned_vols = t.abs(tet_signed_vols)
             return _galerkin_element.element_based_tet_vector_mass_matrix(
                 tet_unsigned_vols
             )
 
-    elif mode == "vertex":
-        if mesh.dim == 2:
+        case ("vertex", 2):
             if diagonal:
                 star_0 = tri_hodge_stars.star_0(mesh)
                 return _galerkin_vertex.vertex_based_diag_vector_mass_matrix(star_0)
@@ -118,7 +119,7 @@ def vector_mass(
                     mass_0
                 )
 
-        elif mesh.dim == 3:
+        case ("vertex", 3):
             if diagonal:
                 star_0 = tet_hodge_stars.star_0(mesh)
                 return _galerkin_vertex.vertex_based_diag_vector_mass_matrix(star_0)
@@ -128,8 +129,8 @@ def vector_mass(
                     mass_0
                 )
 
-    else:
-        raise ValueError()
+        case _:
+            raise ValueError()
 
 
 def galerkin_flat(
