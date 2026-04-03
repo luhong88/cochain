@@ -17,6 +17,7 @@
     * DEC Hodge Laplacians (for triangular meshes) and weak Laplacians/stiffness matrices (for tetrahedral meshes).
     * Galerkin ($L^2$-projected) wedge product.
     * Whitney map for interpolation of discrete $k$-cochains and de Rham map for discretization of continuous $k$-forms. 
+    * Flat and sharp operators for music isomorphisms between 1-cochains and vector fields.
 * Computational backend:
     * Differentiable wrappers for sparse linear solvers SuperLU (via `scipy` and `cupy`) and cuDSS (via `nvmath-python`).
     * Differentiable sparse eigensolvers, including the implicitly restarted Lanczos method (via `scipy`), the thick-restart Lanczos method (via `cupy`), and a custom, GPU-compatible LOBPCG implementation that supports both generalized eigenvalue problems and the shift-invert mode for interior eigenvalues.
@@ -25,5 +26,4 @@
 
 ### Planned Features:
 
-* Musical operators.
 * Harmonic form generator.
