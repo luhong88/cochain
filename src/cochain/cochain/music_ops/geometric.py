@@ -1,7 +1,7 @@
 from typing import Literal
 
 import torch as t
-from einops import einsum, rearrange, repeat
+from einops import rearrange
 from jaxtyping import Float
 
 from ...complex import SimplicialMesh

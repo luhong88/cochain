@@ -1,12 +1,8 @@
-from typing import Literal
-
 import torch as t
-from einops import einsum, rearrange, repeat
+from einops import einsum, repeat
 from jaxtyping import Float, Integer
 
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
-from ...utils.bary_coords import get_k_splx_barycenters, get_tri_circumcenters
-from ..interpolate import _bary_whitney_tet_cochain_1, _bary_whitney_tri_cochain_1
 from ._geometric_element import (
     element_based_tet_geometric_sharp,
     element_based_tri_geometric_sharp,
