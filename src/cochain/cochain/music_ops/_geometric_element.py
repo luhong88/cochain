@@ -103,7 +103,7 @@ def element_based_tri_geometric_sharp(
     tri_edge_orientations: Float[t.Tensor, "tri edge=3"],
     vert_coords: Float[t.Tensor, "vert coord=3"],
     bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
-    location: Literal["barycenter", "circumcenter"] = "barycenter",
+    location: Literal["barycenter", "circumcenter"],
 ) -> Float[t.Tensor, "tri coord=3"]:
     """
     Compute the sharp of a 1-cochain by interpolating it at either the barycenter
@@ -118,8 +118,12 @@ def element_based_tri_geometric_sharp(
             bary_coords = get_k_splx_barycenters(
                 k=2, dtype=cochain_1.dtype, device=cochain_1.device
             )
+
         case "circumcenter":
             bary_coords = get_tri_circumcenters(tris=tris, vert_coords=vert_coords)
+
+        case _:
+            raise ValueError()
 
     form_1 = _bary_whitney_tri_cochain_1(
         cochain_1=cochain_1,

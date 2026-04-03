@@ -5,6 +5,8 @@ from einops import einsum, repeat
 from cochain.cochain.discretize import DeRhamMap
 from cochain.geometry.tet.tet_geometry import compute_tet_signed_vols
 
+# TODO: test gradients
+
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_const_1_form_integration(mesh, request, device):

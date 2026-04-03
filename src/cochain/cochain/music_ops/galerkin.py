@@ -1,7 +1,6 @@
 from typing import Literal
 
 import torch as t
-from einops import rearrange
 from jaxtyping import Float
 
 from ...complex import SimplicialMesh
@@ -27,15 +26,13 @@ def mixed_mass(
 ) -> Float[SparseDecoupledTensor, "splx*coord edge"]:
     match mesh.dim:
         case 2:
-            tri_areas = rearrange(
-                compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
-            )
+            tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
 
             d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
                 mesh.vert_coords, mesh.tris
             )
             bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"] = (
-                d_tri_areas_d_vert_coords / tri_areas
+                d_tri_areas_d_vert_coords / tri_areas.view(-1, 1, 1)
             )
 
         case 3:
@@ -95,8 +92,12 @@ def mixed_mass(
 
 
 def vector_mass(
-    mesh: SimplicialMesh, mode: Literal["element", "vertex"], diagonal: bool
+    mesh: SimplicialMesh, mode: Literal["element", "vertex"], diagonal: bool = False
 ) -> Float[BaseDecoupledTensor, "splx*coord splx*coord"]:
+    """
+    Note that the `diagonal` argument is only relevant for the vertex-based method,
+    and the element-based method will always produce diagonal vector mass matrices.
+    """
     match (mode, mesh.dim):
         case ("element", 2):
             tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
@@ -160,8 +161,11 @@ def galerkin_sharp(
     mass_vec: Float[BaseDecoupledTensor, "splx*coord splx*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
     mode: Literal["element", "vertex"],
-    method: Literal["dense", "solver", "inv_star"] | None,
+    method: Literal["dense", "solver", "inv_star"] | None = None,
 ) -> Float[t.Tensor, "splx coord=3"]:
+    """
+    Note that the `method` argument is only relevant for the vertex-based method.
+    """
     match mode:
         case "element":
             return _galerkin_element.element_based_galerkin_sharp(

@@ -305,17 +305,17 @@ def vertex_based_galerkin_sharp(
 
     match method:
         case "dense":
-            return t.linalg.solve(mass_vec.to_dense(), rhs)
+            vec_field_flat = t.linalg.solve(mass_vec.to_dense(), rhs)
 
         case "inv_star":
-            return rearrange(
-                mass_vec.inv @ rhs,
-                "(top_splx coord) -> top_splx coord",
-                coord=3,
-            )
+            vec_field_flat = mass_vec.inv @ rhs
 
         case "solver":
             raise NotImplementedError()
 
         case _:
             raise ValueError()
+
+    vec_field = rearrange(vec_field_flat, "(splx coord) -> splx coord", coord=3)
+
+    return vec_field

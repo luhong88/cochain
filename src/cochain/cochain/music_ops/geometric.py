@@ -1,7 +1,6 @@
 from typing import Literal
 
 import torch as t
-from einops import rearrange
 from jaxtyping import Float
 
 from ...complex import SimplicialMesh
@@ -53,18 +52,19 @@ def geometric_sharp(
     cochain_1: Float[t.Tensor, " edge"],
     mesh: SimplicialMesh,
     mode: Literal["element", "vertex"],
-    location: Literal["barycenter", "circumcenter"],
+    location: Literal["barycenter", "circumcenter"] = "barycenter",
 ):
+    """
+    "location" is only relevant for tri meshes and element-based sharp.
+    """
     match mesh.dim:
         case 2:
-            tri_areas = rearrange(
-                compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
-            )
+            tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
             d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
                 mesh.vert_coords, mesh.tris
             )
             bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"] = (
-                d_tri_areas_d_vert_coords / tri_areas
+                d_tri_areas_d_vert_coords / tri_areas.view(-1, 1, 1)
             )
 
         case 3:

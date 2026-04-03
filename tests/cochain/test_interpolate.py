@@ -18,6 +18,8 @@ from cochain.geometry.tri.tri_geometry import (
 from cochain.utils.faces import enumerate_local_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 
+# TODO: test gradients
+
 
 @pytest.mark.parametrize(
     "mesh, k, quad",
