@@ -24,6 +24,23 @@ from . import _galerkin_element, _galerkin_vertex
 def mixed_mass(
     mesh: SimplicialMesh, mode: Literal["element", "vertex"]
 ) -> Float[SparseDecoupledTensor, "splx*coord edge"]:
+    """
+    Compute the cross/mixed mass matrix consisting of the inner products between
+    the basis functions of the vector space and the Whitney 1-form basis functions
+    of the lowest forms.
+
+    If `mode` is "element", then the vector space basis functions are defined to
+    be piecewise-constant per top-level simplex; i.e., the basis vectors are
+    (ϕ_σ*e_1, ϕ_σ*e_2, ϕ_σ*e_3), where ϕ_σ is the indicator function for the top
+    level simplex σ, and the e's are the standard Cartesian basis vectors. If
+    `mode` is "vertex", then the vector space basis functions are anchored at
+    the vertices and defined as ϕ_vi(p) = λ_v(p)e_i, where λ_v(p) is the barycentric
+    coordinate of point p associated with vertex v and e_i is one of the standard
+    Cartesian basis functions.
+
+    This matrix is also sometimes known as the Galerkin projection matrix or the
+    coupling matrix.
+    """
     match mesh.dim:
         case 2:
             tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
@@ -95,8 +112,14 @@ def vector_mass(
     mesh: SimplicialMesh, mode: Literal["element", "vertex"], diagonal: bool = False
 ) -> Float[BaseDecoupledTensor, "splx*coord splx*coord"]:
     """
-    Note that the `diagonal` argument is only relevant for the vertex-based method,
-    and the element-based method will always produce diagonal vector mass matrices.
+    Compute the vector mass matrix consisting of the inner products between the
+    basis functions of the vector space. The `mode` argument controls the definition
+    of the basis functions (see `mixed_mass()` for more details).
+
+    If `mode` is "element", then the returned matrix is always diagonal. If `mode`
+    is "vertex", `diagonal=False` computes the exact vector mass matrix from the
+    consistent mass-0 matrix, which is in general not diagonal, and `diagonal=True`
+    computes an approximate, diagonal mass matrix from the Hodge star-0 matrix.
     """
     match (mode, mesh.dim):
         case ("element", 2):
@@ -141,6 +164,22 @@ def galerkin_flat(
     mode: Literal["element", "vertex"],
     method: Literal["dense", "solver", "inv_star"],
 ) -> Float[t.Tensor, " edge"]:
+    """
+    Compute the flat of a vector field using the Galerkin projection method.
+
+    If `mode` is "element", the input vector field should be piecewise-constant
+    and defined over the top-level-simplices of the mesh; if `mode` is "vertex",
+    the input vector field should be defined over the vertices of the mesh. The
+    input `mass_mixed` matrix should be computed using the same `mode` argument.
+
+    This function requires solving a linear system of the form M_1@η = P.T@v, where
+    M_1 is the edge mass matrix, η is the 1-cochain, P is the mixed mass matrix,
+    and v is the vector field. If `method` is "dense", the `mass_1` matrix is
+    converted to a dense tensor first before invoking `torch.linalg.solve()`;
+    if `method` is "solver", the linear system is passed to a sparse system solver;
+    if `method` is "inv_star", the `mass_1` matrix is assumed to be diagonal (e.g.,
+    a Hodge star-1 matrix) and directly inverted to solve the linear system.
+    """
     match mode:
         case "element":
             return _galerkin_element.element_based_galerkin_flat(
@@ -164,7 +203,24 @@ def galerkin_sharp(
     method: Literal["dense", "solver", "inv_star"] | None = None,
 ) -> Float[t.Tensor, "splx coord=3"]:
     """
-    Note that the `method` argument is only relevant for the vertex-based method.
+    Compute the sharp of a 1-cochain using the Galerkin projection method.
+
+    If `mode` is "element", the output vector field will be piecewise-constant
+    and defined over the top-level-simplices of the mesh; if `mode` is "vertex",
+    the output vector field will be defined over the vertices of the mesh. The
+    input `mass_vec` and `mass_mixed` matrix should be computed using the same
+    `mode` argument.
+
+    This function requires solving a linear system of the form M_V@v = P@η, where
+    M_V is the vector mass matrix, v is the vector field, P is the mixed mass matrix,
+    and η is the 1-cochain. If `mode` is "element", the input `mass_vec` is assumed
+    to be diagonal and directly inverted to solve the system. If `mode` is "vertex",
+    the solution method is controlled by the `method` argument. If `method` is "dense",
+    the `mass_vec` matrix is converted to a dense tensor first before invoking
+    `torch.linalg.solve()`; if `method` is "solver", the linear system is passed
+    to a sparse system solver; if `method` is "inv_star", the `mass_vec` matrix is
+    assumed to be diagonal (e.g., derived from a Hodge star-0 matrix) and directly
+    inverted to solve the linear system.
     """
     match mode:
         case "element":

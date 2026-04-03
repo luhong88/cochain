@@ -21,7 +21,22 @@ def local_flat(
     vec_field: Float[t.Tensor, "splx coord"],
     mesh: SimplicialMesh,
     mode: Literal["element", "vertex"],
-):
+) -> Float[t.Tensor, " edge"]:
+    """
+    Compute the flat of a vector field using a local, interpolation based method.
+
+    If `mode` is "element", the input vector field is assumed to be piecewise
+    constant and associated with the top-level simplices of the mesh, and the flat
+    is computed at each edge by taking the dot product between the edge vector
+    and the mean of the field across all cofaces of the edge. If `mode` is "vertex",
+    the input vector field is assumed to be associated with the vertices of the
+    mesh and the flat is computed at each edge as the dot product between the edge
+    vector and the mean of the field at the two end vertices of the edge.
+
+    Note that this local, interpolation based method is in general faster than
+    the Galerkin approach, but the flat and sharp operators do not satisfy the
+    exact adjoint relation.
+    """
     match (mode, mesh.dim):
         case ("element", 2):
             return _local_element.element_based_tri_local_flat(
@@ -55,7 +70,20 @@ def local_sharp(
     location: Literal["barycenter", "circumcenter"] = "barycenter",
 ):
     """
-    "location" is only relevant for tri meshes and element-based sharp.
+    Compute the sharp of a 1-cochain using a local, interpolation based method.
+
+    If `mode` is "element", the sharp is computed by interpolating the 1-cochain
+    at either the barycenter (supported for both tri and tet meshes) or the
+    circumcenter (supported for only tri meshes) of the top-level simplices. If
+    `mode` is "vertex", the function first call the element-based method to interpolate
+    the 1-cochain at the barycenters and then compute a per-vertex value by taking
+    an area/volume-weighted average of the interpolated 1-form over all top-level
+    simplices shsaring the vertex as a face. Therefore, the `location` argument
+    is only relevant for tri meshes and element-based sharp.
+
+    Note that this local, interpolation based method is in general faster than
+    the Galerkin approach, but the flat and sharp operators do not satisfy the
+    exact adjoint relation.
     """
     match mesh.dim:
         case 2:
