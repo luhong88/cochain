@@ -8,7 +8,7 @@ from ...utils.bary_coords import get_k_splx_barycenters, get_tri_circumcenters
 from ..interpolate import _bary_whitney_tet_cochain_1, _bary_whitney_tri_cochain_1
 
 
-def element_based_tri_geometric_flat(
+def element_based_tri_local_flat(
     vec_field: Float[t.Tensor, "tri coord=3"],
     vert_coords: Float[t.Tensor, "global_vert coord=3"],
     tri_edge_idx: Integer[t.LongTensor, "tri local_edge=3"],
@@ -52,7 +52,7 @@ def element_based_tri_geometric_flat(
     return dot_prod
 
 
-def element_based_tet_geometric_flat(
+def element_based_tet_local_flat(
     vec_field: Float[t.Tensor, "tet coord=4"],
     vert_coords: Float[t.Tensor, "global_vert coord=4"],
     tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
@@ -96,7 +96,7 @@ def element_based_tet_geometric_flat(
     return dot_prod
 
 
-def element_based_tri_geometric_sharp(
+def element_based_tri_local_sharp(
     cochain_1: Float[t.Tensor, " edge"],
     tris: Integer[t.LongTensor, "tri vert=3"],
     tri_edge_idx: Integer[t.LongTensor, "tri edge=3"],
@@ -136,7 +136,7 @@ def element_based_tri_geometric_sharp(
     return form_1
 
 
-def element_based_tet_geometric_sharp(
+def element_based_tet_local_sharp(
     cochain_1: Float[t.Tensor, " edge"],
     tet_edge_idx: Integer[t.LongTensor, "tet edge=6"],
     tet_edge_orientations: Float[t.Tensor, "tet edge=6"],

@@ -3,13 +3,13 @@ from einops import einsum, repeat
 from jaxtyping import Float, Integer
 
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
-from ._geometric_element import (
-    element_based_tet_geometric_sharp,
-    element_based_tri_geometric_sharp,
+from ._local_element import (
+    element_based_tet_local_sharp,
+    element_based_tri_local_sharp,
 )
 
 
-def vertex_based_geometric_flat(
+def vertex_based_local_flat(
     vec_field: Float[t.Tensor, "global_vert coord=3"],
     vert_coords: Float[t.Tensor, "global_vert coord=3"],
     edges: Integer[t.LongTensor, "global_edge local_vert=2"],
@@ -30,7 +30,7 @@ def vertex_based_geometric_flat(
     return dot_prod
 
 
-def vertex_based_tri_geometric_sharp(
+def vertex_based_tri_local_sharp(
     cochain_1: Float[t.Tensor, " edge"],
     star_0: Float[DiagDecoupledTensor, "vert vert"],
     n_verts: int,
@@ -49,14 +49,14 @@ def vertex_based_tri_geometric_sharp(
     Note that, since the Whitney 1-form basis functions are discontinuous across
     the tris, the value of the interpolated 1-form from the element-based approach
     is not well-defined at the vertices. Therefore, this area-weighted approach
-    does not satisfy the adjoint relation with the vertex-based geometric flat
+    does not satisfy the adjoint relation with the vertex-based local flat
     operator and can introduce numerical artifacts.
     """
     n_coords = 3
 
     # Interpolate the 1-cochain at the barycenter, which is equivalent to computing
     # the average of the interpolated 1-form over the tris.
-    form_1_on_tris = element_based_tri_geometric_sharp(
+    form_1_on_tris = element_based_tri_local_sharp(
         cochain_1=cochain_1,
         tris=tris,
         tri_edge_idx=tri_edge_idx,
@@ -94,7 +94,7 @@ def vertex_based_tri_geometric_sharp(
     return sharp
 
 
-def vertex_based_tet_geometric_sharp(
+def vertex_based_tet_local_sharp(
     cochain_1: Float[t.Tensor, " edge"],
     star_0: Float[DiagDecoupledTensor, "vert vert"],
     n_verts: int,
@@ -113,7 +113,7 @@ def vertex_based_tet_geometric_sharp(
 
     # Interpolate the 1-cochain at the barycenter, which is equivalent to computing
     # the average of the interpolated 1-form over the tets.
-    form_1_on_tets = element_based_tet_geometric_sharp(
+    form_1_on_tets = element_based_tet_local_sharp(
         cochain_1=cochain_1,
         tet_edge_idx=tet_edge_idx,
         tet_edge_orientations=tet_edge_orientations,

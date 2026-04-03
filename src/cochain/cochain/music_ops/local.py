@@ -14,17 +14,17 @@ from ...geometry.tri.tri_geometry import (
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
-from . import _geometric_element, _geometric_vertex
+from . import _local_element, _local_vertex
 
 
-def geometric_flat(
+def local_flat(
     vec_field: Float[t.Tensor, "splx coord"],
     mesh: SimplicialMesh,
     mode: Literal["element", "vertex"],
 ):
     match (mode, mesh.dim):
         case ("element", 2):
-            return _geometric_element.element_based_tri_geometric_flat(
+            return _local_element.element_based_tri_local_flat(
                 vec_field=vec_field,
                 vert_coords=mesh.vert_coords,
                 tri_edge_idx=mesh.edge_faces.idx,
@@ -32,7 +32,7 @@ def geometric_flat(
             )
 
         case ("element", 3):
-            return _geometric_element.element_based_tet_geometric_flat(
+            return _local_element.element_based_tet_local_flat(
                 vec_field=vec_field,
                 vert_coords=mesh.vert_coords,
                 tet_edge_idx=mesh.edge_faces.idx,
@@ -40,7 +40,7 @@ def geometric_flat(
             )
 
         case ("vertex", dim) if dim in [2, 3]:
-            return _geometric_vertex.vertex_based_geometric_flat(
+            return _local_vertex.vertex_based_local_flat(
                 vec_field=vec_field, vert_coords=mesh.vert_coords, edges=mesh.edges
             )
 
@@ -48,7 +48,7 @@ def geometric_flat(
             raise ValueError()
 
 
-def geometric_sharp(
+def local_sharp(
     cochain_1: Float[t.Tensor, " edge"],
     mesh: SimplicialMesh,
     mode: Literal["element", "vertex"],
@@ -82,7 +82,7 @@ def geometric_sharp(
 
     match (mode, mesh.dim):
         case ("element", 2):
-            return _geometric_element.element_based_tri_geometric_sharp(
+            return _local_element.element_based_tri_local_sharp(
                 cochain_1=cochain_1,
                 tris=mesh.tris,
                 tri_edge_idx=mesh.edge_faces.idx,
@@ -93,7 +93,7 @@ def geometric_sharp(
             )
 
         case ("element", 3):
-            return _geometric_element.element_based_tet_geometric_sharp(
+            return _local_element.element_based_tet_local_sharp(
                 cochain_1=cochain_1,
                 tet_edge_idx=mesh.edge_faces.idx,
                 tet_edge_orientations=mesh.edge_faces.parity,
@@ -103,7 +103,7 @@ def geometric_sharp(
         case ("vertex", 2):
             star_0 = tri_hodge_stars.star_0(mesh)
 
-            return _geometric_vertex.vertex_based_tri_geometric_sharp(
+            return _local_vertex.vertex_based_tri_local_sharp(
                 cochain_1=cochain_1,
                 star_0=star_0,
                 n_verts=mesh.n_verts,
@@ -119,7 +119,7 @@ def geometric_sharp(
             star_0 = tet_hodge_stars.star_0(mesh)
             tet_unsigned_vols = t.abs(tet_signed_vols)
 
-            return _geometric_vertex.vertex_based_tet_geometric_sharp(
+            return _local_vertex.vertex_based_tet_local_sharp(
                 cochain_1=cochain_1,
                 star_0=star_0,
                 n_verts=mesh.n_verts,

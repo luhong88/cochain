@@ -1,11 +1,10 @@
 import pytest
 import torch as t
-from einops import einsum, rearrange, repeat
-from jaxtyping import Float, Integer
+from einops import repeat
 
 from cochain.cochain import music_ops
-from cochain.geometry.tet import tet_hodge_stars, tet_masses
-from cochain.geometry.tri import tri_hodge_stars, tri_masses
+from cochain.geometry.tet import tet_masses
+from cochain.geometry.tri import tri_masses
 
 
 @pytest.mark.parametrize(
@@ -32,13 +31,13 @@ def test_vector_mass_spd(mesh, mode, diagonal, request, device):
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
-def test_geometric_vertex_based_const_vec_field_reconstruction(mesh, request, device):
+def test_local_vertex_based_const_vec_field_reconstruction(mesh, request, device):
     """
     Taking the flat of a constant vector field, followed by sharp, should reproduce
     the same constant vector field. Note that the inverse of this process (cochain
     -> vector field -> cochain) does not work.
 
-    Note that, because of the pathologies of the vertex-based geometric sharp
+    Note that, because of the pathologies of the vertex-based local sharp
     operator, exact reconstruction is not expected; instead, we check that the
     reconstructed vector fields point in roughly the same direction as the original.
     """
@@ -50,9 +49,9 @@ def test_geometric_vertex_based_const_vec_field_reconstruction(mesh, request, de
         vert=mesh.n_verts,
     )
 
-    cochain = music_ops.geometric_flat(vec_field=vec_field, mesh=mesh, mode="vertex")
+    cochain = music_ops.local_flat(vec_field=vec_field, mesh=mesh, mode="vertex")
 
-    vec_field_reconstructed = music_ops.geometric_sharp(
+    vec_field_reconstructed = music_ops.local_sharp(
         cochain_1=cochain, mesh=mesh, mode="vertex"
     )
 
@@ -72,7 +71,7 @@ def test_geometric_vertex_based_const_vec_field_reconstruction(mesh, request, de
         ("two_tets_mesh", "barycenter"),
     ],
 )
-def test_geometric_element_based_const_vec_field_reconstruction(
+def test_local_element_based_const_vec_field_reconstruction(
     mesh, location, request, device
 ):
     """
@@ -90,9 +89,9 @@ def test_geometric_element_based_const_vec_field_reconstruction(
         splx=mesh.n_splx[mesh.dim],
     )
 
-    cochain = music_ops.geometric_flat(vec_field=vec_field, mesh=mesh, mode="element")
+    cochain = music_ops.local_flat(vec_field=vec_field, mesh=mesh, mode="element")
 
-    vec_field_reconstructed = music_ops.geometric_sharp(
+    vec_field_reconstructed = music_ops.local_sharp(
         cochain_1=cochain, mesh=mesh, mode="element", location=location
     )
 
@@ -132,7 +131,7 @@ def test_galerkin_vertex_based_const_vec_field_reconstruction(
     Note that, for this test to pass on a tri mesh, we setup the mesh to be
     flat and entirely within the z = 0 plane, and test a random vector field with
     zero z-component. This is partly because the flat and sharp operators operate
-    on the tangent spaces of the triangles (as is with the geometric approaches).
+    on the tangent spaces of the triangles (as is with the local approaches).
     Furthermore, if a tri mesh has non-zero curvature, projecting a constant vector
     field onto the local tangent spaces creates discontinuities at the edge, which
     the vertex-based Galerkin formulation cannot represent and smoothes over.
@@ -261,7 +260,7 @@ def test_galerkin_element_based_adjoint_relation(mesh, request, device):
     L^2(E) and evaluated as ♭v.T @ M_1 @ η.
 
     Note that this adjoint relation (as defined above) is not satisfied by
-    the geometric approaches.
+    the local approaches.
     """
     mesh = request.getfixturevalue(mesh).to(device)
 
