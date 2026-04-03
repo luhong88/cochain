@@ -1,8 +1,9 @@
 import itertools
 from dataclasses import dataclass
 
-import torch as t
+import torch
 from jaxtyping import Integer
+from torch import LongTensor
 
 from cochain.utils.perm_parity import compute_lex_rel_orient
 
@@ -31,17 +32,17 @@ class FacePermLUT:
 
     k: int
     l: int
-    unique_front: Integer[t.LongTensor, "uf_face vert"]
-    unique_back: Integer[t.LongTensor, "ub_face vert"]
-    front_idx: Integer[t.LongTensor, " face"]
-    back_idx: Integer[t.LongTensor, " face"]
-    sign: Integer[t.LongTensor, "1 face 1"]
+    unique_front: Integer[LongTensor, "uf_face vert"]
+    unique_back: Integer[LongTensor, "ub_face vert"]
+    front_idx: Integer[LongTensor, " face"]
+    back_idx: Integer[LongTensor, " face"]
+    sign: Integer[LongTensor, "1 face 1"]
 
 
 def compute_face_perm_lut(k: int, l: int) -> FacePermLUT:
     m = k + l
 
-    all_perms = t.tensor(list(itertools.permutations(range(m + 1))))
+    all_perms = torch.tensor(list(itertools.permutations(range(m + 1))))
 
     f_faces = all_perms[:, : k + 1]
     b_faces = all_perms[:, k:]

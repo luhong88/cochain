@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 
-import torch as t
+import torch
 from einops import einsum
 from jaxtyping import Float
+from torch import Tensor
 
 from ..complex import SimplicialMesh
 from ..utils import quadrature
@@ -68,7 +69,7 @@ class DeRhamMap:
         self.bary_coords = bary_coords
         self.weights = weights
 
-    def sample_points(self) -> Float[t.Tensor, "k_splx pt coord=3"]:
+    def sample_points(self) -> Float[Tensor, "k_splx pt coord=3"]:
         if not hasattr(self, "bary_coords"):
             self._get_quad_rule()
 
@@ -87,8 +88,8 @@ class DeRhamMap:
 
     def discretize(
         self,
-        k_forms: Float[t.Tensor, "k_splx pt *ch coord"],
-    ) -> Float[t.Tensor, " k_splx *ch"]:
+        k_forms: Float[Tensor, "k_splx pt *ch coord"],
+    ) -> Float[Tensor, " k_splx *ch"]:
         if not hasattr(self, "bary_coords"):
             self._get_quad_rule()
 
@@ -99,7 +100,7 @@ class DeRhamMap:
         # in particular, J is the jacobian and can be computed as the matrix of
         # the edge (column) vectors v_i - v_0.
         splx_vert_coords = self.mesh.vert_coords[self.mesh.splx[self.k]]
-        jacs: Float[t.Tensor, "k_splx edge coord=3"] = (
+        jacs: Float[Tensor, "k_splx edge coord=3"] = (
             splx_vert_coords[:, 1:, :] - splx_vert_coords[:, [0], :]
         )
 
@@ -127,7 +128,7 @@ class DeRhamMap:
                 # vectors {v1 - v0, v2 - v0}, and the pullback is the dot product
                 # between the proxy 1-form and the triangle normal vector (oriented
                 # to satisfy the right-hand rule and scaled to the triangle area).
-                area_normal: Float[t.Tensor, "k_splx coord=3"] = 0.5 * t.cross(
+                area_normal: Float[Tensor, "k_splx coord=3"] = 0.5 * torch.cross(
                     jacs[:, 0, :], jacs[:, 1, :], dim=-1
                 )
                 pullback = einsum(
@@ -143,7 +144,7 @@ class DeRhamMap:
                 # the 3-form (a scalar) and the determinant of the Jacobian (scaled
                 # to the tet volume by the 1/6 factor). Note that, for 3-forms,
                 # the coord dimension is trivial.
-                signed_vol: Float[t.Tensor, " k_splx"] = t.linalg.det(jacs) / 6.0
+                signed_vol: Float[Tensor, " k_splx"] = torch.linalg.det(jacs) / 6.0
                 pullback = einsum(
                     signed_vol,
                     k_forms,

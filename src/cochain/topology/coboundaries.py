@@ -1,13 +1,14 @@
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor
 
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
 
 
 def cbd_from_tri_mesh(
-    tris: Integer[t.LongTensor, "tri 3"],
+    tris: Integer[LongTensor, "tri 3"],
 ) -> tuple[
-    Integer[t.LongTensor, "edge 2"],
+    Integer[LongTensor, "edge 2"],
     Float[SparseDecoupledTensor, "edge vert"],
     Float[SparseDecoupledTensor, "tri edge"],
 ]:
@@ -18,7 +19,7 @@ def cbd_from_tri_mesh(
     # For the triangles ijk, get all the i-th face jk, all the j-th face ik,
     # and all the k-th face ij and stack them together; this provides a redundant
     # list of all oriented edges in the mesh.
-    all_oriented_edges = t.concatenate(
+    all_oriented_edges = torch.concatenate(
         (tris[:, [1, 2]], tris[:, [0, 2]], tris[:, [0, 1]])
     )
     # Convert oriented edges to the canonical orientation, and check whether
@@ -30,22 +31,22 @@ def cbd_from_tri_mesh(
         dim=0, return_inverse=True
     )
 
-    n_verts = t.max(tris).item() + 1
+    n_verts = torch.max(tris).item() + 1
     n_edges = unique_canon_edges.shape[0]
     n_tris = tris.shape[0]
 
     # Generate the 0th-coboundary operator as a sparse tensor. A canonically
     # oriented edge ij at index n in unique_canonical_edges is represented by
     # (n, i, -1) and (n, j, 1) (using COO format).
-    d0_idx = t.stack(
+    d0_idx = torch.stack(
         [
-            t.repeat_interleave(t.arange(n_edges), 2),
+            torch.repeat_interleave(torch.arange(n_edges), 2),
             unique_canon_edges.flatten(),
         ]
     ).to(device=device)
-    d0_val = t.tile(t.tensor([-1.0, 1.0], device=device), (n_edges,))
+    d0_val = torch.tile(torch.tensor([-1.0, 1.0], device=device), (n_edges,))
     cbd_0 = (
-        t.sparse_coo_tensor(
+        torch.sparse_coo_tensor(
             d0_idx,
             d0_val,
             (n_edges, n_verts),
@@ -57,27 +58,27 @@ def cbd_from_tri_mesh(
     # Generate the 1st-coboundary operator.
     # For a triangle ijk, d1(ijk) = jk - ik + ij, which is represented by the
     # "topological signs".
-    edge_topo_signs = t.repeat_interleave(
-        t.tensor([1.0, -1.0, 1.0], device=device), n_tris
+    edge_topo_signs = torch.repeat_interleave(
+        torch.tensor([1.0, -1.0, 1.0], device=device), n_tris
     )
     # Each oriented edge ji that has the opposite orientation as the corresponding
     # canonical edge ij gets an additional -1 "orientation signs"; the orientation
     # sign can be determined by the vertex indices returned by sort() in
     # all_edge_orientations.
-    edge_orientation_signs = t.where(
+    edge_orientation_signs = torch.where(
         all_edge_orientations[:, 1] > 0, all_edge_orientations[:, 1], -1
     )
 
-    d1_idx = t.stack(
+    d1_idx = torch.stack(
         [
-            t.tile(t.arange(n_tris), (3,)),
+            torch.tile(torch.arange(n_tris), (3,)),
             all_edge_idx,
         ]
     ).to(device)
     d1_val = edge_topo_signs * edge_orientation_signs
 
     cbd_1 = (
-        t.sparse_coo_tensor(
+        torch.sparse_coo_tensor(
             d1_idx,
             d1_val,
             (n_tris, n_edges),
@@ -94,10 +95,10 @@ def cbd_from_tri_mesh(
 
 
 def cbd_from_tet_mesh(
-    tets: Integer[t.LongTensor, "tet 4"],
+    tets: Integer[LongTensor, "tet 4"],
 ) -> tuple[
-    Integer[t.LongTensor, "edge 2"],
-    Integer[t.LongTensor, "tri 3"],
+    Integer[LongTensor, "edge 2"],
+    Integer[LongTensor, "tri 3"],
     Float[SparseDecoupledTensor, "edge vert"],
     Float[SparseDecoupledTensor, "tri edge"],
     Float[SparseDecoupledTensor, "tet tri"],
@@ -109,7 +110,7 @@ def cbd_from_tet_mesh(
     # For the tets ijkl, get all the i-th face jkl, all the j-th face ikl, all
     # the k-th face ijl, and all the l-th face ijk and stack them together; this
     # provides a redundant list of all oriented edges in the mesh.
-    all_oriented_tris = t.concatenate(
+    all_oriented_tris = torch.concatenate(
         (tets[:, [1, 2, 3]], tets[:, [0, 2, 3]], tets[:, [0, 1, 3]], tets[:, [0, 1, 2]])
     )
     # Convert oriented tris to the canonical orientation, and check whether each
@@ -125,8 +126,8 @@ def cbd_from_tet_mesh(
     # Generate the 2nd-coboundary operator.
     # For a tet ijkl, d2(ijkl) = jkl - ikl + ijl - ijk, which is represented by
     # the "topological signs".
-    tri_topo_signs = t.repeat_interleave(
-        t.tensor([1.0, -1.0, 1.0, -1.0], device=device), n_tets
+    tri_topo_signs = torch.repeat_interleave(
+        torch.tensor([1.0, -1.0, 1.0, -1.0], device=device), n_tets
     )
     # Each oriented tris that has the opposite orientation as the corresponding
     # canonical tris gets an additional -1 "orientation signs". In total, there
@@ -137,17 +138,19 @@ def cbd_from_tet_mesh(
     # check how many indices match the canonical order indices [0, 1, 2]; if one
     # of them do, the triangle has a negative orientation, and otherwise it has
     # a positive orientation.
-    canon_pos_orientation = t.tensor([0, 1, 2], dtype=t.long, device=device)
-    tri_orientation_signs = t.where(
-        condition=t.sum(all_tri_orientations == canon_pos_orientation, dim=-1) == 1,
+    canon_pos_orientation = torch.tensor([0, 1, 2], dtype=torch.long, device=device)
+    tri_orientation_signs = torch.where(
+        condition=torch.sum(all_tri_orientations == canon_pos_orientation, dim=-1) == 1,
         self=-1,
         other=1,
     )
 
-    d2_idx = t.stack([t.tile(t.arange(n_tets), (4,)), all_tri_idx]).to(device=device)
+    d2_idx = torch.stack([torch.tile(torch.arange(n_tets), (4,)), all_tri_idx]).to(
+        device=device
+    )
     d2_val = tri_topo_signs * tri_orientation_signs
 
-    cbd_2 = t.sparse_coo_tensor(
+    cbd_2 = torch.sparse_coo_tensor(
         d2_idx, d2_val, (n_tets, n_tris), device=device
     ).coalesce()
 

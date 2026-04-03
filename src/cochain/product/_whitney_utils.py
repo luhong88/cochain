@@ -1,8 +1,9 @@
 import itertools
 import math
 
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 from ..complex import SimplicialMesh
 from ..geometry.tet import tet_geometry
@@ -13,8 +14,8 @@ from ..utils.search import splx_search
 
 
 def compute_whitney_router(
-    splx_dim: int, form_deg: int, device: t.device, dtype: t.dtype = t.float
-) -> Float[t.Tensor, "face lambda *d_lambda"]:
+    splx_dim: int, form_deg: int, device: torch.device, dtype: torch.dtype = torch.float
+) -> Float[Tensor, "face lambda *d_lambda"]:
     """
     Compute the coefficients required to construct the Whitney forms from the
     λ's and the dλ's.
@@ -22,11 +23,11 @@ def compute_whitney_router(
     faces = enumerate_local_faces(splx_dim, form_deg, device="cpu").tolist()
 
     router_shape = (len(faces),) + (splx_dim + 1,) * (form_deg + 1)
-    router = t.zeros(router_shape, dtype=dtype, device=device)
+    router = torch.zeros(router_shape, dtype=dtype, device=device)
 
     for splx_idx, splx in enumerate(faces):
-        perms = t.tensor(
-            list(itertools.permutations(splx)), dtype=t.int64, device=device
+        perms = torch.tensor(
+            list(itertools.permutations(splx)), dtype=torch.int64, device=device
         )
         signs = compute_lex_rel_orient(perms).to(dtype=dtype, device=device)
         router[splx_idx][perms.T.unbind(0)] = signs
@@ -35,8 +36,8 @@ def compute_whitney_router(
 
 
 def compute_moments(
-    order: int, splx_dim: int, device: t.device, dtype: t.dtype = t.float
-) -> t.Tensor:
+    order: int, splx_dim: int, device: torch.device, dtype: torch.dtype = torch.float
+) -> Tensor:
     """
     For an n-simplex with unit area/volume and n + 1 barycentric coordinate functions
     λ_i, use the magic formula
@@ -47,7 +48,7 @@ def compute_moments(
     (splx_dim + 1,) * order.
     """
     verts = list(range(splx_dim + 1))
-    moments = t.zeros((len(verts),) * order)
+    moments = torch.zeros((len(verts),) * order)
 
     for lambdas in itertools.product(verts, repeat=order):
         exponents = [lambdas.count(i) for i in verts]
@@ -62,7 +63,7 @@ def compute_moments(
 
 def compute_bc_grad_dot(
     mesh: SimplicialMesh,
-) -> tuple[Float[t.Tensor, "splx vert vert"], Float[t.Tensor, " splx"]]:
+) -> tuple[Float[Tensor, "splx vert vert"], Float[Tensor, " splx"]]:
     """
     A wrapper function for dispatching the correct bary_coord_grad_inner_prods()
     function for either tri or tet meshes.
@@ -81,7 +82,7 @@ def compute_bc_grad_dot(
             signed_splx_size = tet_geometry.compute_tet_signed_vols(
                 mesh.vert_coords, mesh.tets
             )
-            splx_size = t.abs(signed_splx_size)
+            splx_size = torch.abs(signed_splx_size)
             signed_splx_size_grad = (
                 tet_geometry.dompute_d_tet_signed_vols_d_vert_coords(
                     mesh.vert_coords, mesh.tets
@@ -100,9 +101,7 @@ def compute_bc_grad_dot(
 def find_top_splx_faces(
     face_dim: int,
     mesh: SimplicialMesh,
-) -> tuple[
-    Integer[t.LongTensor, "top_splx k_face"], Float[t.Tensor, "top_splx k_face"]
-]:
+) -> tuple[Integer[LongTensor, "top_splx k_face"], Float[Tensor, "top_splx k_face"]]:
     """
     Given a simplicial n-complex, for each top level n-simplex, find all of its
     k-faces, their indices in the list of k-simplices in the mesh, and their
@@ -110,7 +109,7 @@ def find_top_splx_faces(
     """
     k = face_dim
     # Identify the k-faces of the top level simplices and their sign corrections.
-    k_faces: Float[t.Tensor, "top_splx k_face k+1"] = mesh.splx[mesh.dim][
+    k_faces: Float[Tensor, "top_splx k_face k+1"] = mesh.splx[mesh.dim][
         :, enumerate_local_faces(mesh.dim, k, device=mesh.vert_coords.device)
     ]
     k_faces_flat = k_faces.view(-1, k + 1)
@@ -133,7 +132,7 @@ def find_top_splx_faces(
     if k == mesh.dim:
         k_face_parity_global = compute_lex_rel_orient(mesh.splx[k][k_faces_idx_flat])
     else:
-        k_face_parity_global = t.ones(
+        k_face_parity_global = torch.ones(
             1, dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
         ).expand_as(k_faces_idx_flat)
 

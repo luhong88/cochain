@@ -1,6 +1,7 @@
-import torch as t
+import torch
 from cuda.core.experimental import Device
 from jaxtyping import Float
+from torch import Tensor
 
 from ...decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ..solvers.nvmath_wrapper import DirectSolverConfig
@@ -51,7 +52,7 @@ class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
 
         # Solve a linear system with at most 3n channel dims
         b_dummy = (
-            t.zeros(
+            torch.zeros(
                 (A_shift_inv.size(-1), 3 * n),
                 dtype=A_shift_inv.dtype,
                 device=A_shift_inv.device,
@@ -61,11 +62,11 @@ class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
             .transpose(-1, -2)
         )
 
-        super().__init__(A_shift_inv, b_dummy, config, t.cuda.current_stream())
+        super().__init__(A_shift_inv, b_dummy, config, torch.cuda.current_stream())
 
-    def __matmul__(self, x: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
-        stream = t.cuda.current_stream()
-        t.cuda.set_device(x.device)
+    def __matmul__(self, x: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
+        stream = torch.cuda.current_stream()
+        torch.cuda.set_device(x.device)
         Device(x.device.index).set_current()
 
         # Pad up to 3n channel dims
@@ -73,7 +74,7 @@ class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
         pad = 3 * self.n - k
 
         x_padded_col_major = (
-            t.nn.functional.pad(x, (0, pad, 0, 0))
+            torch.nn.functional.pad(x, (0, pad, 0, 0))
             .transpose(-1, -2)
             .contiguous()
             .transpose(-1, -2)
@@ -115,7 +116,7 @@ class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
 
         # Solve a linear system with at most 3n channel dims
         b_dummy = (
-            t.zeros(
+            torch.zeros(
                 (self.M_csr.size(-1), 3 * n),
                 dtype=self.M_csr.dtype,
                 device=self.M_csr.device,
@@ -125,11 +126,11 @@ class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
             .transpose(-1, -2)
         )
 
-        super().__init__(A_shift_inv, b_dummy, config, t.cuda.current_stream())
+        super().__init__(A_shift_inv, b_dummy, config, torch.cuda.current_stream())
 
-    def __matmul__(self, x: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
-        stream = t.cuda.current_stream()
-        t.cuda.set_device(x.device)
+    def __matmul__(self, x: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
+        stream = torch.cuda.current_stream()
+        torch.cuda.set_device(x.device)
         Device(x.device.index).set_current()
 
         Mx = self.M_csr @ x
@@ -139,7 +140,7 @@ class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
         pad = 3 * self.n - k
 
         Mx_padded_col_major = (
-            t.nn.functional.pad(Mx, (0, pad, 0, 0))
+            torch.nn.functional.pad(Mx, (0, pad, 0, 0))
             .transpose(-1, -2)
             .contiguous()
             .transpose(-1, -2)

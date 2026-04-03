@@ -4,7 +4,7 @@ import random
 import numpy as np
 import pytest
 import pyvista as pv
-import torch as t
+import torch
 
 from cochain.complex import SimplicialMesh
 from cochain.datasets import synthetic_tet_meshes, synthetic_tri_meshes
@@ -47,12 +47,12 @@ def set_rng(session_seed):
     Resets the RNG state before each test function using the sesion seed. Note that
     'autouse=True' means this runs automatically for every test.
     """
-    t.manual_seed(session_seed)
+    torch.manual_seed(session_seed)
     np.random.seed(session_seed)
     random.seed(session_seed)
 
-    if t.cuda.is_available():
-        t.cuda.manual_seed_all(session_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(session_seed)
 
     yield
 
@@ -67,7 +67,7 @@ def pytest_configure(config):
 
 
 @pytest.fixture(params=["cpu", "cuda"])
-def device(request) -> t.device:
+def device(request) -> torch.device:
     """
     Set up a device fixture, such that
 
@@ -77,7 +77,7 @@ def device(request) -> t.device:
     """
     mode = request.param
 
-    if mode == "cuda" and not t.cuda.is_available():
+    if mode == "cuda" and not torch.cuda.is_available():
         pytest.skip("[GPU] Skipping CUDA test: No GPU available.")
 
     if mode == "cpu" and request.node.get_closest_marker("gpu_only"):
@@ -86,7 +86,7 @@ def device(request) -> t.device:
     if mode == "cuda" and request.node.get_closest_marker("cpu_only"):
         pytest.skip()
 
-    return t.device(mode)
+    return torch.device(mode)
 
 
 @pytest.fixture
@@ -121,8 +121,8 @@ def icosphere_mesh() -> SimplicialMesh:
     vert_coords_np = np.asarray(pv_sphere.points)
     tris_np = np.asarray(pv_sphere.regular_faces)
 
-    vert_coords_t = t.from_numpy(vert_coords_np).to(dtype=t.float)
-    tris_t = t.from_numpy(tris_np).to(dtype=t.long)
+    vert_coords_t = torch.from_numpy(vert_coords_np).to(dtype=torch.float)
+    tris_t = torch.from_numpy(tris_np).to(dtype=torch.long)
 
     cochain_sphere = SimplicialMesh.from_tri_mesh(vert_coords_t, tris_t)
 

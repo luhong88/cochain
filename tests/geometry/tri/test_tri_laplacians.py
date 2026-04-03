@@ -1,5 +1,5 @@
 import pytest
-import torch as t
+import torch
 
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tri import tri_hodge_stars, tri_laplacians
@@ -17,7 +17,7 @@ def test_l0_stiffness_relation(two_tris_mesh: SimplicialMesh):
     l0 = tri_laplacians.laplacian_0(two_tris_mesh, dual_complex="circumcentric")
     stiffness_indirect = (s0 @ l0).to_dense()
 
-    t.testing.assert_close(stiffness_indirect, stiffness_direct)
+    torch.testing.assert_close(stiffness_indirect, stiffness_direct)
 
 
 def test_l0_direct_construction(two_tris_mesh: SimplicialMesh):
@@ -34,7 +34,7 @@ def test_l0_direct_construction(two_tris_mesh: SimplicialMesh):
     )
     l0 = (codiff_1 @ two_tris_mesh.cbd[0]).to_dense()
 
-    t.testing.assert_close(l0, l0_via_cotan)
+    torch.testing.assert_close(l0, l0_via_cotan)
 
 
 @pytest.mark.parametrize(
@@ -52,8 +52,8 @@ def test_disk_homology_group_dims(
     laplacian, dual_complex, betti, tent_mesh: SimplicialMesh
 ):
     operator = laplacian(tent_mesh, dual_complex).to_dense()
-    dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
-    t.testing.assert_close(dim_ker, t.tensor(betti))
+    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+    torch.testing.assert_close(dim_ker, torch.tensor(betti))
 
 
 @pytest.mark.parametrize(
@@ -71,8 +71,8 @@ def test_annulus_homology_group_dims(
     laplacian, dual_complex, betti, flat_annulus_mesh: SimplicialMesh
 ):
     operator = laplacian(flat_annulus_mesh, dual_complex).to_dense()
-    dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
-    t.testing.assert_close(dim_ker, t.tensor(betti))
+    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+    torch.testing.assert_close(dim_ker, torch.tensor(betti))
 
 
 @pytest.mark.parametrize(
@@ -90,8 +90,8 @@ def test_sphere_homology_group_dims(
     laplacian, dual_complex, betti, icosphere_mesh: SimplicialMesh
 ):
     operator = laplacian(icosphere_mesh, dual_complex).to_dense()
-    dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
-    t.testing.assert_close(dim_ker, t.tensor(betti))
+    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+    torch.testing.assert_close(dim_ker, torch.tensor(betti))
 
 
 @pytest.mark.parametrize(
@@ -101,7 +101,7 @@ def test_sphere_homology_group_dims(
 def test_laplacian_0_kernel(dual_complex, tent_mesh: SimplicialMesh):
     l0 = tri_laplacians.laplacian_0(tent_mesh, dual_complex)
     row_sum = l0.to_dense().sum(dim=-1)
-    t.testing.assert_close(row_sum, t.zeros_like(row_sum))
+    torch.testing.assert_close(row_sum, torch.zeros_like(row_sum))
 
 
 @pytest.mark.parametrize(
@@ -120,7 +120,7 @@ def test_laplacian_2_kernel(dual_complex, hollow_tet_mesh: SimplicialMesh):
 
     zeros = (l2 @ areas).to_dense()
 
-    t.testing.assert_close(zeros, t.zeros_like(zeros))
+    torch.testing.assert_close(zeros, torch.zeros_like(zeros))
 
 
 @pytest.mark.parametrize(
@@ -156,8 +156,8 @@ def test_laplacian_symmetry(
     laplacian_i_T = laplacian_i.T
     stiffness_i_T = stiffness_i.T
 
-    t.testing.assert_close(stiffness_i.to_dense(), stiffness_i_T.to_dense())
-    assert not t.allclose(laplacian_i.to_dense(), laplacian_i_T.to_dense())
+    torch.testing.assert_close(stiffness_i.to_dense(), stiffness_i_T.to_dense())
+    assert not torch.allclose(laplacian_i.to_dense(), laplacian_i_T.to_dense())
 
 
 @pytest.mark.parametrize(
@@ -187,7 +187,7 @@ def test_laplacian_PSD(laplacian, dual_complex, star, hollow_tet_mesh: Simplicia
     laplacian_i = laplacian(hollow_tet_mesh, dual_complex)
     stiffness_i = (star_i @ laplacian_i).to_dense()
 
-    eigs = t.linalg.eigvalsh(stiffness_i)
+    eigs = torch.linalg.eigvalsh(stiffness_i)
     assert eigs.min() >= -1e-6
 
 
@@ -202,8 +202,8 @@ def test_laplacian_1_orthogonality(dual_complex, hollow_tet_mesh: SimplicialMesh
     composition_1 = (l1_div_grad @ l1_curl_curl).to_dense()
     composition_2 = (l1_curl_curl @ l1_div_grad).to_dense()
 
-    t.testing.assert_close(composition_1, t.zeros_like(composition_1))
-    t.testing.assert_close(composition_2, t.zeros_like(composition_2))
+    torch.testing.assert_close(composition_1, torch.zeros_like(composition_1))
+    torch.testing.assert_close(composition_2, torch.zeros_like(composition_2))
 
 
 @pytest.mark.parametrize(
@@ -222,7 +222,7 @@ def test_laplacian_1_curl_free(dual_complex, hollow_tet_mesh: SimplicialMesh):
 
     x1_zero = (l1_curl_curl @ x1_curl_free).to_dense()
 
-    t.testing.assert_close(x1_zero, t.zeros_like(x1_zero))
+    torch.testing.assert_close(x1_zero, torch.zeros_like(x1_zero))
 
 
 @pytest.mark.parametrize(
@@ -237,14 +237,14 @@ def test_laplacian_1_div_free(dual_complex, hollow_tet_mesh: SimplicialMesh):
     codiff_2 = tri_laplacians.codifferential_2(hollow_tet_mesh, dual_complex)
     l1_div_grad = tri_laplacians.laplacian_1_div_grad(hollow_tet_mesh, dual_complex)
 
-    x2 = t.arange(hollow_tet_mesh.n_tris).to(
-        dtype=t.float, device=hollow_tet_mesh.vert_coords.device
+    x2 = torch.arange(hollow_tet_mesh.n_tris).to(
+        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
     )
     x1_div_free = codiff_2 @ x2
 
     x1_zero = (l1_div_grad @ x1_div_free).to_dense()
 
-    t.testing.assert_close(x1_zero, t.zeros_like(x1_zero))
+    torch.testing.assert_close(x1_zero, torch.zeros_like(x1_zero))
 
 
 @pytest.mark.parametrize(
@@ -262,17 +262,17 @@ def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialMesh
     d0 = hollow_tet_mesh.cbd[0]
     codiff_1 = tri_laplacians.codifferential_1(hollow_tet_mesh, dual_complex)
 
-    x0 = t.arange(hollow_tet_mesh.n_verts).to(
-        dtype=t.float, device=hollow_tet_mesh.vert_coords.device
+    x0 = torch.arange(hollow_tet_mesh.n_verts).to(
+        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
     )
-    x1 = t.arange(hollow_tet_mesh.n_edges).to(
-        dtype=t.float, device=hollow_tet_mesh.vert_coords.device
+    x1 = torch.arange(hollow_tet_mesh.n_edges).to(
+        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
     )
 
-    dot_1 = t.dot(d0 @ x0, s1 @ x1)
-    dot_2 = t.dot(x0, s0 @ (codiff_1 @ x1))
+    dot_1 = torch.dot(d0 @ x0, s1 @ x1)
+    dot_2 = torch.dot(x0, s0 @ (codiff_1 @ x1))
 
-    t.testing.assert_close(dot_1, dot_2)
+    torch.testing.assert_close(dot_1, dot_2)
 
 
 @pytest.mark.parametrize(
@@ -290,14 +290,14 @@ def test_codiff_2_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialMesh
     d1 = hollow_tet_mesh.cbd[1]
     codiff_2 = tri_laplacians.codifferential_2(hollow_tet_mesh, dual_complex)
 
-    x1 = t.arange(hollow_tet_mesh.n_edges).to(
-        dtype=t.float, device=hollow_tet_mesh.vert_coords.device
+    x1 = torch.arange(hollow_tet_mesh.n_edges).to(
+        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
     )
-    x2 = t.arange(hollow_tet_mesh.n_tris).to(
-        dtype=t.float, device=hollow_tet_mesh.vert_coords.device
+    x2 = torch.arange(hollow_tet_mesh.n_tris).to(
+        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
     )
 
-    dot_1 = t.dot(d1 @ x1, s2 @ x2)
-    dot_2 = t.dot(x1, s1 @ (codiff_2 @ x2))
+    dot_1 = torch.dot(d1 @ x1, s2 @ x2)
+    dot_2 = torch.dot(x1, s1 @ (codiff_2 @ x2))
 
-    t.testing.assert_close(dot_1, dot_2)
+    torch.testing.assert_close(dot_1, dot_2)

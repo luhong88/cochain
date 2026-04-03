@@ -1,7 +1,8 @@
 import warnings
 
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 from ...decoupled_tensor import SparseDecoupledTensor
 from ..solvers.nvmath_wrapper import DirectSolverConfig
@@ -33,14 +34,14 @@ def _lobpcg_one_iter(
     T_op: SparseDecoupledTensorLike,
     M_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
     S_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
-    R: Float[t.Tensor, "m n"],
-    X_current: Float[t.Tensor, "m n"],
-    X_prev: Float[t.Tensor, "m n"],
+    R: Float[Tensor, "m n"],
+    X_current: Float[Tensor, "m n"],
+    X_prev: Float[Tensor, "m n"],
     precond: LOBPCGPreconditioner,
     largest: bool,
     rtol: float,
-    generator: t.Generator | None,
-) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"], Float[t.Tensor, "m n"]]:
+    generator: torch.Generator | None,
+) -> tuple[Float[Tensor, " n"], Float[Tensor, "m n"], Float[Tensor, "m n"]]:
     """
     Perform one iteration of LOBPCG.
     """
@@ -48,7 +49,7 @@ def _lobpcg_one_iter(
 
     # Perform soft locking/deflation to lock in converged eigenvectors by zeroing
     # out the corresponding residual vectors.
-    R_norm = t.linalg.norm(R, dim=0, keepdim=True)
+    R_norm = torch.linalg.norm(R, dim=0, keepdim=True)
     mask = (R_norm > rtol).to(R_norm.dtype)
     R_masked = R * mask
 
@@ -61,7 +62,7 @@ def _lobpcg_one_iter(
 
     # Assemble the new trial subspace and enforce M-orthonormality condition on
     # the subspace basis vectors.
-    V = t.hstack((X_current, W, P))
+    V = torch.hstack((X_current, W, P))
 
     V_ortho = M_orthonormalize(V, M_op, n_min=n, generator=generator, max_iter=3)
     TV_ortho = T_op @ V_ortho
@@ -87,14 +88,14 @@ def _lobpcg_one_iter(
     # product induced by M would have resulted in "double counting" of M in B'.
     T_reduced = V_ortho.T @ (S_op @ TV_ortho)
 
-    Lambda_next_all, X_next_reduced_all = t.linalg.eigh(T_reduced)
+    Lambda_next_all, X_next_reduced_all = torch.linalg.eigh(T_reduced)
 
     # Extract the n largest (or smallest) eigenvalue-eigenvector pairs.
-    # Note that t.linalg.eigh() returns eigenvalues in ascending order
+    # Note that torch.linalg.eigh() returns eigenvalues in ascending order
     if largest:
         # if largest=True, sort eigenvalues in descending order
-        X_next_reduced = t.flip(X_next_reduced_all[:, -n:], dims=(-1,))
-        Lambda_next = t.flip(Lambda_next_all[-n:], dims=(0,))
+        X_next_reduced = torch.flip(X_next_reduced_all[:, -n:], dims=(-1,))
+        Lambda_next = torch.flip(Lambda_next_all[-n:], dims=(0,))
     else:
         # if largest=False, keep eigenvalues in ascending order
         X_next_reduced = X_next_reduced_all[:, :n]
@@ -112,14 +113,14 @@ def _lobpcg_loop(
     B_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
     M_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
     S_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
-    X_0: Float[t.Tensor, "m n"],
+    X_0: Float[Tensor, "m n"],
     precond: LOBPCGPreconditioner,
     largest: bool,
     atol: float,
     rtol: float,
     niter: int,
-    generator: t.Generator | None,
-) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
+    generator: torch.Generator | None,
+) -> tuple[Float[Tensor, " n"], Float[Tensor, "m n"]]:
     X_current = M_orthonormalize(
         X_0, M_op, n_min=X_0.size(-1), generator=generator, max_iter=3
     )
@@ -131,13 +132,13 @@ def _lobpcg_loop(
     # In most cases, S = I so the quotient reduces to X.T@T@X = X.T@M@X@Λ = Λ.
     # For GEP in the shift-invert mode, T@X = X@Λ' and S = M so that X.T@M@T@X
     # correctly reduces to the shift-inverted eigenvalues Λ'.
-    Lambda_current = t.diag(X_current.T @ (S_op @ TX_current))
+    Lambda_current = torch.diag(X_current.T @ (S_op @ TX_current))
 
     converged = False
     for _ in range(niter):
         # Compute the residual vectors R = T@X - B@X@Λ.
         R = TX_current - (B_op @ X_current) * Lambda_current.view(1, -1)
-        R_norm = t.linalg.norm(R, dim=0)
+        R_norm = torch.linalg.norm(R, dim=0)
 
         # Adjust the tolerance based on the eigenvalue magnitudes.
         tol_current = atol + rtol * Lambda_current.abs()
@@ -252,15 +253,15 @@ def lobpcg_forward(
     A_op: SparseDecoupledTensorLike,
     M_op: Float[SparseDecoupledTensor, "m m"] | None,
     sigma: float | int | None,
-    v0: Float[t.Tensor, "m n"],
+    v0: Float[Tensor, "m n"],
     largest: bool,
     atol: float,
     rtol: float,
     maxiter: int,
     nvmath_config: DirectSolverConfig,
     precond_config: LOBPCGPrecondConfig,
-    generator: t.Generator | None,
-) -> tuple[Float[t.Tensor, " n"], Float[t.Tensor, "m n"]]:
+    generator: torch.Generator | None,
+) -> tuple[Float[Tensor, " n"], Float[Tensor, "m n"]]:
     """
     Solve a (generalized) eigenvalue problem of the form A@x = λ*M@x.
 

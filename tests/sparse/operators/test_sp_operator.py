@@ -1,5 +1,5 @@
 import pytest
-import torch as t
+import torch
 
 from cochain.sparse.decoupled_tensor import (
     DiagDecoupledTensor,
@@ -24,11 +24,11 @@ def test_device_mismatch(A, device):
 
 
 def test_nnz_mismatch(device):
-    idx_coo = t.tensor([[0, 0, 1, 2], [0, 1, 0, 3]])
+    idx_coo = torch.tensor([[0, 0, 1, 2], [0, 1, 0, 3]])
     shape = (4, 4)
     pattern = SparsityPattern(idx_coo, shape).to(device)
 
-    val = t.randn(3).to(device)
+    val = torch.randn(3).to(device)
 
     with pytest.raises(ValueError):
         SparseDecoupledTensor(pattern, val)
@@ -43,7 +43,7 @@ def test_dense_conversion(A, device):
 
     assert A_tensor_dense.dtype == A_operator.dtype
 
-    t.testing.assert_close(A_tensor_dense, A_operator_dense)
+    torch.testing.assert_close(A_tensor_dense, A_operator_dense)
 
 
 def test_coo_conversion(A, device):
@@ -53,11 +53,11 @@ def test_coo_conversion(A, device):
     A_coo = A_operator.to_sparse_coo().coalesce()
 
     assert A_coo.shape == A_coo_true.shape
-    assert A_coo.indices().dtype == t.int64
+    assert A_coo.indices().dtype == torch.int64
     assert A_coo.dtype == A_coo_true.dtype
 
-    t.testing.assert_close(A_coo.indices(), A_coo_true.indices())
-    t.testing.assert_close(A_coo.values(), A_coo_true.values())
+    torch.testing.assert_close(A_coo.indices(), A_coo_true.indices())
+    torch.testing.assert_close(A_coo.values(), A_coo_true.values())
 
 
 def test_coo_conversion_with_batch_dim(A_batched, device):
@@ -67,11 +67,11 @@ def test_coo_conversion_with_batch_dim(A_batched, device):
     A_coo = A_operator.to_sparse_coo().coalesce()
 
     assert A_coo.shape == A_coo_true.shape
-    assert A_coo.indices().dtype == t.int64
+    assert A_coo.indices().dtype == torch.int64
     assert A_coo.dtype == A_coo_true.dtype
 
-    t.testing.assert_close(A_coo.indices(), A_coo_true.indices())
-    t.testing.assert_close(A_coo.values(), A_coo_true.values())
+    torch.testing.assert_close(A_coo.indices(), A_coo_true.indices())
+    torch.testing.assert_close(A_coo.values(), A_coo_true.values())
 
 
 def test_csr_conversion(A, device):
@@ -82,21 +82,25 @@ def test_csr_conversion(A, device):
     A_csr = A_operator.to_sparse_csr()
 
     assert A_csr.shape == A_csr_true.shape
-    assert A_csr.crow_indices().dtype == t.int64
-    assert A_csr.col_indices().dtype == t.int64
+    assert A_csr.crow_indices().dtype == torch.int64
+    assert A_csr.col_indices().dtype == torch.int64
     assert A_csr.dtype == A_csr_true.dtype
 
-    t.testing.assert_close(A_csr.crow_indices(), A_csr_true.crow_indices())
-    t.testing.assert_close(A_csr.col_indices(), A_csr_true.col_indices())
-    t.testing.assert_close(A_csr.values(), A_csr_true.values())
+    torch.testing.assert_close(A_csr.crow_indices(), A_csr_true.crow_indices())
+    torch.testing.assert_close(A_csr.col_indices(), A_csr_true.col_indices())
+    torch.testing.assert_close(A_csr.values(), A_csr_true.values())
 
     A_csr_int32 = A_operator.to_sparse_csr(int32=True)
 
-    assert A_csr_int32.crow_indices().dtype == t.int32
-    assert A_csr_int32.col_indices().dtype == t.int32
+    assert A_csr_int32.crow_indices().dtype == torch.int32
+    assert A_csr_int32.col_indices().dtype == torch.int32
 
-    t.testing.assert_close(A_csr.crow_indices(), A_csr_int32.crow_indices().to(t.int64))
-    t.testing.assert_close(A_csr.col_indices(), A_csr_int32.col_indices().to(t.int64))
+    torch.testing.assert_close(
+        A_csr.crow_indices(), A_csr_int32.crow_indices().to(torch.int64)
+    )
+    torch.testing.assert_close(
+        A_csr.col_indices(), A_csr_int32.col_indices().to(torch.int64)
+    )
 
 
 def test_csr_conversion_with_batch_dim(A_batched, device):
@@ -106,22 +110,26 @@ def test_csr_conversion_with_batch_dim(A_batched, device):
     A_csr = A_operator.to_sparse_csr()
 
     assert A_csr.shape == A_operator.shape
-    assert A_csr.crow_indices().dtype == t.int64
-    assert A_csr.col_indices().dtype == t.int64
+    assert A_csr.crow_indices().dtype == torch.int64
+    assert A_csr.col_indices().dtype == torch.int64
     assert A_csr.dtype == A_operator.dtype
 
     A_csr_int32 = A_operator.to_sparse_csr(int32=True)
 
-    assert A_csr_int32.crow_indices().dtype == t.int32
-    assert A_csr_int32.col_indices().dtype == t.int32
+    assert A_csr_int32.crow_indices().dtype == torch.int32
+    assert A_csr_int32.col_indices().dtype == torch.int32
 
-    t.testing.assert_close(A_csr.crow_indices(), A_csr_int32.crow_indices().to(t.int64))
-    t.testing.assert_close(A_csr.col_indices(), A_csr_int32.col_indices().to(t.int64))
+    torch.testing.assert_close(
+        A_csr.crow_indices(), A_csr_int32.crow_indices().to(torch.int64)
+    )
+    torch.testing.assert_close(
+        A_csr.col_indices(), A_csr_int32.col_indices().to(torch.int64)
+    )
 
     # Since it is not possible to directly convert a batched sparse coo tensor
     # to a batched sparse csr tensor, we directly check for value agreement in
     # dense format.
-    t.testing.assert_close(A_tensor.to_dense(), A_csr.to_dense())
+    torch.testing.assert_close(A_tensor.to_dense(), A_csr.to_dense())
 
 
 def test_csr_transposed_conversion(A, device):
@@ -131,9 +139,9 @@ def test_csr_transposed_conversion(A, device):
 
     assert A_T_direct.shape == A_T_indirect.shape
 
-    t.testing.assert_close(A_T_direct.values(), A_T_indirect.values())
-    t.testing.assert_close(A_T_direct.crow_indices(), A_T_indirect.crow_indices())
-    t.testing.assert_close(A_T_direct.col_indices(), A_T_indirect.col_indices())
+    torch.testing.assert_close(A_T_direct.values(), A_T_indirect.values())
+    torch.testing.assert_close(A_T_direct.crow_indices(), A_T_indirect.crow_indices())
+    torch.testing.assert_close(A_T_direct.col_indices(), A_T_indirect.col_indices())
 
 
 def test_csr_transposed_conversion_with_batch_dim(A_batched, device):
@@ -143,9 +151,9 @@ def test_csr_transposed_conversion_with_batch_dim(A_batched, device):
 
     assert A_T_direct.shape == A_T_indirect.shape
 
-    t.testing.assert_close(A_T_direct.values(), A_T_indirect.values())
-    t.testing.assert_close(A_T_direct.crow_indices(), A_T_indirect.crow_indices())
-    t.testing.assert_close(A_T_direct.col_indices(), A_T_indirect.col_indices())
+    torch.testing.assert_close(A_T_direct.values(), A_T_indirect.values())
+    torch.testing.assert_close(A_T_direct.crow_indices(), A_T_indirect.crow_indices())
+    torch.testing.assert_close(A_T_direct.col_indices(), A_T_indirect.col_indices())
 
 
 def test_csc_conversion(A, device):
@@ -156,21 +164,25 @@ def test_csc_conversion(A, device):
     A_csc = A_operator.to_sparse_csc()
 
     assert A_csc.shape == A_csc_true.shape
-    assert A_csc.ccol_indices().dtype == t.int64
-    assert A_csc.row_indices().dtype == t.int64
+    assert A_csc.ccol_indices().dtype == torch.int64
+    assert A_csc.row_indices().dtype == torch.int64
     assert A_csc.dtype == A_csc_true.dtype
 
-    t.testing.assert_close(A_csc.ccol_indices(), A_csc_true.ccol_indices())
-    t.testing.assert_close(A_csc.row_indices(), A_csc_true.row_indices())
-    t.testing.assert_close(A_csc.values(), A_csc_true.values())
+    torch.testing.assert_close(A_csc.ccol_indices(), A_csc_true.ccol_indices())
+    torch.testing.assert_close(A_csc.row_indices(), A_csc_true.row_indices())
+    torch.testing.assert_close(A_csc.values(), A_csc_true.values())
 
     A_csc_int32 = A_operator.to_sparse_csc(int32=True)
 
-    assert A_csc_int32.ccol_indices().dtype == t.int32
-    assert A_csc_int32.row_indices().dtype == t.int32
+    assert A_csc_int32.ccol_indices().dtype == torch.int32
+    assert A_csc_int32.row_indices().dtype == torch.int32
 
-    t.testing.assert_close(A_csc.ccol_indices(), A_csc_int32.ccol_indices().to(t.int64))
-    t.testing.assert_close(A_csc.row_indices(), A_csc_int32.row_indices().to(t.int64))
+    torch.testing.assert_close(
+        A_csc.ccol_indices(), A_csc_int32.ccol_indices().to(torch.int64)
+    )
+    torch.testing.assert_close(
+        A_csc.row_indices(), A_csc_int32.row_indices().to(torch.int64)
+    )
 
 
 def test_csc_conversion_with_batch_dim(A_batched, device):
@@ -180,46 +192,50 @@ def test_csc_conversion_with_batch_dim(A_batched, device):
     A_csc = A_operator.to_sparse_csc()
 
     assert A_csc.shape == A_operator.shape
-    assert A_csc.ccol_indices().dtype == t.int64
-    assert A_csc.row_indices().dtype == t.int64
+    assert A_csc.ccol_indices().dtype == torch.int64
+    assert A_csc.row_indices().dtype == torch.int64
     assert A_csc.dtype == A_operator.dtype
 
     A_csc_int32 = A_operator.to_sparse_csc(int32=True)
 
-    assert A_csc_int32.ccol_indices().dtype == t.int32
-    assert A_csc_int32.row_indices().dtype == t.int32
+    assert A_csc_int32.ccol_indices().dtype == torch.int32
+    assert A_csc_int32.row_indices().dtype == torch.int32
 
-    t.testing.assert_close(A_csc.ccol_indices(), A_csc_int32.ccol_indices().to(t.int64))
-    t.testing.assert_close(A_csc.row_indices(), A_csc_int32.row_indices().to(t.int64))
+    torch.testing.assert_close(
+        A_csc.ccol_indices(), A_csc_int32.ccol_indices().to(torch.int64)
+    )
+    torch.testing.assert_close(
+        A_csc.row_indices(), A_csc_int32.row_indices().to(torch.int64)
+    )
 
     # Since it is not possible to directly convert a batched sparse coo tensor
     # to a batched sparse csc tensor, we directly check for value agreement in
     # dense format.
-    t.testing.assert_close(A_tensor.to_dense(), A_csc.to_dense())
+    torch.testing.assert_close(A_tensor.to_dense(), A_csc.to_dense())
 
 
 def test_sp_dense_mm(A, device):
     A_tensor = A.to(device)
     A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
-    B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
+    B_dense = torch.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
 
     C_dense_true = A_tensor @ B_dense
     C_dense = A_operator @ B_dense
 
-    t.testing.assert_close(C_dense, C_dense_true)
+    torch.testing.assert_close(C_dense, C_dense_true)
 
 
 def test_dense_sp_mm(A, device):
     A_tensor = A.to(device)
     A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
-    B_dense = t.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
+    B_dense = torch.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
 
     C_dense_true = B_dense @ A_tensor
     C_dense = B_dense @ A_operator
 
-    t.testing.assert_close(C_dense, C_dense_true)
+    torch.testing.assert_close(C_dense, C_dense_true)
 
 
 def test_sp_sp_mm(A, device):
@@ -229,38 +245,38 @@ def test_sp_sp_mm(A, device):
     sp_sp_true = A_tensor @ A_tensor.T
     sp_sp = A_operator @ A_operator.T
 
-    t.testing.assert_close(sp_sp.to_dense(), sp_sp_true.to_dense())
+    torch.testing.assert_close(sp_sp.to_dense(), sp_sp_true.to_dense())
 
 
 def test_sp_mv(A, device):
     A_tensor = A.to(device)
     A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
-    b_dense = t.randn(A_tensor.shape[-1], dtype=A_tensor.dtype, device=device)
+    b_dense = torch.randn(A_tensor.shape[-1], dtype=A_tensor.dtype, device=device)
 
     mv_true = A_tensor @ b_dense
     mv = A_operator @ b_dense
 
-    t.testing.assert_close(mv, mv_true)
+    torch.testing.assert_close(mv, mv_true)
 
 
 def test_sp_vm(A, device):
     A_tensor = A.to(device)
     A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
-    b_dense = t.randn(A_tensor.shape[0], dtype=A_tensor.dtype, device=device)
+    b_dense = torch.randn(A_tensor.shape[0], dtype=A_tensor.dtype, device=device)
 
     vm_true = b_dense @ A_tensor
     vm = b_dense @ A_operator
 
-    t.testing.assert_close(vm, vm_true)
+    torch.testing.assert_close(vm, vm_true)
 
 
 def test_matmul_with_batch_dim(A, A_batched, device):
     A_operator = SparseDecoupledTensor.from_tensor(A).to(device)
     A_batched_operator = SparseDecoupledTensor.from_tensor(A_batched).to(device)
 
-    b_dense = t.randn(
+    b_dense = torch.randn(
         A_batched_operator.shape[-1], dtype=A_batched_operator.dtype, device=device
     )
 
@@ -280,15 +296,15 @@ def test_matmul_with_batch_dim(A, A_batched, device):
 def test_matmul_with_dense_dim(A, device):
     A_operator = SparseDecoupledTensor.from_tensor(A).to(device)
 
-    val = t.randn(4, 2)
-    idx_coo = t.tensor([[0, 1, 2, 2], [1, 0, 1, 2]])
+    val = torch.randn(4, 2)
+    idx_coo = torch.tensor([[0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (4, 4)
 
     hybrid_operator = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(
         device
     )
 
-    b_dense = t.randn(shape[-1], dtype=hybrid_operator.dtype, device=device)
+    b_dense = torch.randn(shape[-1], dtype=hybrid_operator.dtype, device=device)
 
     with pytest.raises(NotImplementedError):
         hybrid_operator @ b_dense
@@ -307,7 +323,9 @@ def test_matmul_with_wrong_tensor_ndim(A, device):
     A_tensor = A.to(device)
     A_operator = SparseDecoupledTensor.from_tensor(A_tensor)
 
-    b_dense = t.randn((A_tensor.shape[-1],) * 3, dtype=A_tensor.dtype, device=device)
+    b_dense = torch.randn(
+        (A_tensor.shape[-1],) * 3, dtype=A_tensor.dtype, device=device
+    )
 
     with pytest.raises(NotImplementedError):
         A_operator @ b_dense
@@ -339,8 +357,8 @@ def test_dim_with_batch(A_batched, device):
 
 
 def test_dim_with_batch_dense(device):
-    val = t.randn(4, 2)
-    idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
+    val = torch.randn(4, 2)
+    idx_coo = torch.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
     A_operator = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
@@ -360,7 +378,7 @@ def test_transpose(A, device):
     A_tensor_T = A_tensor.T.to_dense()
     A_operator_T = A_operator.T.to_dense()
 
-    t.testing.assert_close(A_operator_T, A_tensor_T)
+    torch.testing.assert_close(A_operator_T, A_tensor_T)
 
 
 def test_transpose_with_batch_dim(A_batched, device):
@@ -370,12 +388,12 @@ def test_transpose_with_batch_dim(A_batched, device):
     A_tensor_T = A_tensor.to_dense().transpose(-1, -2)
     A_operator_T = A_operator.T.to_dense()
 
-    t.testing.assert_close(A_operator_T, A_tensor_T)
+    torch.testing.assert_close(A_operator_T, A_tensor_T)
 
 
 def test_transpose_with_batch_dense_dim(device):
-    val = t.randn(4, 2)
-    idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
+    val = torch.randn(4, 2)
+    idx_coo = torch.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
     sdt = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
@@ -383,7 +401,7 @@ def test_transpose_with_batch_dense_dim(device):
     sp_op_T = sdt.T.to_dense()
     sp_tensor_T = sdt.to_dense().transpose(1, 2)
 
-    t.testing.assert_close(sp_op_T, sp_tensor_T)
+    torch.testing.assert_close(sp_op_T, sp_tensor_T)
 
 
 def test_requires_grad_is_false(A, device):
@@ -425,8 +443,8 @@ def test_nnz_with_batch_dim(A_batched, device):
 
 
 def test_size(device):
-    val = t.randn(4, 2)
-    idx_coo = t.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
+    val = torch.randn(4, 2)
+    idx_coo = torch.tensor([[0, 0, 1, 1], [0, 1, 2, 2], [1, 0, 1, 2]])
     shape = (2, 4, 4)
 
     sdt = SparseDecoupledTensor(SparsityPattern(idx_coo, shape), val).to(device)
@@ -439,9 +457,9 @@ def test_size(device):
 
 def test_to_float64(A, device):
     A_tensor = A.to(device)
-    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).to(t.float64)
+    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).to(torch.float64)
 
-    assert A_operator.val.dtype == t.float64
+    assert A_operator.val.dtype == torch.float64
 
 
 def test_to_device(A, device):
@@ -456,10 +474,10 @@ def test_apply(A, device):
     A_tensor = A.to(device)
     A_op = SparseDecoupledTensor.from_tensor(A).clone().to(device)
 
-    tensor_applied = t.relu(A_tensor.to_dense())
-    op_applied = A_op.apply(t.relu).to_dense()
+    tensor_applied = torch.relu(A_tensor.to_dense())
+    op_applied = A_op.apply(torch.relu).to_dense()
 
-    t.testing.assert_close(op_applied, tensor_applied)
+    torch.testing.assert_close(op_applied, tensor_applied)
 
 
 def test_neg(A, device):
@@ -468,7 +486,7 @@ def test_neg(A, device):
     A_op = SparseDecoupledTensor.from_tensor(A).to(device)
     neg_A_op = -A_op
 
-    t.testing.assert_close(neg_A_op.to_dense(), neg_A_tensor.to_dense())
+    torch.testing.assert_close(neg_A_op.to_dense(), neg_A_tensor.to_dense())
 
 
 def test_add(A, device):
@@ -478,7 +496,7 @@ def test_add(A, device):
     tensor_sum = A_tensor + A_tensor
     op_sum = A_op + A_op
 
-    t.testing.assert_close(op_sum.to_dense(), tensor_sum.to_dense())
+    torch.testing.assert_close(op_sum.to_dense(), tensor_sum.to_dense())
 
 
 def test_sub(A, device):
@@ -488,7 +506,7 @@ def test_sub(A, device):
     tensor_sub = A_tensor - A_tensor
     op_sub = A_op - A_op
 
-    t.testing.assert_close(op_sub.to_dense(), tensor_sub.to_dense())
+    torch.testing.assert_close(op_sub.to_dense(), tensor_sub.to_dense())
 
 
 def test_assemble(A, device):
@@ -498,65 +516,69 @@ def test_assemble(A, device):
     tensor_sum = A_tensor + A_tensor.T
     op_sum = SparseDecoupledTensor.assemble(A_op, A_op.T)
 
-    t.testing.assert_close(op_sum.to_dense(), tensor_sum.to_dense())
+    torch.testing.assert_close(op_sum.to_dense(), tensor_sum.to_dense())
 
 
 def test_assemble_with_diag_operator(A, device):
     A_tensor = A.to(device)
     A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
-    diag = t.randn(A_tensor.size(0))
-    diag_tensor = t.diagflat(diag).to(device)
+    diag = torch.randn(A_tensor.size(0))
+    diag_tensor = torch.diagflat(diag).to(device)
     ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
 
     tensor_sum = diag_tensor + A_tensor
     op_sum = SparseDecoupledTensor.assemble(A_op, ddt)
 
-    t.testing.assert_close(op_sum.to_dense(), tensor_sum)
+    torch.testing.assert_close(op_sum.to_dense(), tensor_sum)
 
 
 def test_mul(A, device):
     A_tensor = A.to(device)
     A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
-    for scalar in [2, 3.0, t.tensor(-9.0).to(device)]:
+    for scalar in [2, 3.0, torch.tensor(-9.0).to(device)]:
         tensor_scaled = scalar * A_tensor
         op_scaled = scalar * A_op
         op_rscaled = A_op * scalar
 
-        t.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())
-        t.testing.assert_close(op_rscaled.to_dense(), tensor_scaled.to_dense())
+        torch.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())
+        torch.testing.assert_close(op_rscaled.to_dense(), tensor_scaled.to_dense())
 
 
 def test_trudiv(A, device):
     A_tensor = A.to(device)
     A_op = SparseDecoupledTensor.from_tensor(A).to(device)
 
-    for scalar in [2, 3.0, t.tensor(-9.0).to(device)]:
+    for scalar in [2, 3.0, torch.tensor(-9.0).to(device)]:
         tensor_scaled = A_tensor / scalar
         op_scaled = A_op / scalar
 
-        t.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())
+        torch.testing.assert_close(op_scaled.to_dense(), tensor_scaled.to_dense())
 
 
 def test_pack_block_diag(device):
-    a = t.randint(0, 3, (3, 3)).to_sparse_coo().to(dtype=t.float32, device=device)
-    b = SparseDecoupledTensor.from_tensor(t.randint(0, 3, (2, 2))).to(
-        dtype=t.float32, device=device
+    a = (
+        torch.randint(0, 3, (3, 3))
+        .to_sparse_coo()
+        .to(dtype=torch.float32, device=device)
     )
-    c = DiagDecoupledTensor.from_tensor(t.randint(0, 3, (4,))).to(
-        dtype=t.float32, device=device
+    b = SparseDecoupledTensor.from_tensor(torch.randint(0, 3, (2, 2))).to(
+        dtype=torch.float32, device=device
+    )
+    c = DiagDecoupledTensor.from_tensor(torch.randint(0, 3, (4,))).to(
+        dtype=torch.float32, device=device
     )
 
-    true_block_diag = t.block_diag(a.to_dense(), b.to_dense(), c.to_dense())
+    true_block_diag = torch.block_diag(a.to_dense(), b.to_dense(), c.to_dense())
     block_diag = SparseDecoupledTensor.pack_block_diag((a, b, c))
 
-    t.testing.assert_close(block_diag.to_dense(), true_block_diag)
+    torch.testing.assert_close(block_diag.to_dense(), true_block_diag)
 
     sp_ops = block_diag.unpack_block_diag()
 
     for sdt, ori_op in zip(sp_ops, [a, b, c]):
-        t.testing.assert_close(sdt.to_dense(), ori_op.to_dense())
+        torch.testing.assert_close(sdt.to_dense(), ori_op.to_dense())
 
 
 def test_pack_block_diag_with_batch_dim(A_batched, device):
@@ -566,100 +588,114 @@ def test_pack_block_diag_with_batch_dim(A_batched, device):
 
     A_batched_dense = A_batched.to_dense().to(device)
 
-    block_diag_true = t.stack(
+    block_diag_true = torch.stack(
         (
-            t.block_diag(A_batched_dense[0], -A_batched_dense[0]),
-            t.block_diag(A_batched_dense[1], -A_batched_dense[1]),
+            torch.block_diag(A_batched_dense[0], -A_batched_dense[0]),
+            torch.block_diag(A_batched_dense[1], -A_batched_dense[1]),
         )
     )
 
-    t.testing.assert_close(block_diag.to_dense(), block_diag_true)
+    torch.testing.assert_close(block_diag.to_dense(), block_diag_true)
 
     sp_ops = block_diag.unpack_block_diag()
 
-    t.testing.assert_close(sp_ops[0].to_dense(), A_batched_dense)
-    t.testing.assert_close(sp_ops[1].to_dense(), -A_batched_dense)
+    torch.testing.assert_close(sp_ops[0].to_dense(), A_batched_dense)
+    torch.testing.assert_close(sp_ops[1].to_dense(), -A_batched_dense)
 
 
 def test_pack_block_diag_with_dense_dim(device):
     a = SparseDecoupledTensor.from_tensor(
-        t.sparse_coo_tensor(
-            indices=t.randint(0, 4, (2, 5)), values=t.randn(5, 2), size=(4, 4, 2)
+        torch.sparse_coo_tensor(
+            indices=torch.randint(0, 4, (2, 5)),
+            values=torch.randn(5, 2),
+            size=(4, 4, 2),
         ).coalesce()
     ).to(device)
 
     b = SparseDecoupledTensor.from_tensor(
-        t.sparse_coo_tensor(
-            indices=t.randint(0, 3, (2, 3)), values=t.randn(3, 2), size=(3, 3, 2)
+        torch.sparse_coo_tensor(
+            indices=torch.randint(0, 3, (2, 3)),
+            values=torch.randn(3, 2),
+            size=(3, 3, 2),
         ).coalesce()
     ).to(device)
 
     block_diag = SparseDecoupledTensor.pack_block_diag((a, b))
 
-    block_diag_true = t.stack(
+    block_diag_true = torch.stack(
         (
-            t.block_diag(a.to_dense()[:, :, 0], b.to_dense()[:, :, 0]),
-            t.block_diag(a.to_dense()[:, :, 1], b.to_dense()[:, :, 1]),
+            torch.block_diag(a.to_dense()[:, :, 0], b.to_dense()[:, :, 0]),
+            torch.block_diag(a.to_dense()[:, :, 1], b.to_dense()[:, :, 1]),
         ),
         dim=-1,
     )
 
-    t.testing.assert_close(block_diag.to_dense(), block_diag_true)
+    torch.testing.assert_close(block_diag.to_dense(), block_diag_true)
 
 
 def test_bmat(device):
-    a = t.randn(2, 3).to(device)
-    b = t.randn(2, 4).to(device)
-    c = t.randn(4, 3).to(device)
-    d = t.zeros(4, 4).to(device)
+    a = torch.randn(2, 3).to(device)
+    b = torch.randn(2, 4).to(device)
+    c = torch.randn(4, 3).to(device)
+    d = torch.zeros(4, 4).to(device)
 
     bmat = SparseDecoupledTensor.bmat([[a, b], [c, None]])
-    bmat_true = t.cat((t.cat((a, b), dim=-1), t.cat((c, d), dim=-1)), dim=0)
+    bmat_true = torch.cat((torch.cat((a, b), dim=-1), torch.cat((c, d), dim=-1)), dim=0)
 
-    t.testing.assert_close(bmat.to_dense(), bmat_true)
+    torch.testing.assert_close(bmat.to_dense(), bmat_true)
 
 
 def test_bmat_with_batch_dim(device):
-    a = t.randn(2, 2, 3).to(device)
-    b = t.randn(2, 2, 4).to(device)
-    c = t.randn(2, 4, 3).to(device)
-    d = t.zeros(2, 4, 4).to(device)
+    a = torch.randn(2, 2, 3).to(device)
+    b = torch.randn(2, 2, 4).to(device)
+    c = torch.randn(2, 4, 3).to(device)
+    d = torch.zeros(2, 4, 4).to(device)
 
     bmat = SparseDecoupledTensor.bmat([[a, b], [c, None]])
-    bmat_true = t.stack(
+    bmat_true = torch.stack(
         (
-            t.cat((t.cat((a[0], b[0]), dim=-1), t.cat((c[0], d[0]), dim=-1)), dim=0),
-            t.cat((t.cat((a[1], b[1]), dim=-1), t.cat((c[1], d[1]), dim=-1)), dim=0),
+            torch.cat(
+                (torch.cat((a[0], b[0]), dim=-1), torch.cat((c[0], d[0]), dim=-1)),
+                dim=0,
+            ),
+            torch.cat(
+                (torch.cat((a[1], b[1]), dim=-1), torch.cat((c[1], d[1]), dim=-1)),
+                dim=0,
+            ),
         )
     )
 
-    t.testing.assert_close(bmat.to_dense(), bmat_true)
+    torch.testing.assert_close(bmat.to_dense(), bmat_true)
 
 
 def test_bmat_with_dense_dim(device):
     a = SparseDecoupledTensor.from_tensor(
-        t.sparse_coo_tensor(
-            indices=t.randint(0, 4, (2, 5)), values=t.randn(5, 2), size=(4, 4, 2)
+        torch.sparse_coo_tensor(
+            indices=torch.randint(0, 4, (2, 5)),
+            values=torch.randn(5, 2),
+            size=(4, 4, 2),
         ).coalesce()
     ).to(device)
 
     b = SparseDecoupledTensor.from_tensor(
-        t.sparse_coo_tensor(
-            indices=t.randint(0, 3, (2, 3)), values=t.randn(3, 2), size=(3, 3, 2)
+        torch.sparse_coo_tensor(
+            indices=torch.randint(0, 3, (2, 3)),
+            values=torch.randn(3, 2),
+            size=(3, 3, 2),
         ).coalesce()
     ).to(device)
 
     bmat = SparseDecoupledTensor.bmat([[a, None], [None, b]])
 
-    bmat_true = t.stack(
+    bmat_true = torch.stack(
         (
-            t.block_diag(a.to_dense()[:, :, 0], b.to_dense()[:, :, 0]),
-            t.block_diag(a.to_dense()[:, :, 1], b.to_dense()[:, :, 1]),
+            torch.block_diag(a.to_dense()[:, :, 0], b.to_dense()[:, :, 0]),
+            torch.block_diag(a.to_dense()[:, :, 1], b.to_dense()[:, :, 1]),
         ),
         dim=-1,
     )
 
-    t.testing.assert_close(bmat.to_dense(), bmat_true)
+    torch.testing.assert_close(bmat.to_dense(), bmat_true)
 
 
 def test_bmat_with_invalid_row_col(A, device):

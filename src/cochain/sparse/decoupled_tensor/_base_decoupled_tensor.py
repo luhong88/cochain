@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Sequence
+from typing import Callable
 
-import torch as t
+import torch
+from torch import Tensor
 
 
 def is_scalar(other) -> bool:
     return isinstance(other, (float, int)) or (
-        isinstance(other, t.Tensor) and other.numel() == 1
+        isinstance(other, Tensor) and other.numel() == 1
     )
 
 
 def validate_matmul_args(
-    self: BaseDecoupledTensor, other: BaseDecoupledTensor | t.Tensor
+    self: BaseDecoupledTensor, other: BaseDecoupledTensor | Tensor
 ):
     if self.n_batch_dim > 0:
         raise NotImplementedError(
@@ -37,7 +38,7 @@ def validate_matmul_args(
                     "__matmul__ with sparse hybrid BaseDecoupledTensor is not supported."
                 )
 
-        case t.Tensor():
+        case Tensor():
             if (other.ndim < 1) or (other.ndim > 2):
                 raise NotImplementedError(
                     f"__matmul__ with tensor of shape {other.shape} is not supported."
@@ -50,11 +51,11 @@ def validate_matmul_args(
 
 
 class BaseDecoupledTensor(ABC):
-    val: t.Tensor
+    val: Tensor
 
     @classmethod
     @abstractmethod
-    def from_tensor(cls, tensor: t.Tensor) -> BaseDecoupledTensor: ...
+    def from_tensor(cls, tensor: Tensor) -> BaseDecoupledTensor: ...
 
     @abstractmethod
     def apply(self, fn: Callable, **kwargs) -> BaseDecoupledTensor: ...
@@ -76,7 +77,7 @@ class BaseDecoupledTensor(ABC):
     def abs(self) -> BaseDecoupledTensor: ...
 
     @abstractmethod
-    def diagonal(self) -> t.Tensor: ...
+    def diagonal(self) -> Tensor: ...
 
     @abstractmethod
     def __mul__(self, other) -> BaseDecoupledTensor: ...
@@ -95,9 +96,9 @@ class BaseDecoupledTensor(ABC):
 
     @property
     @abstractmethod
-    def shape(self) -> t.Size: ...
+    def shape(self) -> torch.Size: ...
 
-    def size(self, dim: int | None = None) -> int | t.Size:
+    def size(self, dim: int | None = None) -> int | torch.Size:
         if dim is None:
             return self.shape
         else:
@@ -127,16 +128,16 @@ class BaseDecoupledTensor(ABC):
     def T(self) -> BaseDecoupledTensor: ...
 
     @property
-    def dtype(self) -> t.dtype:
+    def dtype(self) -> torch.dtype:
         return self.val.dtype
 
     @property
-    def device(self) -> t.device:
+    def device(self) -> torch.device:
         return self.val.device
 
     @abstractmethod
     def clone(
-        self, memory_format: t.memory_format = t.contiguous_format
+        self, memory_format: torch.memory_format = torch.contiguous_format
     ) -> BaseDecoupledTensor: ...
 
     @abstractmethod
@@ -154,16 +155,16 @@ class BaseDecoupledTensor(ABC):
     def to(self, *args, **kwargs) -> BaseDecoupledTensor: ...
 
     @abstractmethod
-    def to_dense(self) -> t.Tensor: ...
+    def to_dense(self) -> Tensor: ...
 
     @abstractmethod
     def to_sparse_operator(self) -> BaseDecoupledTensor: ...
 
     @abstractmethod
-    def to_sparse_coo(self) -> t.Tensor: ...
+    def to_sparse_coo(self) -> Tensor: ...
 
     @abstractmethod
-    def to_sparse_csr(self, int32: bool = False) -> t.Tensor: ...
+    def to_sparse_csr(self, int32: bool = False) -> Tensor: ...
 
     @abstractmethod
-    def to_sparse_csc(self, int32: bool = False) -> t.Tensor: ...
+    def to_sparse_csc(self, int32: bool = False) -> Tensor: ...

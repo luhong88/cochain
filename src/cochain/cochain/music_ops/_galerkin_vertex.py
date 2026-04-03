@@ -1,8 +1,9 @@
 from typing import Literal
 
-import torch as t
+import torch
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
@@ -15,11 +16,11 @@ from ...utils.faces import enumerate_local_faces
 def vertex_based_tri_mixed_mass_matrix(
     n_verts: int,
     n_edges: int,
-    tris: Integer[t.LongTensor, "tri local_vert=3"],
-    tri_edge_idx: Integer[t.LongTensor, "tri local_edge=3"],
-    tri_edge_orientations: Float[t.Tensor, "tri local_edge=3"],
-    tri_areas: Float[t.Tensor, " tri"],
-    bary_coords_grad: Float[t.Tensor, "tri local_vert=3 coord=3"],
+    tris: Integer[LongTensor, "tri local_vert=3"],
+    tri_edge_idx: Integer[LongTensor, "tri local_edge=3"],
+    tri_edge_orientations: Float[Tensor, "tri local_edge=3"],
+    tri_areas: Float[Tensor, " tri"],
+    bary_coords_grad: Float[Tensor, "tri local_vert=3 coord=3"],
 ) -> Float[SparseDecoupledTensor, "global_vert*coord global_edge"]:
     """
     Compute the cross/mixed mass matrix. For each triangle,
@@ -33,10 +34,10 @@ def vertex_based_tri_mixed_mass_matrix(
     """
     # Note that, for this calculation, the local, per-triangle mass matrix is
     # required instead of the global mass matrices computed in geometry.tri.
-    ref_local_mass_0 = ((t.ones(3, 3) + t.eye(3)) / 12.0).to(
+    ref_local_mass_0 = ((torch.ones(3, 3) + torch.eye(3)) / 12.0).to(
         dtype=tri_areas.dtype, device=tri_areas.device
     )
-    local_mass_0: Float[t.Tensor, "tri vert=3 vert=3"] = einsum(
+    local_mass_0: Float[Tensor, "tri vert=3 vert=3"] = einsum(
         tri_areas, ref_local_mass_0, "tri, v_i v_j -> tri v_i v_j"
     )
 
@@ -53,7 +54,7 @@ def vertex_based_tri_mixed_mass_matrix(
     # local_int contains all possible pairing of vertices (v_i) and edges (v_j, v_k),
     # but we only need the 3 unique edge faces and the orientation sign correction
     # in preparation for scatter-add to global canonical edges.
-    local_edge_idx: Integer[t.LongTensor, "edge=3 vert=2"] = enumerate_local_faces(
+    local_edge_idx: Integer[LongTensor, "edge=3 vert=2"] = enumerate_local_faces(
         splx_dim=2, face_dim=1, device=bary_coords_grad.device
     )
 
@@ -73,7 +74,7 @@ def vertex_based_tri_mixed_mass_matrix(
     # The row index iterates over the flattened (global vert, coordinate basis) dim.
     # The col index iterates over the global edge dim.
     row_idx_shaped = repeat(n_coords * tris, "tri v_i -> tri v_i coord", coord=n_coords)
-    offset = t.tensor(
+    offset = torch.tensor(
         [[[0, 1, 2]]], dtype=row_idx_shaped.dtype, device=row_idx_shaped.device
     )
     row_idx = repeat(
@@ -89,8 +90,8 @@ def vertex_based_tri_mixed_mass_matrix(
         coord=n_coords,
     )
 
-    cross_mass = t.sparse_coo_tensor(
-        indices=t.stack((row_idx, col_idx)),
+    cross_mass = torch.sparse_coo_tensor(
+        indices=torch.stack((row_idx, col_idx)),
         values=local_int_canon_edges.flatten(),
         size=(n_verts * n_coords, n_edges),
         dtype=bary_coords_grad.dtype,
@@ -103,21 +104,21 @@ def vertex_based_tri_mixed_mass_matrix(
 def vertex_based_tet_mixed_mass_matrix(
     n_verts: int,
     n_edges: int,
-    tets: Integer[t.LongTensor, "tet local_vert=4"],
-    tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
-    tet_edge_orientations: Float[t.Tensor, "tet local_edge=6"],
-    tet_unsigned_vols: Float[t.Tensor, " tet"],
-    bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
+    tets: Integer[LongTensor, "tet local_vert=4"],
+    tet_edge_idx: Integer[LongTensor, "tet local_edge=6"],
+    tet_edge_orientations: Float[Tensor, "tet local_edge=6"],
+    tet_unsigned_vols: Float[Tensor, " tet"],
+    bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
 ) -> Float[SparseDecoupledTensor, "global_vert*coord global_edge"]:
     """
     Compute the cross/mixed mass matrix for a tet mesh.
     """
     # Note that, for this calculation, the local, per-tet mass matrix is
     # required instead of the global mass matrices computed in geometry.tet.
-    ref_local_mass_0 = ((t.ones(4, 4) + t.eye(4)) / 20.0).to(
+    ref_local_mass_0 = ((torch.ones(4, 4) + torch.eye(4)) / 20.0).to(
         dtype=tet_unsigned_vols.dtype, device=tet_unsigned_vols.device
     )
-    local_mass_0: Float[t.Tensor, "tet vert=4 vert=4"] = einsum(
+    local_mass_0: Float[Tensor, "tet vert=4 vert=4"] = einsum(
         tet_unsigned_vols, ref_local_mass_0, "tet, v_i v_j -> tet v_i v_j"
     )
 
@@ -134,7 +135,7 @@ def vertex_based_tet_mixed_mass_matrix(
     # local_int contains all possible pairing of vertices (v_i) and edges (v_j, v_k),
     # but we only need the 6 unique edge faces and the orientation sign correction
     # in preparation for scatter-add to global canonical edges.
-    local_edge_idx: Integer[t.LongTensor, "edge=6 vert=2"] = enumerate_local_faces(
+    local_edge_idx: Integer[LongTensor, "edge=6 vert=2"] = enumerate_local_faces(
         splx_dim=3, face_dim=1, device=bary_coords_grad.device
     )
 
@@ -154,7 +155,7 @@ def vertex_based_tet_mixed_mass_matrix(
     # The row index iterates over the flattened (global vert, coordinate basis) dim.
     # The col index iterates over the global edge dim.
     row_idx_shaped = repeat(n_coords * tets, "tet v_i -> tet v_i coord", coord=n_coords)
-    offset = t.tensor(
+    offset = torch.tensor(
         [[[0, 1, 2]]], dtype=row_idx_shaped.dtype, device=row_idx_shaped.device
     )
     row_idx = repeat(
@@ -170,8 +171,8 @@ def vertex_based_tet_mixed_mass_matrix(
         coord=n_coords,
     )
 
-    cross_mass = t.sparse_coo_tensor(
-        indices=t.stack((row_idx, col_idx)),
+    cross_mass = torch.sparse_coo_tensor(
+        indices=torch.stack((row_idx, col_idx)),
         values=local_int_canon_edges.flatten(),
         size=(n_verts * n_coords, n_edges),
         dtype=bary_coords_grad.dtype,
@@ -220,7 +221,7 @@ def vertex_based_consistent_vector_mass_matrix(
 
     # Each (i, j) index of M_0 translates into three indices for M_V:
     # (3i, 3j), (3i + 1, 3j + 1), and (3i + 2, 3j + 2)
-    offset = t.arange(n_coords, dtype=mass_0.pattern.dtype, device=mass_0.device)
+    offset = torch.arange(n_coords, dtype=mass_0.pattern.dtype, device=mass_0.device)
 
     m_v_idx = repeat(
         n_coords * mass_0.pattern.idx_coo,
@@ -230,7 +231,7 @@ def vertex_based_consistent_vector_mass_matrix(
 
     m_v_val = repeat(mass_0.val, "nnz -> (nnz coord)", coord=n_coords)
 
-    m_v = t.sparse_coo_tensor(
+    m_v = torch.sparse_coo_tensor(
         indices=m_v_idx,
         values=m_v_val,
         size=[n_coords * s for s in mass_0.shape],
@@ -254,11 +255,11 @@ def vertex_based_diag_vector_mass_matrix(
 
 
 def vertex_based_galerkin_flat(
-    vec_field: Float[t.Tensor, "vert coord"],
+    vec_field: Float[Tensor, "vert coord"],
     mass_1: Float[BaseDecoupledTensor, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "vert*coord edge"],
     method: Literal["dense", "solver", "inv_star"],
-) -> Float[t.Tensor, " edge"]:
+) -> Float[Tensor, " edge"]:
     """
     Compute the flat of a vector field defined over the vertices of the mesh using
     the Galerkin projection method.
@@ -270,7 +271,7 @@ def vertex_based_galerkin_flat(
 
     match method:
         case "dense":
-            return t.linalg.solve(mass_1.to_dense(), rhs)
+            return torch.linalg.solve(mass_1.to_dense(), rhs)
 
         case "inv_star":
             return mass_1.inv @ rhs
@@ -283,11 +284,11 @@ def vertex_based_galerkin_flat(
 
 
 def vertex_based_galerkin_sharp(
-    cochain_1: Float[t.Tensor, " edge"],
+    cochain_1: Float[Tensor, " edge"],
     mass_vec: Float[BaseDecoupledTensor, "vert*coord vert*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "vert*coord edge"],
     method: Literal["dense", "solver", "inv_star"],
-) -> Float[t.Tensor, "vert coord=3"]:
+) -> Float[Tensor, "vert coord=3"]:
     """
     Compute the sharp of a 1-cochain using the Galerkin projection method. The
     resulting vector field is associated with the vertices of the mesh.
@@ -305,7 +306,7 @@ def vertex_based_galerkin_sharp(
 
     match method:
         case "dense":
-            vec_field_flat = t.linalg.solve(mass_vec.to_dense(), rhs)
+            vec_field_flat = torch.linalg.solve(mass_vec.to_dense(), rhs)
 
         case "inv_star":
             vec_field_flat = mass_vec.inv @ rhs

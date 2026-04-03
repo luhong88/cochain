@@ -1,5 +1,5 @@
 import pytest
-import torch as t
+import torch
 from einops import einsum, repeat
 
 from cochain.cochain.discretize import DeRhamMap
@@ -17,7 +17,7 @@ def test_const_1_form_integration(mesh, request, device):
     pts = de_rham.sample_points()
     n_splx, n_pts, _ = pts.shape
 
-    const_form = t.randn((2, 3)).to(
+    const_form = torch.randn((2, 3)).to(
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
@@ -29,7 +29,7 @@ def test_const_1_form_integration(mesh, request, device):
     edge_vecs = edge_verts[:, 1] - edge_verts[:, 0]
     dot_prod = einsum(edge_vecs, const_form, "edge coord, ch coord -> edge ch")
 
-    t.testing.assert_close(discretized_cochain, dot_prod)
+    torch.testing.assert_close(discretized_cochain, dot_prod)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -41,7 +41,7 @@ def test_const_2_form_integration(mesh, request, device):
     pts = de_rham.sample_points()
     n_splx, n_pts, _ = pts.shape
 
-    const_form = t.randn((2, 3)).to(
+    const_form = torch.randn((2, 3)).to(
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
@@ -50,12 +50,12 @@ def test_const_2_form_integration(mesh, request, device):
     discretized_cochain = de_rham.discretize(sampled_form)
 
     tri_verts = mesh.vert_coords[mesh.tris]
-    tri_area_norm = 0.5 * t.cross(
+    tri_area_norm = 0.5 * torch.cross(
         tri_verts[:, 1] - tri_verts[:, 0], tri_verts[:, 2] - tri_verts[:, 0], dim=-1
     )
     dot_prod = einsum(tri_area_norm, const_form, "tri coord, ch coord -> tri ch")
 
-    t.testing.assert_close(discretized_cochain, dot_prod)
+    torch.testing.assert_close(discretized_cochain, dot_prod)
 
 
 def test_const_3_form_integration(two_tets_mesh, device):
@@ -66,7 +66,7 @@ def test_const_3_form_integration(two_tets_mesh, device):
     pts = de_rham.sample_points()
     n_splx, n_pts, _ = pts.shape
 
-    const_form = t.randn((2, 1)).to(
+    const_form = torch.randn((2, 1)).to(
         dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
     )
     sampled_form = repeat(
@@ -77,7 +77,7 @@ def test_const_3_form_integration(two_tets_mesh, device):
     tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
     dot_prod = einsum(tet_signed_vols, const_form, "tet, ch coord -> tet ch")
 
-    t.testing.assert_close(discretized_cochain, dot_prod)
+    torch.testing.assert_close(discretized_cochain, dot_prod)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -107,7 +107,7 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     d_pi_form = d_0 @ mesh.vert_coords
 
     # Compute dω analytically.
-    grad_1_forms = t.eye(
+    grad_1_forms = torch.eye(
         3,
         dtype=mesh.vert_coords.dtype,
         device=device,
@@ -119,7 +119,7 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
 
     pi_d_form = de_rham_1.discretize(sampled_1_forms)
 
-    t.testing.assert_close(d_pi_form, pi_d_form)
+    torch.testing.assert_close(d_pi_form, pi_d_form)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -148,7 +148,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     # of the form (x, 0, 0), (0, y, 0), (0, 0, z), etc., and each of these basis
     # functions can be written as a 3x3 matrix that, when multiplied by a coordinate
     # vector, returns the value of the 1-form at the coordinate location.
-    matrix_1_forms = t.tensor(
+    matrix_1_forms = torch.tensor(
         [
             [[1, 0, 0], [0, 0, 0], [0, 0, 0]],  # (x, 0, 0)
             [[0, 1, 0], [0, 0, 0], [0, 0, 0]],  # (y, 0, 0)
@@ -175,7 +175,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
 
     # Compute dω analytically.
     # fmt:off
-    curl_2_forms = t.tensor(
+    curl_2_forms = torch.tensor(
         [
             [0, 0, 0],  # ∇ x (x, 0, 0)
             [0, 0, -1], # ∇ x (y, 0, 0)
@@ -198,7 +198,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
 
     pi_d_form = de_rham_2.discretize(sampled_2_forms)
 
-    t.testing.assert_close(d_pi_form, pi_d_form)
+    torch.testing.assert_close(d_pi_form, pi_d_form)
 
 
 def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
@@ -227,7 +227,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
     # and each of these basis functions can be written as a 3x3 matrix that, when
     # multiplied by a coordinate vector, returns the value of the 2-form at the
     # coordinate location.
-    matrix_2_forms = t.tensor(
+    matrix_2_forms = torch.tensor(
         [
             [[1, 0, 0], [0, 0, 0], [0, 0, 0]],  # (x, 0, 0)
             [[0, 1, 0], [0, 0, 0], [0, 0, 0]],  # (y, 0, 0)
@@ -254,7 +254,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
 
     # Compute dω analytically.
     # fmt:off
-    div_3_forms = t.tensor(
+    div_3_forms = torch.tensor(
         [
             [1], # ∇ ⋅ (x, 0, 0)
             [0], # ∇ ⋅ (y, 0, 0)
@@ -277,7 +277,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
 
     pi_d_form = de_rham_3.discretize(sampled_3_forms)
 
-    t.testing.assert_close(d_pi_form, pi_d_form)
+    torch.testing.assert_close(d_pi_form, pi_d_form)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -319,7 +319,7 @@ def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
     x_0, y_0, z_0 = v0.unbind(-1)
     x_1, y_1, z_1 = v1.unbind(-1)
 
-    scalar_basis_int = t.stack(
+    scalar_basis_int = torch.stack(
         [
             (x_0**2 + x_0 * x_1 + x_1**2) / 3.0,
             (y_0**2 + y_0 * y_1 + y_1**2) / 3.0,
@@ -349,10 +349,10 @@ def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
     # the same outer product trick to broadcast the scalar values into the three
     # coordinate slots (here, the "tangent vectors" are simply the standard
     # Cartesian basis vectors).
-    sampled_form_scalar_basis = t.stack(
+    sampled_form_scalar_basis = torch.stack(
         [x_pts**2, y_pts**2, z_pts**2, x_pts * y_pts, x_pts * z_pts, y_pts * z_pts]
     )
-    vec_basis = t.eye(3, dtype=pts.dtype, device=pts.device)
+    vec_basis = torch.eye(3, dtype=pts.dtype, device=pts.device)
 
     sampled_form = einsum(
         sampled_form_scalar_basis,
@@ -363,7 +363,7 @@ def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
     discretized_cochain = de_rham.discretize(sampled_form)
 
     # Check that the analytical line integrals agree with the numerical quadratures.
-    t.testing.assert_close(discretized_cochain, dot_prod)
+    torch.testing.assert_close(discretized_cochain, dot_prod)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -387,7 +387,7 @@ def test_2_form_polynomial_deg_2_exact_integration(mesh, request, device):
     x_1, y_1, z_1 = v1.unbind(-1)
     x_2, y_2, z_2 = v2.unbind(-1)
 
-    scalar_basis_int = t.stack(
+    scalar_basis_int = torch.stack(
         [
             (x_0**2 + x_1**2 + x_2**2 + x_0 * x_1 + x_0 * x_2 + x_1 * x_2) / 6.0,
             (y_0**2 + y_1**2 + y_2**2 + y_0 * y_1 + y_0 * y_2 + y_1 * y_2) / 6.0,
@@ -425,7 +425,7 @@ def test_2_form_polynomial_deg_2_exact_integration(mesh, request, device):
         ]
     )
 
-    tri_area_norms = 0.5 * t.cross(
+    tri_area_norms = 0.5 * torch.cross(
         tri_verts[:, 1] - tri_verts[:, 0], tri_verts[:, 2] - tri_verts[:, 0], dim=-1
     )
 
@@ -441,10 +441,10 @@ def test_2_form_polynomial_deg_2_exact_integration(mesh, request, device):
     pts = de_rham.sample_points()
     x_pts, y_pts, z_pts = pts.unbind(-1)
 
-    sampled_form_scalar_basis = t.stack(
+    sampled_form_scalar_basis = torch.stack(
         [x_pts**2, y_pts**2, z_pts**2, x_pts * y_pts, x_pts * z_pts, y_pts * z_pts]
     )
-    vec_basis = t.eye(3, dtype=pts.dtype, device=pts.device)
+    vec_basis = torch.eye(3, dtype=pts.dtype, device=pts.device)
 
     sampled_form = einsum(
         sampled_form_scalar_basis,
@@ -455,7 +455,7 @@ def test_2_form_polynomial_deg_2_exact_integration(mesh, request, device):
     discretized_cochain = de_rham.discretize(sampled_form)
 
     # Check that the analytical line integrals agree with the numerical quadratures.
-    t.testing.assert_close(discretized_cochain, dot_prod)
+    torch.testing.assert_close(discretized_cochain, dot_prod)
 
 
 def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
@@ -473,7 +473,7 @@ def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
     x_2, y_2, z_2 = v2.unbind(-1)
     x_3, y_3, z_3 = v3.unbind(-1)
 
-    scalar_basis_int = t.stack(
+    scalar_basis_int = torch.stack(
         [
             (
                 x_0**2
@@ -580,10 +580,10 @@ def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
     pts = de_rham.sample_points()
     x_pts, y_pts, z_pts = pts.unbind(-1)
 
-    sampled_form_scalar_basis = t.stack(
+    sampled_form_scalar_basis = torch.stack(
         [x_pts**2, y_pts**2, z_pts**2, x_pts * y_pts, x_pts * z_pts, y_pts * z_pts]
     )
-    vec_basis = t.tensor([[1]], dtype=pts.dtype, device=pts.device)
+    vec_basis = torch.tensor([[1]], dtype=pts.dtype, device=pts.device)
 
     sampled_form = einsum(
         sampled_form_scalar_basis,
@@ -594,4 +594,4 @@ def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
     discretized_cochain = de_rham.discretize(sampled_form)
 
     # Check that the analytical line integrals agree with the numerical quadratures.
-    t.testing.assert_close(discretized_cochain, dot_prod)
+    torch.testing.assert_close(discretized_cochain, dot_prod)

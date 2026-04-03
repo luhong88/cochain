@@ -1,6 +1,6 @@
 import numpy as np
 import pyvista as pv
-import torch as t
+import torch
 from scipy.spatial import Delaunay
 
 from ..complex import SimplicialMesh
@@ -11,10 +11,10 @@ def load_two_tris_mesh() -> SimplicialMesh:
     A simple 2D mesh embedded in R^3 composed of two triangles sharing one edge.
     """
     return SimplicialMesh.from_tri_mesh(
-        vert_coords=t.tensor(
+        vert_coords=torch.tensor(
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         ),
-        tris=t.tensor([[0, 1, 2], [1, 3, 2]], dtype=t.long),
+        tris=torch.tensor([[0, 1, 2], [1, 3, 2]], dtype=torch.long),
     )
 
 
@@ -23,7 +23,7 @@ def load_two_disjoint_tris_mesh() -> SimplicialMesh:
     Similar to the two tris mesh, but the two triangles are disjoint.
     """
     return SimplicialMesh.from_tri_mesh(
-        vert_coords=t.tensor(
+        vert_coords=torch.tensor(
             [
                 [0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0],
@@ -33,7 +33,7 @@ def load_two_disjoint_tris_mesh() -> SimplicialMesh:
                 [0.0, 1.0, 1.0],
             ]
         ),
-        tris=t.tensor([[0, 1, 2], [3, 4, 5]], dtype=t.long),
+        tris=torch.tensor([[0, 1, 2], [3, 4, 5]], dtype=torch.long),
     )
 
 
@@ -42,7 +42,7 @@ def load_square_mesh() -> SimplicialMesh:
     A simple triangulated square consisting of 4 triangles in the z = 0 plane.
     """
     return SimplicialMesh.from_tri_mesh(
-        vert_coords=t.tensor(
+        vert_coords=torch.tensor(
             [
                 [0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0],
@@ -51,7 +51,9 @@ def load_square_mesh() -> SimplicialMesh:
                 [0.5, 0.5, 0.0],
             ]
         ),
-        tris=t.tensor([[0, 4, 1], [1, 4, 2], [2, 4, 3], [3, 4, 0]], dtype=t.long),
+        tris=torch.tensor(
+            [[0, 4, 1], [1, 4, 2], [2, 4, 3], [3, 4, 0]], dtype=torch.long
+        ),
     )
 
 
@@ -61,7 +63,7 @@ def load_tent_mesh() -> SimplicialMesh:
     plane.
     """
     return SimplicialMesh.from_tri_mesh(
-        vert_coords=t.tensor(
+        vert_coords=torch.tensor(
             [
                 [0.5, 0.5, 1.0],
                 [0.0, 0.0, 0.0],
@@ -70,7 +72,9 @@ def load_tent_mesh() -> SimplicialMesh:
                 [0.0, 1.0, 0.0],
             ]
         ),
-        tris=t.tensor([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=t.long),
+        tris=torch.tensor(
+            [[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=torch.long
+        ),
     )
 
 
@@ -79,7 +83,7 @@ def load_hollow_tet_mesh() -> SimplicialMesh:
     A simple 2D mesh for the boundary of a tetrahedron.
     """
     return SimplicialMesh.from_tri_mesh(
-        vert_coords=t.tensor(
+        vert_coords=torch.tensor(
             [
                 [0.0, 0.0, 2.0],
                 [1.0, 0.0, 0.0],
@@ -87,7 +91,9 @@ def load_hollow_tet_mesh() -> SimplicialMesh:
                 [-0.5, -1.0, 0.0],
             ]
         ),
-        tris=t.tensor([[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]], dtype=t.long),
+        tris=torch.tensor(
+            [[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]], dtype=torch.long
+        ),
     )
 
 
@@ -136,8 +142,8 @@ def load_flat_annulus_mesh(
     annulus_tris = all_triangles[keep_mask]
 
     annulus_mesh = SimplicialMesh.from_tri_mesh(
-        t.from_numpy(vert_coords_3d).to(dtype=t.float),
-        t.from_numpy(annulus_tris).to(dtype=t.long),
+        torch.from_numpy(vert_coords_3d).to(dtype=torch.float),
+        torch.from_numpy(annulus_tris).to(dtype=torch.long),
     )
 
     return annulus_mesh
@@ -163,8 +169,8 @@ def load_finer_flat_annulus_mesh(
     ).triangulate()
 
     mesh = SimplicialMesh.from_tri_mesh(
-        t.from_numpy(np.array(pv_mesh.points)).to(dtype=t.float),
-        t.from_numpy(np.array(pv_mesh.regular_faces)).to(dtype=t.long),
+        torch.from_numpy(np.array(pv_mesh.points)).to(dtype=torch.float),
+        torch.from_numpy(np.array(pv_mesh.regular_faces)).to(dtype=torch.long),
     )
 
     return mesh

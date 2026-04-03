@@ -1,13 +1,14 @@
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 from ..complex import SimplicialMesh
 from ._whitney_utils import compute_bc_grad_dot, compute_moments, compute_whitney_router
 
 
 def _inv_metric_det(
-    bc_grad_dot: Float[t.Tensor, "splx vert vert"], form_deg: int
-) -> Float[t.Tensor, " splx *d_lambda"]:
+    bc_grad_dot: Float[Tensor, "splx vert vert"], form_deg: int
+) -> Float[Tensor, " splx *d_lambda"]:
     """
     Compute the scalar inner products between wedge products of dλ's, which is
     equivalent to computing the determinant of the inner products of the gradients
@@ -16,7 +17,7 @@ def _inv_metric_det(
     match form_deg:
         # Because Whitney 0-forms do not involve dλ terms, return 1 for each simplex.
         case 0:
-            d_bc_wedge_dot = t.ones(
+            d_bc_wedge_dot = torch.ones(
                 bc_grad_dot.shape[0], dtype=bc_grad_dot.dtype, device=bc_grad_dot.device
             )
 
@@ -32,7 +33,7 @@ def _inv_metric_det(
             n_splx = bc_grad_dot.size(0)
             n_vert = bc_grad_dot.size(-1)
 
-            d_bc_wedge_dot = t.zeros(
+            d_bc_wedge_dot = torch.zeros(
                 n_splx,
                 n_vert,
                 n_vert,
@@ -42,8 +43,12 @@ def _inv_metric_det(
                 device=bc_grad_dot.device,
             )
 
-            d_bc_wedge_dot.add_(t.einsum("tik,tjl->tijkl", bc_grad_dot, bc_grad_dot))
-            d_bc_wedge_dot.sub_(t.einsum("til,tjk->tijkl", bc_grad_dot, bc_grad_dot))
+            d_bc_wedge_dot.add_(
+                torch.einsum("tik,tjl->tijkl", bc_grad_dot, bc_grad_dot)
+            )
+            d_bc_wedge_dot.sub_(
+                torch.einsum("til,tjk->tijkl", bc_grad_dot, bc_grad_dot)
+            )
 
         # TODO: memory optimization
 
@@ -56,7 +61,7 @@ def _inv_metric_det(
             n_splx = bc_grad_dot.size(0)
             n_vert = bc_grad_dot.size(-1)
 
-            d_bc_wedge_dot = t.zeros(
+            d_bc_wedge_dot = torch.zeros(
                 n_splx,
                 n_vert,
                 n_vert,
@@ -75,7 +80,7 @@ def _inv_metric_det(
             # to arnage x, y, z back to lex order.
             for x, y, z in ["abc", "bca", "cab"]:
                 d_bc_wedge_dot.add_(
-                    t.einsum(
+                    torch.einsum(
                         f"ti{x},tj{y},tk{z}->tijkabc",
                         bc_grad_dot,
                         bc_grad_dot,
@@ -85,7 +90,7 @@ def _inv_metric_det(
 
             for x, y, z in ["acb", "bac", "cba"]:
                 d_bc_wedge_dot.sub_(
-                    t.einsum(
+                    torch.einsum(
                         f"ti{x},tj{y},tk{z}->tijkabc",
                         bc_grad_dot,
                         bc_grad_dot,
@@ -129,7 +134,7 @@ def triple_tensor_prod(
     k: int,
     l: int,
     mesh: SimplicialMesh,
-) -> Float[t.Tensor, "top_splx k_face l_face m_face"]:
+) -> Float[Tensor, "top_splx k_face l_face m_face"]:
     """
     Compute the triple product tensor T_ijk required for computing the load vector.
 
@@ -152,7 +157,7 @@ def triple_tensor_prod(
 
     einsum_str = _get_triple_tensor_prod_einsum_str(k, l)
 
-    return t.einsum(
+    return torch.einsum(
         einsum_str,
         k_form_router,
         l_form_router,

@@ -1,20 +1,21 @@
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 from ...utils.constants import EPS
 
 
 def compute_tet_signed_vols(
-    vert_coords: Float[t.Tensor, "vert coord=3"],
-    tets: Integer[t.LongTensor, "tet vert=4"],
-) -> Float[t.Tensor, " tet"]:
+    vert_coords: Float[Tensor, "vert coord=3"],
+    tets: Integer[LongTensor, "tet vert=4"],
+) -> Float[Tensor, " tet"]:
     """
     Compute the signed volume of each tetrahedron in a 3D mesh. A tet is assigned
     a positive volume if it satisfies the right-hand rule. Note that this volume
     sign is not to be confused with the orientation sign of a tet (i.e., whether
     its vertex indices can be reordered into ascending order with an even permutation).
     """
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+    tet_vert_coords: Float[Tensor, "tet 4 3"] = vert_coords[tets]
 
     # For each tet ijkl, compute the edge vectors ij, ik, and il. The volume of
     # the tet is given by the absolute value of the scalar triple product of these
@@ -22,8 +23,8 @@ def compute_tet_signed_vols(
     tet_edges = tet_vert_coords[:, [1, 2, 3], :] - tet_vert_coords[:, [0, 0, 0], :]
 
     tet_signed_vols = (
-        t.sum(
-            t.cross(tet_edges[:, 0], tet_edges[:, 1], dim=-1) * tet_edges[:, 2],
+        torch.sum(
+            torch.cross(tet_edges[:, 0], tet_edges[:, 1], dim=-1) * tet_edges[:, 2],
             dim=-1,
         )
         / 6.0
@@ -33,16 +34,16 @@ def compute_tet_signed_vols(
 
 
 def dompute_d_tet_signed_vols_d_vert_coords(
-    vert_coords: Float[t.Tensor, "vert coord=3"],
-    tets: Integer[t.LongTensor, "tet vert=4"],
-) -> Float[t.Tensor, "tet vert=4 coord=3"]:
+    vert_coords: Float[Tensor, "vert coord=3"],
+    tets: Integer[LongTensor, "tet vert=4"],
+) -> Float[Tensor, "tet vert=4 coord=3"]:
     """
     Compute the gradient of the signed volume of each tetrahedron wrt the coordinates
     of its four vertices.
     """
     i, j, k, l = 0, 1, 2, 3
 
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+    tet_vert_coords: Float[Tensor, "tet 4 3"] = vert_coords[tets]
 
     # For each tet ijkl and for each vertex, find the (inward) area normal of the
     # base triangle, which is proportional to the gradient of the volume wrt the
@@ -65,18 +66,18 @@ def dompute_d_tet_signed_vols_d_vert_coords(
         tet_vert_coords[:, [k, l, j, k]] - tet_vert_coords[:, [j, i, i, i]]
     )
 
-    dVdV = t.cross(base_tri_edge_1, base_tri_edge_2, dim=-1) / 6.0
+    dVdV = torch.cross(base_tri_edge_1, base_tri_edge_2, dim=-1) / 6.0
 
     return dVdV
 
 
 def tet_face_vector_areas(
-    vert_coords: Float[t.Tensor, "vert coord=3"],
-    tets: Integer[t.LongTensor, "tet vert=4"],
+    vert_coords: Float[Tensor, "vert coord=3"],
+    tets: Integer[LongTensor, "tet vert=4"],
 ) -> tuple[
-    Float[t.Tensor, "tet edge=6 coord=3"],
-    Float[t.Tensor, "tet edge=6 coord=3"],
-    Float[t.Tensor, "tet edge=6"],
+    Float[Tensor, "tet edge=6 coord=3"],
+    Float[Tensor, "tet edge=6 coord=3"],
+    Float[Tensor, "tet edge=6"],
 ]:
     """
     Compute the outward pointing vector areas for triangles in a tet mesh and their
@@ -89,18 +90,18 @@ def tet_face_vector_areas(
     """
     i, j, k, l = 0, 1, 2, 3
 
-    tet_vols = t.abs(compute_tet_signed_vols(vert_coords, tets))
+    tet_vols = torch.abs(compute_tet_signed_vols(vert_coords, tets))
 
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+    tet_vert_coords: Float[Tensor, "tet 4 3"] = vert_coords[tets]
 
     # For each tet ijkl and each edge s, computes the (outward) normal on the two
     # triangles with o as the shared edge (i.e., th x o and hh x o).
-    area_vec_to: Float[t.Tensor, "tet 6 3"] = t.cross(
+    area_vec_to: Float[Tensor, "tet 6 3"] = torch.cross(
         tet_vert_coords[:, [k, i, i, j, i, l]] - tet_vert_coords[:, [l, l, l, k, j, k]],
         tet_vert_coords[:, [i, j, j, i, k, j]] - tet_vert_coords[:, [l, l, l, k, j, k]],
         dim=-1,
     )
-    area_vec_ho: Float[t.Tensor, "tet 6 3"] = t.cross(
+    area_vec_ho: Float[Tensor, "tet 6 3"] = torch.cross(
         tet_vert_coords[:, [j, j, k, i, l, j]] - tet_vert_coords[:, [l, l, l, k, j, k]],
         tet_vert_coords[:, [k, k, i, l, i, i]] - tet_vert_coords[:, [l, l, l, k, j, k]],
         dim=-1,
@@ -112,17 +113,17 @@ def tet_face_vector_areas(
     # angle formed by the two triangles with o as the shared edge. This contribution
     # can also be written as <th x o, hh x o> / 36 * vol_ijkl; here, vol_ijkl is
     # the unsigned/absolute volume of the tet ijkl.
-    weight_o: Float[t.Tensor, "tet 6"] = (
-        t.sum(area_vec_to * area_vec_ho, dim=-1) / (36.0 * tet_vols + EPS)[:, None]
+    weight_o: Float[Tensor, "tet 6"] = (
+        torch.sum(area_vec_to * area_vec_ho, dim=-1) / (36.0 * tet_vols + EPS)[:, None]
     )
 
     return area_vec_to, area_vec_ho, weight_o
 
 
 def bary_coord_grad_inner_prods(
-    tet_signed_vols: Float[t.Tensor, " tet 1 1"],
-    d_signed_vols_d_vert_coords: Float[t.Tensor, "tet vert=4 coord=3"],
-) -> Float[t.Tensor, "tet vert=4 vert=4"]:
+    tet_signed_vols: Float[Tensor, " tet 1 1"],
+    d_signed_vols_d_vert_coords: Float[Tensor, "tet vert=4 coord=3"],
+) -> Float[Tensor, "tet vert=4 vert=4"]:
     """
     For a tet, let lambda_x(p) be the barycentric coordinate function for p wrt
     a vertex x of the tet. This function computes all pairwise inner products
@@ -131,11 +132,11 @@ def bary_coord_grad_inner_prods(
     """
     # The gradient of lambda_i(p) wrt p is given by grad_i(vol_ijkl)/vol_ijkl, a
     # constant wrt p.
-    bary_coords_grad: Float[t.Tensor, "tet 4 3"] = (
+    bary_coords_grad: Float[Tensor, "tet 4 3"] = (
         d_signed_vols_d_vert_coords / tet_signed_vols
     )
 
-    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = t.einsum(
+    bary_coords_grad_dot: Float[Tensor, "tet 4 4"] = torch.einsum(
         "tic,tjc->tij", bary_coords_grad, bary_coords_grad
     )
 
@@ -143,23 +144,21 @@ def bary_coord_grad_inner_prods(
 
 
 def whitney_2_form_inner_prods(
-    vert_coords: Float[t.Tensor, "vert coord=3"],
-    tets: Integer[t.LongTensor, "tet vert=4"],
-    tet_tris_signs: Float[t.Tensor, "tet tri=4"],
-) -> tuple[Float[t.Tensor, "tet 1"], Float[t.Tensor, "tet tri=4 tri=4"]]:
+    vert_coords: Float[Tensor, "vert coord=3"],
+    tets: Integer[LongTensor, "tet vert=4"],
+    tet_tris_signs: Float[Tensor, "tet tri=4"],
+) -> tuple[Float[Tensor, "tet 1"], Float[Tensor, "tet tri=4 tri=4"]]:
     """
     For each tet, compute the pairwise inner product of the Whitney 2-form basis
     functions associated with the faces of the tet, and correct for the face and
     tet orientation.
     """
 
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+    tet_vert_coords: Float[Tensor, "tet 4 3"] = vert_coords[tets]
 
-    tet_signed_vols: Float[t.Tensor, " tet"] = compute_tet_signed_vols(
-        vert_coords, tets
-    )
-    tet_vols = t.abs(tet_signed_vols)
-    tet_signs = t.sign(tet_signed_vols)
+    tet_signed_vols: Float[Tensor, " tet"] = compute_tet_signed_vols(vert_coords, tets)
+    tet_vols = torch.abs(tet_signed_vols)
+    tet_signs = torch.sign(tet_signed_vols)
 
     # For each tet, associate the 2-form basis function with the opposite vertex.
     # Then, the inner product between the basis functions is given by
@@ -178,21 +177,21 @@ def whitney_2_form_inner_prods(
     #
     # here, R_i = sum_j[G_ij], S = sum_ij[G_ij], and Tr[G] is the trace of G.
 
-    gram: Float[t.Tensor, "tet 4 4"] = t.sum(
+    gram: Float[Tensor, "tet 4 4"] = torch.sum(
         tet_vert_coords.view(-1, 4, 1, 3) * tet_vert_coords.view(-1, 1, 4, 3), dim=-1
     )
 
     # Compute R_i + R_j
-    gram_partial_sum: Float[t.Tensor, "tet 4 4"] = t.sum(
+    gram_partial_sum: Float[Tensor, "tet 4 4"] = torch.sum(
         gram, dim=-1, keepdim=True
-    ) + t.sum(gram, dim=-2, keepdim=True)
+    ) + torch.sum(gram, dim=-2, keepdim=True)
 
     # Compute S + Tr[G]
-    gram_sum: Float[t.Tensor, "tet 1 1"] = (
-        t.sum(gram, dim=(-1, -2)) + t.einsum("tii->t", gram)
+    gram_sum: Float[Tensor, "tet 1 1"] = (
+        torch.sum(gram, dim=(-1, -2)) + torch.einsum("tii->t", gram)
     ).view(-1, 1, 1)
 
-    whitney_inner_prod: Float[t.Tensor, "tet tri=4 tri=4"] = (
+    whitney_inner_prod: Float[Tensor, "tet tri=4 tri=4"] = (
         20.0 * gram - 5.0 * gram_partial_sum + gram_sum
     ) / (180.0 * tet_vols.view(-1, 1, 1))
 
@@ -200,7 +199,7 @@ def whitney_2_form_inner_prods(
     # correction of both the triangle face orientation as well as the tet orientations.
     sign_corrections = tet_tris_signs * tet_signs.view(-1, 1)
 
-    whitney_inner_prod_signed: Float[t.Tensor, "tet tri=4 tri=4"] = (
+    whitney_inner_prod_signed: Float[Tensor, "tet tri=4 tri=4"] = (
         whitney_inner_prod
         * sign_corrections.view(-1, 1, 4)
         * sign_corrections.view(-1, 4, 1)
@@ -210,10 +209,10 @@ def whitney_2_form_inner_prods(
 
 
 def cotan_weights(
-    vert_coords: Float[t.Tensor, "vert 3"],
-    tets: Integer[t.LongTensor, "tri 3"],
+    vert_coords: Float[Tensor, "vert 3"],
+    tets: Integer[LongTensor, "tri 3"],
     n_verts: int,
-) -> Float[t.Tensor, "vert vert"]:
+) -> Float[Tensor, "vert vert"]:
     i, j, k, l = 0, 1, 2, 3
 
     _, _, weight_o = tet_face_vector_areas(vert_coords, tets)
@@ -235,7 +234,7 @@ def cotan_weights(
     )
     weights_val = weight_o.T.flatten()
 
-    asym_weights = t.sparse_coo_tensor(weights_idx, weights_val, (n_verts, n_verts))
+    asym_weights = torch.sparse_coo_tensor(weights_idx, weights_val, (n_verts, n_verts))
     sym_weights = (asym_weights + asym_weights.T).coalesce()
 
     return sym_weights

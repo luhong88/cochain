@@ -1,5 +1,6 @@
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
@@ -15,20 +16,20 @@ def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
     """
-    tet_vols = t.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    tet_vols = torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
-    ref_local_mass_0 = ((t.ones(4, 4) + t.eye(4)) / 20.0).to(
+    ref_local_mass_0 = ((torch.ones(4, 4) + torch.eye(4)) / 20.0).to(
         dtype=tet_mesh.vert_coords.dtype, device=tet_mesh.vert_coords.device
     )
-    local_mass_0: Float[t.Tensor, "tet 4 4"] = tet_vols.view(
+    local_mass_0: Float[Tensor, "tet 4 4"] = tet_vols.view(
         -1, 1, 1
     ) * ref_local_mass_0.view(1, 4, 4)
 
     r_idx = tet_mesh.tets.view(-1, 4, 1).expand(-1, 4, 4)
     c_idx = tet_mesh.tets.view(-1, 1, 4).expand(-1, 4, 4)
 
-    mass = t.sparse_coo_tensor(
-        indices=t.vstack((r_idx.flatten(), c_idx.flatten())),
+    mass = torch.sparse_coo_tensor(
+        indices=torch.vstack((r_idx.flatten(), c_idx.flatten())),
         values=local_mass_0.flatten(),
         size=(tet_mesh.n_verts, tet_mesh.n_verts),
     ).coalesce()
@@ -49,8 +50,8 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     Here, p is a position vector inside the tet and lambda_x(p) is the barycentric
     coordinate function for p wrt the vertex x.
     """
-    vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
-    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
+    vert_coords: Float[Tensor, "vert 3"] = tet_mesh.vert_coords
+    tets: Integer[LongTensor, "tet 4"] = tet_mesh.tets
 
     dtype = vert_coords.dtype
     device = vert_coords.device
@@ -65,7 +66,7 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
     # For each tet ijkl, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
-    bary_coords_grad_dot: Float[t.Tensor, "tet 4 4"] = bary_coord_grad_inner_prods(
+    bary_coords_grad_dot: Float[Tensor, "tet 4 4"] = bary_coord_grad_inner_prods(
         tet_signed_vols, d_signed_vols_d_vert_coords
     )
 
@@ -73,9 +74,9 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # i.e., int[lambda_i(p)lambda_j(p)dvol_ijkl]. Using the "magic formula", this
     # integral is vol_ijkl*(1 + delta_ij)/20, where delta is the Kronecker delta
     # function.
-    bary_coords_int: Float[t.Tensor, "tet 4 4"] = t.abs(tet_signed_vols / 20.0) * (
-        t.ones((n_tets, 4, 4), dtype=dtype, device=device)
-        + t.eye(4, dtype=dtype, device=device).view(1, 4, 4)
+    bary_coords_int: Float[Tensor, "tet 4 4"] = torch.abs(tet_signed_vols / 20.0) * (
+        torch.ones((n_tets, 4, 4), dtype=dtype, device=device)
+        + torch.eye(4, dtype=dtype, device=device).view(1, 4, 4)
     )
 
     # For each tet ijkl, each pair of its edges e1=xy and e2=pq contributes the
@@ -91,8 +92,10 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
     # Enumerate all unique edges via their vertex position in the tet.
     i, j, k, l = 0, 1, 2, 3
-    unique_edges = t.tensor(
-        [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]], dtype=t.long, device=device
+    unique_edges = torch.tensor(
+        [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]],
+        dtype=torch.long,
+        device=device,
     )
 
     x_idx = unique_edges[:, 0][:, None]
@@ -102,7 +105,7 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
     # For each tet, find all pairs of Whitney 1-form basis function inner products,
     # i.e., the W_xy,pq.
-    whitney_inner_prod: Float[t.Tensor, "tet 6 6"] = (
+    whitney_inner_prod: Float[Tensor, "tet 6 6"] = (
         bary_coords_int[:, x_idx, p_idx] * bary_coords_grad_dot[:, y_idx, q_idx]
         - bary_coords_int[:, x_idx, q_idx] * bary_coords_grad_dot[:, y_idx, p_idx]
         - bary_coords_int[:, y_idx, p_idx] * bary_coords_grad_dot[:, x_idx, q_idx]
@@ -130,7 +133,7 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
     # Multiply the Whitney 1-form inner product by the edge orientation signs
     # to get the contribution from canonical edges.
-    whitney_flat_signed: Float[t.Tensor, "tet 36"] = (
+    whitney_flat_signed: Float[Tensor, "tet 36"] = (
         whitney_inner_prod
         * whitney_edge_signs.view(-1, 1, 6)
         * whitney_edge_signs.view(-1, 6, 1)
@@ -138,16 +141,16 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
     # Get the canonical edge index pairs for the Whitney 1-form inner products of
     # all 36 edge pairs per tet.
-    whitney_flat_r_idx: Float[t.Tensor, " tet*36"] = (
+    whitney_flat_r_idx: Float[Tensor, " tet*36"] = (
         whitney_edges_idx.view(-1, 6, 1).expand(-1, 6, 6).flatten()
     )
-    whitney_flat_c_idx: Float[t.Tensor, " tet*36"] = (
+    whitney_flat_c_idx: Float[Tensor, " tet*36"] = (
         whitney_edges_idx.view(-1, 1, 6).expand(-1, 6, 6).flatten()
     )
 
     # Assemble the mass matrix.
-    mass = t.sparse_coo_tensor(
-        t.vstack((whitney_flat_r_idx, whitney_flat_c_idx)),
+    mass = torch.sparse_coo_tensor(
+        torch.vstack((whitney_flat_r_idx, whitney_flat_c_idx)),
         whitney_flat_signed.flatten(),
         (n_edges, n_edges),
     ).coalesce()
@@ -189,10 +192,10 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     #
     # Therefore, the canonical 2-face definitions and orientations need to be
     # adjusted prior for this function.
-    tri_face_idx = t.flip(tet_mesh.tri_faces.idx, dims=(-1,))
-    tri_face_orientations = t.tensor(
+    tri_face_idx = torch.flip(tet_mesh.tri_faces.idx, dims=(-1,))
+    tri_face_orientations = torch.tensor(
         [[1.0, -1.0, 1.0, -1.0]], dtype=tet_mesh.dtype, device=tet_mesh.device
-    ) * t.flip(tet_mesh.tri_faces.parity, dims=(-1,))
+    ) * torch.flip(tet_mesh.tri_faces.parity, dims=(-1,))
 
     # First, compute the inner products of the Whitney 2-form basis functions.
     _, whitney_inner_prod_signed = whitney_2_form_inner_prods(
@@ -201,14 +204,14 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
 
     # Assemble the mass matrix by scattering the inner products according to the
     # triangle indices.
-    mass_idx = t.vstack(
+    mass_idx = torch.vstack(
         (
             tri_face_idx.view(-1, 4, 1).expand(-1, 4, 4).flatten(),
             tri_face_idx.view(-1, 1, 4).expand(-1, 4, 4).flatten(),
         )
     )
     mass_val = whitney_inner_prod_signed.flatten()
-    mass = t.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
+    mass = torch.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
 
     return SparseDecoupledTensor.from_tensor(mass)
 
@@ -220,5 +223,5 @@ def mass_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tet tet"]:
     the 3-star.
     """
     return DiagDecoupledTensor.from_tensor(
-        1.0 / t.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+        1.0 / torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
     )

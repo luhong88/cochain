@@ -1,20 +1,21 @@
 from typing import Literal
 
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 from ...decoupled_tensor import SparseDecoupledTensor
 
 
 def M_orthonormalize(
-    V: Float[t.Tensor, "m n"],
+    V: Float[Tensor, "m n"],
     M_op: Float[SparseDecoupledTensor, "m m"],
     *,
     rtol: float | None = None,
     n_min: int | None = None,
-    generator: t.Generator | None = None,
+    generator: torch.Generator | None = None,
     max_iter: int = 3,
-) -> Float[t.Tensor, "m l"]:
+) -> Float[Tensor, "m l"]:
     """
     Convert the column vectors of V into M-orthonormal vectors using iterative
     canonical/PCA orthonormalization.
@@ -36,8 +37,8 @@ def M_orthonormalize(
     """
     # Force double precision to further suppress the condition number issue.
     V_dtype = V.dtype
-    V_double = V.to(t.float64)
-    M_op_double = M_op.to(t.float64)
+    V_double = V.to(torch.float64)
+    M_op_double = M_op.to(torch.float64)
 
     V_current = V_double
     for _ in range(max_iter):
@@ -47,7 +48,7 @@ def M_orthonormalize(
         # If the number of columns in V_ortho drops below the minimum, perform
         # a "soft restart" by padding random vectors to V_ortho.
         if (n_min is not None) and (V_ortho_double.size(-1) < n_min):
-            pad = t.randn(
+            pad = torch.randn(
                 (V_ortho_double.size(0), n_min - V_ortho_double.size(-1)),
                 generator=generator,
                 dtype=V_ortho_double.dtype,
@@ -66,7 +67,7 @@ def M_orthonormalize(
             )
 
             # Concat to form the new basis
-            V_ortho_double = t.hstack((V_ortho_double, pad_res_ortho))
+            V_ortho_double = torch.hstack((V_ortho_double, pad_res_ortho))
 
         V_current = V_ortho_double
 
@@ -81,15 +82,15 @@ def M_orthonormalize(
 
 
 def _M_orthonormalize_one_iter(
-    V: Float[t.Tensor, "m n"],
+    V: Float[Tensor, "m n"],
     M_op: Float[SparseDecoupledTensor, "m m"],
     rtol: float | None = None,
-) -> tuple[Float[t.Tensor, "m l"], Float[t.Tensor, ""]]:
+) -> tuple[Float[Tensor, "m l"], Float[Tensor, ""]]:
     if rtol is None:
-        rtol = V.size(0) * t.finfo(V.dtype).eps
+        rtol = V.size(0) * torch.finfo(V.dtype).eps
 
     # Compute the M-orthogonal gram matrix.
-    G: Float[t.Tensor, "n n"] = V.T @ (M_op @ V)
+    G: Float[Tensor, "n n"] = V.T @ (M_op @ V)
 
     # Implicit normalization of G. Let D be a diagonal matrix whose diagonal
     # elements are the inverse square roots of the diagonal elements of G; then
@@ -97,16 +98,16 @@ def _M_orthonormalize_one_iter(
     # of V, but computationally cheaper. This scaling improves the condition number
     # of G for eigh(). Note that columns of V that are zero or very close to
     # zero are not length-normalized.
-    V_col_norm2 = t.diag(G).clamp(min=0.0)
-    D = 1.0 / t.sqrt(V_col_norm2)
+    V_col_norm2 = torch.diag(G).clamp(min=0.0)
+    D = 1.0 / torch.sqrt(V_col_norm2)
 
-    zero_col_mask = (~t.isfinite(D)) | (V_col_norm2 < t.finfo(V.dtype).eps * 10)
+    zero_col_mask = (~torch.isfinite(D)) | (V_col_norm2 < torch.finfo(V.dtype).eps * 10)
     D[zero_col_mask] = 1.0
 
     G_scaled = D.view(-1, 1) * G * D.view(1, -1)
 
     # Perform an eigendecomposition of G = Q@Λ@Q.T.
-    eig_vals, eig_vecs = t.linalg.eigh(G_scaled)
+    eig_vals, eig_vecs = torch.linalg.eigh(G_scaled)
 
     # Drop very small eigenvalues corresponding to linearly dependent columns.
     eps = rtol * eig_vals.max()
@@ -114,15 +115,17 @@ def _M_orthonormalize_one_iter(
 
     # If V is basically zero, return a single zero vector and a condition number of 0.
     if not mask.any():
-        return t.zeros_like(V[:, :1]), t.tensor(0.0, dtype=V.dtype, device=V.device)
+        return torch.zeros_like(V[:, :1]), torch.tensor(
+            0.0, dtype=V.dtype, device=V.device
+        )
 
     eig_vals_masked = eig_vals[mask]
-    inv_eig_vals_masked = 1.0 / t.sqrt(eig_vals_masked)
+    inv_eig_vals_masked = 1.0 / torch.sqrt(eig_vals_masked)
     eig_vecs_masked = eig_vecs[:, mask]
 
     # Check the condition number using the masked eigenvalues, for assessing
     # progress of iterative refinement.
-    cond = t.sqrt(eig_vals_masked.max() / eig_vals_masked.min())
+    cond = torch.sqrt(eig_vals_masked.max() / eig_vals_masked.min())
 
     # Compute the whitening matrix W = Q@Λ^(-1/2) as the inverse square root
     # of G. Need to apply the D vector here to undo the implicit normalization.
@@ -136,24 +139,24 @@ def _M_orthonormalize_one_iter(
 
 
 def canonicalize_eig_vec_signs(
-    eig_vecs: Float[t.Tensor, "m k"],
-) -> Float[t.Tensor, "m k"]:
+    eig_vecs: Float[Tensor, "m k"],
+) -> Float[Tensor, "m k"]:
     """
     "Canonicalize" the orientation of eigenvectors via the convention that the
     element with the largest absolute value has a positive sign.
     """
     max_idx = eig_vecs.abs().max(dim=0, keepdim=True).indices
-    max_sign = t.gather(input=eig_vecs, dim=0, index=max_idx).sign()
+    max_sign = torch.gather(input=eig_vecs, dim=0, index=max_idx).sign()
     canon_eig_vecs = eig_vecs * max_sign
     return canon_eig_vecs
 
 
 def grassmann_proj_dists(
-    eig_vecs_pred: Float[t.Tensor, "m k"],
-    eig_vecs_true: Float[t.Tensor, "m k"],
-    M: Float[t.Tensor, "m m"] | Float[SparseDecoupledTensor, "m m"] | None = None,
+    eig_vecs_pred: Float[Tensor, "m k"],
+    eig_vecs_true: Float[Tensor, "m k"],
+    M: Float[Tensor, "m m"] | Float[SparseDecoupledTensor, "m m"] | None = None,
     mode: Literal["pairwise", "subspace"] = "subspace",
-) -> Float[t.Tensor, "*k"]:
+) -> Float[Tensor, "*k"]:
     """
     Compute the Grassmann projection distance between two sets of eigenvectors.
 
@@ -180,7 +183,7 @@ def grassmann_proj_dists(
     If the M matrix is provided, it is assumed that the eigenvectors are derived
     from a generalized eigenvalue problem, and both the `eig_vecs_pred` and
     `eig_vecs_true` are M-orthonormal. If M is None, then the eigenvectors are
-    assumed to be orthonormal w.r.t. the standard Euclidean metric.
+    assumed to be orthonormal w.r.torch. the standard Euclidean metric.
     """
     if M is None:
         W = eig_vecs_true
@@ -189,10 +192,10 @@ def grassmann_proj_dists(
 
     match mode:
         case "pairwise":
-            dist = 1 - t.sum(eig_vecs_pred * W, dim=0).pow(2)
+            dist = 1 - torch.sum(eig_vecs_pred * W, dim=0).pow(2)
         case "subspace":
             k = eig_vecs_true.size(-1)
-            dist = k - t.sum((eig_vecs_pred.T @ W).pow(2))
+            dist = k - torch.sum((eig_vecs_pred.T @ W).pow(2))
         case _:
             raise ValueError()
 

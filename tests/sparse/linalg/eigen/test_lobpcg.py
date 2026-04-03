@@ -1,6 +1,7 @@
 import pytest
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.sparse.linalg.eigen import LOBPCGConfig, LOBPCGPrecondConfig, lobpcg
@@ -11,25 +12,25 @@ from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
 
 
 def dense_gep(
-    A: Float[t.Tensor, "m m"], M: Float[t.Tensor, "m m"]
-) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
-    # Since t.linalg.eigh() does not support GEP, need to perform Cholesky
+    A: Float[Tensor, "m m"], M: Float[Tensor, "m m"]
+) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
+    # Since torch.linalg.eigh() does not support GEP, need to perform Cholesky
     # whitening on A.
-    M_cho_inv = t.linalg.inv(t.linalg.cholesky(M))
+    M_cho_inv = torch.linalg.inv(torch.linalg.cholesky(M))
     A_whitened = M_cho_inv @ A @ M_cho_inv.T
 
-    eig_vals_true, eig_vecs_whitened = t.linalg.eigh(A_whitened)
+    eig_vals_true, eig_vecs_whitened = torch.linalg.eigh(A_whitened)
     eig_vecs_true = M_cho_inv.T @ eig_vecs_whitened
 
     return eig_vals_true, eig_vecs_true
 
 
 @pytest.mark.gpu_only
-def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
+def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
-    eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
+    eig_vals_true, eig_vecs_true = torch.linalg.eigh(A_dense)
 
     k = 2
 
@@ -37,12 +38,12 @@ def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
     eig_vals_rev, eig_vecs_rev = lobpcg(
         A=A_op, M=None, k=k, lobpcg_config=LOBPCGConfig(largest=True)
     )
-    eig_vals = t.flip(eig_vals_rev, dims=(0,))
-    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+    eig_vals = torch.flip(eig_vals_rev, dims=(0,))
+    eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
     # If largest=True, lobpcg returns eigenvalues in descending order.
-    t.testing.assert_close(eig_vals, eig_vals_true[-k:])
-    t.testing.assert_close(
+    torch.testing.assert_close(eig_vals, eig_vals_true[-k:])
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, -k:]),
     )
@@ -51,8 +52,8 @@ def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
         A=A_op, M=None, k=k, lobpcg_config=LOBPCGConfig(largest=False)
     )
 
-    t.testing.assert_close(eig_vals, eig_vals_true[:k])
-    t.testing.assert_close(
+    torch.testing.assert_close(eig_vals, eig_vals_true[:k])
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, :k]),
     )
@@ -64,12 +65,12 @@ def test_standard_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
     ["identity", "jacobi", "ilu", "cholesky"],
 )
 def test_standard_forward_preconditioners(
-    rand_sp_spd_6x6: Float[t.Tensor, "6 6"], preconditioner, device
+    rand_sp_spd_6x6: Float[Tensor, "6 6"], preconditioner, device
 ):
     A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
-    eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
+    eig_vals_true, eig_vecs_true = torch.linalg.eigh(A_dense)
 
     k = 2
 
@@ -80,12 +81,12 @@ def test_standard_forward_preconditioners(
         lobpcg_config=LOBPCGConfig(largest=True),
         precond_config=LOBPCGPrecondConfig(method=preconditioner),
     )
-    eig_vals = t.flip(eig_vals_rev, dims=(0,))
-    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+    eig_vals = torch.flip(eig_vals_rev, dims=(0,))
+    eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
     # If largest=True, lobpcg returns eigenvalues in descending order.
-    t.testing.assert_close(eig_vals, eig_vals_true[-k:])
-    t.testing.assert_close(
+    torch.testing.assert_close(eig_vals, eig_vals_true[-k:])
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, -k:]),
     )
@@ -93,15 +94,15 @@ def test_standard_forward_preconditioners(
 
 @pytest.mark.gpu_only
 def test_batched_standard_forward(
-    rand_sp_spd_6x6: Float[t.Tensor, "6 6"],
-    rand_sp_spd_9x9: Float[t.Tensor, "9 9"],
+    rand_sp_spd_6x6: Float[Tensor, "6 6"],
+    rand_sp_spd_9x9: Float[Tensor, "9 9"],
     device,
 ):
     A1_dense = rand_sp_spd_6x6.to_dense().to(device)
-    eig_vals_1_true, eig_vecs_1_true = t.linalg.eigh(A1_dense)
+    eig_vals_1_true, eig_vecs_1_true = torch.linalg.eigh(A1_dense)
 
     A2_dense = rand_sp_spd_9x9.to_dense().to(device)
-    eig_vals_2_true, eig_vecs_2_true = t.linalg.eigh(A2_dense)
+    eig_vals_2_true, eig_vecs_2_true = torch.linalg.eigh(A2_dense)
 
     k = 2
 
@@ -116,28 +117,28 @@ def test_batched_standard_forward(
         k=k,
         lobpcg_config=LOBPCGConfig(largest=True),
     )
-    eig_vals = t.flip(eig_vals_rev, dims=(-1,))
-    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+    eig_vals = torch.flip(eig_vals_rev, dims=(-1,))
+    eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
     eig_vals_1, eig_vals_2 = eig_vals.unbind(0)
     eig_vecs_1 = eig_vecs[:6]
     eig_vecs_2 = eig_vecs[6:]
 
-    t.testing.assert_close(eig_vals_1, eig_vals_1_true[-k:])
-    t.testing.assert_close(eig_vals_2, eig_vals_2_true[-k:])
+    torch.testing.assert_close(eig_vals_1, eig_vals_1_true[-k:])
+    torch.testing.assert_close(eig_vals_2, eig_vals_2_true[-k:])
 
-    t.testing.assert_close(
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs_1),
         canonicalize_eig_vec_signs(eig_vecs_1_true[:, -k:]),
     )
-    t.testing.assert_close(
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs_2),
         canonicalize_eig_vec_signs(eig_vecs_2_true[:, -k:]),
     )
 
 
 @pytest.mark.gpu_only
-def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
+def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], device):
     k = 3
 
     A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
@@ -146,30 +147,30 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
     A_dense.requires_grad_()
 
-    eig_vals_true_all, eig_vecs_true_all = t.linalg.eigh(A_dense)
+    eig_vals_true_all, eig_vecs_true_all = torch.linalg.eigh(A_dense)
     eig_vals_true = eig_vals_true_all[-k:]
 
     eig_vals_rev, eig_vecs_rev = lobpcg(
         A=A_op, M=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
-    eig_vals = t.flip(eig_vals_rev, dims=(0,))
+    eig_vals = torch.flip(eig_vals_rev, dims=(0,))
 
     # Compare eigenvalue gradient
-    eig_vals_rand = t.randn_like(eig_vals_true)
-    eig_vals_loss_true = t.sum(eig_vals_true * eig_vals_rand)
-    eig_vals_loss = t.sum(eig_vals * eig_vals_rand)
+    eig_vals_rand = torch.randn_like(eig_vals_true)
+    eig_vals_loss_true = torch.sum(eig_vals_true * eig_vals_rand)
+    eig_vals_loss = torch.sum(eig_vals * eig_vals_rand)
 
     eig_vals_loss_true.backward()
     eig_vals_loss.backward()
 
-    eig_vals_grad_true = A_dense.grad[t.unbind(A_op.pattern.idx_coo, dim=0)]
+    eig_vals_grad_true = A_dense.grad[torch.unbind(A_op.pattern.idx_coo, dim=0)]
     eig_vals_grad = A_op.val.grad
 
-    t.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
+    torch.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
 
 
 @pytest.mark.gpu_only
-def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
+def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], device):
     k = 3
 
     A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
@@ -178,7 +179,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
     A_dense.requires_grad_()
 
-    eig_vals_true_all, eig_vecs_true_all = t.linalg.eigh(A_dense)
+    eig_vals_true_all, eig_vecs_true_all = torch.linalg.eigh(A_dense)
     eig_vecs_true = eig_vecs_true_all[:, -k:]
     subspace_projector = eig_vecs_true @ eig_vecs_true.T
 
@@ -191,28 +192,28 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     eig_vals_rev, eig_vecs_rev = lobpcg(
         A=A_op, M=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
-    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+    eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
     # Compare eigenvector gradient; here, we compute the Frobenius matrix inner
     # product between a random matrix and the eigenspace project matrix (V@V.T)
     # to make the loss invariant to eigenvector sign flips.
-    eig_vecs_rand = t.randn_like(eig_vecs_true)
-    eig_vecs_loss_true = t.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
-    eig_vecs_loss = t.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
+    eig_vecs_rand = torch.randn_like(eig_vecs_true)
+    eig_vecs_loss_true = torch.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
+    eig_vecs_loss = torch.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
 
     eig_vecs_loss_true.backward()
     eig_vecs_loss.backward()
 
     eig_vecs_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
-        t.unbind(A_op.pattern.idx_coo, dim=0)
+        torch.unbind(A_op.pattern.idx_coo, dim=0)
     ]
     eig_vecs_grad = A_op.val.grad
 
-    t.testing.assert_close(eig_vecs_grad, eig_vecs_grad_true)
+    torch.testing.assert_close(eig_vecs_grad, eig_vecs_grad_true)
 
 
 @pytest.mark.gpu_only
-def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], device):
+def test_standard_combined_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], device):
     k = 3
 
     A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
@@ -221,7 +222,7 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     A_dense = rand_sp_spd_9x9.to_dense().to(device)
     A_dense.requires_grad_()
 
-    eig_vals_true_all, eig_vecs_true_all = t.linalg.eigh(A_dense)
+    eig_vals_true_all, eig_vecs_true_all = torch.linalg.eigh(A_dense)
     eig_vals_true = eig_vals_true_all[-k:]
     eig_vecs_true = eig_vecs_true_all[:, -k:]
     subspace_projector = eig_vecs_true @ eig_vecs_true.T
@@ -229,16 +230,16 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     eig_vals_rev, eig_vecs_rev = lobpcg(
         A=A_op, M=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
-    eig_vals = t.flip(eig_vals_rev, dims=(0,))
-    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+    eig_vals = torch.flip(eig_vals_rev, dims=(0,))
+    eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
-    eig_vals_rand = t.randn_like(eig_vals_true)
-    eig_vals_loss_true = t.sum(eig_vals_true * eig_vals_rand)
-    eig_vals_loss = t.sum(eig_vals * eig_vals_rand)
+    eig_vals_rand = torch.randn_like(eig_vals_true)
+    eig_vals_loss_true = torch.sum(eig_vals_true * eig_vals_rand)
+    eig_vals_loss = torch.sum(eig_vals * eig_vals_rand)
 
-    eig_vecs_rand = t.randn_like(eig_vecs_true)
-    eig_vecs_loss_true = t.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
-    eig_vecs_loss = t.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
+    eig_vecs_rand = torch.randn_like(eig_vecs_true)
+    eig_vecs_loss_true = torch.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
+    eig_vecs_loss = torch.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
 
     combined_loss_true = eig_vals_loss_true + eig_vecs_loss_true
     combined_loss = eig_vals_loss + eig_vecs_loss
@@ -247,15 +248,15 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[t.Tensor, "9 9"], dev
     combined_loss.backward()
 
     combined_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
-        t.unbind(A_op.pattern.idx_coo, dim=0)
+        torch.unbind(A_op.pattern.idx_coo, dim=0)
     ]
     combined_grad = A_op.val.grad
 
-    t.testing.assert_close(combined_grad, combined_grad_true)
+    torch.testing.assert_close(combined_grad, combined_grad_true)
 
 
 @pytest.mark.gpu_only
-def test_gep_forward(rand_sp_gep_6x6: Float[t.Tensor, "6 6"], device):
+def test_gep_forward(rand_sp_gep_6x6: Float[Tensor, "6 6"], device):
     A, M = rand_sp_gep_6x6
 
     A_dense = A.to_dense().to(device)
@@ -272,12 +273,12 @@ def test_gep_forward(rand_sp_gep_6x6: Float[t.Tensor, "6 6"], device):
     eig_vals_rev, eig_vecs_rev = lobpcg(
         A=A_op, M=M_op, k=k, lobpcg_config=LOBPCGConfig(largest=True)
     )
-    eig_vals = t.flip(eig_vals_rev, dims=(0,))
-    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+    eig_vals = torch.flip(eig_vals_rev, dims=(0,))
+    eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
     # Both eigsolver returns eigenvalues in ascending orders
-    t.testing.assert_close(eig_vals, eig_vals_true[-k:])
-    t.testing.assert_close(
+    torch.testing.assert_close(eig_vals, eig_vals_true[-k:])
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, -k:]),
     )
@@ -286,15 +287,15 @@ def test_gep_forward(rand_sp_gep_6x6: Float[t.Tensor, "6 6"], device):
         A=A_op, M=M_op, k=k, lobpcg_config=LOBPCGConfig(largest=False)
     )
 
-    t.testing.assert_close(eig_vals, eig_vals_true[:k])
-    t.testing.assert_close(
+    torch.testing.assert_close(eig_vals, eig_vals_true[:k])
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, :k]),
     )
 
 
 @pytest.mark.gpu_only
-def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
+def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[Tensor, "9 9"], device):
     k = 3
 
     A, M = rand_sp_gep_9x9
@@ -317,28 +318,28 @@ def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     eig_vals_rev, eig_vecs_rev = lobpcg(
         A=A_op, M=M_op, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
-    eig_vals = t.flip(eig_vals_rev, dims=(0,))
+    eig_vals = torch.flip(eig_vals_rev, dims=(0,))
 
-    eig_vals_rand = t.randn_like(eig_vals_true)
-    eig_vals_loss_true = t.sum(eig_vals_true * eig_vals_rand)
-    eig_vals_loss = t.sum(eig_vals * eig_vals_rand)
+    eig_vals_rand = torch.randn_like(eig_vals_true)
+    eig_vals_loss_true = torch.sum(eig_vals_true * eig_vals_rand)
+    eig_vals_loss = torch.sum(eig_vals * eig_vals_rand)
 
     eig_vals_loss_true.backward()
     eig_vals_loss.backward()
 
-    A_grad_true = A_dense.grad[t.unbind(A_op.pattern.idx_coo, dim=0)]
+    A_grad_true = A_dense.grad[torch.unbind(A_op.pattern.idx_coo, dim=0)]
     A_grad = A_op.val.grad
 
-    t.testing.assert_close(A_grad, A_grad_true)
+    torch.testing.assert_close(A_grad, A_grad_true)
 
-    M_grad_true = M_dense.grad[t.unbind(M_op.pattern.idx_coo, dim=0)]
+    M_grad_true = M_dense.grad[torch.unbind(M_op.pattern.idx_coo, dim=0)]
     M_grad = M_op.val.grad
 
-    t.testing.assert_close(M_grad, M_grad_true)
+    torch.testing.assert_close(M_grad, M_grad_true)
 
 
 @pytest.mark.gpu_only
-def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
+def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[Tensor, "9 9"], device):
     k = 3
 
     A, M = rand_sp_gep_9x9
@@ -362,43 +363,43 @@ def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[t.Tensor, "9 9"], device):
     eig_vals_rev, eig_vecs_rev = lobpcg(
         A=A_op, M=M_op, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
-    eig_vecs = t.flip(eig_vecs_rev, dims=(-1,))
+    eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
-    eig_vecs_rand = t.randn_like(eig_vecs_true)
-    eig_vecs_loss_true = t.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
-    eig_vecs_loss = t.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
+    eig_vecs_rand = torch.randn_like(eig_vecs_true)
+    eig_vecs_loss_true = torch.sum(eig_vecs_rand * eig_vecs_true, dim=0).abs().sum()
+    eig_vecs_loss = torch.sum(eig_vecs_rand * eig_vecs, dim=0).abs().sum()
 
     eig_vecs_loss_true.backward()
     eig_vecs_loss.backward()
 
     A_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector.T)[
-        t.unbind(A_op.pattern.idx_coo, dim=0)
+        torch.unbind(A_op.pattern.idx_coo, dim=0)
     ]
     A_grad = A_op.val.grad
 
-    t.testing.assert_close(A_grad, A_grad_true)
+    torch.testing.assert_close(A_grad, A_grad_true)
 
     M_grad_true = (subspace_projector @ M_dense.grad @ subspace_projector.T)[
-        t.unbind(M_op.pattern.idx_coo, dim=0)
+        torch.unbind(M_op.pattern.idx_coo, dim=0)
     ]
     M_grad = M_op.val.grad
 
-    t.testing.assert_close(M_grad, M_grad_true)
+    torch.testing.assert_close(M_grad, M_grad_true)
 
 
 @pytest.mark.gpu_only
-def test_shift_invert_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
+def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     A_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     A_dense = rand_sp_spd_6x6.to_dense().to(device)
 
-    # Since t.linalg.eigh does not support shift-invert mode, need to manually
+    # Since torch.linalg.eigh does not support shift-invert mode, need to manually
     # extract the target eigenvalue/eigenvector
-    eig_vals_true, eig_vecs_true = t.linalg.eigh(A_dense)
+    eig_vals_true, eig_vecs_true = torch.linalg.eigh(A_dense)
 
     k = 1
     target_eig_val = 18.5
 
-    target_idx = t.argmin(t.abs(eig_vals_true - target_eig_val), keepdim=True)
+    target_idx = torch.argmin(torch.abs(eig_vals_true - target_eig_val), keepdim=True)
     eig_val_true = eig_vals_true[target_idx]
     eig_vec_true = eig_vecs_true[:, target_idx]
 
@@ -412,8 +413,8 @@ def test_shift_invert_forward(rand_sp_spd_6x6: Float[t.Tensor, "6 6"], device):
         lobpcg_config=LOBPCGConfig(sigma=target_eig_val, largest=True, maxiter=10),
     )
 
-    t.testing.assert_close(eig_val, eig_val_true)
-    t.testing.assert_close(
+    torch.testing.assert_close(eig_val, eig_val_true)
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vec),
         canonicalize_eig_vec_signs(eig_vec_true),
     )
@@ -431,7 +432,7 @@ def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
     k = 1
     target_eig_val = 18.5
 
-    target_idx = t.argmin(t.abs(eig_vals_true - target_eig_val), keepdim=True)
+    target_idx = torch.argmin(torch.abs(eig_vals_true - target_eig_val), keepdim=True)
     eig_val_true = eig_vals_true[target_idx]
     eig_vec_true = eig_vecs_true[:, target_idx]
 
@@ -448,8 +449,8 @@ def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
         lobpcg_config=LOBPCGConfig(sigma=target_eig_val, largest=True, maxiter=10),
     )
 
-    t.testing.assert_close(eig_val, eig_val_true)
-    t.testing.assert_close(
+    torch.testing.assert_close(eig_val, eig_val_true)
+    torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vec),
         canonicalize_eig_vec_signs(eig_vec_true),
     )

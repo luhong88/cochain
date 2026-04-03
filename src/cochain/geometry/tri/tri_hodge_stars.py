@@ -1,7 +1,8 @@
 from typing import Literal
 
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
@@ -31,15 +32,15 @@ def _star_1_circumcentric(
     1-cells to the primal edges, which is given by the cotan formula. The returned
     tensor forms the diagonal of the 1-star tensor.
     """
-    vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
-    tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
+    vert_coords: Float[Tensor, "vert 3"] = tri_mesh.vert_coords
+    tris: Integer[LongTensor, "tri 3"] = tri_mesh.tris
 
     n_verts = tri_mesh.n_verts
 
     # The cotan weights matrix (i.e., off-diagonal elements of the stiffness matrix)
     # already contains the desired values; i.e., S_ij = -0.5*sum_k[cot_k] for all
     # k that forms a triangle with i and j.
-    weights: Float[t.Tensor, "vert vert"] = cotan_weights(vert_coords, tris, n_verts)
+    weights: Float[Tensor, "vert vert"] = cotan_weights(vert_coords, tris, n_verts)
 
     # Identify the location of the canonical edge ij in the sparse W_ij indices,
     # and use the location to extract the cotan values.
@@ -64,31 +65,31 @@ def _star_1_barycentric(
     """
     Compute the barycentric Hodge 1-star operator.
     """
-    vert_coords: Float[t.Tensor, "vert 3"] = tri_mesh.vert_coords
-    tris: Integer[t.LongTensor, "tri 3"] = tri_mesh.tris
-    edges: Integer[t.LongTensor, "edge 2"] = tri_mesh.edges
-    tri_vert_coords: Float[t.Tensor, "tri 3 3"] = vert_coords[tris]
+    vert_coords: Float[Tensor, "vert 3"] = tri_mesh.vert_coords
+    tris: Integer[LongTensor, "tri 3"] = tri_mesh.tris
+    edges: Integer[LongTensor, "edge 2"] = tri_mesh.edges
+    tri_vert_coords: Float[Tensor, "tri 3 3"] = vert_coords[tris]
 
     i, j, k = 0, 1, 2
 
     # For each tri, find its barycenter and the barycenters of its edge faces,
     # as well as the dual edges that connect the barycenters
-    tri_barys: Float[t.Tensor, "tri 1 3"] = t.mean(
+    tri_barys: Float[Tensor, "tri 1 3"] = torch.mean(
         tri_vert_coords, dim=-2, keepdim=True
     )
-    tri_edge_face_barys: Float[t.Tensor, "tri 3 3"] = t.mean(
+    tri_edge_face_barys: Float[Tensor, "tri 3 3"] = torch.mean(
         tri_vert_coords[:, [[i, j], [i, k], [j, k]]],
         dim=-2,
     )
 
     dual_edges = tri_barys - tri_edge_face_barys
-    dual_edge_lens: Float[t.Tensor, "tri 4"] = t.linalg.norm(dual_edges, dim=-1)
+    dual_edge_lens: Float[Tensor, "tri 4"] = torch.linalg.norm(dual_edges, dim=-1)
 
     # For each edge, find all tri containing the edge as a face, and sum together
     # the tri-edge pair dual edge lengths.
     all_canon_edges_idx = tri_mesh.edge_faces.idx
 
-    diag = t.zeros(
+    diag = torch.zeros(
         tri_mesh.n_edges,
         dtype=vert_coords.dtype,
         device=vert_coords.device,
@@ -100,7 +101,7 @@ def _star_1_barycentric(
     )
 
     # Divide the dual edge length sum by the primal edge length to get the Hodge 1-star.
-    edge_lens = t.linalg.norm(
+    edge_lens = torch.linalg.norm(
         vert_coords[edges[:, 1]] - vert_coords[edges[:, 0]],
         dim=-1,
     )
@@ -134,7 +135,7 @@ def star_0(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
     tri_area = compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
-    diag = t.zeros(
+    diag = torch.zeros(
         tri_mesh.n_verts,
         dtype=tri_mesh.vert_coords.dtype,
         device=tri_mesh.vert_coords.device,
@@ -142,7 +143,7 @@ def star_0(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     diag.scatter_add_(
         dim=0,
         index=tri_mesh.tris.flatten(),
-        src=t.repeat_interleave(tri_area / 3.0, 3),
+        src=torch.repeat_interleave(tri_area / 3.0, 3),
     )
 
     return DiagDecoupledTensor(diag)

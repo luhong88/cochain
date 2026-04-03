@@ -1,7 +1,7 @@
 from functools import partial
 
 import pytest
-import torch as t
+import torch
 
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tet import tet_hodge_stars, tet_laplacians, tet_masses
@@ -23,8 +23,8 @@ def test_sphere_homology_group_dims(
     weak_laplacian, betti, two_tets_mesh: SimplicialMesh
 ):
     operator = weak_laplacian(two_tets_mesh).to_dense()
-    dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
-    t.testing.assert_close(dim_ker, t.tensor(betti))
+    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+    torch.testing.assert_close(dim_ker, torch.tensor(betti))
 
 
 @pytest.mark.parametrize(
@@ -43,8 +43,8 @@ def test_torus_homology_group_dims(
     weak_laplacian, betti, solid_torus_mesh: SimplicialMesh
 ):
     operator = weak_laplacian(solid_torus_mesh).to_dense()
-    dim_ker = operator.shape[0] - t.linalg.matrix_rank(operator)
-    t.testing.assert_close(dim_ker, t.tensor(betti))
+    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+    torch.testing.assert_close(dim_ker, torch.tensor(betti))
 
 
 def test_laplacian_0_equivalence(two_tets_mesh: SimplicialMesh):
@@ -57,7 +57,7 @@ def test_laplacian_0_equivalence(two_tets_mesh: SimplicialMesh):
         two_tets_mesh, method="consistent"
     ).to_dense()
 
-    t.testing.assert_close(l0_cotan, l0_consistent)
+    torch.testing.assert_close(l0_cotan, l0_consistent)
 
 
 @pytest.mark.parametrize(
@@ -78,7 +78,9 @@ def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialMesh):
     """
     weak_laplacian_i = weak_laplacian(two_tets_mesh)
     weak_laplacian_i_T = weak_laplacian_i.T
-    t.testing.assert_close(weak_laplacian_i.to_dense(), weak_laplacian_i_T.to_dense())
+    torch.testing.assert_close(
+        weak_laplacian_i.to_dense(), weak_laplacian_i_T.to_dense()
+    )
 
 
 @pytest.mark.parametrize(
@@ -99,7 +101,7 @@ def test_laplacian_PSD(weak_laplacian, two_tets_mesh: SimplicialMesh):
     """
     laplacian_i = weak_laplacian(two_tets_mesh).to_dense()
 
-    eigs = t.linalg.eigvalsh(laplacian_i)
+    eigs = torch.linalg.eigvalsh(laplacian_i)
     assert eigs.min() >= -1e-6
 
 
@@ -113,7 +115,7 @@ def test_laplacian_PSD(weak_laplacian, two_tets_mesh: SimplicialMesh):
 def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialMesh):
     l0 = weak_laplacian(two_tets_mesh)
     row_sum = l0.to_dense().sum(dim=-1)
-    t.testing.assert_close(row_sum, t.zeros_like(row_sum))
+    torch.testing.assert_close(row_sum, torch.zeros_like(row_sum))
 
 
 # TODO: update to use custom solver wrapper
@@ -140,17 +142,17 @@ def test_laplacian_orthogonality(
 
     m = mass(two_tets_mesh).to_dense()
 
-    composition_1 = dg @ t.linalg.solve(m, cc)  # dg @ inv_m @ cc
-    composition_2 = cc @ t.linalg.solve(m, dg)  # cc @ inv_m @ dg
+    composition_1 = dg @ torch.linalg.solve(m, cc)  # dg @ inv_m @ cc
+    composition_2 = cc @ torch.linalg.solve(m, dg)  # cc @ inv_m @ dg
 
     # For these tests, the numerical tolerance needs to be more lenient, since
     # the calculation involves a long chain of matrix multiplications and effectively
     # two matrix inverses.
-    t.testing.assert_close(
-        composition_1, t.zeros_like(composition_1), atol=1e-4, rtol=0
+    torch.testing.assert_close(
+        composition_1, torch.zeros_like(composition_1), atol=1e-4, rtol=0
     )
-    t.testing.assert_close(
-        composition_2, t.zeros_like(composition_2), atol=1e-4, rtol=0
+    torch.testing.assert_close(
+        composition_2, torch.zeros_like(composition_2), atol=1e-4, rtol=0
     )
 
 
@@ -162,14 +164,14 @@ def test_laplacian_1_curl_free(two_tets_mesh: SimplicialMesh):
     l1_curl_curl = tet_laplacians.weak_laplacian_1_curl_curl(two_tets_mesh)
 
     d0 = two_tets_mesh.cbd[0]
-    x0 = t.arange(two_tets_mesh.n_verts).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x0 = torch.arange(two_tets_mesh.n_verts).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
     x1_curl_free = d0 @ x0
 
     x1_zero = (l1_curl_curl @ x1_curl_free).to_dense()
 
-    t.testing.assert_close(x1_zero, t.zeros_like(x1_zero))
+    torch.testing.assert_close(x1_zero, torch.zeros_like(x1_zero))
 
 
 # TODO: update to use custom solver wrapper
@@ -184,14 +186,14 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialMesh):
 
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
 
-    x2 = t.arange(two_tets_mesh.n_tris).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x2 = torch.arange(two_tets_mesh.n_tris).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
-    x1_div_free = t.linalg.solve(m1, d1_T) @ x2  # inv_m1 @ d1_T @ x2
+    x1_div_free = torch.linalg.solve(m1, d1_T) @ x2  # inv_m1 @ d1_T @ x2
 
     x1_zero = (l1_div_grad @ x1_div_free).to_dense()
 
-    t.testing.assert_close(x1_zero, t.zeros_like(x1_zero))
+    torch.testing.assert_close(x1_zero, torch.zeros_like(x1_zero))
 
 
 def test_laplacian_2_curl_free(two_tets_mesh: SimplicialMesh):
@@ -207,14 +209,14 @@ def test_laplacian_2_curl_free(two_tets_mesh: SimplicialMesh):
 
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
 
-    x3 = t.arange(two_tets_mesh.n_tets).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x3 = torch.arange(two_tets_mesh.n_tets).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
-    x2_curl_free = t.linalg.solve(m2, d2_T) @ x3  # inv_m2 @ d2_T @ x3
+    x2_curl_free = torch.linalg.solve(m2, d2_T) @ x3  # inv_m2 @ d2_T @ x3
 
     x2_zero = (l2_curl_curl @ x2_curl_free).to_dense()
 
-    t.testing.assert_close(x2_zero, t.zeros_like(x2_zero))
+    torch.testing.assert_close(x2_zero, torch.zeros_like(x2_zero))
 
 
 # TODO: update to use custom solver wrapper
@@ -226,14 +228,14 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialMesh):
     l2_div_grad = tet_laplacians.weak_laplacian_2_div_grad(two_tets_mesh)
 
     d1 = two_tets_mesh.cbd[1]
-    x1 = t.arange(two_tets_mesh.n_edges).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x1 = torch.arange(two_tets_mesh.n_edges).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
     x2_div_free = d1 @ x1
 
     x2_zero = (l2_div_grad @ x2_div_free).to_dense()
 
-    t.testing.assert_close(x2_zero, t.zeros_like(x2_zero))
+    torch.testing.assert_close(x2_zero, torch.zeros_like(x2_zero))
 
 
 def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialMesh):
@@ -251,17 +253,17 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialMesh):
 
     codiff_1 = inv_m0 @ d0_T @ m1
 
-    x0 = t.arange(two_tets_mesh.n_verts).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x0 = torch.arange(two_tets_mesh.n_verts).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
-    x1 = t.arange(two_tets_mesh.n_edges).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x1 = torch.arange(two_tets_mesh.n_edges).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
 
-    dot_1 = t.dot(d0 @ x0, m1 @ x1)
-    dot_2 = t.dot(x0, m0 @ (codiff_1 @ x1))
+    dot_1 = torch.dot(d0 @ x0, m1 @ x1)
+    dot_2 = torch.dot(x0, m0 @ (codiff_1 @ x1))
 
-    t.testing.assert_close(dot_1, dot_2)
+    torch.testing.assert_close(dot_1, dot_2)
 
 
 # TODO: update to use custom solver wrapper
@@ -276,19 +278,19 @@ def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialMesh):
     d1 = two_tets_mesh.cbd[1].to_dense()
     d1_T = d1.transpose(0, 1)
 
-    codiff_2 = t.linalg.solve(m1, d1_T) @ m2  # inv_m1 @ d1_T @ m2
+    codiff_2 = torch.linalg.solve(m1, d1_T) @ m2  # inv_m1 @ d1_T @ m2
 
-    x1 = t.arange(two_tets_mesh.n_edges).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x1 = torch.arange(two_tets_mesh.n_edges).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
-    x2 = t.arange(two_tets_mesh.n_tris).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x2 = torch.arange(two_tets_mesh.n_tris).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
 
-    dot_1 = t.dot(d1 @ x1, m2 @ x2)
-    dot_2 = t.dot(x1, m1 @ (codiff_2 @ x2))
+    dot_1 = torch.dot(d1 @ x1, m2 @ x2)
+    dot_2 = torch.dot(x1, m1 @ (codiff_2 @ x2))
 
-    t.testing.assert_close(dot_1, dot_2)
+    torch.testing.assert_close(dot_1, dot_2)
 
 
 # TODO: update to use custom solver wrapper
@@ -303,19 +305,19 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialMesh):
     d2 = two_tets_mesh.cbd[2].to_dense()
     d2_T = d2.transpose(0, 1)
 
-    codiff_3 = t.linalg.solve(m2, d2_T) @ m3  # inv_m2 @ d2_T @ m3
+    codiff_3 = torch.linalg.solve(m2, d2_T) @ m3  # inv_m2 @ d2_T @ m3
 
-    x2 = t.arange(two_tets_mesh.n_tris).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x2 = torch.arange(two_tets_mesh.n_tris).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
-    x3 = t.arange(two_tets_mesh.n_tets).to(
-        dtype=t.float, device=two_tets_mesh.vert_coords.device
+    x3 = torch.arange(two_tets_mesh.n_tets).to(
+        dtype=torch.float, device=two_tets_mesh.vert_coords.device
     )
 
-    dot_1 = t.dot(d2 @ x2, m3 @ x3)
-    dot_2 = t.dot(x2, m2 @ (codiff_3 @ x3))
+    dot_1 = torch.dot(d2 @ x2, m3 @ x3)
+    dot_2 = torch.dot(x2, m2 @ (codiff_3 @ x3))
 
-    t.testing.assert_close(dot_1, dot_2)
+    torch.testing.assert_close(dot_1, dot_2)
 
 
 # TODO: add rotation/translation/scaling invariance tests

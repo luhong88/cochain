@@ -1,5 +1,6 @@
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
@@ -16,30 +17,30 @@ def star_2(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
     """
     Compute the barycentric Hodge 2-star operator.
     """
-    vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
-    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
-    tris: Integer[t.LongTensor, "tri 3"] = tet_mesh.tris
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+    vert_coords: Float[Tensor, "vert 3"] = tet_mesh.vert_coords
+    tets: Integer[LongTensor, "tet 4"] = tet_mesh.tets
+    tris: Integer[LongTensor, "tri 3"] = tet_mesh.tris
+    tet_vert_coords: Float[Tensor, "tet 4 3"] = vert_coords[tets]
 
     i, j, k, l = 0, 1, 2, 3
 
     # For each tet, find all of its tri faces, and for each such tet-tri pair,
     # find the dual edge that connects the barycenters of the tet and the tri.
-    tet_barys: Float[t.Tensor, "tet 1 3"] = t.mean(
+    tet_barys: Float[Tensor, "tet 1 3"] = torch.mean(
         tet_vert_coords, dim=-2, keepdim=True
     )
-    tet_tri_face_barys: Float[t.Tensor, "tet 4 3"] = t.mean(
+    tet_tri_face_barys: Float[Tensor, "tet 4 3"] = torch.mean(
         tet_vert_coords[:, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]], dim=-2
     )
 
     dual_edges = tet_barys - tet_tri_face_barys
-    dual_edge_lens: Float[t.Tensor, "tet 4"] = t.linalg.norm(dual_edges, dim=-1)
+    dual_edge_lens: Float[Tensor, "tet 4"] = torch.linalg.norm(dual_edges, dim=-1)
 
     # For each tri, find all tet containing the tri as a face, and sum together
     # the tet-tri pair dual edge lengths.
-    all_canon_tris_idx: Integer[t.LongTensor, "tet 4"] = tet_mesh.tri_faces.idx
+    all_canon_tris_idx: Integer[LongTensor, "tet 4"] = tet_mesh.tri_faces.idx
 
-    diag = t.zeros(
+    diag = torch.zeros(
         tet_mesh.n_tris,
         dtype=vert_coords.dtype,
         device=vert_coords.device,
@@ -61,22 +62,22 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
     """
     Compute the barycentric Hodge 1-star operator.
     """
-    vert_coords: Float[t.Tensor, "vert 3"] = tet_mesh.vert_coords
-    tets: Integer[t.LongTensor, "tet 4"] = tet_mesh.tets
-    edges: Integer[t.LongTensor, "edge 2"] = tet_mesh.edges
-    tet_vert_coords: Float[t.Tensor, "tet 4 3"] = vert_coords[tets]
+    vert_coords: Float[Tensor, "vert 3"] = tet_mesh.vert_coords
+    tets: Integer[LongTensor, "tet 4"] = tet_mesh.tets
+    edges: Integer[LongTensor, "edge 2"] = tet_mesh.edges
+    tet_vert_coords: Float[Tensor, "tet 4 3"] = vert_coords[tets]
 
     i, j, k, l = 0, 1, 2, 3
 
     # For each tet, find its barycenter and the barycenters of its tri faces and
     # edge faces.
-    tet_barys: Float[t.Tensor, "tet 1 3"] = t.mean(
+    tet_barys: Float[Tensor, "tet 1 3"] = torch.mean(
         tet_vert_coords, dim=-2, keepdim=True
     )
-    tet_tri_face_barys: Float[t.Tensor, "tet 4 3"] = t.mean(
+    tet_tri_face_barys: Float[Tensor, "tet 4 3"] = torch.mean(
         tet_vert_coords[:, [[j, k, l], [i, l, k], [i, j, l], [i, k, j]]], dim=-2
     )
-    tet_edge_face_barys: Float[t.Tensor, "tet 6 3"] = t.mean(
+    tet_edge_face_barys: Float[Tensor, "tet 6 3"] = torch.mean(
         tet_vert_coords[:, [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]]],
         dim=-2,
     )
@@ -87,12 +88,14 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
     tet_tri_vec = tet_barys - tet_tri_face_barys
     tet_edge_vec = tet_barys - tet_edge_face_barys
 
-    subareas: Float[t.Tensor, "tet 6"] = (
-        t.linalg.norm(
-            t.cross(tet_edge_vec, tet_tri_vec[:, [2, 1, 0, 0, 0, 1]], dim=-1), dim=-1
+    subareas: Float[Tensor, "tet 6"] = (
+        torch.linalg.norm(
+            torch.cross(tet_edge_vec, tet_tri_vec[:, [2, 1, 0, 0, 0, 1]], dim=-1),
+            dim=-1,
         )
-        + t.linalg.norm(
-            t.cross(tet_edge_vec, tet_tri_vec[:, [3, 3, 3, 2, 1, 2]], dim=-1), dim=-1
+        + torch.linalg.norm(
+            torch.cross(tet_edge_vec, tet_tri_vec[:, [3, 3, 3, 2, 1, 2]], dim=-1),
+            dim=-1,
         )
     ) / 2.0
 
@@ -100,7 +103,7 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
     # the subareas of the two barycentric triangles.
     all_canon_edges_idx = tet_mesh.edge_faces.idx
 
-    diag = t.zeros(
+    diag = torch.zeros(
         tet_mesh.n_edges,
         dtype=vert_coords.dtype,
         device=vert_coords.device,
@@ -112,7 +115,7 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
     )
 
     # Divide the dual area sums by the edge lengths to get the Hodge 1-star.
-    edge_lens = t.linalg.norm(
+    edge_lens = torch.linalg.norm(
         vert_coords[edges[:, 1]] - vert_coords[edges[:, 0]],
         dim=-1,
     )
@@ -132,13 +135,13 @@ def star_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
     n_verts = tet_mesh.n_verts
 
-    tet_vol = t.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    tet_vol = torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
-    diag = t.zeros(n_verts, device=tet_mesh.vert_coords.device)
+    diag = torch.zeros(n_verts, device=tet_mesh.vert_coords.device)
     diag.scatter_add_(
         dim=0,
         index=tet_mesh.tets.flatten(),
-        src=t.repeat_interleave(tet_vol / 4.0, 4),
+        src=torch.repeat_interleave(tet_vol / 4.0, 4),
     )
 
     return DiagDecoupledTensor.from_tensor(diag)

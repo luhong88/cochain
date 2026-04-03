@@ -3,8 +3,9 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
-import torch as t
+import torch
 from jaxtyping import Bool, Float, Integer
+from torch import LongTensor, Tensor
 
 from .sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
 from .topology import boundaries, coboundaries
@@ -12,7 +13,7 @@ from .utils.faces import GlobalFaces, enumerate_global_faces
 
 
 def _is_tensor_like(obj: Any) -> bool:
-    return t.is_tensor(obj) | isinstance(obj, BaseDecoupledTensor)
+    return torch.is_tensor(obj) | isinstance(obj, BaseDecoupledTensor)
 
 
 @dataclass
@@ -23,16 +24,16 @@ class SimplicialMesh:
         Float[SparseDecoupledTensor, "tet tri"],
     ]
     splx: tuple[
-        Integer[t.LongTensor, "edge 2"],
-        Integer[t.LongTensor, "tri 3"],
-        Integer[t.LongTensor, "tet 4"],
+        Integer[LongTensor, "edge 2"],
+        Integer[LongTensor, "tri 3"],
+        Integer[LongTensor, "tet 4"],
     ]
-    vert_coords: Float[t.Tensor, "vert 3"] | None
+    vert_coords: Float[Tensor, "vert 3"] | None
 
     def __post_init__(self):
         # The list of vertices contains only redundant information, but we
         # materialize it anyways so that simplices[0] gives the list of 0-simplices.
-        verts = t.arange(self.n_verts, device=self.edges.device).view(-1, 1)
+        verts = torch.arange(self.n_verts, device=self.edges.device).view(-1, 1)
         self.splx = (verts,) + self.splx
 
         # Check for dim consistency in coboundary operators.
@@ -77,27 +78,27 @@ class SimplicialMesh:
         return self._apply(lambda x: x.to(*args, **kwargs))
 
     @property
-    def dtype(self) -> t.dtype:
+    def dtype(self) -> torch.dtype:
         return self.vert_coords.dtype
 
     @property
-    def device(self) -> t.device:
+    def device(self) -> torch.device:
         return self.vert_coords.device
 
     @property
-    def verts(self) -> Integer[t.LongTensor, "vert 1"]:
+    def verts(self) -> Integer[LongTensor, "vert 1"]:
         return self.splx[0]
 
     @property
-    def edges(self) -> Integer[t.LongTensor, "edge 2"]:
+    def edges(self) -> Integer[LongTensor, "edge 2"]:
         return self.splx[1]
 
     @property
-    def tris(self) -> Integer[t.LongTensor, "tri 3"]:
+    def tris(self) -> Integer[LongTensor, "tri 3"]:
         return self.splx[2]
 
     @property
-    def tets(self) -> Integer[t.LongTensor, "tet 4"]:
+    def tets(self) -> Integer[LongTensor, "tet 4"]:
         return self.splx[3]
 
     @property
@@ -150,27 +151,27 @@ class SimplicialMesh:
     def bd_mask(
         self,
     ) -> tuple[
-        Bool[t.Tensor, " vert"],
-        Bool[t.Tensor, " edge"],
-        Bool[t.Tensor, " tri"],
-        Bool[t.Tensor, " tet"],
+        Bool[Tensor, " vert"],
+        Bool[Tensor, " edge"],
+        Bool[Tensor, " tri"],
+        Bool[Tensor, " tet"],
     ]:
         return boundaries.detect_mesh_boundaries(self.cbd)
 
     @property
-    def bd_vert_mask(self) -> Bool[t.Tensor, " vert"]:
+    def bd_vert_mask(self) -> Bool[Tensor, " vert"]:
         return self.bd_mask[0]
 
     @property
-    def bd_edge_mask(self) -> Bool[t.Tensor, " edge"]:
+    def bd_edge_mask(self) -> Bool[Tensor, " edge"]:
         return self.bd_mask[1]
 
     @property
-    def bd_tri_mask(self) -> Bool[t.Tensor, " tri"]:
+    def bd_tri_mask(self) -> Bool[Tensor, " tri"]:
         return self.bd_mask[2]
 
     @property
-    def bd_tet_mask(self) -> Bool[t.Tensor, " tet"]:
+    def bd_tet_mask(self) -> Bool[Tensor, " tet"]:
         return self.bd_mask[3]
 
     # TODO: write test for this method
@@ -193,8 +194,8 @@ class SimplicialMesh:
     @classmethod
     def from_tri_mesh(
         cls,
-        vert_coords: Float[t.Tensor, "vert 3"],
-        tris: Integer[t.LongTensor, "tri 3"],
+        vert_coords: Float[Tensor, "vert 3"],
+        tris: Integer[LongTensor, "tri 3"],
     ):
         """
         Construct a special geometric simplicial 2-complex as a triangulated 2D
@@ -206,14 +207,14 @@ class SimplicialMesh:
         """
         unique_canon_edges, cbd_0, cbd_1 = coboundaries.cbd_from_tri_mesh(tris)
 
-        cbd_2 = t.sparse_coo_tensor(
-            indices=t.empty((2, 0), dtype=t.long),
-            values=t.empty((0,), dtype=vert_coords.dtype),
+        cbd_2 = torch.sparse_coo_tensor(
+            indices=torch.empty((2, 0), dtype=torch.long),
+            values=torch.empty((0,), dtype=vert_coords.dtype),
             size=(0, tris.shape[0]),
             device=cbd_0.device,
         )
 
-        tets = t.empty((0, 4), dtype=t.long, device=tris.device)
+        tets = torch.empty((0, 4), dtype=torch.long, device=tris.device)
 
         return cls(
             cbd=(cbd_0, cbd_1, cbd_2),
@@ -224,8 +225,8 @@ class SimplicialMesh:
     @classmethod
     def from_tet_mesh(
         cls,
-        vert_coords: Float[t.Tensor, "vert 3"],
-        tets: Integer[t.LongTensor, "tet 4"],
+        vert_coords: Float[Tensor, "vert 3"],
+        tets: Integer[LongTensor, "tet 4"],
     ):
         """
         Construct a special geometric simplicial 3-complex as a triangulated 3D
@@ -259,10 +260,10 @@ class SimplicialBatch(SimplicialMesh):
 
     def __init__(
         self,
-        batch_verts: Integer[t.LongTensor, " vert"],
-        batch_edges: Integer[t.LongTensor, " edge"],
-        batch_tris: Integer[t.LongTensor, " tri"],
-        batch_tets: Integer[t.LongTensor, " tet"],
+        batch_verts: Integer[LongTensor, " vert"],
+        batch_edges: Integer[LongTensor, " edge"],
+        batch_tris: Integer[LongTensor, " tri"],
+        batch_tets: Integer[LongTensor, " tet"],
         *args,
         **kwargs,
     ):
@@ -301,23 +302,23 @@ def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
     dtype = sc_batch[0].cbd[0].dtype
 
     # Generate a cumsum n_sc list for each simplex dimension
-    n_splx_batch = t.tensor(
+    n_splx_batch = torch.tensor(
         [
             [0] + [sc.n_verts for sc in sc_batch],
             [0] + [sc.n_edges for sc in sc_batch],
             [0] + [sc.n_tris for sc in sc_batch],
             [0] + [sc.n_tets for sc in sc_batch],
         ],
-        dtype=t.long,
+        dtype=torch.long,
         device=device,
     )
 
-    n_splx_cumsum_batch = t.cumsum(n_splx_batch, dim=-1, dtype=t.long)
+    n_splx_cumsum_batch = torch.cumsum(n_splx_batch, dim=-1, dtype=torch.long)
 
     # Generate the batch tensor for each simplex dimension
     batch_tensor_dict = {
-        f"batch_{splx_type}": t.repeat_interleave(
-            t.arange(len(sc_batch), dtype=t.long, device=device),
+        f"batch_{splx_type}": torch.repeat_interleave(
+            torch.arange(len(sc_batch), dtype=torch.long, device=device),
             repeats=n_splx_batch[splx_dim, 1:],
         )
         for splx_dim, splx_type in enumerate(["verts", "edges", "tris", "tets"])
@@ -326,15 +327,15 @@ def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
     # Collate the coboundary operators into sparse block-diagonal forms.
     # Increment the simplex indices for each sc in the batch.
     coboundaries_batch = [
-        t.sparse_coo_tensor(
-            indices=t.hstack(
+        torch.sparse_coo_tensor(
+            indices=torch.hstack(
                 [
                     sc.cbd[dim].indices()
                     + n_splx_cumsum_batch[[dim + 1, dim], idx][:, None]
                     for idx, sc in enumerate(sc_batch)
                 ]
             ),
-            values=t.hstack([sc.cbd[dim].values() for sc in sc_batch]),
+            values=torch.hstack([sc.cbd[dim].values() for sc in sc_batch]),
             size=(n_splx_cumsum_batch[dim + 1, -1], n_splx_cumsum_batch[dim, -1]),
             dtype=dtype,
             device=device,
@@ -344,7 +345,7 @@ def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
 
     # Collate the simplices; increment the vertex indices for each sc in the batch.
     simplices_batch = [
-        t.vstack(
+        torch.vstack(
             [
                 getattr(sc, splx_type) + n_splx_cumsum_batch[0, idx]
                 for idx, sc in enumerate(sc_batch)
@@ -357,7 +358,7 @@ def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
     vert_coords_list = [sc.vert_coords for sc in sc_batch]
 
     if None not in vert_coords_list:
-        vert_coords_batch = t.vstack(vert_coords_list)
+        vert_coords_batch = torch.vstack(vert_coords_list)
 
     elif all(vert_coords is None for vert_coords in vert_coords_list):
         vert_coords_batch = None
@@ -375,7 +376,7 @@ def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
     )
 
 
-class DataLoader(t.utils.data.DataLoader):
+class DataLoader(torch.utils.data.DataLoader):
     """
     A user-facing DataLoader that automatically uses the collate_fn.
     """

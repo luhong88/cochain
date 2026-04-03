@@ -1,5 +1,6 @@
-import torch as t
+import torch
 from jaxtyping import Bool, Float
+from torch import Tensor
 
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
 
@@ -11,10 +12,10 @@ def detect_mesh_boundaries(
         Float[SparseDecoupledTensor, "tet tri"],
     ],
 ) -> tuple[
-    Bool[t.Tensor, " vert"],
-    Bool[t.Tensor, " edge"],
-    Bool[t.Tensor, " tri"],
-    Bool[t.Tensor, " tet"],
+    Bool[Tensor, " vert"],
+    Bool[Tensor, " edge"],
+    Bool[Tensor, " tri"],
+    Bool[Tensor, " tet"],
 ]:
     """
     Return 4 tensor boolean masks that mark the vert, edge, tri, and tet that are
@@ -27,9 +28,9 @@ def detect_mesh_boundaries(
 
     # The top-level simplies by definition cannot be boundaries.
     boundary_masks = [
-        t.zeros(
+        torch.zeros(
             cbd_ops[0].size(0),
-            dtype=t.bool,
+            dtype=torch.bool,
             device=cbd_ops[0].device,
         )
     ]
@@ -40,7 +41,7 @@ def detect_mesh_boundaries(
             # If the k-th coboundary operator is empty, then either there is no
             # (k-1)-simplices, or the (k-1)-simplices are at the top level.
             n_faces = cbd.size(-1)
-            face_is_boundary = t.zeros(n_faces, dtype=t.bool, device=cbd.device)
+            face_is_boundary = torch.zeros(n_faces, dtype=torch.bool, device=cbd.device)
             boundary_masks.append(face_is_boundary)
 
         else:
@@ -48,9 +49,9 @@ def detect_mesh_boundaries(
                 # A face of a top-level simplex is on the boundary if it is the face
                 # of exactly one top-level simplex.
                 face_relation_count = cbd.to_sparse_coo().abs().sum(dim=0).to_dense()
-                face_is_boundary = t.isclose(
+                face_is_boundary = torch.isclose(
                     face_relation_count,
-                    t.tensor(
+                    torch.tensor(
                         1.0,
                         dtype=face_relation_count.dtype,
                         device=face_relation_count.device,
@@ -67,9 +68,9 @@ def detect_mesh_boundaries(
                 boundary_face_relation_count = cbd.T.abs() @ boundary_masks[-1].to(
                     dtype=cbd.dtype
                 )
-                face_is_boundary = ~t.isclose(
+                face_is_boundary = ~torch.isclose(
                     boundary_face_relation_count,
-                    t.tensor(
+                    torch.tensor(
                         0.0,
                         dtype=boundary_face_relation_count.dtype,
                         device=boundary_face_relation_count.device,

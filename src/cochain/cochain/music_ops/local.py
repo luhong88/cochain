@@ -1,7 +1,8 @@
 from typing import Literal
 
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...geometry.tet import tet_hodge_stars
@@ -18,10 +19,10 @@ from . import _local_element, _local_vertex
 
 
 def local_flat(
-    vec_field: Float[t.Tensor, "splx coord"],
+    vec_field: Float[Tensor, "splx coord"],
     mesh: SimplicialMesh,
     mode: Literal["element", "vertex"],
-) -> Float[t.Tensor, " edge"]:
+) -> Float[Tensor, " edge"]:
     """
     Compute the flat of a vector field using a local, interpolation based method.
 
@@ -64,7 +65,7 @@ def local_flat(
 
 
 def local_sharp(
-    cochain_1: Float[t.Tensor, " edge"],
+    cochain_1: Float[Tensor, " edge"],
     mesh: SimplicialMesh,
     mode: Literal["element", "vertex"],
     location: Literal["barycenter", "circumcenter"] = "barycenter",
@@ -91,7 +92,7 @@ def local_sharp(
             d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
                 mesh.vert_coords, mesh.tris
             )
-            bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"] = (
+            bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"] = (
                 d_tri_areas_d_vert_coords / tri_areas.view(-1, 1, 1)
             )
 
@@ -101,7 +102,7 @@ def local_sharp(
             d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
                 mesh.vert_coords, mesh.tets
             )
-            bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"] = (
+            bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"] = (
                 d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
             )
 
@@ -145,7 +146,7 @@ def local_sharp(
 
         case ("vertex", 3):
             star_0 = tet_hodge_stars.star_0(mesh)
-            tet_unsigned_vols = t.abs(tet_signed_vols)
+            tet_unsigned_vols = torch.abs(tet_signed_vols)
 
             return _local_vertex.vertex_based_tet_local_sharp(
                 cochain_1=cochain_1,

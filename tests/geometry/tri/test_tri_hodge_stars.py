@@ -3,7 +3,8 @@ import math
 import igl
 import numpy as np
 import skfem as skfem
-import torch as t
+import torch
+from torch import Tensor
 
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tri import tri_geometry, tri_hodge_stars
@@ -16,9 +17,9 @@ def test_star_0_on_tent(tent_mesh: SimplicialMesh):
 
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
-    true_s0 = tri_area * t.Tensor([4.0, 2.0, 2.0, 2.0, 2.0]) / 3.0
+    true_s0 = tri_area * Tensor([4.0, 2.0, 2.0, 2.0, 2.0]) / 3.0
 
-    t.testing.assert_close(s0, true_s0)
+    torch.testing.assert_close(s0, true_s0)
 
 
 def test_star_0_on_tet(hollow_tet_mesh: SimplicialMesh):
@@ -43,43 +44,43 @@ def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialMesh):
     dual_side_edge_ratio = 1.0 / tan_ang
     dual_base_edge_ratio = (tan_ang**2 - 1) / (4 * tan_ang)
 
-    true_s1 = t.Tensor([dual_side_edge_ratio] * 4 + [dual_base_edge_ratio] * 4)
+    true_s1 = Tensor([dual_side_edge_ratio] * 4 + [dual_base_edge_ratio] * 4)
 
-    t.testing.assert_close(s1, true_s1)
+    torch.testing.assert_close(s1, true_s1)
 
 
 def test_star_1_barycentric_on_tent(tent_mesh: SimplicialMesh):
     s1 = tri_hodge_stars.star_1(tent_mesh, dual_complex="barycentric").val
 
-    face_bary = t.tensor([1.5, 0.5, 1.0]) / 3.0
-    side_edge_bary = t.tensor([0.5, 0.5, 1.0]) / 2.0
-    dual_side_edge_len = 2.0 * t.linalg.norm(face_bary - side_edge_bary)
-    side_edge_len = t.linalg.norm(2.0 * side_edge_bary)
+    face_bary = torch.tensor([1.5, 0.5, 1.0]) / 3.0
+    side_edge_bary = torch.tensor([0.5, 0.5, 1.0]) / 2.0
+    dual_side_edge_len = 2.0 * torch.linalg.norm(face_bary - side_edge_bary)
+    side_edge_len = torch.linalg.norm(2.0 * side_edge_bary)
     dual_side_edge_ratio = dual_side_edge_len / side_edge_len
 
-    base_edge_barycenter = t.tensor([1.0, 0.0, 0.0]) / 2.0
-    dual_base_edge_ratio = t.linalg.norm(face_bary - base_edge_barycenter)
+    base_edge_barycenter = torch.tensor([1.0, 0.0, 0.0]) / 2.0
+    dual_base_edge_ratio = torch.linalg.norm(face_bary - base_edge_barycenter)
 
-    true_s1 = t.Tensor([dual_side_edge_ratio] * 4 + [dual_base_edge_ratio] * 4)
+    true_s1 = Tensor([dual_side_edge_ratio] * 4 + [dual_base_edge_ratio] * 4)
 
-    t.testing.assert_close(s1, true_s1)
+    torch.testing.assert_close(s1, true_s1)
 
 
 def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialMesh):
     s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex="circumcentric").val
 
     # extract the Hodge 1-star from `igl.cotmatrix()`.
-    igl_cotan_laplacian = t.from_numpy(
+    igl_cotan_laplacian = torch.from_numpy(
         igl.cotmatrix(
             hollow_tet_mesh.vert_coords.cpu().detach().numpy(),
             hollow_tet_mesh.tris.cpu().detach().numpy(),
         ).todense()
-    ).to(dtype=t.float)
+    ).to(dtype=torch.float)
     true_s1 = igl_cotan_laplacian[
         hollow_tet_mesh.edges[:, 0], hollow_tet_mesh.edges[:, 1]
     ]
 
-    t.testing.assert_close(s1, true_s1)
+    torch.testing.assert_close(s1, true_s1)
 
 
 def test_star_2_on_tent(tent_mesh: SimplicialMesh):
@@ -87,8 +88,8 @@ def test_star_2_on_tent(tent_mesh: SimplicialMesh):
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
 
-    true_s2 = t.Tensor([1.0 / tri_area] * 4)
-    t.testing.assert_close(s2, true_s2)
+    true_s2 = Tensor([1.0 / tri_area] * 4)
+    torch.testing.assert_close(s2, true_s2)
 
 
 def test_star_2_on_tet(hollow_tet_mesh: SimplicialMesh):
@@ -107,15 +108,15 @@ def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialMesh):
         flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
     )
 
-    true_tri_areas = t.from_numpy(
+    true_tri_areas = torch.from_numpy(
         igl.doublearea(
             flat_annulus_mesh.vert_coords.cpu().detach().numpy(),
             flat_annulus_mesh.tris.cpu().detach().numpy(),
         )
         / 2.0
-    ).to(dtype=t.float)
+    ).to(dtype=torch.float)
 
-    t.testing.assert_close(tri_areas, true_tri_areas)
+    torch.testing.assert_close(tri_areas, true_tri_areas)
 
 
 def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialMesh):
@@ -125,7 +126,7 @@ def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialMesh):
         hollow_tet_mesh.vert_coords, hollow_tet_mesh.tris
     ).flatten(end_dim=1)
 
-    jacobian = t.autograd.functional.jacobian(
+    jacobian = torch.autograd.functional.jacobian(
         lambda vert_coords: tri_geometry.compute_tri_areas(
             vert_coords, hollow_tet_mesh.tris
         ),
@@ -133,8 +134,8 @@ def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialMesh):
     )
     # Extract the nonzero components of the Jacobian.
     dAdV_true = jacobian[
-        t.repeat_interleave(t.arange(hollow_tet_mesh.n_tris), 3),
+        torch.repeat_interleave(torch.arange(hollow_tet_mesh.n_tris), 3),
         hollow_tet_mesh.tris.flatten(),
     ]
 
-    t.testing.assert_close(dAdV, dAdV_true)
+    torch.testing.assert_close(dAdV, dAdV_true)

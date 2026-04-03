@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 from torch.autograd.function import once_differentiable
 
 from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
@@ -64,14 +65,14 @@ if _HAS_NVMATH:
         solution_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
+class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[t.Tensor, " nnz"],
+        A_val: Float[Tensor, " nnz"],
         A_pattern: Integer[SparsityPattern, "*b r c"],
-        b: Float[t.Tensor, " r"] | Float[t.Tensor, "*b *ch r"],
+        b: Float[Tensor, " r"] | Float[Tensor, "*b *ch r"],
         config: DirectSolverConfig,
-    ) -> tuple[Float[t.Tensor, "*b c *ch"], AutogradDirectSolver]:
+    ) -> tuple[Float[Tensor, "*b c *ch"], AutogradDirectSolver]:
         A_csr = SparseDecoupledTensor(A_pattern, A_val).to_sparse_csr(int32=True)
 
         if b.ndim > 1:
@@ -79,7 +80,7 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
         else:
             b_col_major = b.contiguous()
 
-        stream = t.cuda.current_stream()
+        stream = torch.cuda.current_stream()
 
         # Do not give DirectSolver constructor the current stream to prevent
         # possible stream mismatch in backward(); instead, pass the stream to
@@ -118,11 +119,11 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
     @staticmethod
     @once_differentiable
     def backward(
-        ctx, dLdx: Float[t.Tensor, "*b c *ch"], _
+        ctx, dLdx: Float[Tensor, "*b c *ch"], _
     ) -> tuple[
-        Float[t.Tensor, " nnz"] | None,
+        Float[Tensor, " nnz"] | None,
         None,
-        Float[t.Tensor, "*b *ch r"] | None,
+        Float[Tensor, "*b *ch r"] | None,
         None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
@@ -147,13 +148,13 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
             # cuda state is uninitialized. We must explicitly call Device(id).set_current()
             # to bind the active CUDA context to this thread's local state, ensuring
             # nvmath operations recognize the device.
-            t.cuda.set_device(x.device)
+            torch.cuda.set_device(x.device)
             Device(x.device.index).set_current()
 
-        stream = t.cuda.current_stream()
+        stream = torch.cuda.current_stream()
 
         if dLdx.ndim > 1:
-            dLdx_col_major: Float[t.Tensor, "*b c *ch"] = (
+            dLdx_col_major: Float[Tensor, "*b c *ch"] = (
                 dLdx.transpose(-1, -2).contiguous().transpose(-1, -2)
             )
         else:
@@ -184,7 +185,7 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
             # If A is symmetric, only update the RHS of the solver.
             solver.reset_operands(b=dLdx_col_major, stream=stream)
 
-        lambda_: Float[t.Tensor, "*b r *ch"] = solver.solve(stream=stream)
+        lambda_: Float[Tensor, "*b r *ch"] = solver.solve(stream=stream)
 
         # Free up solver memory usage.
         solver.free()
@@ -205,14 +206,14 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
             # Extract the nonzero dLdA element row and col indices, accounting for
             # batch dimensions, and use them to extract the corresponding elements
             # from lambda_ and x to construct the nonzero outer product elements.
-            r_idx: Integer[t.LongTensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
+            r_idx: Integer[LongTensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
                 list(range(n_batch)) + [n_batch]
             ]
-            c_idx: Integer[t.LongTensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
+            c_idx: Integer[LongTensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
                 list(range(n_batch)) + [n_batch + 1]
             ]
             # Note that r_idx.unbind(0) is equivalent to *r_idx for indexing.
-            dLdA_val = t.sum(-lambda_[r_idx.unbind(0)] * x[c_idx.unbind(0)], dim=-1)
+            dLdA_val = torch.sum(-lambda_[r_idx.unbind(0)] * x[c_idx.unbind(0)], dim=-1)
 
         else:
             # if there are no batch dimensions, then the A_pattern.idx_coo is of
@@ -228,11 +229,11 @@ class _NvmathDirectSolverAutogradFunction(t.autograd.Function):
 
 def nvmath_direct_solver(
     A: Float[SparseDecoupledTensor, "*b r c"],
-    b: Float[t.Tensor, "*b *ch r"],
+    b: Float[Tensor, "*b *ch r"],
     *,
     sparse_system_type: Literal["general", "symmetric", "SPD"] = "general",
     config: DirectSolverConfig | None = None,
-) -> Float[t.Tensor, "*b c *ch"]:
+) -> Float[Tensor, "*b c *ch"]:
     """
     This function provides a differentiable wrapper for the `nvmath.sparse.advanced.DirectSolver`
     class in `nvmath-python` for solving sparse linear systems of the form `A@x=b`.
