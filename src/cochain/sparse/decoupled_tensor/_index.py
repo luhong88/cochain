@@ -1,16 +1,17 @@
 from typing import Literal
 
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 
 def coalesced_coo_to_compressed_idx(
-    coo_idx: Integer[t.LongTensor, "sp nnz"],
-    shape: t.Size,
+    coo_idx: Integer[LongTensor, "sp nnz"],
+    shape: torch.Size,
     *,
     format: Literal["crow", "ccol"],
-    dtype: t.dtype | None = None,
-) -> Integer[t.LongTensor, "*b nnz/b"]:
+    dtype: torch.dtype | None = None,
+) -> Integer[LongTensor, "*b nnz/b"]:
     """
     Convert a coalesced, sparse coo index tensor to a compressed row idx (crow)
     tensor or a compressed col idx (ccol) tensor, depending on the 'format' argument.
@@ -36,9 +37,9 @@ def coalesced_coo_to_compressed_idx(
             row_idx = coo_idx[target_idx].to(dtype)
             # Compress row idx using bincount; minlength=rows accounts for empty rows.
             # Note that this works even if row_idx is not sorted.
-            counts = t.bincount(row_idx, minlength=n_row)
-            crow_idx = t.zeros(n_row + 1, dtype=dtype, device=device)
-            t.cumsum(counts, dim=0, out=crow_idx[1:])
+            counts = torch.bincount(row_idx, minlength=n_row)
+            crow_idx = torch.zeros(n_row + 1, dtype=dtype, device=device)
+            torch.cumsum(counts, dim=0, out=crow_idx[1:])
 
             return crow_idx.contiguous()
 
@@ -57,8 +58,10 @@ def coalesced_coo_to_compressed_idx(
             # and then put this count in the k-th position. The +1 is needed to
             # account for the fact that compressed row idx always starts at 0. The
             # cumsum() converts the row counts to compressed row idx.
-            counts = t.zeros(n_batch, n_row + 1, dtype=dtype, device=device)
-            ones = t.tensor(1, dtype=dtype, device=device).expand_as(row_idx_batched)
+            counts = torch.zeros(n_batch, n_row + 1, dtype=dtype, device=device)
+            ones = torch.tensor(1, dtype=dtype, device=device).expand_as(
+                row_idx_batched
+            )
             counts.scatter_add_(1, row_idx_batched + 1, ones)
             crow_idx = counts.cumsum(dim=1, dtype=dtype)
 
@@ -66,11 +69,11 @@ def coalesced_coo_to_compressed_idx(
 
 
 def coalesced_coo_to_col_idx(
-    coo_idx: Integer[t.LongTensor, "sp nnz"],
-    shape: t.Size,
+    coo_idx: Integer[LongTensor, "sp nnz"],
+    shape: torch.Size,
     *,
-    dtype: t.dtype | None = None,
-) -> Integer[t.LongTensor, "*b nnz/b"]:
+    dtype: torch.dtype | None = None,
+) -> Integer[LongTensor, "*b nnz/b"]:
     if dtype is None:
         dtype = coo_idx.dtype
 
@@ -90,9 +93,9 @@ def coalesced_coo_to_col_idx(
 
 
 def get_csc_sort_perm(
-    coo_idx: Integer[t.LongTensor, "sp nnz"],
-    shape: t.Size,
-) -> Integer[t.LongTensor, " nnz"]:
+    coo_idx: Integer[LongTensor, "sp nnz"],
+    shape: torch.Size,
+) -> Integer[LongTensor, " nnz"]:
     """
     Returns a permutation that reorders a row-sorted coo tensor into a col-sorted,
     csc-ready order.
@@ -101,7 +104,7 @@ def get_csc_sort_perm(
         case 2:
             col_idx = coo_idx[1]
             # stable=True to preserve the existing row ordering in the same col.
-            perm = t.argsort(col_idx, dim=0, stable=True)
+            perm = torch.argsort(col_idx, dim=0, stable=True)
 
             return perm.contiguous()
 
@@ -114,10 +117,10 @@ def get_csc_sort_perm(
             col_idx_batched = coo_idx[2].view(n_batch, nnz_per_batch)
 
             # Sort per-batch with dim=-1
-            perm_per_batch = t.argsort(col_idx_batched, dim=-1, stable=True)
+            perm_per_batch = torch.argsort(col_idx_batched, dim=-1, stable=True)
 
             # Convert local per-batch indices to global indices
-            batch_offset = t.arange(
+            batch_offset = torch.arange(
                 0, nnz, step=nnz_per_batch, device=coo_idx.device
             ).view(-1, 1)
 
@@ -127,12 +130,12 @@ def get_csc_sort_perm(
 
 
 def coalesced_coo_to_row_idx(
-    coo_idx: Integer[t.LongTensor, "sp nnz"],
-    shape: t.Size,
-    perm: Integer[t.LongTensor, " nnz"],
+    coo_idx: Integer[LongTensor, "sp nnz"],
+    shape: torch.Size,
+    perm: Integer[LongTensor, " nnz"],
     *,
-    dtype: t.dtype | None = None,
-) -> Integer[t.LongTensor, "*b nnz/b"]:
+    dtype: torch.dtype | None = None,
+) -> Integer[LongTensor, "*b nnz/b"]:
     if dtype is None:
         dtype = coo_idx.dtype
 
@@ -152,11 +155,11 @@ def coalesced_coo_to_row_idx(
 
 # TODO: force int64 for radix packing safety
 def project_and_extract_cnz_vals(
-    src_coo: Integer[t.LongTensor, "2 src_nnz"],
-    src_val: Float[t.Tensor, " source_nnz"],
-    target_coo: Integer[t.LongTensor, "2 target_nnz"],
-    target_shape: t.Size,
-) -> Integer[t.LongTensor, " target_nnz"]:
+    src_coo: Integer[LongTensor, "2 src_nnz"],
+    src_val: Float[Tensor, " source_nnz"],
+    target_coo: Integer[LongTensor, "2 target_nnz"],
+    target_shape: torch.Size,
+) -> Integer[LongTensor, " target_nnz"]:
     """
     For two coalesced sparse coo tensors "source" and "target", find the indices
     of the nonzero (r, c) index pairs of the source that is also present in the
@@ -169,7 +172,7 @@ def project_and_extract_cnz_vals(
     src_nnz = src_coo.size(1)
 
     if target_nnz == 0 or src_nnz == 0:
-        return t.empty(0, dtype=src_val.dtype, device=src_coo.device)
+        return torch.empty(0, dtype=src_val.dtype, device=src_coo.device)
 
     # Perform a radix packing to index the nonzero index pairs in the source
     # and target coo index tensors.
@@ -178,8 +181,8 @@ def project_and_extract_cnz_vals(
 
     # Use searchsorted() to find the insertion location of target index pairs
     # into the list of source index pairs.
-    target_idx_insert_loc = t.searchsorted(src_idx_packed, target_idx_packed)
-    target_idx_insert_loc_clipped = t.clip(target_idx_insert_loc, 0, src_nnz - 1)
+    target_idx_insert_loc = torch.searchsorted(src_idx_packed, target_idx_packed)
+    target_idx_insert_loc_clipped = torch.clip(target_idx_insert_loc, 0, src_nnz - 1)
 
     # If a target index pair has a matching source index pair, then its packed
     # index matches the packed index of the source index pair at its insertion
@@ -190,10 +193,10 @@ def project_and_extract_cnz_vals(
 
     # For each nonzero index pair in the target, if it has a matching index pair
     # in the source, find the source value at this index pair, otherwise returns 0.
-    cnz_src_val = t.where(
+    cnz_src_val = torch.where(
         cnz_target_idx_mask,
         src_val[target_idx_insert_loc_clipped],
-        t.tensor(0.0, dtype=src_val.dtype, device=src_val.device),
+        torch.tensor(0.0, dtype=src_val.dtype, device=src_val.device),
     )
 
     return cnz_src_val.contiguous()

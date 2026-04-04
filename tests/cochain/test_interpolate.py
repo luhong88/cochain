@@ -1,9 +1,10 @@
 from random import random
 
 import pytest
-import torch as t
+import torch
 from einops import einsum, rearrange, repeat
-from jaxtyping import Float, Integer
+from jaxtyping import Float
+from torch import Tensor
 
 from cochain.cochain.discretize import DeRhamMap
 from cochain.cochain.interpolate import barycentric_whitney_map
@@ -38,7 +39,7 @@ def test_interpolate_discretize_left_inverse(mesh, k, quad, device, request):
     map to discretize the k-form, gives back the same k-cochain.
     """
     mesh = request.getfixturevalue(mesh).to(device)
-    k_cochain_true = t.randn(mesh.splx[k].size(0)).to(device)
+    k_cochain_true = torch.randn(mesh.splx[k].size(0)).to(device)
 
     # First, interpolate the discrete k-cochain
     bary_coords, weights = quad(
@@ -58,7 +59,7 @@ def test_interpolate_discretize_left_inverse(mesh, k, quad, device, request):
     de_rham = DeRhamMap(k=k, quad_degree=3, mesh=mesh, allow_neg_weights=True)
     k_cochain_reconstructed = de_rham.discretize(k_form)
 
-    t.testing.assert_close(k_cochain_reconstructed, k_cochain_true)
+    torch.testing.assert_close(k_cochain_reconstructed, k_cochain_true)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -81,7 +82,9 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
             ).get_rule(degree=3)
 
     # Test a random 0-cochain with 2 channel dimensions.
-    cochain_0 = t.randn((mesh.n_verts, 2), dtype=mesh.vert_coords.dtype, device=device)
+    cochain_0 = torch.randn(
+        (mesh.n_verts, 2), dtype=mesh.vert_coords.dtype, device=device
+    )
     d_0 = mesh.cbd[0]
 
     # First, compute the interpolation of the exterior derivative.
@@ -138,7 +141,7 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     )
 
     # Check that the two approaches give the same results.
-    t.testing.assert_close(w_d_cochain, d_w_cochain_formed)
+    torch.testing.assert_close(w_d_cochain, d_w_cochain_formed)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -161,7 +164,9 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             ).get_rule(degree=3)
 
     # Test a random 1-cochain with 2 channel dimensions.
-    cochain_1 = t.randn((mesh.n_edges, 2), dtype=mesh.vert_coords.dtype, device=device)
+    cochain_1 = torch.randn(
+        (mesh.n_edges, 2), dtype=mesh.vert_coords.dtype, device=device
+    )
     d_1 = mesh.cbd[1]
 
     # First, compute the interpolation of the exterior derivative.
@@ -221,7 +226,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
         case _:
             raise ValueError()
 
-    basis = 2.0 * t.cross(
+    basis = 2.0 * torch.cross(
         bary_coords_grad[:, local_edge_idx[:, 0]],
         bary_coords_grad[:, local_edge_idx[:, 1]],
         dim=-1,
@@ -243,7 +248,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     )
 
     # Check that the two approaches give the same results.
-    t.testing.assert_close(w_d_cochain, d_w_cochain_formed)
+    torch.testing.assert_close(w_d_cochain, d_w_cochain_formed)
 
 
 def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
@@ -259,7 +264,9 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     )
 
     # Test a random 1-cochain with 2 channel dimensions.
-    cochain_2 = t.randn((mesh.n_tris, 2), dtype=mesh.vert_coords.dtype, device=device)
+    cochain_2 = torch.randn(
+        (mesh.n_tris, 2), dtype=mesh.vert_coords.dtype, device=device
+    )
     d_2 = mesh.cbd[2]
 
     # First, compute the interpolation of the exterior derivative.
@@ -300,9 +307,9 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     # shape (tet, 2_face, vert, coord). The final unsqueeze preserves the coord
     # dimension. It is also possible to write this out more verbosely as
     #
-    # basis = 6.0 * t.sum(
+    # basis = 6.0 * torch.sum(
     #     bary_coords_grad[:, local_tri_idx[:, 0]]
-    #     * t.cross(
+    #     * torch.cross(
     #         bary_coords_grad[:, local_tri_idx[:, 1]],
     #         bary_coords_grad[:, local_tri_idx[:, 2]],
     #         dim=-1,
@@ -310,7 +317,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     #     dim=-1,
     #     keepdim=True,
     # )
-    basis = 6.0 * t.linalg.det(bary_coords_grad[:, local_tri_idx]).unsqueeze(-1)
+    basis = 6.0 * torch.linalg.det(bary_coords_grad[:, local_tri_idx]).unsqueeze(-1)
 
     # Note that (1) the exterior derivative of the interpolated 2-cochain has no
     # pt dimension (since it should be constant within the top-level simplices),
@@ -328,7 +335,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     )
 
     # Check that the two approaches give the same results.
-    t.testing.assert_close(w_d_cochain, d_w_cochain_formed)
+    torch.testing.assert_close(w_d_cochain, d_w_cochain_formed)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -344,7 +351,7 @@ def test_0_form_interpolate_discretize_right_project(mesh, request, device):
     constant = random()
 
     # The 0-cochain is simply the assignment of the constant to the vertices.
-    cochain_0 = constant * t.ones(
+    cochain_0 = constant * torch.ones(
         (mesh.n_verts, 1), dtype=mesh.vert_coords.dtype, device=device
     )
 
@@ -366,9 +373,9 @@ def test_0_form_interpolate_discretize_right_project(mesh, request, device):
         mode="interior",
     )
 
-    form_0_true = constant * t.ones_like(form_0)
+    form_0_true = constant * torch.ones_like(form_0)
 
-    t.testing.assert_close(form_0, form_0_true)
+    torch.testing.assert_close(form_0, form_0_true)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -379,7 +386,7 @@ def test_1_form_interpolate_discretize_right_project(mesh, request, device):
     """
     mesh = request.getfixturevalue(mesh).to(device)
 
-    const_vec = t.randn(3, dtype=mesh.vert_coords.dtype, device=device)
+    const_vec = torch.randn(3, dtype=mesh.vert_coords.dtype, device=device)
 
     # Discretize the constant 1-form via de Rham map.
     de_rham = DeRhamMap(k=1, quad_degree=3, mesh=mesh)
@@ -421,12 +428,12 @@ def test_1_form_interpolate_discretize_right_project(mesh, request, device):
             # interpolated 1-form.
             tri_verts = mesh.vert_coords[mesh.tris]
 
-            area_normal = t.cross(
+            area_normal = torch.cross(
                 tri_verts[:, 1] - tri_verts[:, 0],
                 tri_verts[:, 2] - tri_verts[:, 0],
                 dim=-1,
             )
-            area_unormal = area_normal / t.linalg.norm(
+            area_unormal = area_normal / torch.linalg.norm(
                 area_normal, dim=-1, keepdim=True
             )
             form_1_perp_comp = einsum(
@@ -435,10 +442,10 @@ def test_1_form_interpolate_discretize_right_project(mesh, request, device):
             form_1_perp = form_1_perp_comp.view(-1, 1) * area_unormal
             form_1_tangent = form_1_true - form_1_perp.unsqueeze(1)
 
-            t.testing.assert_close(form_1, form_1_tangent)
+            torch.testing.assert_close(form_1, form_1_tangent)
 
         case 3:
-            t.testing.assert_close(form_1, form_1_true)
+            torch.testing.assert_close(form_1, form_1_true)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -449,7 +456,7 @@ def test_2_form_interpolate_discretize_right_project(mesh, request, device):
     """
     mesh = request.getfixturevalue(mesh).to(device)
 
-    const_vec = t.randn(3, dtype=mesh.vert_coords.dtype, device=device)
+    const_vec = torch.randn(3, dtype=mesh.vert_coords.dtype, device=device)
 
     # Discretize the constant 2-form via de Rham map.
     de_rham = DeRhamMap(k=2, quad_degree=3, mesh=mesh)
@@ -490,12 +497,12 @@ def test_2_form_interpolate_discretize_right_project(mesh, request, device):
             # interpolated 2-form.
             tri_verts = mesh.vert_coords[mesh.tris]
 
-            area_normal = t.cross(
+            area_normal = torch.cross(
                 tri_verts[:, 1] - tri_verts[:, 0],
                 tri_verts[:, 2] - tri_verts[:, 0],
                 dim=-1,
             )
-            area_unormal = area_normal / t.linalg.norm(
+            area_unormal = area_normal / torch.linalg.norm(
                 area_normal, dim=-1, keepdim=True
             )
             form_2_perp_comp = einsum(
@@ -504,11 +511,11 @@ def test_2_form_interpolate_discretize_right_project(mesh, request, device):
             form_2_perp = form_2_perp_comp.view(-1, 1) * area_unormal
             form_2_perp_shaped = form_2_perp.unsqueeze(1).expand_as(form_2)
 
-            t.testing.assert_close(form_2, form_2_perp_shaped)
+            torch.testing.assert_close(form_2, form_2_perp_shaped)
 
         case 3:
             form_2_true = const_vec.view(1, 1, -1).expand_as(form_2)
-            t.testing.assert_close(form_2, form_2_true)
+            torch.testing.assert_close(form_2, form_2_true)
 
 
 def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
@@ -518,7 +525,7 @@ def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
     """
     mesh = two_tets_mesh.to(device)
 
-    const_scalar = t.randn(1, dtype=mesh.vert_coords.dtype, device=device)
+    const_scalar = torch.randn(1, dtype=mesh.vert_coords.dtype, device=device)
 
     # Discretize the constant 3-form via de Rham map.
     de_rham = DeRhamMap(k=3, quad_degree=3, mesh=mesh)
@@ -544,7 +551,7 @@ def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
 
     # Compare the interpolated 2-form with the true 3-form.
     form_3_true = const_scalar.view(1, 1, -1).expand_as(form_3)
-    t.testing.assert_close(form_3, form_3_true)
+    torch.testing.assert_close(form_3, form_3_true)
 
 
 def test_1_form_tangential_continuity_on_tri_mesh(two_tris_mesh, device):
@@ -554,13 +561,13 @@ def test_1_form_tangential_continuity_on_tri_mesh(two_tris_mesh, device):
     """
     mesh = two_tris_mesh.to(device)
 
-    cochain_1 = t.randn(mesh.n_edges, dtype=mesh.vert_coords.dtype, device=device)
+    cochain_1 = torch.randn(mesh.n_edges, dtype=mesh.vert_coords.dtype, device=device)
 
     bary_coords, _ = GaussLegendre(
         dtype=mesh.vert_coords.dtype, device=device
     ).get_rule(degree=3)
 
-    form_1: Float[t.Tensor, "tri edge pt coord"] = barycentric_whitney_map(
+    form_1: Float[Tensor, "tri edge pt coord"] = barycentric_whitney_map(
         k=1,
         k_cochain=cochain_1,
         bary_coords=bary_coords.unsqueeze(0),
@@ -584,7 +591,7 @@ def test_1_form_tangential_continuity_on_tri_mesh(two_tris_mesh, device):
         form_1_shared_edge_2, shared_edge_vec, "pt coord, coord -> pt"
     )
 
-    t.testing.assert_close(form_1_tangent_1, form_1_tangent_2)
+    torch.testing.assert_close(form_1_tangent_1, form_1_tangent_2)
 
 
 def test_1_form_tangential_continuity_on_tet_mesh(two_tets_mesh, device):
@@ -594,13 +601,13 @@ def test_1_form_tangential_continuity_on_tet_mesh(two_tets_mesh, device):
     """
     mesh = two_tets_mesh.to(device)
 
-    cochain_1 = t.randn(mesh.n_edges, dtype=mesh.vert_coords.dtype, device=device)
+    cochain_1 = torch.randn(mesh.n_edges, dtype=mesh.vert_coords.dtype, device=device)
 
     bary_coords, _ = GaussLegendre(
         dtype=mesh.vert_coords.dtype, device=device
     ).get_rule(degree=3)
 
-    form_1: Float[t.Tensor, "tet edge pt coord"] = barycentric_whitney_map(
+    form_1: Float[Tensor, "tet edge pt coord"] = barycentric_whitney_map(
         k=1,
         k_cochain=cochain_1,
         bary_coords=bary_coords.unsqueeze(0),
@@ -624,7 +631,7 @@ def test_1_form_tangential_continuity_on_tet_mesh(two_tets_mesh, device):
         form_1_shared_edge_2, shared_edge_vec, "edge pt coord, edge coord -> edge pt"
     )
 
-    t.testing.assert_close(form_1_tangent_1, form_1_tangent_2)
+    torch.testing.assert_close(form_1_tangent_1, form_1_tangent_2)
 
 
 def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
@@ -634,13 +641,13 @@ def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     """
     mesh = two_tets_mesh.to(device)
 
-    cochain_2 = t.randn(mesh.n_tris, dtype=mesh.vert_coords.dtype, device=device)
+    cochain_2 = torch.randn(mesh.n_tris, dtype=mesh.vert_coords.dtype, device=device)
 
     bary_coords, _ = Dunavant(dtype=mesh.vert_coords.dtype, device=device).get_rule(
         degree=3
     )
 
-    form_2: Float[t.Tensor, "tet tri pt coord"] = barycentric_whitney_map(
+    form_2: Float[Tensor, "tet tri pt coord"] = barycentric_whitney_map(
         k=2,
         k_cochain=cochain_2,
         bary_coords=bary_coords.unsqueeze(0),
@@ -655,7 +662,7 @@ def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     form_2_shared_tri_1 = form_2[0, 0]
     form_2_shared_tri_2 = form_2[1, 0]
 
-    shared_tri_normal_vec = t.cross(
+    shared_tri_normal_vec = torch.cross(
         mesh.vert_coords[1] - mesh.vert_coords[0],
         mesh.vert_coords[2] - mesh.vert_coords[0],
     )
@@ -672,4 +679,4 @@ def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     # forms assuming that the 2-simplices assume the canonical orientation; therefore
     # the normal components of the 2-form on the shared 2-faces should point in
     # the same, not the opposite, directions.
-    t.testing.assert_close(form_2_normal_1, form_2_normal_2)
+    torch.testing.assert_close(form_2_normal_1, form_2_normal_2)

@@ -1,8 +1,9 @@
 import numpy as np
-import torch as t
+import torch
 from jaxtyping import Bool, Float, Integer
 from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
+from torch import LongTensor, Tensor
 
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.utils.search import splx_search
@@ -10,11 +11,11 @@ from cochain.utils.search import splx_search
 
 def _minimum_spanning_tree(
     adjacency: Float[SparseDecoupledTensor, "node node"],
-    root_mask: Bool[t.Tensor, " node"] | None = None,
-    exclusion_mask: Bool[t.Tensor, " edge"] | None = None,
-    weights: Float[t.Tensor, " edge"] | None = None,
+    root_mask: Bool[Tensor, " node"] | None = None,
+    exclusion_mask: Bool[Tensor, " edge"] | None = None,
+    weights: Float[Tensor, " edge"] | None = None,
     keep_super_node: bool = False,
-) -> Integer[t.LongTensor, "2 mst_node"]:
+) -> Integer[LongTensor, "2 mst_node"]:
     """
     the root_mask is a boolean mask that specifies the node(s) that will serve as
     the root(s) of the spanning tree/forest.
@@ -26,7 +27,7 @@ def _minimum_spanning_tree(
     n_nodes = adjacency.shape[0]
 
     # int32 is required for scipy sparse array indices
-    idx_coo_full = adjacency.pattern.idx_coo.to(dtype=t.int32)
+    idx_coo_full = adjacency.pattern.idx_coo.to(dtype=torch.int32)
     idx_coo_rows_full = idx_coo_full[0].detach().cpu().numpy()
     idx_coo_cols_full = idx_coo_full[1].detach().cpu().numpy()
 
@@ -97,7 +98,7 @@ def _minimum_spanning_tree(
         tree_u = mst_coo.row[valid_mask]
         tree_v = mst_coo.col[valid_mask]
 
-    tree_edges = t.from_numpy(np.stack((tree_u, tree_v))).to(
+    tree_edges = torch.from_numpy(np.stack((tree_u, tree_v))).to(
         dtype=adjacency.pattern.dtype, device=adjacency.device
     )
 
@@ -107,11 +108,11 @@ def _minimum_spanning_tree(
 # TODO: update to accommodate tet meshes
 def compute_tree_mask(
     topo_laplacian_0: Float[SparseDecoupledTensor, "vert vert"],
-    canon_edges: Integer[t.LongTensor, "edge 2"],
+    canon_edges: Integer[LongTensor, "edge 2"],
     mass_1: Float[SparseDecoupledTensor, "edge edge"] | None = None,
-    vert_rel_bc_mask: Bool[t.Tensor, " vert"] | None = None,
-    cotree_mask: Bool[t.Tensor, " edge"] | None = None,
-) -> Bool[t.Tensor, " edge"]:
+    vert_rel_bc_mask: Bool[Tensor, " vert"] | None = None,
+    cotree_mask: Bool[Tensor, " edge"] | None = None,
+) -> Bool[Tensor, " edge"]:
     """
     Compute the spanning tree on the 1-skeleton of a triangular mesh, which
     can be used to fix the gauge freedom of the down/grad-div component of the
@@ -177,7 +178,9 @@ def compute_tree_mask(
         sort_query_vert=True,
     )
 
-    tree_mask = t.zeros(canon_edges.shape[0], dtype=t.bool, device=adjacency.device)
+    tree_mask = torch.zeros(
+        canon_edges.shape[0], dtype=torch.bool, device=adjacency.device
+    )
     tree_mask[mst_idx] = True
 
     return tree_mask
@@ -185,7 +188,7 @@ def compute_tree_mask(
 
 def _cbd_to_coface(
     cbd, degree: int = 2
-) -> tuple[Integer[t.LongTensor, " face"], Integer[t.LongTensor, "face coface"]]:
+) -> tuple[Integer[LongTensor, " face"], Integer[LongTensor, "face coface"]]:
     """
     For a given k-coboundary operator, find the indices of all k-simplices of
     degree d (i.e., the number of cofaces of the k-simplices), and, for each
@@ -204,19 +207,19 @@ def _cbd_to_coface(
     # Find how many times the index of each k-simplex shows up in the column index
     # For example, if a k-simplex is the face of two (k+1)-simplices, then it
     # will show up as two nonzero elements in the its column in cbd[k].
-    face_idx, face_degree = t.unique(idx_coo_col, return_counts=True)
+    face_idx, face_degree = torch.unique(idx_coo_col, return_counts=True)
 
     # Filter for the indices of all k-simplices that have the desired degree, then
     # turn this into a boolean mask for the coo indices.
     shared_face_idx = face_idx[face_degree == degree]
-    shared_face_mask = t.isin(idx_coo_col, shared_face_idx)
+    shared_face_mask = torch.isin(idx_coo_col, shared_face_idx)
 
     # Get the subset of cbd coo indices corresponding to the k-simplices with the
     # desired degree; by sorting the coo col indices (the k-simplex indices), the
     # coface (k+1)-simplices (the coo row indices) for each k-simplex are re-ordered
     # next to each other, which can then be reshaped to generate the coface list.
     idx_coo_subset = idx_coo[:, shared_face_mask]
-    sort_idx = t.sort(idx_coo_subset[-1], stable=True).indices
+    sort_idx = torch.sort(idx_coo_subset[-1], stable=True).indices
     coface_idx = idx_coo_subset[-2][sort_idx].reshape(-1, degree)
 
     unique_face_idx = idx_coo_subset[-1, sort_idx][::degree]
@@ -229,8 +232,8 @@ def compute_cotree_mask(
     dual_topo_laplacian_0: Float[SparseDecoupledTensor, "vert vert"],
     cbd_1: Float[SparseDecoupledTensor, "tri edge"],
     inv_mass_1: Float[SparseDecoupledTensor, "edge edge"] | None = None,
-    edge_rel_bc_mask: Bool[t.Tensor, " edge"] | None = None,
-) -> Bool[t.Tensor, " edge"]:
+    edge_rel_bc_mask: Bool[Tensor, " edge"] | None = None,
+) -> Bool[Tensor, " edge"]:
     """
     Compute the dual spanning tree (i.e., cotree) on the dual 1-skeleton of a
     triangular mesh, which can be used to fix the gauge freedom of the up/curl-curl
@@ -280,7 +283,9 @@ def compute_cotree_mask(
     # to the super node. To do so, we check whether each row of the 1-coboundary
     # operator contains edges marked with a relative boundary condition.
     if edge_rel_bc_mask is None:
-        bd_dual_vert_mask = t.zeros(cbd_1.shape[0], dtype=t.bool, device=cbd_1.device)
+        bd_dual_vert_mask = torch.zeros(
+            cbd_1.shape[0], dtype=torch.bool, device=cbd_1.device
+        )
     else:
         bd_dual_vert_mask = (cbd_1.abs() @ edge_rel_bc_mask.to(dtype=cbd_1.dtype)) > 0.0
 
@@ -304,7 +309,9 @@ def compute_cotree_mask(
         )
     ]
 
-    cotree_mask = t.zeros(cbd_1.shape[-1], dtype=t.bool, device=adjacency.device)
+    cotree_mask = torch.zeros(
+        cbd_1.shape[-1], dtype=torch.bool, device=adjacency.device
+    )
     cotree_mask[mst_idx] = True
 
     return cotree_mask

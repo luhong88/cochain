@@ -1,16 +1,17 @@
 import itertools
 
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
-from ..complex import SimplicialMesh
-from ..utils.perm_parity import compute_lex_rel_orient
+from ...complex import SimplicialMesh
+from ...utils.perm_parity import compute_lex_rel_orient
 from ._whitney_utils import compute_bc_grad_dot, compute_moments, compute_whitney_router
 
 
 def _compute_mask_3_form(
-    device: t.device, dtype: t.dtype
-) -> Float[t.Tensor, "d_lambda d_lambda d_lambda"]:
+    device: torch.device, dtype: torch.dtype
+) -> Float[Tensor, "d_lambda d_lambda d_lambda"]:
     """
     The space of 3-forms in R^3 is one-dimensional, and all 3-forms can be related
     to the reference form via:
@@ -35,10 +36,10 @@ def _compute_mask_3_form(
     This sign is equivalent to (-1)**(2 + 1) = -1. A convenient way to compute
     the combined sign is as C_ijk = sign(ijkl) (i.e., appending l to the end).
     """
-    mask = t.zeros(4, 4, 4, dtype=dtype, device=device)
+    mask = torch.zeros(4, 4, 4, dtype=dtype, device=device)
 
-    perm = t.tensor(
-        list(itertools.permutations(range(4), r=4)), dtype=t.int64, device=device
+    perm = torch.tensor(
+        list(itertools.permutations(range(4), r=4)), dtype=torch.int64, device=device
     )
     signs = compute_lex_rel_orient(perm).to(dtype=dtype)
 
@@ -48,14 +49,14 @@ def _compute_mask_3_form(
 
 
 def _inv_metric_det_3_form(
-    bc_grad_dot: Float[t.Tensor, "tet vert vert"],
-) -> Float[t.Tensor, " tet"]:
+    bc_grad_dot: Float[Tensor, "tet vert vert"],
+) -> Float[Tensor, " tet"]:
     """
     A specialized version of _inv_metric_det() that optimizes the calculation for
     3-forms; specifically, it computes <dλ_0 ⋀ dλ_1 ⋀ dλ_2, dλ_0 ⋀ dλ_1 ⋀ dλ_2>
     for all tets.
     """
-    ref_det_012 = t.linalg.det(bc_grad_dot[:, :-1, :-1])
+    ref_det_012 = torch.linalg.det(bc_grad_dot[:, :-1, :-1])
     return ref_det_012
 
 
@@ -99,7 +100,7 @@ def triple_tensor_prod_3_form(
     k: int,
     l: int,
     mesh: SimplicialMesh,
-) -> Float[t.Tensor, "tet k_face l_face 3_face"]:
+) -> Float[Tensor, "tet k_face l_face 3_face"]:
     """
     A specialized version of triple_tensor_prod() for when k + l = 3.
     """
@@ -119,8 +120,8 @@ def triple_tensor_prod_3_form(
 
     einsum_str = _get_triple_tensor_prod_einsum_str_3_form(k, l)
 
-    prod1: Float[t.Tensor, " tet"] = splx_size * ref_det_012
-    prod2: Float[t.Tensor, "k_face l_face m_face"] = t.einsum(
+    prod1: Float[Tensor, " tet"] = splx_size * ref_det_012
+    prod2: Float[Tensor, "k_face l_face m_face"] = torch.einsum(
         einsum_str,
         k_form_router,
         l_form_router,

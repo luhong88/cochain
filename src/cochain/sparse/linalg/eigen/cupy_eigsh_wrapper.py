@@ -4,8 +4,9 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import Tensor
 
 from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ._backward import dLdA_backward
@@ -40,8 +41,8 @@ if _HAS_CUPY:
         sigma: float | None = None
         which: Literal["LM", "LA", "SA"] = "LM"
         v0: (
-            Float[t.Tensor | cp.ndarray, " c"]
-            | Sequence[Float[t.Tensor | cp.ndarray, " c"] | None]
+            Float[Tensor | cp.ndarray, " c"]
+            | Sequence[Float[Tensor | cp.ndarray, " c"] | None]
             | None
         ) = None
         ncv: int | None = None
@@ -50,13 +51,13 @@ if _HAS_CUPY:
 
         def __post_init__(self):
             match self.v0:
-                case t.Tensor():
+                case Tensor():
                     self.v0 = cp.from_dlpack(self.v0.detach().contiguous())
                 case Sequence():
                     v0_list = []
                     for v0 in self.v0:
                         match v0:
-                            case t.Tensor():
+                            case Tensor():
                                 v0_list.append(
                                     cp.from_dlpack(self.v0.detach().contiguous())
                                 )
@@ -76,21 +77,21 @@ if _HAS_CUPY:
             return config_list
 
 
-class _CuPyEigshAutogradFunction(t.autograd.Function):
+class _CuPyEigshAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[t.Tensor, " nnz"],
+        A_val: Float[Tensor, " nnz"],
         A_pattern: Integer[SparsityPattern, "r c"],
         k: int,
         eps: float | int,
         compute_eig_vecs: bool,
         cp_config: CuPyEigshConfig,
         nvmath_config: DirectSolverConfig,
-    ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"] | None]:
+    ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"] | None]:
         from ._cupy_eigsh_operators import CuPyShiftInvSymOp, sp_op_comps_to_cp_csr
 
         # Force CuPy to use the current Pytorch stream.
-        stream = t.cuda.current_stream()
+        stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             if cp_config.sigma is None:
                 A_cp = sp_op_comps_to_cp_csr(A_val, A_pattern)
@@ -111,12 +112,12 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
 
             if compute_eig_vecs:
                 eig_vals_cp, eig_vecs_cp = results
-                eig_vecs = t.from_dlpack(eig_vecs_cp)
+                eig_vecs = torch.from_dlpack(eig_vecs_cp)
             else:
                 eig_vals_cp = results
                 eig_vecs = None
 
-            eig_vals = t.from_dlpack(eig_vals_cp)
+            eig_vals = torch.from_dlpack(eig_vals_cp)
 
         if cp_config.sigma is None:
             eig_vals_true = eig_vals
@@ -138,9 +139,9 @@ class _CuPyEigshAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx, dLdl: Float[t.Tensor, " k"], dLdv: Float[t.Tensor, "c k"] | None
+        ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "c k"] | None
     ) -> tuple[
-        Float[t.Tensor, " nnz"] | None,
+        Float[Tensor, " nnz"] | None,
         None,
         None,
         None,
@@ -162,7 +163,7 @@ def _cupy_eigsh_no_batch(
     compute_eig_vecs: bool,
     cp_config: CuPyEigshConfig,
     nvmath_config: DirectSolverConfig,
-) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
+) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
         A.val, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
     )
@@ -177,7 +178,7 @@ def _cupy_eigsh_batch(
     compute_eig_vecs: bool,
     cp_config_batched: CuPyEigshConfig,
     nvmath_config: DirectSolverConfig,
-) -> tuple[Float[t.Tensor, "b k"], Float[t.Tensor, "c k"]]:
+) -> tuple[Float[Tensor, "b k"], Float[Tensor, "c k"]]:
     A_list = A_batched.unpack_block_diag()
 
     cp_config_list = cp_config_batched.expand(n=len(A_list))
@@ -191,12 +192,12 @@ def _cupy_eigsh_batch(
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
 
-    eig_vals = t.vstack(eig_val_list)
+    eig_vals = torch.vstack(eig_val_list)
 
     if eig_vec_list[0] is None:
         eig_vecs = None
     else:
-        eig_vecs = t.vstack(eig_vec_list)
+        eig_vecs = torch.vstack(eig_vec_list)
 
     return eig_vals, eig_vecs
 
@@ -210,7 +211,7 @@ def cupy_eigsh(
     return_eigenvectors: bool = True,
     cp_config: CuPyEigshConfig | None = None,
     nvmath_config: DirectSolverConfig | None = None,
-) -> tuple[Float[t.Tensor, "*b k"], Float[t.Tensor, "c k"] | None]:
+) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "c k"] | None]:
     """
     This function provides a differentiable wrapper for the GPU-based
     `cupyx.scipy.sparse.linalg.eigsh()` method.

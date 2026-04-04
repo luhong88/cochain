@@ -1,4 +1,4 @@
-import torch as t
+import torch
 from jaxtyping import Float
 
 from ...complex import SimplicialMesh
@@ -18,14 +18,14 @@ def stiffness_matrix(
     sym_stiffness = cotan_weights(tri_mesh.vert_coords, tri_mesh.tris, tri_mesh.n_verts)
 
     # Compute the diagonal elements of the stiffness matrix.
-    stiffness_diag = t.sparse.sum(sym_stiffness, dim=-1)
+    stiffness_diag = torch.sparse.sum(sym_stiffness, dim=-1)
     # laplacian_diag.indices() has shape (1, nnz_diag)
-    diag_idx = t.concatenate([stiffness_diag.indices(), stiffness_diag.indices()])
+    diag_idx = torch.concatenate([stiffness_diag.indices(), stiffness_diag.indices()])
 
     # Generate the final, complete stiffness matrix.
-    stiffness = t.sparse_coo_tensor(
-        t.hstack((sym_stiffness.indices(), diag_idx)),
-        t.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
+    stiffness = torch.sparse_coo_tensor(
+        torch.hstack((sym_stiffness.indices(), diag_idx)),
+        torch.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
     ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(stiffness)

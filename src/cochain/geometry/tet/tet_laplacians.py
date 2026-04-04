@@ -1,7 +1,8 @@
 from typing import Literal
 
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
@@ -98,7 +99,7 @@ def weak_laplacian_2_curl_curl(
         "solver",
         "inv_star",
     ],
-) -> Float[SparseDecoupledTensor, "tri tri"] | Float[t.Tensor, "tri tri"]:
+) -> Float[SparseDecoupledTensor, "tri tri"] | Float[Tensor, "tri tri"]:
     """
     Compute the curl curl component of the weak 2-Laplacian
     M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
@@ -121,7 +122,9 @@ def weak_laplacian_2_curl_curl(
             m_1 = mass_1(tet_mesh)
             m_2 = mass_2(tet_mesh)
 
-            return (m_2 @ d1) @ t.linalg.solve(m_1.to_dense(), (d1_T @ m_2).to_dense())
+            return (m_2 @ d1) @ torch.linalg.solve(
+                m_1.to_dense(), (d1_T @ m_2).to_dense()
+            )
 
         case "inv_star":
             m_1 = mass_1(tet_mesh)
@@ -159,7 +162,7 @@ def weak_laplacian_2(
         "solver",
         "inv_star",
     ],
-) -> Float[SparseDecoupledTensor, "tri tri"] | Float[t.Tensor, "tri tri"]:
+) -> Float[SparseDecoupledTensor, "tri tri"] | Float[Tensor, "tri tri"]:
     """
     Compute the weak 2-Laplacian (face Laplacian)
     S2 = d_2.T @ M_3 @ d_2 + M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
@@ -176,7 +179,7 @@ def weak_laplacian_2(
         match div_grad:
             case SparseDecoupledTensor():
                 return SparseDecoupledTensor.assemble(div_grad, curl_curl)
-            case t.Tensor():
+            case Tensor():
                 return div_grad + curl_curl.to_dense()
             case _:
                 raise TypeError()
@@ -193,7 +196,7 @@ def weak_laplacian_3(
         "solver",
         "inv_star",
     ],
-) -> Float[SparseDecoupledTensor, "tri tri"] | Float[t.Tensor, "tri tri"]:
+) -> Float[SparseDecoupledTensor, "tri tri"] | Float[Tensor, "tri tri"]:
     """
     Compute the weak 3-Laplacian (tet Laplacian)
     M_3 @ d_2 @ inv_M_2 @ d_2.T @ M_3
@@ -218,7 +221,9 @@ def weak_laplacian_3(
             m_2 = mass_2(tet_mesh)
             m_3 = mass_3(tet_mesh)
 
-            return (m_3 @ d2) @ t.linalg.solve(m_2.to_dense(), (d2_T @ m_3).to_dense())
+            return (m_3 @ d2) @ torch.linalg.solve(
+                m_2.to_dense(), (d2_T @ m_3).to_dense()
+            )
 
         case "solver":
             raise NotImplementedError()

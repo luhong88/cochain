@@ -1,7 +1,8 @@
 from typing import Literal
 
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...geometry.tet import tet_hodge_stars, tet_masses
@@ -48,18 +49,18 @@ def mixed_mass(
             d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
                 mesh.vert_coords, mesh.tris
             )
-            bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"] = (
+            bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"] = (
                 d_tri_areas_d_vert_coords / tri_areas.view(-1, 1, 1)
             )
 
         case 3:
             tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            tet_unsigned_vols = t.abs(tet_signed_vols)
+            tet_unsigned_vols = torch.abs(tet_signed_vols)
 
             d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
                 mesh.vert_coords, mesh.tets
             )
-            bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"] = (
+            bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"] = (
                 d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
             )
 
@@ -128,7 +129,7 @@ def vector_mass(
 
         case ("element", 3):
             tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            tet_unsigned_vols = t.abs(tet_signed_vols)
+            tet_unsigned_vols = torch.abs(tet_signed_vols)
             return _galerkin_element.element_based_tet_vector_mass_matrix(
                 tet_unsigned_vols
             )
@@ -158,12 +159,12 @@ def vector_mass(
 
 
 def galerkin_flat(
-    vec_field: Float[t.Tensor, "splx coord"],
+    vec_field: Float[Tensor, "splx coord"],
     mass_1: Float[BaseDecoupledTensor, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
     mode: Literal["element", "vertex"],
     method: Literal["dense", "solver", "inv_star"],
-) -> Float[t.Tensor, " edge"]:
+) -> Float[Tensor, " edge"]:
     """
     Compute the flat of a vector field using the Galerkin projection method.
 
@@ -196,12 +197,12 @@ def galerkin_flat(
 
 
 def galerkin_sharp(
-    cochain_1: Float[t.Tensor, " edge"],
+    cochain_1: Float[Tensor, " edge"],
     mass_vec: Float[BaseDecoupledTensor, "splx*coord splx*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
     mode: Literal["element", "vertex"],
     method: Literal["dense", "solver", "inv_star"] | None = None,
-) -> Float[t.Tensor, "splx coord=3"]:
+) -> Float[Tensor, "splx coord=3"]:
     """
     Compute the sharp of a 1-cochain using the Galerkin projection method.
 

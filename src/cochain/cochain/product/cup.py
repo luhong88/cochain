@@ -1,15 +1,16 @@
 from typing import Literal
 
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
-from ..complex import SimplicialMesh
-from ..utils.perm_parity import compute_lex_rel_orient
-from ..utils.search import splx_search
+from ...complex import SimplicialMesh
+from ...utils.perm_parity import compute_lex_rel_orient
+from ...utils.search import splx_search
 from ._face_perm_lut import compute_face_perm_lut
 
 
-class CupProduct(t.nn.Module):
+class CupProduct(torch.nn.Module):
     def __init__(
         self,
         k: int,
@@ -64,11 +65,11 @@ class CupProduct(t.nn.Module):
             )
         else:
             m_splx_sorted = mesh.splx[m]
-            m_splx_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+            m_splx_parity = torch.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 mesh.splx[m].size(0)
             )
 
-        self.m_splx_parity: Float[t.Tensor, " m_splx"]
+        self.m_splx_parity: Float[Tensor, " m_splx"]
         self.register_buffer("m_splx_parity", m_splx_parity)
 
         # Identify the k-front faces of (k+l)-simplices and their sign correction
@@ -80,17 +81,17 @@ class CupProduct(t.nn.Module):
             sort_query_vert=False,
         )
 
-        self.f_face_idx: Integer[t.LongTensor, " m_splx"]
+        self.f_face_idx: Integer[LongTensor, " m_splx"]
         self.register_buffer("f_face_idx", f_face_idx)
 
         if k == mesh.dim:
             f_face_parity = compute_lex_rel_orient(mesh.splx[k][self.f_face_idx])
         else:
-            f_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+            f_face_parity = torch.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 self.f_face_idx.size(0)
             )
 
-        self.f_face_parity: Integer[t.LongTensor, " m_splx"]
+        self.f_face_parity: Integer[LongTensor, " m_splx"]
         self.register_buffer("f_face_parity", f_face_parity)
 
         # Identify the k-back faces of (k+l)-simplices and their sign correction
@@ -102,29 +103,29 @@ class CupProduct(t.nn.Module):
             sort_query_vert=False,
         )
 
-        self.b_face_idx: Integer[t.LongTensor, " m_splx"]
+        self.b_face_idx: Integer[LongTensor, " m_splx"]
         self.register_buffer("b_face_idx", b_face_idx)
 
         if l == mesh.dim:
             b_face_parity = compute_lex_rel_orient(mesh.splx[l][self.b_face_idx])
         else:
-            b_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+            b_face_parity = torch.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 self.b_face_idx.size(0)
             )
 
-        self.b_face_parity: Integer[t.LongTensor, " m_splx"]
+        self.b_face_parity: Integer[LongTensor, " m_splx"]
         self.register_buffer("b_face_parity", b_face_parity)
 
     def forward(
         self,
-        k_cochain: Float[t.Tensor, " k_splx *ch_in"],
-        l_cochain: Float[t.Tensor, " l_splx *ch_in"],
+        k_cochain: Float[Tensor, " k_splx *ch_in"],
+        l_cochain: Float[Tensor, " l_splx *ch_in"],
         pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
-    ) -> Float[t.Tensor, " m_splx *ch_out"]:
-        k_cochain_at_f_face = t.einsum(
+    ) -> Float[Tensor, " m_splx *ch_out"]:
+        k_cochain_at_f_face = torch.einsum(
             "n,n...->n...", self.f_face_parity, k_cochain[self.f_face_idx]
         )
-        l_cochain_at_b_face = t.einsum(
+        l_cochain_at_b_face = torch.einsum(
             "n,n...->n...", self.b_face_parity, l_cochain[self.b_face_idx]
         )
 
@@ -132,26 +133,26 @@ class CupProduct(t.nn.Module):
         # dimensions; for other pairing method, *ch_in need to match to one dimension.
         match pairing:
             case "scalar":
-                prod = t.einsum(
+                prod = torch.einsum(
                     "n,n...->n...",
                     self.m_splx_parity,
                     k_cochain_at_f_face * l_cochain_at_b_face,
                 )
 
             case "dot":
-                prod = self.m_splx_parity.view(-1, 1) * t.sum(
+                prod = self.m_splx_parity.view(-1, 1) * torch.sum(
                     k_cochain_at_f_face * l_cochain_at_b_face,
                     dim=-1,
                     keepdim=True,
                 )
 
             case "cross":
-                prod = self.m_splx_parity.view(-1, 1) * t.cross(
+                prod = self.m_splx_parity.view(-1, 1) * torch.cross(
                     k_cochain_at_f_face, l_cochain_at_b_face, dim=-1
                 )
 
             case "outer":
-                prod = t.einsum(
+                prod = torch.einsum(
                     "n,nk,nl->nkl",
                     self.m_splx_parity,
                     k_cochain_at_f_face,
@@ -164,7 +165,7 @@ class CupProduct(t.nn.Module):
         return prod
 
 
-class AntisymmetricCupProduct(t.nn.Module):
+class AntisymmetricCupProduct(torch.nn.Module):
     def __init__(
         self,
         k: int,
@@ -188,7 +189,7 @@ class AntisymmetricCupProduct(t.nn.Module):
 
         perm = compute_face_perm_lut(k, l)
 
-        self.perm_sign: Float[t.Tensor, "1 face 1"]
+        self.perm_sign: Float[Tensor, "1 face 1"]
         self.register_buffer("perm_sign", perm.sign.to(mesh.vert_coords.dtype))
 
         # Compute (k+l)-simplex sign correction.
@@ -199,19 +200,19 @@ class AntisymmetricCupProduct(t.nn.Module):
             )
         else:
             m_splx_sorted = mesh.splx[m]
-            m_splx_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+            m_splx_parity = torch.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 mesh.splx[m].size(0)
             )
 
-        self.m_splx_parity: Float[t.Tensor, " m_splx"]
+        self.m_splx_parity: Float[Tensor, " m_splx"]
         self.register_buffer("m_splx_parity", m_splx_parity)
 
         # Identify permutations of the  k-front faces of (k+l)-simplices and their
         # sign correction.
-        uf_face: Integer[t.LongTensor, "m_splx uf_face k+1"] = m_splx_sorted[
+        uf_face: Integer[LongTensor, "m_splx uf_face k+1"] = m_splx_sorted[
             :, perm.unique_front
         ]
-        uf_face_idx: Integer[t.LongTensor, "m_splx uf_face"] = splx_search(
+        uf_face_idx: Integer[LongTensor, "m_splx uf_face"] = splx_search(
             key_splx=mesh.splx[k],
             query_splx=uf_face,
             sort_key_splx=True if k == mesh.dim else False,
@@ -220,7 +221,7 @@ class AntisymmetricCupProduct(t.nn.Module):
         )
         f_face_idx = uf_face_idx[:, perm.front_idx]
 
-        self.f_face_idx: Integer[t.LongTensor, "m_splx face"]
+        self.f_face_idx: Integer[LongTensor, "m_splx face"]
         self.register_buffer("f_face_idx", f_face_idx)
 
         if k == mesh.dim:
@@ -230,19 +231,19 @@ class AntisymmetricCupProduct(t.nn.Module):
                 .view(*uf_face.shape[:-1])[:, perm.front_idx]
             )
         else:
-            f_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+            f_face_parity = torch.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 self.f_face_idx.shape
             )
 
-        self.f_face_parity: Float[t.Tensor, "m_splx face"]
+        self.f_face_parity: Float[Tensor, "m_splx face"]
         self.register_buffer("f_face_parity", f_face_parity)
 
         # Identify permutations of the k-back faces of (k+l)-simplices and their
         # sign correction.
-        ub_face: Integer[t.LongTensor, "m_splx ub_face l+1"] = (
+        ub_face: Integer[LongTensor, "m_splx ub_face l+1"] = (
             m_splx_sorted[:, perm.unique_back].sort(dim=-1).values
         )
-        ub_face_idx: Integer[t.LongTensor, "m_splx ub_face"] = splx_search(
+        ub_face_idx: Integer[LongTensor, "m_splx ub_face"] = splx_search(
             key_splx=mesh.splx[l],
             query_splx=ub_face,
             sort_key_splx=True if l == mesh.dim else False,
@@ -251,7 +252,7 @@ class AntisymmetricCupProduct(t.nn.Module):
         )
         b_face_idx = ub_face_idx[:, perm.back_idx]
 
-        self.b_face_idx: Integer[t.LongTensor, "m_splx face"]
+        self.b_face_idx: Integer[LongTensor, "m_splx face"]
         self.register_buffer("b_face_idx", b_face_idx)
 
         if l == mesh.dim:
@@ -261,27 +262,27 @@ class AntisymmetricCupProduct(t.nn.Module):
                 .view(*ub_face.shape[:-1])[:, perm.back_idx]
             )
         else:
-            b_face_parity = t.ones(1, dtype=mesh.vert_coords.dtype).expand(
+            b_face_parity = torch.ones(1, dtype=mesh.vert_coords.dtype).expand(
                 self.b_face_idx.shape
             )
 
-        self.b_face_parity: Float[t.Tensor, " m_splx face"]
+        self.b_face_parity: Float[Tensor, " m_splx face"]
         self.register_buffer("b_face_parity", b_face_parity)
 
     def forward(
         self,
-        k_cochain: Float[t.Tensor, " k_splx *ch_in"],
-        l_cochain: Float[t.Tensor, " l_splx *ch_in"],
+        k_cochain: Float[Tensor, " k_splx *ch_in"],
+        l_cochain: Float[Tensor, " l_splx *ch_in"],
         pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
-    ) -> Float[t.Tensor, " m_splx *ch_out"]:
-        k_cochain_at_f_face: Float[t.Tensor, "m_splx face *ch_in"] = k_cochain[
+    ) -> Float[Tensor, " m_splx *ch_out"]:
+        k_cochain_at_f_face: Float[Tensor, "m_splx face *ch_in"] = k_cochain[
             self.f_face_idx
         ]
-        l_cochain_at_b_face: Float[t.Tensor, "m_splx face *ch_in"] = l_cochain[
+        l_cochain_at_b_face: Float[Tensor, "m_splx face *ch_in"] = l_cochain[
             self.b_face_idx
         ]
 
-        combined_perm_sign: Float[t.Tensor, "m_splx face 1"] = (
+        combined_perm_sign: Float[Tensor, "m_splx face 1"] = (
             self.m_splx_parity.view(-1, 1, 1)
             * self.f_face_parity.unsqueeze(-1)
             * self.b_face_parity.unsqueeze(-1)
@@ -292,15 +293,15 @@ class AntisymmetricCupProduct(t.nn.Module):
         # dimensions; for other pairing method, *ch_in need to match to one dimension.
         match pairing:
             case "scalar":
-                prod = t.einsum(
+                prod = torch.einsum(
                     "nf,nf...->n...",
                     combined_perm_sign.squeeze(-1),
                     k_cochain_at_f_face * l_cochain_at_b_face,
                 ) / combined_perm_sign.size(1)
 
             case "dot":
-                prod = t.mean(
-                    t.sum(
+                prod = torch.mean(
+                    torch.sum(
                         combined_perm_sign * k_cochain_at_f_face * l_cochain_at_b_face,
                         dim=-1,
                         keepdim=True,
@@ -309,14 +310,14 @@ class AntisymmetricCupProduct(t.nn.Module):
                 )
 
             case "cross":
-                prod = t.mean(
+                prod = torch.mean(
                     combined_perm_sign
-                    * t.cross(k_cochain_at_f_face, l_cochain_at_b_face, dim=-1),
+                    * torch.cross(k_cochain_at_f_face, l_cochain_at_b_face, dim=-1),
                     dim=1,
                 )
 
             case "outer":
-                prod = t.einsum(
+                prod = torch.einsum(
                     "nf,nfk,nfl->nkl",
                     combined_perm_sign.flatten(start_dim=1),
                     k_cochain_at_f_face,

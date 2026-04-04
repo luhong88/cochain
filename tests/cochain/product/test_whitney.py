@@ -1,13 +1,13 @@
 import itertools
 
 import pytest
-import torch as t
+import torch
 
+from cochain.cochain.product.cup import AntisymmetricCupProduct
+from cochain.cochain.product.whitney import WhitneyWedgeL2Projector
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tet import tet_masses
 from cochain.geometry.tri import tri_hodge_stars, tri_masses
-from cochain.product.cup import AntisymmetricCupProduct
-from cochain.product.whitney import WhitneyWedgeL2Projector
 
 
 def _compute_mass_matrix(mesh: SimplicialMesh, k: int):
@@ -50,9 +50,11 @@ def test_const_0_form_galerkin_wedge_product(mesh_name, request, device):
 
     n_splx_map = mesh.n_splx
 
-    const_0_form = t.ones(n_splx_map[0], dtype=mesh.vert_coords.dtype, device=device)
+    const_0_form = torch.ones(
+        n_splx_map[0], dtype=mesh.vert_coords.dtype, device=device
+    )
     for k in range(mesh.dim + 1):
-        k_form = t.randn(n_splx_map[k]).to(device)
+        k_form = torch.randn(n_splx_map[k]).to(device)
 
         proj = WhitneyWedgeL2Projector(0, k, mesh)
 
@@ -60,9 +62,9 @@ def test_const_0_form_galerkin_wedge_product(mesh_name, request, device):
 
         mass = _compute_mass_matrix(mesh, k).to_dense().to(device)
 
-        w = t.linalg.solve(mass, b)
+        w = torch.linalg.solve(mass, b)
 
-        t.testing.assert_close(w, k_form)
+        torch.testing.assert_close(w, k_form)
 
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
@@ -78,20 +80,20 @@ def test_galerkin_wedge_product_graded_commutativity(mesh_name, request, device)
 
     for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
         if k + l <= mesh.dim:
-            k_cochain = t.randn(n_splx_map[k]).to(device)
-            l_cochain = t.randn(n_splx_map[l]).to(device)
+            k_cochain = torch.randn(n_splx_map[k]).to(device)
+            l_cochain = torch.randn(n_splx_map[l]).to(device)
 
             proj_kl = WhitneyWedgeL2Projector(k, l, mesh).to(device)
             proj_lk = WhitneyWedgeL2Projector(l, k, mesh).to(device)
 
             mass = _compute_mass_matrix(mesh, k + l).to_dense().to(device)
 
-            w_kl = t.linalg.solve(mass.to_dense(), proj_kl(k_cochain, l_cochain))
-            w_lk = t.linalg.solve(mass.to_dense(), proj_lk(l_cochain, k_cochain))
+            w_kl = torch.linalg.solve(mass.to_dense(), proj_kl(k_cochain, l_cochain))
+            w_lk = torch.linalg.solve(mass.to_dense(), proj_lk(l_cochain, k_cochain))
 
             sign = (-1.0) ** (k * l)
 
-            t.testing.assert_close(w_kl, sign * w_lk)
+            torch.testing.assert_close(w_kl, sign * w_lk)
 
 
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
@@ -104,37 +106,37 @@ def test_galerkin_wedge_product_bilinearity(mesh_name, request, device):
         if k + l <= mesh.dim:
             mass = _compute_mass_matrix(mesh, k + l).to_dense().to(device)
 
-            k1_cochain = t.randn(n_splx_map[k]).to(device)
-            k2_cochain = t.randn(n_splx_map[k]).to(device)
-            l_cochain = t.randn(n_splx_map[l]).to(device)
+            k1_cochain = torch.randn(n_splx_map[k]).to(device)
+            k2_cochain = torch.randn(n_splx_map[k]).to(device)
+            l_cochain = torch.randn(n_splx_map[l]).to(device)
 
-            c1, c2 = t.randn(2)
+            c1, c2 = torch.randn(2)
 
             proj_kl = WhitneyWedgeL2Projector(k, l, mesh).to(device)
 
-            lhs = t.linalg.solve(
+            lhs = torch.linalg.solve(
                 mass, proj_kl(c1 * k1_cochain + c2 * k2_cochain, l_cochain)
             )
-            rhs = c1 * t.linalg.solve(
+            rhs = c1 * torch.linalg.solve(
                 mass, proj_kl(k1_cochain, l_cochain)
-            ) + c2 * t.linalg.solve(mass, proj_kl(k2_cochain, l_cochain))
+            ) + c2 * torch.linalg.solve(mass, proj_kl(k2_cochain, l_cochain))
 
-            t.testing.assert_close(lhs, rhs)
+            torch.testing.assert_close(lhs, rhs)
 
-            k_cochain = t.randn(n_splx_map[k]).to(device)
-            l1_cochain = t.randn(n_splx_map[l]).to(device)
-            l2_cochain = t.randn(n_splx_map[l]).to(device)
+            k_cochain = torch.randn(n_splx_map[k]).to(device)
+            l1_cochain = torch.randn(n_splx_map[l]).to(device)
+            l2_cochain = torch.randn(n_splx_map[l]).to(device)
 
-            c1, c2 = t.randn(2)
+            c1, c2 = torch.randn(2)
 
-            lhs = t.linalg.solve(
+            lhs = torch.linalg.solve(
                 mass, proj_kl(k_cochain, c1 * l1_cochain + c2 * l2_cochain)
             )
-            rhs = c1 * t.linalg.solve(
+            rhs = c1 * torch.linalg.solve(
                 mass, proj_kl(k_cochain, l1_cochain)
-            ) + c2 * t.linalg.solve(mass, proj_kl(k_cochain, l2_cochain))
+            ) + c2 * torch.linalg.solve(mass, proj_kl(k_cochain, l2_cochain))
 
-            t.testing.assert_close(lhs, rhs)
+            torch.testing.assert_close(lhs, rhs)
 
 
 def test_galerkin_wedge_product_cohomology_class(hollow_tet_mesh, device):
@@ -149,26 +151,26 @@ def test_galerkin_wedge_product_cohomology_class(hollow_tet_mesh, device):
         l = hollow_tet_mesh.dim - k
 
         if k == 0:
-            k_cochain = t.randn(1).expand(n_splx_map[k]).to(device)
+            k_cochain = torch.randn(1).expand(n_splx_map[k]).to(device)
         if k > 0:
             d_k_1 = hollow_tet_mesh.cbd[k - 1].to(device)
-            k_1_cochain = t.randn(n_splx_map[k - 1]).to(device)
+            k_1_cochain = torch.randn(n_splx_map[k - 1]).to(device)
             k_cochain = d_k_1 @ k_1_cochain
 
         if l == 0:
-            l_cochain = t.randn(1).expand(n_splx_map[l]).to(device)
+            l_cochain = torch.randn(1).expand(n_splx_map[l]).to(device)
         if l > 0:
             d_l_1 = hollow_tet_mesh.cbd[l - 1].to(device)
-            l_1_cochain = t.randn(n_splx_map[l - 1]).to(device)
+            l_1_cochain = torch.randn(n_splx_map[l - 1]).to(device)
             l_cochain = d_l_1 @ l_1_cochain
 
         anti_cup_kl = AntisymmetricCupProduct(k, l, hollow_tet_mesh).to(device)
 
         proj_kl = WhitneyWedgeL2Projector(k, l, hollow_tet_mesh).to(device)
         mass = _compute_mass_matrix(hollow_tet_mesh, k + l).to_dense().to(device)
-        wedge_kl = t.linalg.solve(mass, proj_kl(k_cochain, l_cochain))
+        wedge_kl = torch.linalg.solve(mass, proj_kl(k_cochain, l_cochain))
 
-        t.testing.assert_close(
+        torch.testing.assert_close(
             wedge_kl.sum(),
             anti_cup_kl(k_cochain, l_cochain).sum(),
         )

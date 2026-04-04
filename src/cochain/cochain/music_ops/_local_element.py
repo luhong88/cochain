@@ -1,19 +1,20 @@
 from typing import Literal
 
-import torch as t
+import torch
 from einops import einsum, repeat
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 from ...utils.bary_coords import get_k_splx_barycenters, get_tri_circumcenters
 from ..interpolate import _bary_whitney_tet_cochain_1, _bary_whitney_tri_cochain_1
 
 
 def element_based_tri_local_flat(
-    vec_field: Float[t.Tensor, "tri coord=3"],
-    vert_coords: Float[t.Tensor, "global_vert coord=3"],
-    tri_edge_idx: Integer[t.LongTensor, "tri local_edge=3"],
-    edges: Integer[t.LongTensor, "global_edge local_vert=2"],
-) -> Float[t.Tensor, " global_edge"]:
+    vec_field: Float[Tensor, "tri coord=3"],
+    vert_coords: Float[Tensor, "global_vert coord=3"],
+    tri_edge_idx: Integer[LongTensor, "tri local_edge=3"],
+    edges: Integer[LongTensor, "global_edge local_vert=2"],
+) -> Float[Tensor, " global_edge"]:
     """
     Compute the flat of a piecewise constant vector field associated with the tris
     of the mesh by taking the dot product between the mean of the field across all
@@ -31,7 +32,7 @@ def element_based_tri_local_flat(
         tri_edge_idx, "tri edge -> (tri edge) coord", coord=n_coords
     )
 
-    vec_field_mean = t.zeros(
+    vec_field_mean = torch.zeros(
         (n_edges, n_coords), dtype=vec_field.dtype, device=vec_field.device
     )
 
@@ -53,11 +54,11 @@ def element_based_tri_local_flat(
 
 
 def element_based_tet_local_flat(
-    vec_field: Float[t.Tensor, "tet coord=4"],
-    vert_coords: Float[t.Tensor, "global_vert coord=4"],
-    tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
-    edges: Integer[t.LongTensor, "global_edge local_vert=2"],
-) -> Float[t.Tensor, " global_edge"]:
+    vec_field: Float[Tensor, "tet coord=4"],
+    vert_coords: Float[Tensor, "global_vert coord=4"],
+    tet_edge_idx: Integer[LongTensor, "tet local_edge=6"],
+    edges: Integer[LongTensor, "global_edge local_vert=2"],
+) -> Float[Tensor, " global_edge"]:
     """
     Compute the flat of a piecewise constant vector field associated with the tets
     of the mesh by taking the dot product between the mean of the field across all
@@ -75,7 +76,7 @@ def element_based_tet_local_flat(
         tet_edge_idx, "tet edge -> (tet edge) coord", coord=n_coords
     )
 
-    vec_field_mean = t.zeros(
+    vec_field_mean = torch.zeros(
         (n_edges, n_coords), dtype=vec_field.dtype, device=vec_field.device
     )
 
@@ -97,14 +98,14 @@ def element_based_tet_local_flat(
 
 
 def element_based_tri_local_sharp(
-    cochain_1: Float[t.Tensor, " edge"],
-    tris: Integer[t.LongTensor, "tri vert=3"],
-    tri_edge_idx: Integer[t.LongTensor, "tri edge=3"],
-    tri_edge_orientations: Float[t.Tensor, "tri edge=3"],
-    vert_coords: Float[t.Tensor, "vert coord=3"],
-    bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
+    cochain_1: Float[Tensor, " edge"],
+    tris: Integer[LongTensor, "tri vert=3"],
+    tri_edge_idx: Integer[LongTensor, "tri edge=3"],
+    tri_edge_orientations: Float[Tensor, "tri edge=3"],
+    vert_coords: Float[Tensor, "vert coord=3"],
+    bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"],
     location: Literal["barycenter", "circumcenter"],
-) -> Float[t.Tensor, "tri coord=3"]:
+) -> Float[Tensor, "tri coord=3"]:
     """
     Compute the sharp of a 1-cochain by interpolating it at either the barycenter
     or the circumcenter of the triangles.
@@ -137,11 +138,11 @@ def element_based_tri_local_sharp(
 
 
 def element_based_tet_local_sharp(
-    cochain_1: Float[t.Tensor, " edge"],
-    tet_edge_idx: Integer[t.LongTensor, "tet edge=6"],
-    tet_edge_orientations: Float[t.Tensor, "tet edge=6"],
-    bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
-) -> Float[t.Tensor, "tet coord=3"]:
+    cochain_1: Float[Tensor, " edge"],
+    tet_edge_idx: Integer[LongTensor, "tet edge=6"],
+    tet_edge_orientations: Float[Tensor, "tet edge=6"],
+    bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
+) -> Float[Tensor, "tet coord=3"]:
     """
     Compute the sharp of a 1-cochain by interpolating it at the barycenter of the
     tets.

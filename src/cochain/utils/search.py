@@ -1,18 +1,19 @@
 from typing import Literal
 
-import torch as t
+import torch
 from jaxtyping import Integer
+from torch import LongTensor
 
 
 def _polynomial_hash_splx_search(
-    key_splx: Integer[t.LongTensor, "key_splx vert"],
-    query_splx: Integer[t.LongTensor, "query_splx vert"],
+    key_splx: Integer[LongTensor, "key_splx vert"],
+    query_splx: Integer[LongTensor, "query_splx vert"],
     *,
     sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
-) -> Integer[t.LongTensor, " query_splx"]:
-    dtype = t.int64
+) -> Integer[LongTensor, " query_splx"]:
+    dtype = torch.int64
     device = key_splx.device
 
     # Note that a k-simplex has k + 1 vertices.
@@ -31,40 +32,40 @@ def _polynomial_hash_splx_search(
     # +1 to ensure base > max digit
     max_vert_idx = max(key_splx_reduced.max(), query_splx_reduced.max()).to(dtype) + 1
 
-    exponent = t.arange(splx_dim, -1, -1, device=device, dtype=dtype)
-    coef = t.pow(max_vert_idx, exponent).view(1, -1)
+    exponent = torch.arange(splx_dim, -1, -1, device=device, dtype=dtype)
+    coef = torch.pow(max_vert_idx, exponent).view(1, -1)
 
-    max_allowed_hash_val = t.iinfo(dtype).max
+    max_allowed_hash_val = torch.iinfo(dtype).max
     worst_case_hash_val = float(max_vert_idx) ** (splx_dim + 1)
     if worst_case_hash_val > max_allowed_hash_val:
         raise RuntimeError(
             "Potential polynomial hash overflow detected. Use method='lex_sort' instead."
         )
 
-    key_splx_packed = t.sum(key_splx_reduced * coef, dim=-1)
-    query_splx_packed = t.sum(query_splx_reduced * coef, dim=-1)
+    key_splx_packed = torch.sum(key_splx_reduced * coef, dim=-1)
+    query_splx_packed = torch.sum(query_splx_reduced * coef, dim=-1)
 
     if sort_key_splx:
         key_splx_packed_sorted, key_splx_packed_sort_idx = key_splx_packed.sort()
-        query_splx_idx_sorted = t.searchsorted(
+        query_splx_idx_sorted = torch.searchsorted(
             key_splx_packed_sorted, query_splx_packed
         )
         query_splx_idx = key_splx_packed_sort_idx[query_splx_idx_sorted]
 
     else:
-        query_splx_idx = t.searchsorted(key_splx_packed, query_splx_packed)
+        query_splx_idx = torch.searchsorted(key_splx_packed, query_splx_packed)
 
     return query_splx_idx
 
 
 def _lex_splx_search(
-    key_splx: Integer[t.LongTensor, "key_splx vert"],
-    query_splx: Integer[t.LongTensor, "query_splx vert"],
+    key_splx: Integer[LongTensor, "key_splx vert"],
+    query_splx: Integer[LongTensor, "query_splx vert"],
     *,
     sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
-) -> Integer[t.LongTensor, " query_splx"]:
+) -> Integer[LongTensor, " query_splx"]:
     if key_splx.size(1) != query_splx.size(1):
         raise ValueError(
             "The 'key_splx' and 'query_splx' must have the same dimension."
@@ -73,7 +74,7 @@ def _lex_splx_search(
     key_splx_canon = key_splx.sort(dim=-1).values if sort_key_vert else key_splx
     query_splx_canon = query_splx.sort(dim=-1).values if sort_query_vert else query_splx
 
-    combined_splx = t.vstack((key_splx_canon, query_splx_canon))
+    combined_splx = torch.vstack((key_splx_canon, query_splx_canon))
     _, combined_splx_ids = combined_splx.unique(dim=0, sorted=True, return_inverse=True)
 
     n_key_splx = key_splx_canon.size(0)
@@ -82,24 +83,24 @@ def _lex_splx_search(
 
     if sort_key_splx:
         key_splx_ids_sorted, key_splx_id_sort_idx = key_splx_ids.sort()
-        query_splx_idx_sorted = t.searchsorted(key_splx_ids_sorted, query_splx_ids)
+        query_splx_idx_sorted = torch.searchsorted(key_splx_ids_sorted, query_splx_ids)
         query_splx_idx = key_splx_id_sort_idx[query_splx_idx_sorted]
 
     else:
-        query_splx_idx = t.searchsorted(key_splx_ids, query_splx_ids)
+        query_splx_idx = torch.searchsorted(key_splx_ids, query_splx_ids)
 
     return query_splx_idx
 
 
 def splx_search(
-    key_splx: Integer[t.LongTensor, "key_splx vert"],
-    query_splx: Integer[t.LongTensor, "*b query_splx vert"],
+    key_splx: Integer[LongTensor, "key_splx vert"],
+    query_splx: Integer[LongTensor, "*b query_splx vert"],
     *,
     sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
     method: Literal["lex_sort", "polynomial_hash", "auto"] = "auto",
-) -> Integer[t.LongTensor, "*b query_splx"]:
+) -> Integer[LongTensor, "*b query_splx"]:
     """
     Search for simplices in `query_splx` in the `key_splx`. It uses polynomial
     rolling hash to convert the simplex vert index tuples into integers and use

@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Sequence
 
-import torch as t
+import torch
 from jaxtyping import Integer
+from torch import LongTensor
 
 from ._index import (
     coalesced_coo_to_col_idx,
@@ -15,7 +16,7 @@ from ._index import (
 )
 
 
-def _validate_coo_idx_shape(coo_idx: Integer[t.LongTensor, "sp nnz"], shape: t.Size):
+def _validate_coo_idx_shape(coo_idx: Integer[LongTensor, "sp nnz"], shape: torch.Size):
     match len(shape):
         case 1:
             raise ValueError(
@@ -57,7 +58,7 @@ def _validate_coo_idx_shape(coo_idx: Integer[t.LongTensor, "sp nnz"], shape: t.S
             # tensor has 6 nnz, while the second has 2). This second check rules
             # out this possibility.
             if batch_idx is not None:
-                batch_counts = t.bincount(batch_idx, minlength=n_batch)
+                batch_counts = torch.bincount(batch_idx, minlength=n_batch)
                 if not (batch_counts == nnz_per_batch).all():
                     raise ValueError(
                         "The equal nnz per batch item condition is not met."
@@ -78,7 +79,7 @@ def check_pattern_equality(
     if self_pattern is other_pattern:
         pass
 
-    elif self_pattern.shape == other_pattern.shape and t.equal(
+    elif self_pattern.shape == other_pattern.shape and torch.equal(
         self_pattern.idx_coo, other_pattern.idx_coo
     ):
         pass
@@ -90,9 +91,9 @@ def check_pattern_equality(
 # TODO: need a helper function to generate this from a simplicial batch
 @dataclass(frozen=True)
 class BlockDiagConfig:
-    batch_perm: Integer[t.LongTensor, " nnz"]
+    batch_perm: Integer[LongTensor, " nnz"]
     nnzs: list[int]
-    pattern_shapes: list[t.Size]
+    pattern_shapes: list[torch.Size]
 
     def to(self, *args, **kwargs) -> BlockDiagConfig:
         new_batch_perm = self.batch_perm.to(*args, **kwargs)
@@ -106,12 +107,12 @@ class SparsityPattern:
     This class does not check that idx_coo is coalesced.
     """
 
-    _idx_coo: Integer[t.LongTensor, "sp nnz"]
-    shape: tuple[int, ...] | t.Size
+    _idx_coo: Integer[LongTensor, "sp nnz"]
+    shape: tuple[int, ...] | torch.Size
     block_diag_config: BlockDiagConfig | None = None
 
     @property
-    def idx_coo(self) -> Integer[t.LongTensor, "sp nnz"]:
+    def idx_coo(self) -> Integer[LongTensor, "sp nnz"]:
         return self._idx_coo
 
     def __post_init__(self):
@@ -123,7 +124,7 @@ class SparsityPattern:
             lower_ok = (min_idx >= 0).all()
 
             max_idx = self.idx_coo.amax(dim=1)
-            bounds = t.tensor(
+            bounds = torch.tensor(
                 self.shape, device=self.idx_coo.device, dtype=self.idx_coo.dtype
             )
             upper_ok = (max_idx < bounds).all()
@@ -136,11 +137,11 @@ class SparsityPattern:
         object.__setattr__(
             self,
             "_idx_coo",
-            self._idx_coo.detach().clone(memory_format=t.contiguous_format),
+            self._idx_coo.detach().clone(memory_format=torch.contiguous_format),
         )
 
         # Coerse shape dtype.
-        object.__setattr__(self, "shape", t.Size(self.shape))
+        object.__setattr__(self, "shape", torch.Size(self.shape))
 
     @classmethod
     def pack_block_diag(
@@ -158,13 +159,13 @@ class SparsityPattern:
         idx_dtype = rep_pattern.dtype
 
         # Determine the input SparsityPattern sparse row/column shapes.
-        r_sizes_cum = t.tensor(
+        r_sizes_cum = torch.tensor(
             [0] + [pattern.size(-2) for pattern in block_patterns],
             dtype=idx_dtype,
             device=device,
         ).cumsum(dim=0)
 
-        c_sizes_cum = t.tensor(
+        c_sizes_cum = torch.tensor(
             [0] + [sdt.size(-1) for sdt in block_patterns],
             dtype=idx_dtype,
             device=device,
@@ -172,12 +173,12 @@ class SparsityPattern:
 
         # Compute block offsets and apply to concatenated coo index.
         nnzs = [pattern._nnz() for pattern in block_patterns]
-        nnz_concat = t.tensor(nnzs, dtype=idx_dtype, device=device)
+        nnz_concat = torch.tensor(nnzs, dtype=idx_dtype, device=device)
 
-        r_offset = t.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
-        c_offset = t.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
+        r_offset = torch.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
+        c_offset = torch.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
 
-        idx_coo_concat = t.hstack(
+        idx_coo_concat = torch.hstack(
             [
                 pattern.idx_coo.to(device=device, dtype=idx_dtype)
                 for pattern in block_patterns
@@ -189,18 +190,18 @@ class SparsityPattern:
         # If there is a batch dimension, the coo index needs to be sorted first
         # by batch item order; find the permutation for this sort. If there is no
         # batch dim, this sort does nothing.
-        batch_perm = t.sort(idx_coo_concat[0], stable=True).indices
+        batch_perm = torch.sort(idx_coo_concat[0], stable=True).indices
 
         # Determine the concatenated SparsityPattern shape.
         if rep_pattern.n_batch_dim > 0:
-            pattern_shape_concat = t.Size(
+            pattern_shape_concat = torch.Size(
                 [rep_pattern.size(0), r_sizes_cum[-1], c_sizes_cum[-1]]
             )
         else:
-            pattern_shape_concat = t.Size([r_sizes_cum[-1], c_sizes_cum[-1]])
+            pattern_shape_concat = torch.Size([r_sizes_cum[-1], c_sizes_cum[-1]])
 
         # Record block diag construction information for disassembly
-        # block_ptr = t.repeat_interleave(t.arange(len(sp_ops)), nnz_concat)
+        # block_ptr = torch.repeat_interleave(torch.arange(len(sp_ops)), nnz_concat)
         pattern_shapes = [pattern.shape for pattern in block_patterns]
         config = BlockDiagConfig(batch_perm, nnzs, pattern_shapes)
 
@@ -215,7 +216,7 @@ class SparsityPattern:
 
     def unpack_block_diag(
         self,
-    ) -> tuple[list[SparsityPattern], Integer[t.LongTensor, " nnz"]]:
+    ) -> tuple[list[SparsityPattern], Integer[LongTensor, " nnz"]]:
         """
         Deconstruct a block diagonal `SparsityPattern` into a list of constituent
         `SparsityPattern`s.
@@ -226,39 +227,39 @@ class SparsityPattern:
         device = self.device
         idx_dtype = self.dtype
 
-        block_perm_inv = t.argsort(self.block_diag_config.batch_perm)
+        block_perm_inv = torch.argsort(self.block_diag_config.batch_perm)
 
         # Undo the batch dim sort, so that the idx_coo is back in a per-block
         # ordering. Fancy indexing guarantees copying.
         idx_coo_concat = self.idx_coo[:, block_perm_inv]
 
         # Undo the per-block, cumulative index offsets.
-        r_sizes_cum = t.tensor(
+        r_sizes_cum = torch.tensor(
             [0] + [shape[-2] for shape in self.block_diag_config.pattern_shapes],
             dtype=idx_dtype,
             device=device,
         ).cumsum(dim=0)
 
-        c_sizes_cum = t.tensor(
+        c_sizes_cum = torch.tensor(
             [0] + [shape[-1] for shape in self.block_diag_config.pattern_shapes],
             dtype=idx_dtype,
             device=device,
         ).cumsum(dim=0)
 
-        nnz_concat = t.tensor(
+        nnz_concat = torch.tensor(
             self.block_diag_config.nnzs, dtype=idx_dtype, device=device
         )
 
-        r_offset = t.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
-        c_offset = t.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
+        r_offset = torch.repeat_interleave(r_sizes_cum[:-1], nnz_concat)
+        c_offset = torch.repeat_interleave(c_sizes_cum[:-1], nnz_concat)
 
         idx_coo_concat[-2] -= r_offset
         idx_coo_concat[-1] -= c_offset
 
         # Split the concatenated idx_coo into constituent parts. Note that
-        # t.split() creates a view without copying; this is okay because the
+        # torch.split() creates a view without copying; this is okay because the
         # SparsityPattern constructor enforces copying.
-        idx_coo_list = t.split(idx_coo_concat, self.block_diag_config.nnzs, dim=-1)
+        idx_coo_list = torch.split(idx_coo_concat, self.block_diag_config.nnzs, dim=-1)
 
         pattern_list = [
             SparsityPattern(idx_coo, shape)
@@ -273,7 +274,7 @@ class SparsityPattern:
     @classmethod
     def bmat(
         cls, patterns: Sequence[Sequence[SparsityPattern | None]]
-    ) -> tuple[SparsityPattern, Integer[t.LongTensor, " nnz"]]:
+    ) -> tuple[SparsityPattern, Integer[LongTensor, " nnz"]]:
         """
         Determine how to combine a 2D grid of `SparsityPattern`s to construct a
         block matrix operator. None is allowed to represent empty/zero blocks.
@@ -312,8 +313,8 @@ class SparsityPattern:
             r_sizes.append(row_r_sizes)
             c_sizes.append(row_c_sizes)
 
-        r_sizes = t.tensor(r_sizes, dtype=idx_dtype, device=device)
-        c_sizes = t.tensor(c_sizes, dtype=idx_dtype, device=device)
+        r_sizes = torch.tensor(r_sizes, dtype=idx_dtype, device=device)
+        c_sizes = torch.tensor(c_sizes, dtype=idx_dtype, device=device)
 
         # Sanity checks on the row/col shape tensors.
         for sp_op_dims in [r_sizes, c_sizes]:
@@ -324,7 +325,7 @@ class SparsityPattern:
                     )
 
         r_max_size_per_row = r_sizes.max(dim=-1, keepdim=True).values
-        r_min_size_per_row = t.zeros_like(r_max_size_per_row)
+        r_min_size_per_row = torch.zeros_like(r_max_size_per_row)
         if not (
             (r_sizes == r_max_size_per_row) | (r_sizes == r_min_size_per_row)
         ).all():
@@ -333,7 +334,7 @@ class SparsityPattern:
             )
 
         c_max_size_per_col = c_sizes.max(dim=0, keepdim=True).values
-        c_min_size_per_col = t.zeros_like(c_max_size_per_col)
+        c_min_size_per_col = torch.zeros_like(c_max_size_per_col)
         if not (
             (c_sizes == c_max_size_per_col) | (c_sizes == c_min_size_per_col)
         ).all():
@@ -364,19 +365,19 @@ class SparsityPattern:
             r_offset += r_sizes[r_idx, :].max().item()
             c_offset = 0
 
-        idx_coo_concat = t.hstack(idx_coo_list)
+        idx_coo_concat = torch.hstack(idx_coo_list)
 
         # If there is a batch dimension, the coo index needs to be sorted first
         # by batch item order; find the permutation for this sort.
-        batch_perm = t.sort(idx_coo_concat[0], stable=True).indices
+        batch_perm = torch.sort(idx_coo_concat[0], stable=True).indices
 
         # Determine the concatenated SparsityPattern shape.
         n_row = r_sizes.max(dim=1).values.sum().item()
         n_col = c_sizes.max(dim=0).values.sum().item()
         if rep_pattern.n_batch_dim > 0:
-            pattern_shape_concat = t.Size([rep_pattern.size(0), n_row, n_col])
+            pattern_shape_concat = torch.Size([rep_pattern.size(0), n_row, n_col])
         else:
-            pattern_shape_concat = t.Size([n_row, n_col])
+            pattern_shape_concat = torch.Size([n_row, n_col])
 
         # Construct concatenated coo index.
         pattern_concat = SparsityPattern(
@@ -385,7 +386,7 @@ class SparsityPattern:
 
         return pattern_concat, batch_perm
 
-    def size(self, dim: int | None = None) -> int | t.Size:
+    def size(self, dim: int | None = None) -> int | torch.Size:
         if dim is None:
             return self.shape
         else:
@@ -449,11 +450,11 @@ class SparsityPattern:
         return pattern_trans
 
     @property
-    def dtype(self) -> t.dtype:
+    def dtype(self) -> torch.dtype:
         return self.idx_coo.dtype
 
     @property
-    def device(self) -> t.device:
+    def device(self) -> torch.device:
         return self.idx_coo.device
 
     def to(self, *args, **kwargs) -> SparsityPattern:
@@ -517,44 +518,44 @@ class SparsityPattern:
         return new_pattern
 
     @cached_property
-    def idx_crow(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+    def idx_crow(self) -> Integer[LongTensor, "*b nnz/b"]:
         return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="crow")
 
     @cached_property
-    def idx_crow_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
+    def idx_crow_int32(self) -> Integer[torch.IntTensor, "*b nnz/b"]:
         return coalesced_coo_to_compressed_idx(
-            self.idx_coo, self.shape, format="crow", dtype=t.int32
+            self.idx_coo, self.shape, format="crow", dtype=torch.int32
         )
 
     # TODO: consider renaming this to idx_col_csr to avoid confusion.
     @cached_property
-    def idx_col(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+    def idx_col(self) -> Integer[LongTensor, "*b nnz/b"]:
         return coalesced_coo_to_col_idx(self.idx_coo, self.shape)
 
     @cached_property
-    def idx_col_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
-        return coalesced_coo_to_col_idx(self.idx_coo, self.shape, dtype=t.int32)
+    def idx_col_int32(self) -> Integer[torch.IntTensor, "*b nnz/b"]:
+        return coalesced_coo_to_col_idx(self.idx_coo, self.shape, dtype=torch.int32)
 
     @cached_property
-    def coo_to_csc_perm(self) -> Integer[t.LongTensor, " nnz"]:
+    def coo_to_csc_perm(self) -> Integer[LongTensor, " nnz"]:
         return get_csc_sort_perm(self.idx_coo, self.shape)
 
     @cached_property
-    def idx_ccol(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+    def idx_ccol(self) -> Integer[LongTensor, "*b nnz/b"]:
         return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="ccol")
 
     @cached_property
-    def idx_ccol_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
+    def idx_ccol_int32(self) -> Integer[torch.IntTensor, "*b nnz/b"]:
         return coalesced_coo_to_compressed_idx(
-            self.idx_coo, self.shape, format="ccol", dtype=t.int32
+            self.idx_coo, self.shape, format="ccol", dtype=torch.int32
         )
 
     @cached_property
-    def idx_row_csc(self) -> Integer[t.LongTensor, "*b nnz/b"]:
+    def idx_row_csc(self) -> Integer[LongTensor, "*b nnz/b"]:
         return coalesced_coo_to_row_idx(self.idx_coo, self.shape, self.coo_to_csc_perm)
 
     @cached_property
-    def idx_row_csc_int32(self) -> Integer[t.IntTensor, "*b nnz/b"]:
+    def idx_row_csc_int32(self) -> Integer[torch.IntTensor, "*b nnz/b"]:
         return coalesced_coo_to_row_idx(
-            self.idx_coo, self.shape, self.coo_to_csc_perm, dtype=t.int32
+            self.idx_coo, self.shape, self.coo_to_csc_perm, dtype=torch.int32
         )

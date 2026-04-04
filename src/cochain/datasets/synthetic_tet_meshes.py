@@ -1,17 +1,17 @@
 import numpy as np
 import pytetwild
 import pyvista as pv
-import torch as t
+import torch
 
 from ..complex import SimplicialMesh
 
 
 def load_regular_tet_mesh() -> SimplicialMesh:
     return SimplicialMesh.from_tet_mesh(
-        vert_coords=t.tensor(
+        vert_coords=torch.tensor(
             [[1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0]]
         ),
-        tets=t.tensor([[0, 1, 2, 3]], dtype=t.long),
+        tets=torch.tensor([[0, 1, 2, 3]], dtype=torch.long),
     )
 
 
@@ -20,7 +20,7 @@ def load_two_tets_mesh() -> SimplicialMesh:
     A simple 3D mesh embedded composed of two tetrahedra sharing one triangle.
     """
     return SimplicialMesh.from_tet_mesh(
-        vert_coords=t.tensor(
+        vert_coords=torch.tensor(
             [
                 [-0.5, -0.5, 0.0],
                 [1.0, 0.0, 0.0],
@@ -29,7 +29,7 @@ def load_two_tets_mesh() -> SimplicialMesh:
                 [0.0, 0.0, 1.0],
             ]
         ),
-        tets=t.tensor([[0, 1, 2, 4], [2, 1, 0, 3]]),
+        tets=torch.tensor([[0, 1, 2, 4], [2, 1, 0, 3]]),
     )
 
 
@@ -45,8 +45,10 @@ def load_bcc_mesh(dim: int = 5) -> SimplicialMesh:
     tet_grid = grid.triangulate()
 
     return SimplicialMesh.from_tet_mesh(
-        vert_coords=t.from_numpy(tet_grid.points).to(dtype=t.float),
-        tets=t.from_numpy(tet_grid.cells.reshape(-1, 5)[:, 1:].copy()).to(dtype=t.long),
+        vert_coords=torch.from_numpy(tet_grid.points).to(dtype=torch.float),
+        tets=torch.from_numpy(tet_grid.cells.reshape(-1, 5)[:, 1:].copy()).to(
+            dtype=torch.long
+        ),
     )
 
 
@@ -74,8 +76,8 @@ def load_solid_torus(
     )
 
     mesh = SimplicialMesh.from_tet_mesh(
-        vert_coords=t.from_numpy(v_tet).to(dtype=t.float),
-        tets=t.from_numpy(t_tet).to(dtype=t.long),
+        vert_coords=torch.from_numpy(v_tet).to(dtype=torch.float),
+        tets=torch.from_numpy(t_tet).to(dtype=torch.long),
     )
 
     return mesh

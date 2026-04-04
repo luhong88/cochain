@@ -1,9 +1,10 @@
 import cupy as cp
 import cupyx.scipy.sparse as cp_sp
 import cupyx.scipy.sparse.linalg as cp_sp_linalg
-import torch as t
+import torch
 from cuda.core.experimental import Device
 from jaxtyping import Float, Integer
+from torch import Tensor
 
 from ...decoupled_tensor import SparsityPattern
 from ..solvers.nvmath_wrapper import DirectSolverConfig
@@ -11,7 +12,7 @@ from ._inv_operator import BaseNVMathInvSymSpOp
 
 
 def sp_op_comps_to_cp_csr(
-    A_val: Float[t.Tensor, " nnz"],
+    A_val: Float[Tensor, " nnz"],
     A_pattern: Integer[SparsityPattern, "r c"],
 ) -> Float[cp_sp.csr_matrix, "r c"]:
     return cp_sp.csr_matrix(
@@ -32,12 +33,12 @@ class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
 
     def __init__(
         self,
-        A_val: Float[t.Tensor, " nnz"],
+        A_val: Float[Tensor, " nnz"],
         A_pattern: Integer[SparsityPattern, "r c"],
         sigma: float,
         config: DirectSolverConfig,
     ):
-        t_stream = t.cuda.current_stream()
+        t_stream = torch.cuda.current_stream()
 
         # Prepare Cupy arrays.
         with cp.cuda.ExternalStream(t_stream.cuda_stream, t_stream.device_index):

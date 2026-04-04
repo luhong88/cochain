@@ -1,5 +1,5 @@
 import pytest
-import torch as t
+import torch
 from einops import repeat
 
 from cochain.cochain import music_ops
@@ -24,9 +24,9 @@ def test_vector_mass_spd(mesh, mode, diagonal, request, device):
     # Note that the diagonal argument is only relevant for mode="vertex".
     mass_v = music_ops.vector_mass(mesh, mode, diagonal).to_dense()
 
-    t.testing.assert_close(mass_v, mass_v.T)
+    torch.testing.assert_close(mass_v, mass_v.T)
 
-    eigs = t.linalg.eigvalsh(mass_v)
+    eigs = torch.linalg.eigvalsh(mass_v)
     assert eigs.min() >= 1e-6
 
 
@@ -44,7 +44,7 @@ def test_local_vertex_based_const_vec_field_reconstruction(mesh, request, device
     mesh = request.getfixturevalue(mesh).to(device)
 
     vec_field = repeat(
-        t.randn(3, dtype=mesh.dtype, device=mesh.device),
+        torch.randn(3, dtype=mesh.dtype, device=mesh.device),
         "coord -> vert coord",
         vert=mesh.n_verts,
     )
@@ -55,9 +55,9 @@ def test_local_vertex_based_const_vec_field_reconstruction(mesh, request, device
         cochain_1=cochain, mesh=mesh, mode="vertex"
     )
 
-    vec_field_cos_dist = t.sum(vec_field * vec_field_reconstructed, dim=-1) / (
-        t.linalg.norm(vec_field, dim=-1)
-        * t.linalg.norm(vec_field_reconstructed, dim=-1)
+    vec_field_cos_dist = torch.sum(vec_field * vec_field_reconstructed, dim=-1) / (
+        torch.linalg.norm(vec_field, dim=-1)
+        * torch.linalg.norm(vec_field_reconstructed, dim=-1)
     )
 
     assert (vec_field_cos_dist > 0.7).all()
@@ -84,7 +84,7 @@ def test_local_element_based_const_vec_field_reconstruction(
     mesh = request.getfixturevalue(mesh).to(device)
 
     vec_field = repeat(
-        t.randn(3, dtype=mesh.dtype, device=mesh.device),
+        torch.randn(3, dtype=mesh.dtype, device=mesh.device),
         "coord -> splx coord",
         splx=mesh.n_splx[mesh.dim],
     )
@@ -99,24 +99,24 @@ def test_local_element_based_const_vec_field_reconstruction(
         case 2:
             tri_verts = mesh.vert_coords[mesh.tris]
 
-            area_normal = t.cross(
+            area_normal = torch.cross(
                 tri_verts[:, 1] - tri_verts[:, 0],
                 tri_verts[:, 2] - tri_verts[:, 0],
                 dim=-1,
             )
-            area_unormal = area_normal / t.linalg.norm(
+            area_unormal = area_normal / torch.linalg.norm(
                 area_normal, dim=-1, keepdim=True
             )
 
             vec_field_normal = (
-                t.sum(vec_field * area_unormal, dim=-1, keepdim=True) * area_unormal
+                torch.sum(vec_field * area_unormal, dim=-1, keepdim=True) * area_unormal
             )
             vec_field_tangent = vec_field - vec_field_normal
 
-            t.testing.assert_close(vec_field_reconstructed, vec_field_tangent)
+            torch.testing.assert_close(vec_field_reconstructed, vec_field_tangent)
 
         case 3:
-            t.testing.assert_close(vec_field_reconstructed, vec_field)
+            torch.testing.assert_close(vec_field_reconstructed, vec_field)
 
 
 @pytest.mark.parametrize("mesh", ["square_mesh", "two_tets_mesh"])
@@ -157,7 +157,7 @@ def test_galerkin_vertex_based_const_vec_field_reconstruction(
     mass_vec = music_ops.vector_mass(mesh, mode="vertex", diagonal=diagonal)
     mass_mixed = music_ops.mixed_mass(mesh, mode="vertex")
 
-    random_vec = t.randn(3, dtype=mesh.dtype, device=mesh.device)
+    random_vec = torch.randn(3, dtype=mesh.dtype, device=mesh.device)
     if mesh.dim == 2:
         random_vec[-1] = 0.0
 
@@ -183,7 +183,7 @@ def test_galerkin_vertex_based_const_vec_field_reconstruction(
         method="inv_star" if diagonal else "dense",
     )
 
-    t.testing.assert_close(vec_field_reconstructed, vec_field)
+    torch.testing.assert_close(vec_field_reconstructed, vec_field)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -200,7 +200,7 @@ def test_galerkin_element_based_const_vec_field_reconstruction(mesh, request, de
     mass_mixed = music_ops.mixed_mass(mesh, mode="element")
 
     vec_field = repeat(
-        t.randn(3, dtype=mesh.dtype, device=mesh.device),
+        torch.randn(3, dtype=mesh.dtype, device=mesh.device),
         "coord -> splx coord",
         splx=mesh.n_splx[mesh.dim],
     )
@@ -227,24 +227,24 @@ def test_galerkin_element_based_const_vec_field_reconstruction(mesh, request, de
             # needs to be projected out prior to comparison.
             tri_verts = mesh.vert_coords[mesh.tris]
 
-            area_normal = t.cross(
+            area_normal = torch.cross(
                 tri_verts[:, 1] - tri_verts[:, 0],
                 tri_verts[:, 2] - tri_verts[:, 0],
                 dim=-1,
             )
-            area_unormal = area_normal / t.linalg.norm(
+            area_unormal = area_normal / torch.linalg.norm(
                 area_normal, dim=-1, keepdim=True
             )
 
             vec_field_normal = (
-                t.sum(vec_field * area_unormal, dim=-1, keepdim=True) * area_unormal
+                torch.sum(vec_field * area_unormal, dim=-1, keepdim=True) * area_unormal
             )
             vec_field_tangent = vec_field - vec_field_normal
 
-            t.testing.assert_close(vec_field_reconstructed, vec_field_tangent)
+            torch.testing.assert_close(vec_field_reconstructed, vec_field_tangent)
 
         case 3:
-            t.testing.assert_close(vec_field_reconstructed, vec_field)
+            torch.testing.assert_close(vec_field_reconstructed, vec_field)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -273,7 +273,7 @@ def test_galerkin_element_based_adjoint_relation(mesh, request, device):
     mass_vec = music_ops.vector_mass(mesh, mode="element")
     mass_mixed = music_ops.mixed_mass(mesh, mode="element")
 
-    vec_field = t.randn(
+    vec_field = torch.randn(
         (mesh.n_splx[mesh.dim], 3), dtype=mesh.dtype, device=mesh.device
     )
     vec_field_flat = music_ops.galerkin_flat(
@@ -284,15 +284,15 @@ def test_galerkin_element_based_adjoint_relation(mesh, request, device):
         method="dense",
     )
 
-    cochain = t.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    cochain = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
     cochain_sharp = music_ops.galerkin_sharp(
         cochain_1=cochain, mass_vec=mass_vec, mass_mixed=mass_mixed, mode="element"
     )
 
-    lhs = t.sum(vec_field.flatten() * (mass_vec @ cochain_sharp.flatten()))
-    rhs = t.sum(vec_field_flat * (mass_1 @ cochain))
+    lhs = torch.sum(vec_field.flatten() * (mass_vec @ cochain_sharp.flatten()))
+    rhs = torch.sum(vec_field_flat * (mass_1 @ cochain))
 
-    t.testing.assert_close(lhs, rhs)
+    torch.testing.assert_close(lhs, rhs)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -311,7 +311,7 @@ def test_galerkin_vertex_based_adjoint_relation(mesh, request, device):
     mass_vec = music_ops.vector_mass(mesh, mode="vertex", diagonal=False)
     mass_mixed = music_ops.mixed_mass(mesh, mode="vertex")
 
-    vec_field = t.randn((mesh.n_verts, 3), dtype=mesh.dtype, device=mesh.device)
+    vec_field = torch.randn((mesh.n_verts, 3), dtype=mesh.dtype, device=mesh.device)
     vec_field_flat = music_ops.galerkin_flat(
         vec_field=vec_field,
         mass_1=mass_1,
@@ -320,7 +320,7 @@ def test_galerkin_vertex_based_adjoint_relation(mesh, request, device):
         method="dense",
     )
 
-    cochain = t.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    cochain = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
     cochain_sharp = music_ops.galerkin_sharp(
         cochain_1=cochain,
         mass_vec=mass_vec,
@@ -329,7 +329,7 @@ def test_galerkin_vertex_based_adjoint_relation(mesh, request, device):
         method="dense",
     )
 
-    lhs = t.sum(vec_field.flatten() * (mass_vec @ cochain_sharp.flatten()))
-    rhs = t.sum(vec_field_flat * (mass_1 @ cochain))
+    lhs = torch.sum(vec_field.flatten() * (mass_vec @ cochain_sharp.flatten()))
+    rhs = torch.sum(vec_field_flat * (mass_1 @ cochain))
 
-    t.testing.assert_close(lhs, rhs)
+    torch.testing.assert_close(lhs, rhs)

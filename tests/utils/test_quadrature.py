@@ -2,14 +2,14 @@ import itertools
 from math import factorial
 
 import pytest
-import torch as t
+import torch
 
 from cochain.utils import quadrature
 
 
 @pytest.mark.parametrize(
     "dtype",
-    [t.float32, t.float64],
+    [torch.float32, torch.float64],
 )
 def test_GaussLegendre_polynomial_basis(dtype, device):
     """
@@ -24,20 +24,20 @@ def test_GaussLegendre_polynomial_basis(dtype, device):
             if a + b == k:
                 # Integrate the basis function over the ref edge using the
                 # magic formula
-                int_true = t.tensor(
+                int_true = torch.tensor(
                     (factorial(a) * factorial(b)) / factorial(a + b + 1),
                     dtype=dtype,
                     device=device,
                 )
 
-                int_test = t.sum(w * (bc[:, 0] ** a * bc[:, 1] ** b))
+                int_test = torch.sum(w * (bc[:, 0] ** a * bc[:, 1] ** b))
 
-                t.testing.assert_close(int_test, int_true)
+                torch.testing.assert_close(int_test, int_true)
 
 
 @pytest.mark.parametrize(
     "dtype",
-    [t.float32, t.float64],
+    [torch.float32, torch.float64],
 )
 def test_Dunavant_polynomial_basis(dtype, device):
     """
@@ -52,7 +52,7 @@ def test_Dunavant_polynomial_basis(dtype, device):
             if a + b + c == k:
                 # Integrate the basis function over the ref triangle using the
                 # magic formula
-                int_true = t.tensor(
+                int_true = torch.tensor(
                     (factorial(a) * factorial(b) * factorial(c))
                     / factorial(a + b + c + 2),
                     dtype=dtype,
@@ -62,15 +62,15 @@ def test_Dunavant_polynomial_basis(dtype, device):
                 # Multiply by 1/2 to account for ref tri area (recall that
                 # the weights from the quadrature rules are barycentric).
                 int_test = (
-                    t.sum(w * (bc[:, 0] ** a * bc[:, 1] ** b * bc[:, 2] ** c)) / 2.0
+                    torch.sum(w * (bc[:, 0] ** a * bc[:, 1] ** b * bc[:, 2] ** c)) / 2.0
                 )
 
-                t.testing.assert_close(int_test, int_true)
+                torch.testing.assert_close(int_test, int_true)
 
 
 @pytest.mark.parametrize(
     "dtype",
-    [t.float32, t.float64],
+    [torch.float32, torch.float64],
 )
 def test_Keast_polynomial_basis(dtype, device):
     """
@@ -93,7 +93,7 @@ def test_Keast_polynomial_basis(dtype, device):
             if a + b + c + d == k:
                 # Integrate the basis function over the ref tet using the
                 # magic formula
-                int_true = t.tensor(
+                int_true = torch.tensor(
                     (factorial(a) * factorial(b) * factorial(c) * factorial(d))
                     / factorial(a + b + c + d + 3),
                     dtype=dtype,
@@ -103,7 +103,7 @@ def test_Keast_polynomial_basis(dtype, device):
                 # Multiply by 1/6 to account for ref tet volume (recall that
                 # the weights from the quadrature rules are barycentric).
                 int_test = (
-                    t.sum(
+                    torch.sum(
                         w
                         * (
                             bc[:, 0] ** a
@@ -115,4 +115,4 @@ def test_Keast_polynomial_basis(dtype, device):
                     / 6.0
                 )
 
-                t.testing.assert_close(int_test, int_true)
+                torch.testing.assert_close(int_test, int_true)

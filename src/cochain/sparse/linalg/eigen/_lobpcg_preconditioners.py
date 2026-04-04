@@ -2,9 +2,10 @@ from collections import ChainMap
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-import torch as t
+import torch
 from cuda.core.experimental import Device
 from jaxtyping import Float
+from torch import Tensor
 
 from ...decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ..solvers.nvmath_wrapper import DirectSolverConfig
@@ -63,7 +64,7 @@ class JacobiPrecond:
         eps = 1e-4 * A_op.tr / A_op.size(0)
         self.ddt = DiagDecoupledTensor(1 / (A_op.diagonal() + eps))
 
-    def __matmul__(self, res: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
+    def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
         return self.ddt @ res
 
 
@@ -109,7 +110,7 @@ class ILUPrecond:
                 int32=True
             )
 
-        stream = t.cuda.current_stream()
+        stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             op_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
                 (
@@ -125,11 +126,11 @@ class ILUPrecond:
 
             self.solver = cp_sp_linalg.spilu(A=op_cp, **spilu_config)
 
-    def __matmul__(self, res: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
-        stream = t.cuda.current_stream()
+    def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
+        stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             res_cp = cp.from_dlpack(res.detach().contiguous())
-            sol = t.from_dlpack(self.solver.solve(res_cp, trans="N"))
+            sol = torch.from_dlpack(self.solver.solve(res_cp, trans="N"))
 
         return sol
 
@@ -158,7 +159,7 @@ class ChoPrecond(BaseNVMathInvSymSpOp):
 
         # Solve a linear system with at most 3n channel dims
         b_dummy = (
-            t.zeros((A_op.size(-1), 3 * n), dtype=A_op.dtype, device=A_op.device)
+            torch.zeros((A_op.size(-1), 3 * n), dtype=A_op.dtype, device=A_op.device)
             .transpose(-1, -2)
             .contiguous()
             .transpose(-1, -2)
@@ -182,10 +183,10 @@ class ChoPrecond(BaseNVMathInvSymSpOp):
                 int32=True
             )
 
-        super().__init__(op, b_dummy, nvmath_config, t.cuda.current_stream())
+        super().__init__(op, b_dummy, nvmath_config, torch.cuda.current_stream())
 
-    def __matmul__(self, res: Float[t.Tensor, "m k"]) -> Float[t.Tensor, "m k"]:
-        stream = t.cuda.current_stream()
+    def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
+        stream = torch.cuda.current_stream()
         Device(res.device.index).set_current()
 
         # Pad up to 3n channel dims
@@ -193,7 +194,7 @@ class ChoPrecond(BaseNVMathInvSymSpOp):
         pad = 3 * self.n - k
 
         res_padded_col_major = (
-            t.nn.functional.pad(res, (0, pad, 0, 0))
+            torch.nn.functional.pad(res, (0, pad, 0, 0))
             .transpose(-1, -2)
             .contiguous()
             .transpose(-1, -2)

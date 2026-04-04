@@ -1,6 +1,7 @@
-import torch as t
+import torch
 from einops import einsum, repeat
 from jaxtyping import Float, Integer
+from torch import LongTensor, Tensor
 
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
 from ._local_element import (
@@ -10,10 +11,10 @@ from ._local_element import (
 
 
 def vertex_based_local_flat(
-    vec_field: Float[t.Tensor, "global_vert coord=3"],
-    vert_coords: Float[t.Tensor, "global_vert coord=3"],
-    edges: Integer[t.LongTensor, "global_edge local_vert=2"],
-) -> Float[t.Tensor, " global_edge"]:
+    vec_field: Float[Tensor, "global_vert coord=3"],
+    vert_coords: Float[Tensor, "global_vert coord=3"],
+    edges: Integer[LongTensor, "global_edge local_vert=2"],
+) -> Float[Tensor, " global_edge"]:
     """
     Compute the flat of a vector field associated with the mesh vertices by taking
     the dot product between the mean of the field at the two vertices of each
@@ -31,16 +32,16 @@ def vertex_based_local_flat(
 
 
 def vertex_based_tri_local_sharp(
-    cochain_1: Float[t.Tensor, " edge"],
+    cochain_1: Float[Tensor, " edge"],
     star_0: Float[DiagDecoupledTensor, "vert vert"],
     n_verts: int,
-    tris: Integer[t.LongTensor, "tri vert=3"],
-    tri_edge_idx: Integer[t.LongTensor, "tri edge=3"],
-    tri_edge_orientations: Float[t.Tensor, "tri edge=3"],
-    tri_areas: Float[t.Tensor, " tri"],
-    vert_coords: Float[t.Tensor, "vert coord=3"],
-    bary_coords_grad: Float[t.Tensor, "tri vert=3 coord=3"],
-) -> Float[t.Tensor, "vert coord=3"]:
+    tris: Integer[LongTensor, "tri vert=3"],
+    tri_edge_idx: Integer[LongTensor, "tri edge=3"],
+    tri_edge_orientations: Float[Tensor, "tri edge=3"],
+    tri_areas: Float[Tensor, " tri"],
+    vert_coords: Float[Tensor, "vert coord=3"],
+    bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"],
+) -> Float[Tensor, "vert coord=3"]:
     """
     Compute the vertex-based sharp of a 1-cochain by first using the element-based
     approach and then taking an area-weighted average of the 1-form over all triangles
@@ -73,7 +74,7 @@ def vertex_based_tri_local_sharp(
         area_weighted_form_1, "tri coord -> (tri vert) coord", vert=n_verts
     )
 
-    area_weighted_form_1_on_verts = t.zeros(
+    area_weighted_form_1_on_verts = torch.zeros(
         (n_verts, n_coords), dtype=cochain_1.dtype, device=cochain_1.device
     )
 
@@ -95,15 +96,15 @@ def vertex_based_tri_local_sharp(
 
 
 def vertex_based_tet_local_sharp(
-    cochain_1: Float[t.Tensor, " edge"],
+    cochain_1: Float[Tensor, " edge"],
     star_0: Float[DiagDecoupledTensor, "vert vert"],
     n_verts: int,
-    tets: Integer[t.LongTensor, "tet vert=4"],
-    tet_edge_idx: Integer[t.LongTensor, "tet local_edge=6"],
-    tet_edge_orientations: Float[t.Tensor, "tet local_edge=6"],
-    tet_unsigned_vols: Float[t.Tensor, " tet"],
-    bary_coords_grad: Float[t.Tensor, "tet vert=4 coord=3"],
-) -> Float[t.Tensor, "vert coord=3"]:
+    tets: Integer[LongTensor, "tet vert=4"],
+    tet_edge_idx: Integer[LongTensor, "tet local_edge=6"],
+    tet_edge_orientations: Float[Tensor, "tet local_edge=6"],
+    tet_unsigned_vols: Float[Tensor, " tet"],
+    bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
+) -> Float[Tensor, "vert coord=3"]:
     """
     Compute the vertex-based sharp of a 1-cochain by first using the element-based
     approach and then taking an area-weighted average of the 1-form over all tets
@@ -127,7 +128,7 @@ def vertex_based_tet_local_sharp(
         vol_weighted_form_1, "tet coord -> (tet vert) coord", vert=n_verts
     )
 
-    vol_weighted_form_1_on_verts = t.zeros(
+    vol_weighted_form_1_on_verts = torch.zeros(
         (n_verts, n_coords), dtype=cochain_1.dtype, device=cochain_1.device
     )
 

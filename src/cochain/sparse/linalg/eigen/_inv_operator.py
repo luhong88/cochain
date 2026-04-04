@@ -1,7 +1,8 @@
 import cupy as cp
 import nvmath.sparse.advanced as nvmath_sp
-import torch as t
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 from ..solvers.nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
 
@@ -9,10 +10,10 @@ from ..solvers.nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_ty
 class BaseNVMathInvSymSpOp:
     def __init__(
         self,
-        a: Float[t.Tensor, " m m"],
-        b: Float[t.Tensor, "m n"],
+        a: Float[Tensor, " m m"],
+        b: Float[Tensor, "m n"],
         config: DirectSolverConfig,
-        stream: t.Stream | cp.cuda.Stream,
+        stream: torch.Stream | cp.cuda.Stream,
     ):
         self.dtype = a.dtype
         self.shape = a.shape

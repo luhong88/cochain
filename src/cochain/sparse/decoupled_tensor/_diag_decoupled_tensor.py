@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable
 
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import Tensor
 
 from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from ._matmul import (
@@ -19,10 +20,10 @@ from ._sparse_decoupled_tensor import SparseDecoupledTensor
 
 @dataclass
 class DiagDecoupledTensor(BaseDecoupledTensor):
-    val: Float[t.Tensor, "*b diag"]
+    val: Float[Tensor, "*b diag"]
 
     def __post_init__(self):
-        if self.val.layout != t.strided:
+        if self.val.layout != torch.strided:
             raise TypeError(
                 "'val' must be a dense tensor of shape (diag,) or (b, diag)."
             )
@@ -30,19 +31,21 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         if self.val.ndim < 1 or self.val.ndim > 2:
             raise ValueError("'val' must be either of shape (diag,) or (b, diag).")
 
-        if not t.isfinite(self.val).all():
+        if not torch.isfinite(self.val).all():
             raise ValueError("DiagDecoupledTensor values contain NaN or Inf.")
 
         # Enforce contiguous memory layout.
         self.val = self.val.contiguous()
 
     @classmethod
-    def from_tensor(cls, tensor: t.Tensor) -> DiagDecoupledTensor:
+    def from_tensor(cls, tensor: Tensor) -> DiagDecoupledTensor:
         return cls(tensor)
 
     @classmethod
-    def eye(cls, n: int, dtype: t.dtype, device: t.device) -> DiagDecoupledTensor:
-        val = t.ones(n, dtype=dtype, device=device)
+    def eye(
+        cls, n: int, dtype: torch.dtype, device: torch.device
+    ) -> DiagDecoupledTensor:
+        val = torch.ones(n, dtype=dtype, device=device)
         return DiagDecoupledTensor(val)
 
     def apply(self, fn: Callable, **kwargs) -> DiagDecoupledTensor:
@@ -61,7 +64,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
     def abs(self) -> DiagDecoupledTensor:
         return DiagDecoupledTensor(self.val.abs())
 
-    def diagonal(self) -> Float[t.Tensor, "*b diag"]:
+    def diagonal(self) -> Float[Tensor, "*b diag"]:
         return self.val
 
     @property
@@ -69,7 +72,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         return DiagDecoupledTensor(1.0 / self.val)
 
     @property
-    def tr(self) -> Float[t.Tensor, "*b"]:
+    def tr(self) -> Float[Tensor, "*b"]:
         if self.n_batch_dim == 0:
             return self.val.sum()
         else:
@@ -120,7 +123,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
                 diag_sp = SparseDecoupledTensor(pattern, val)
                 return diag_sp
 
-            case t.Tensor():
+            case Tensor():
                 match other.ndim:
                     case 1:
                         return self.val * other
@@ -143,7 +146,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
                 sp_diag = SparseDecoupledTensor(pattern, val)
                 return sp_diag
 
-            case t.Tensor():
+            case Tensor():
                 match other.ndim:
                     case 1:
                         return other * self.val
@@ -154,8 +157,8 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
                 return NotImplemented
 
     @property
-    def shape(self) -> t.Size:
-        return t.Size(self.val.shape + (self.val.shape[-1],))
+    def shape(self) -> torch.Size:
+        return torch.Size(self.val.shape + (self.val.shape[-1],))
 
     def _nnz(self) -> int:
         """
@@ -186,7 +189,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         return self
 
     def clone(
-        self, memory_format: t.memory_format = t.contiguous_format
+        self, memory_format: torch.memory_format = torch.contiguous_format
     ) -> DiagDecoupledTensor:
         return DiagDecoupledTensor(self.val.clone(memory_format=memory_format))
 
@@ -196,24 +199,24 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
     def to(self, *args, **kwargs) -> DiagDecoupledTensor:
         return DiagDecoupledTensor(self.val.to(*args, **kwargs))
 
-    def to_dense(self) -> Float[t.Tensor, "*b d d"]:
+    def to_dense(self) -> Float[Tensor, "*b d d"]:
         if self.n_batch_dim == 0:
-            return t.diagflat(self.val)
+            return torch.diagflat(self.val)
         else:
-            return t.diag_embed(self.val)
+            return torch.diag_embed(self.val)
 
-    def _get_idx_coo(self) -> Integer[t.Tensor, " sp nnz"]:
+    def _get_idx_coo(self) -> Integer[Tensor, " sp nnz"]:
         if self.n_batch_dim == 0:
-            idx_coo = t.tile(t.arange(self._nnz(), device=self.device), (2, 1))
+            idx_coo = torch.tile(torch.arange(self._nnz(), device=self.device), (2, 1))
 
         else:
             b = self.size(0)
             d = self.size(-1)
 
-            idx_coo = t.vstack(
+            idx_coo = torch.vstack(
                 (
-                    t.repeat_interleave(t.arange(b, device=self.device), d),
-                    t.tile(t.arange(d, device=self.device), (2, b)),
+                    torch.repeat_interleave(torch.arange(b, device=self.device), d),
+                    torch.tile(torch.arange(d, device=self.device), (2, b)),
                 )
             )
 
@@ -227,10 +230,10 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
         return SparseDecoupledTensor(pattern, val)
 
-    def to_sparse_coo(self) -> Float[t.Tensor, "*b d d"]:
+    def to_sparse_coo(self) -> Float[Tensor, "*b d d"]:
         idx_coo = self._get_idx_coo()
 
-        return t.sparse_coo_tensor(
+        return torch.sparse_coo_tensor(
             idx_coo,
             self.val.flatten(),
             self.shape,
@@ -239,20 +242,24 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         ).coalesce()
 
     def _to_compressed_sparse_tensor(
-        self, constructor: Callable, idx_dtype: t.dtype = t.int64
-    ) -> Float[t.Tensor, "*b d d"]:
+        self, constructor: Callable, idx_dtype: torch.dtype = torch.int64
+    ) -> Float[Tensor, "*b d d"]:
         if self.n_batch_dim == 0:
-            idx_crow = t.arange(self._nnz() + 1, dtype=idx_dtype, device=self.device)
-            idx_col = t.arange(self._nnz(), dtype=idx_dtype, device=self.device)
+            idx_crow = torch.arange(
+                self._nnz() + 1, dtype=idx_dtype, device=self.device
+            )
+            idx_col = torch.arange(self._nnz(), dtype=idx_dtype, device=self.device)
 
         else:
             b = self.size(0)
             d = self.size(-1)
 
-            idx_crow = t.tile(
-                t.arange(d + 1, dtype=idx_dtype, device=self.device), (b, 1)
+            idx_crow = torch.tile(
+                torch.arange(d + 1, dtype=idx_dtype, device=self.device), (b, 1)
             )
-            idx_col = t.tile(t.arange(d, dtype=idx_dtype, device=self.device), (b, 1))
+            idx_col = torch.tile(
+                torch.arange(d, dtype=idx_dtype, device=self.device), (b, 1)
+            )
 
         return constructor(
             idx_crow,
@@ -263,12 +270,12 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
             device=self.device,
         )
 
-    def to_sparse_csr(self, int32: bool = False) -> Float[t.Tensor, "*b d d"]:
+    def to_sparse_csr(self, int32: bool = False) -> Float[Tensor, "*b d d"]:
         return self._to_compressed_sparse_tensor(
-            t.sparse_csr_tensor, t.int32 if int32 else t.int64
+            torch.sparse_csr_tensor, torch.int32 if int32 else torch.int64
         )
 
-    def to_sparse_csc(self, int32: bool = False) -> Float[t.Tensor, "*b d d"]:
+    def to_sparse_csc(self, int32: bool = False) -> Float[Tensor, "*b d d"]:
         return self._to_compressed_sparse_tensor(
-            t.sparse_csc_tensor, t.int32 if int32 else t.int64
+            torch.sparse_csc_tensor, torch.int32 if int32 else torch.int64
         )

@@ -4,8 +4,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import scipy.sparse
 import scipy.sparse.linalg
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import Tensor
 from torch.autograd.function import once_differentiable
 
 from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
@@ -24,20 +25,20 @@ if TYPE_CHECKING:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
 
-class _CuPySuperLUAutogradFunction(t.autograd.Function):
+class _CuPySuperLUAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[t.Tensor, " nnz"],
+        A_val: Float[Tensor, " nnz"],
         A_pattern: Integer[SparsityPattern, "r c"],
-        b: Float[t.Tensor, " r *ch"],
+        b: Float[Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
-    ) -> tuple[Float[t.Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
+    ) -> tuple[Float[Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
         val = A_val[A_pattern.coo_to_csc_perm].detach().contiguous()
         idx_ccol = A_pattern.idx_ccol_int32.detach().contiguous()
         idx_row = A_pattern.idx_row_csc_int32.detach().contiguous()
 
         # Force CuPy to use the current Pytorch stream.
-        stream = t.cuda.current_stream()
+        stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
                 (
@@ -50,7 +51,7 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
             x_cp = cp.from_dlpack(b.detach().contiguous())
 
             solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
-            x = t.from_dlpack(solver.solve(x_cp, trans="N"))
+            x = torch.from_dlpack(solver.solve(x_cp, trans="N"))
 
         return x, solver
 
@@ -67,11 +68,11 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
     @staticmethod
     @once_differentiable
     def backward(
-        ctx, dLdx: Float[t.Tensor, " c *ch"], _
+        ctx, dLdx: Float[Tensor, " c *ch"], _
     ) -> tuple[
-        Float[t.Tensor, " nnz"] | None,
+        Float[Tensor, " nnz"] | None,
         None,
-        Float[t.Tensor, " r *ch"] | None,
+        Float[Tensor, " r *ch"] | None,
         None,
     ]:
         """
@@ -99,12 +100,12 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
         else:
             solver: cp_sp_linalg.SuperLU = ctx.solver
 
-        stream = t.cuda.current_stream()
+        stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            lambda_cp: Float[t.Tensor, " r"] = solver.solve(
+            lambda_cp: Float[Tensor, " r"] = solver.solve(
                 cp.from_dlpack(dLdx.detach().contiguous()), trans="T"
             )
-            lambda_ = t.from_dlpack(lambda_cp)
+            lambda_ = torch.from_dlpack(lambda_cp)
 
         # Free up solver memory usage.
         ctx.solver = None
@@ -115,7 +116,7 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
         # dLdA will have the same sparsity pattern as A.
         if lambda_.dim() > 1:
             # If there is a channel dimension, sum over it.
-            dLdA_val = t.sum(
+            dLdA_val = torch.sum(
                 -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]], dim=-1
             )
         else:
@@ -128,14 +129,14 @@ class _CuPySuperLUAutogradFunction(t.autograd.Function):
             return (dLdA_val, None, lambda_, None)
 
 
-class _SciPySuperLUAutogradFunction(t.autograd.Function):
+class _SciPySuperLUAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[t.Tensor, " nnz"],
+        A_val: Float[Tensor, " nnz"],
         A_pattern: Integer[SparsityPattern, "r c"],
-        b: Float[t.Tensor, " r *ch"],
+        b: Float[Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
-    ) -> tuple[Float[t.Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
+    ) -> tuple[Float[Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
         val = A_val[A_pattern.coo_to_csc_perm].detach().contiguous().cpu().numpy()
         idx_ccol = A_pattern.idx_ccol_int32.detach().contiguous().cpu().numpy()
         idx_row = A_pattern.idx_row_csc_int32.detach().contiguous().cpu().numpy()
@@ -147,7 +148,7 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
         x_np = b.detach().contiguous().cpu().numpy()
 
         solver = scipy.sparse.linalg.splu(A_scipy, **splu_kwargs)
-        x = t.from_numpy(solver.solve(x_np, trans="N")).to(
+        x = torch.from_numpy(solver.solve(x_np, trans="N")).to(
             dtype=A_val.dtype, device=A_val.device
         )
 
@@ -166,11 +167,11 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
     @staticmethod
     @once_differentiable
     def backward(
-        ctx, dLdx: Float[t.Tensor, " c *ch"], _
+        ctx, dLdx: Float[Tensor, " c *ch"], _
     ) -> tuple[
-        Float[t.Tensor, " nnz"] | None,
+        Float[Tensor, " nnz"] | None,
         None,
-        Float[t.Tensor, " r *ch"] | None,
+        Float[Tensor, " r *ch"] | None,
         None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
@@ -191,7 +192,7 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
             solver: scipy.sparse.linalg.SuperLU = ctx.solver
 
         lambda_np = solver.solve(dLdx.detach().contiguous().cpu().numpy(), trans="T")
-        lambda_: Float[t.Tensor, " r *ch"] = t.from_numpy(lambda_np).to(
+        lambda_: Float[Tensor, " r *ch"] = torch.from_numpy(lambda_np).to(
             dtype=dLdx.dtype, device=dLdx.device
         )
 
@@ -204,7 +205,7 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
         # dLdA will have the same sparsity pattern as A.
         if lambda_.ndim > 1:
             # If there is a channel dimension, sum over it.
-            dLdA_val = t.sum(
+            dLdA_val = torch.sum(
                 -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]], dim=-1
             )
         else:
@@ -219,12 +220,12 @@ class _SciPySuperLUAutogradFunction(t.autograd.Function):
 
 def splu(
     A: Float[SparseDecoupledTensor, "r c"],
-    b: Float[t.Tensor, " r *ch"],
+    b: Float[Tensor, " r *ch"],
     *,
     backend: Literal["cupy", "scipy"],
     channel_first: bool = False,
     **splu_kwargs,
-) -> Float[t.Tensor, " c *ch"]:
+) -> Float[Tensor, " c *ch"]:
     """
     This function provides a differentiable wrapper for SuperLU.
 
@@ -268,7 +269,7 @@ def splu(
         case _:
             if channel_first:
                 # (*ch, r) -> (r, ch_flat)
-                b_ready = t.movedim(b, -1, 0).reshape(b.shape[-1], -1)
+                b_ready = torch.movedim(b, -1, 0).reshape(b.shape[-1], -1)
             else:
                 # (r, *ch) -> (r, ch_flat)
                 b_ready = b.reshape(b.shape[0], -1)

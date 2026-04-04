@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Sequence
 
-import torch as t
+import torch
 from jaxtyping import Float, Integer
+from torch import Tensor
 
 from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ._backward import dLdA_backward, dLdA_dLdM_backward
@@ -26,12 +27,12 @@ if TYPE_CHECKING:
 @dataclass
 class LOBPCGConfig:
     sigma: float | int | None = None
-    v0: Float[t.Tensor, "m n"] | Sequence[Float[t.Tensor, "m c"] | None] | None = None
+    v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "m c"] | None] | None = None
     largest: bool = True
     atol: float | None = None
     rtol: float | None = None
     maxiter: int | None = 1000
-    generator: t.Generator | None = None
+    generator: torch.Generator | None = None
 
     def expand(self, n: int) -> list[LOBPCGConfig]:
         if isinstance(self.v0, Sequence):
@@ -44,19 +45,19 @@ class LOBPCGConfig:
         return config_list
 
 
-class _LOBPCGAutogradFunction(t.autograd.Function):
+class _LOBPCGAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[t.Tensor, " A_nnz"],
+        A_val: Float[Tensor, " A_nnz"],
         A_pattern: Integer[SparsityPattern, "m m"],
-        M_val: Float[t.Tensor, " M_nnz"] | None,
+        M_val: Float[Tensor, " M_nnz"] | None,
         M_pattern: Integer[SparsityPattern, "m m"] | None,
         k: int,
         eps: float | int,
         lobpcg_config: LOBPCGConfig,
         precond_config: LOBPCGPrecondConfig,
         nvmath_config: DirectSolverConfig,
-    ) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
+    ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
         A_op = SparseDecoupledTensor(A_pattern, A_val)
 
         if (M_val is None) and (M_pattern is None):
@@ -105,11 +106,11 @@ class _LOBPCGAutogradFunction(t.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx, dLdl: Float[t.Tensor, " k"], dLdv: Float[t.Tensor, "m k"] | None
+        ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "m k"] | None
     ) -> tuple[
-        Float[t.Tensor, " A_nnz"] | None,
+        Float[Tensor, " A_nnz"] | None,
         None,
-        Float[t.Tensor, " A_nnz"] | None,
+        Float[Tensor, " A_nnz"] | None,
         None,
         None,
         None,
@@ -139,7 +140,7 @@ def _lobpcg_no_batch(
     lobpcg_config: LOBPCGConfig,
     precond_config: LOBPCGPrecondConfig,
     nvmath_config: DirectSolverConfig,
-) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "c k"]]:
+) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
             A.val,
@@ -176,7 +177,7 @@ def _lobpcg_batch(
     lobpcg_config_batched: LOBPCGConfig,
     precond_config: LOBPCGPrecondConfig,
     nvmath_config: DirectSolverConfig,
-) -> tuple[Float[t.Tensor, " k"], Float[t.Tensor, "m k"]]:
+) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
     if M_batched is None:
         M_list = [None] * len(A_list)
     else:
@@ -193,12 +194,12 @@ def _lobpcg_batch(
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
 
-    eig_vals = t.vstack(eig_val_list)
+    eig_vals = torch.vstack(eig_val_list)
 
     if eig_vec_list[0] is None:
         eig_vecs = None
     else:
-        eig_vecs = t.vstack(eig_vec_list)
+        eig_vecs = torch.vstack(eig_vec_list)
 
     return eig_vals, eig_vecs
 
@@ -214,7 +215,7 @@ def lobpcg(
     lobpcg_config: LOBPCGConfig | None = None,
     nvmath_config: DirectSolverConfig | None = None,
     precond_config: LOBPCGPrecondConfig | None = None,
-) -> tuple[Float[t.Tensor, "*b k"], Float[t.Tensor, "m k"]]:
+) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "m k"]]:
     """
     A custom implementation of LOBPCG.
 
@@ -286,7 +287,7 @@ def lobpcg(
 
         if block_diag_batch:
             v0 = [
-                t.randn(
+                torch.randn(
                     (a.size(0), n),
                     generator=lobpcg_config.generator,
                     dtype=A.dtype,
@@ -295,7 +296,7 @@ def lobpcg(
                 for a in A_list
             ]
         else:
-            v0 = t.randn(
+            v0 = torch.randn(
                 (A.size(0), n),
                 generator=lobpcg_config.generator,
                 dtype=A.dtype,
@@ -305,9 +306,11 @@ def lobpcg(
     else:
         v0 = lobpcg_config.v0
 
-    atol = t.finfo(A.dtype).eps if lobpcg_config.rtol is None else lobpcg_config.rtol
+    atol = (
+        torch.finfo(A.dtype).eps if lobpcg_config.rtol is None else lobpcg_config.rtol
+    )
     rtol = (
-        t.finfo(A.dtype).eps ** 0.5
+        torch.finfo(A.dtype).eps ** 0.5
         if lobpcg_config.rtol is None
         else lobpcg_config.rtol
     )

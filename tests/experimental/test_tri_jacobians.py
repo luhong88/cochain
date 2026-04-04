@@ -1,5 +1,5 @@
 import pytest
-import torch as t
+import torch
 
 from cochain.complex import SimplicialMesh
 from cochain.experimental import tri_jacobians
@@ -22,14 +22,14 @@ def test_star_jacobian(star, d_star_d_vert_coords, hollow_tet_mesh: SimplicialMe
     vert_coords = hollow_tet_mesh.vert_coords.clone()
     tris = hollow_tet_mesh.tris.clone()
 
-    autograd_jacobian = t.autograd.functional.jacobian(
+    autograd_jacobian = torch.autograd.functional.jacobian(
         lambda vert_coords: star(SimplicialMesh.from_tri_mesh(vert_coords, tris)).val,
         vert_coords,
     )
 
     analytical_jacobian = d_star_d_vert_coords(hollow_tet_mesh).to_dense()
 
-    t.testing.assert_close(autograd_jacobian, analytical_jacobian)
+    torch.testing.assert_close(autograd_jacobian, analytical_jacobian)
 
 
 @pytest.mark.parametrize(
@@ -49,7 +49,7 @@ def test_inv_star_jacobian(
     vert_coords = hollow_tet_mesh.vert_coords.clone()
     tris = hollow_tet_mesh.tris.clone()
 
-    autograd_jacobian = t.autograd.functional.jacobian(
+    autograd_jacobian = torch.autograd.functional.jacobian(
         lambda vert_coords: star(
             SimplicialMesh.from_tri_mesh(vert_coords, tris)
         ).inv.val,
@@ -58,7 +58,7 @@ def test_inv_star_jacobian(
 
     analytical_jacobian = d_inv_star_d_vert_coords(hollow_tet_mesh).to_dense()
 
-    t.testing.assert_close(autograd_jacobian, analytical_jacobian)
+    torch.testing.assert_close(autograd_jacobian, analytical_jacobian)
 
 
 def tet_mass_1_aurograd(two_tris_mesh: SimplicialMesh):
@@ -67,12 +67,12 @@ def tet_mass_1_aurograd(two_tris_mesh: SimplicialMesh):
     y = (mass_1**2).sum()
 
     dMdV = tri_jacobians.d_mass_1_d_vert_coords(two_tris_mesh).to_dense()
-    dydM = t.autograd.grad(y, mass_1, retain_graph=True)[0]
-    custom_grad = t.einsum("ij,ijkl->kl", dydM, dMdV)
+    dydM = torch.autograd.grad(y, mass_1, retain_graph=True)[0]
+    custom_grad = torch.einsum("ij,ijkl->kl", dydM, dMdV)
 
-    auto_grad = t.autograd.grad(y, two_tris_mesh.vert_coords)[0]
+    auto_grad = torch.autograd.grad(y, two_tris_mesh.vert_coords)[0]
 
-    assert t.allclose(custom_grad, auto_grad, atol=1e-4)
+    assert torch.allclose(custom_grad, auto_grad, atol=1e-4)
 
 
 def test_stiffness_autograd(two_tris_mesh: SimplicialMesh):
@@ -85,9 +85,9 @@ def test_stiffness_autograd(two_tris_mesh: SimplicialMesh):
     y = (two_tris_S**2).sum()
 
     dLdV = tri_jacobians.d_stiffness_d_vert_coords(two_tris_mesh).to_dense()
-    dydL = t.autograd.grad(y, two_tris_S, retain_graph=True)[0]
-    custom_grad = t.einsum("ij,ijkl->kl", dydL, dLdV)
+    dydL = torch.autograd.grad(y, two_tris_S, retain_graph=True)[0]
+    custom_grad = torch.einsum("ij,ijkl->kl", dydL, dLdV)
 
-    auto_grad = t.autograd.grad(y, two_tris_mesh.vert_coords)[0]
+    auto_grad = torch.autograd.grad(y, two_tris_mesh.vert_coords)[0]
 
-    assert t.allclose(custom_grad, auto_grad, atol=1e-4)
+    assert torch.allclose(custom_grad, auto_grad, atol=1e-4)
