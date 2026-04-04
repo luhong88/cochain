@@ -345,6 +345,7 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
     { name = "scikit-fem" },
+    { name = "sympy" },
 ]
 
 [package.metadata]
@@ -371,6 +372,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "ruff", specifier = ">=0.14.3" },
     { name = "scikit-fem", specifier = ">=11.0.0" },
+    { name = "sympy", specifier = ">=1.14.0" },
 ]
 
 [[package]]
