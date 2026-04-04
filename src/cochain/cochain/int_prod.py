@@ -13,7 +13,6 @@ from .ext_prod.whitney import WhitneyWedgeL2Projector
 def galerkin_contract(
     cochain_k: Float[Tensor, " k_splx *ch"],
     cochain_1: Float[Tensor, " edge *ch"],
-    mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"],
     mass_km1: Float[BaseDecoupledTensor, "km1_splx km1_splx"],
     wedge_op: WhitneyWedgeL2Projector,
     method: Literal["dense", "solver"],
@@ -30,7 +29,13 @@ def galerkin_contract(
 
     where M_(k-1) and M_k are the consistent mass matrices and W(v, *).T is the
     matrix representation of the adjoint of the wedge product between v and a
-    (k-1)-cochain.
+    (k-1)-cochain. Note that the WhitneyWedgeL2Projector implementation returns
+    the load vector rather than the wedge product directly; i.e., the `wedge_op`
+    effectively acts as M_k @ W(v, *) rather than W(v, *), an explicit M_k matrix
+    is not required.
+
+    The input `wedge_op` should be setup to compute the load vector for the wedge
+    product between a 1-cochain and a (k-1)-cochain.
 
     Note that, if the input cochains contain batch/channel dimensions, then the
     `cochain_k`, `cochain_1`, and the output (k-1)-cochain should all have the same
@@ -51,8 +56,6 @@ def galerkin_contract(
         device=cochain_k.device,
     )
 
-    mass_cochain: Float[Tensor, " k_splx *ch"] = mass_k @ cochain_k
-
     def _wedge_forward(cochain_km1: Tensor) -> Tensor:
         # pairing="scalar" preserves the *ch dimension in the output
         return wedge_op(cochain_1, cochain_km1, pairing="scalar")
@@ -62,7 +65,7 @@ def galerkin_contract(
     # create store intermediate tensors in the buffer, these are considered
     # immutable for the purpose of vjp().
     _, vjp_fxn = torch.func.vjp(_wedge_forward, dummy_cochain_km1)
-    rhs = vjp_fxn(mass_cochain)[0]
+    rhs = vjp_fxn(cochain_k)[0]
 
     match method:
         case "dense":
