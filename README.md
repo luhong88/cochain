@@ -1,8 +1,8 @@
-# Cochain: a differentiable engine for computational topology and DEC
+# Cochain: a differentiable toolkit for computational topology and DEC
 
 **Status**: Pre-alpha, in early development.
 
-Cochain is a specialized framework for computational topology written in PyTorch, designed to facilitate the rigorous manipulation of discrete topological objects (specifically, 2D and 3D simplicial meshes embedded in $\mathbb{R}^3$) and to bridge algebraic topology with high-performance scientific computing. By grounding its discrete operators in the formalisms of cohomology theory and discrete exterior calculus, Cochain enables complex topological transformations and structure-preserving discretizations to be evaluated while leveraging the hardware acceleration and automatic differentiation of modern computational backends.
+Cochain is a computational topology toolkit built on PyTorch, designed to facilitate the analysis of discrete topological objects (specifically, 2D and 3D simplicial meshes embedded in $\mathbb{R}^3$) within the context of discrete exterior calculus (DEC) and cohomology theory.
 
 ## Features:
 
@@ -22,7 +22,7 @@ Cochain is a specialized framework for computational topology written in PyTorch
     * Flat and sharp operators for music isomorphisms between 1-cochains and vector fields.
 * Computational backends:
     * Differentiable wrappers for sparse linear solvers SuperLU (via `scipy` and `cupy`) and cuDSS (via `nvmath-python`).
-    * Differentiable sparse eigensolvers, including the implicitly restarted Lanczos method (via `scipy`), the thick-restart Lanczos method (via `cupy`), and a custom, GPU-compatible LOBPCG implementation that supports both generalized eigenvalue problems and the shift-invert mode for interior eigenvalues.
+    * Differentiable sparse eigensolvers, including the implicitly restarted Lanczos method (via `scipy`), the thick-restart Lanczos method (via `cupy`), and LOBPCG solver implementation that supports both generalized eigenvalue problems and the shift-invert mode for interior eigenvalues.
     * Fixed-topology autograd: optimized sparse matrix primitives that pre-compute index structures, ensuring efficient backprop through operator values.
 
 
