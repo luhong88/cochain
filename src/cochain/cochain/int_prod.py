@@ -1,12 +1,10 @@
 from typing import Literal
 
 import torch
-from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from jaxtyping import Float
+from torch import Tensor
 
-from ..complex import SimplicialMesh
-from ..sparse.decoupled_tensor import BaseDecoupledTensor, DiagDecoupledTensor
-from .ext_prod.cup import AntisymmetricCupProduct
+from ..sparse.decoupled_tensor import BaseDecoupledTensor
 from .ext_prod.whitney import WhitneyWedgeL2Projector
 
 
@@ -76,38 +74,3 @@ def galerkin_contract(
 
         case _:
             raise ValueError()
-
-
-def algebraic_contract(
-    k: int,
-    cochain_k: Float[Tensor, " k_splx *ch"],
-    cochain_1: Float[Tensor, " edge *ch"],
-    star_k: Float[DiagDecoupledTensor, "k_splx k_splx"],
-    star_km1: Float[DiagDecoupledTensor, "km1_splx km1_splx"],
-    cup_op: AntisymmetricCupProduct,
-) -> Float[Tensor, " km1_splx *ch"]:
-    """
-    Compute the interior product i_v(η) between a vector field V (represented by
-    its flat v = ♭V) and a discrete k-form/k-cochain η using an algebraic/DEC
-    approach by replacing wedge product in the definition of the interior product
-    (in the smooth setting) with the (antisymmetric) cup product:
-
-    ξ = i_v(η) = (-1)^(k(n-k)) * star_(k-1).inv @ cup(v, star_k @ η)
-
-    where n is the dimension of the ambience space (3) and star_(k-1) and star_k
-    are the diagonal Hodge stars. The antisymmetric cup product is preferred here
-    over the standard cup product because it satisfies the graded commutativity
-    property and is invariant to vertex permutations.
-
-    Note that, if the input cochains contain batch/channel dimensions, then the
-    `cochain_k`, `cochain_1`, and the output (k-1)-cochain should all have the same
-    batch/channel dimensions.
-    """
-    cup_prod = cup_op(cochain_1, star_k @ cochain_k, pairing="scalar")
-
-    ambient_dim = 3  # The mesh is embedded in R^3
-    sign = (-1.0) ** (k * (ambient_dim - k))
-
-    int_prod = sign * star_km1.inv @ cup_prod
-
-    return int_prod
