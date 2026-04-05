@@ -28,3 +28,7 @@ Cochain is a collection of computational topology operators built on PyTorch, de
 ### Planned Features:
 
 * Harmonic form generator.
+
+## License
+
+This project is licensed under the MIT License; see the `LICENSE` file for details.
