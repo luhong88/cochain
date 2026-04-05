@@ -1,8 +1,8 @@
-# Cochain: a differentiable toolkit for computational topology and DEC
+# Cochain: differentiable operators for computational topology and DEC
 
 **Status**: Pre-alpha, in early development.
 
-Cochain is a computational topology toolkit built on PyTorch, designed to facilitate the analysis of discrete topological objects (specifically, 2D and 3D simplicial meshes embedded in $\mathbb{R}^3$) within the context of discrete exterior calculus (DEC) and cohomology theory.
+Cochain is a collection of computational topology operators built on PyTorch, designed to facilitate the analysis of discrete topological objects (specifically, 2D and 3D simplicial meshes embedded in $\mathbb{R}^3$) within the context of discrete exterior calculus (DEC) and cohomology theory.
 
 ## Features:
 
@@ -21,8 +21,8 @@ Cochain is a computational topology toolkit built on PyTorch, designed to facili
     * Whitney map for interpolation of discrete $k$-cochains and de Rham map for discretization of continuous $k$-forms. 
     * Flat and sharp operators for music isomorphisms between 1-cochains and vector fields.
 * Sparse linear algebra utils:
-    * PyTorch-compatible wrapper for existing sparse linear solvers (SuperLU and cuDSS) and eigensolvers (Lanczos and LOBPCG), adapted to support generalized eigenvalue problems and the shift-invert mode.
-    * Fixed-topology autograd that caches sparse index structures.
+    * PyTorch interfaces for existing sparse linear solvers (SuperLU and cuDSS) and eigensolvers (Lanczos and LOBPCG) that support generalized eigenvalue problems and the shift-invert mode.
+    * Autograd support for fixed-topology sparse operations.
 
 
 ### Planned Features:
