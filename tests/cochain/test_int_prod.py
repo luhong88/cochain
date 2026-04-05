@@ -6,7 +6,7 @@ from cochain.cochain import music_ops
 from cochain.cochain.discretize import DeRhamMap
 from cochain.cochain.ext_prod.cup import AntisymmetricCupProduct
 from cochain.cochain.ext_prod.whitney import WhitneyWedgeL2Projector
-from cochain.cochain.int_prod import algebraic_contract, galerkin_contract
+from cochain.cochain.int_prod import galerkin_contract
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tet import tet_masses
 from cochain.geometry.tri import tri_masses
@@ -167,3 +167,117 @@ def test_galerkin_contraction_3_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
     )
 
     torch.testing.assert_close(int_prod, int_prod_cochain_true)
+
+
+def test_galerkin_contraction_nilpotency_2_form(two_tets_mesh: SimplicialMesh, device):
+    """
+    Test that contracting a k-cochain twice against the same vector field gives
+    zero.
+
+    Note that, due to L^2 projection errors, the Galerkin method does not strictly
+    satisfy the nilpotency property unless tested on constant vector fields and
+    constant k-forms.
+    """
+    k = 2
+    mesh = two_tets_mesh.to(device)
+
+    # Set up a constant vector field and a constant 2-form.
+    const_vec = torch.randn(3, dtype=mesh.dtype, device=mesh.device)
+    const_2_form = torch.randn(3, dtype=mesh.dtype, device=mesh.device)
+
+    # Compute the flat of the constant vector field.
+    edge_verts = mesh.vert_coords[mesh.edges]
+    edge_vecs = edge_verts[:, 1] - edge_verts[:, 0]
+    const_vec_flat = einsum(const_vec, edge_vecs, "coord, edge coord -> edge")
+
+    # Compute the flat of the constant 2-form using the de Rham map.
+    de_rham_2 = DeRhamMap(k=k, quad_degree=1, mesh=mesh)
+
+    sampled_points = de_rham_2.sample_points()
+    n_tris, n_pts, _ = sampled_points.shape
+    const_2_form_shaped = repeat(
+        const_2_form, "coord -> tri pt coord", tri=n_tris, pt=n_pts
+    )
+
+    const_2_cochain = de_rham_2.discretize(const_2_form_shaped)
+
+    # Perform two consecutive interior products
+    wedge_op_r1 = WhitneyWedgeL2Projector(k=1, l=k - 1, mesh=mesh)
+    mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(mesh)
+
+    int_prod_r1 = galerkin_contract(
+        cochain_k=const_2_cochain,
+        cochain_1=const_vec_flat,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op_r1,
+        method="dense",
+    )
+
+    wedge_op_r2 = WhitneyWedgeL2Projector(k=1, l=k - 2, mesh=mesh)
+    mass_km2 = getattr(tet_masses, f"mass_{k - 2}")(mesh)
+
+    int_prod_r2 = galerkin_contract(
+        cochain_k=int_prod_r1,
+        cochain_1=const_vec_flat,
+        mass_km1=mass_km2,
+        wedge_op=wedge_op_r2,
+        method="dense",
+    )
+
+    # The final (k-2)-cochain should be close to zero.
+    int_prod_r2_true = torch.zeros_like(int_prod_r2)
+
+    torch.testing.assert_close(int_prod_r2, int_prod_r2_true)
+
+
+def test_galerkin_contraction_nilpotency_3_form(two_tets_mesh: SimplicialMesh, device):
+    k = 3
+    mesh = two_tets_mesh.to(device)
+
+    # Set up a constant vector field and a constant 3-form.
+    const_vec = torch.randn(3, dtype=mesh.dtype, device=mesh.device)
+    const_3_form = torch.randn(1, dtype=mesh.dtype, device=mesh.device)
+
+    # Compute the flat of the constant vector field.
+    edge_verts = mesh.vert_coords[mesh.edges]
+    edge_vecs = edge_verts[:, 1] - edge_verts[:, 0]
+    const_vec_flat = einsum(const_vec, edge_vecs, "coord, edge coord -> edge")
+
+    # Compute the flat of the constant 3-form using the de Rham map.
+    de_rham_3 = DeRhamMap(k=3, quad_degree=1, mesh=mesh)
+
+    sampled_points = de_rham_3.sample_points()
+    n_tets, n_pts, _ = sampled_points.shape
+    const_3_form_shaped = repeat(
+        const_3_form, "coord -> tet pt coord", tet=n_tets, pt=n_pts
+    )
+
+    const_3_cochain = de_rham_3.discretize(const_3_form_shaped)
+
+    # Perform two consecutive interior products
+    wedge_op_r1 = WhitneyWedgeL2Projector(k=1, l=k - 1, mesh=mesh)
+    mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(mesh)
+
+    int_prod_r1 = galerkin_contract(
+        cochain_k=const_3_cochain,
+        cochain_1=const_vec_flat,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op_r1,
+        method="dense",
+    )
+
+    wedge_op_r2 = WhitneyWedgeL2Projector(k=1, l=k - 2, mesh=mesh)
+    mass_km2 = getattr(tet_masses, f"mass_{k - 2}")(mesh)
+
+    int_prod_r2 = galerkin_contract(
+        cochain_k=int_prod_r1,
+        cochain_1=const_vec_flat,
+        mass_km1=mass_km2,
+        wedge_op=wedge_op_r2,
+        method="dense",
+    )
+
+    # The final (k-2)-cochain should be close to zero.
+    int_prod_r2_true = torch.zeros_like(int_prod_r2)
+
+    torch.testing.assert_close(int_prod_r2, int_prod_r2_true)
