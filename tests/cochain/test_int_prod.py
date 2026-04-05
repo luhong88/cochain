@@ -1,3 +1,5 @@
+import random
+
 import pytest
 import torch
 from einops import einsum, rearrange, repeat
@@ -74,7 +76,7 @@ def test_galerkin_contraction_2_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
     const_2_form = torch.randn(3, dtype=mesh.dtype, device=mesh.device)
 
     # Note that, the interior product must be computed as ω x v, rather than v x ω.
-    int_prod_form = torch.cross(const_2_form, const_vec)
+    int_prod_form = torch.cross(const_2_form, const_vec, dim=-1)
 
     # Discretize the true interior product into a 1-cochain.
     de_rham_1 = DeRhamMap(k=1, quad_degree=1, mesh=mesh)
@@ -281,3 +283,88 @@ def test_galerkin_contraction_nilpotency_3_form(two_tets_mesh: SimplicialMesh, d
     int_prod_r2_true = torch.zeros_like(int_prod_r2)
 
     torch.testing.assert_close(int_prod_r2, int_prod_r2_true)
+
+
+@pytest.mark.parametrize(
+    "k, mesh",
+    [
+        (1, "two_tets_mesh"),
+        (2, "two_tets_mesh"),
+        (3, "two_tets_mesh"),
+        (1, "two_tris_mesh"),
+        (2, "two_tris_mesh"),
+    ],
+)
+def test_galerkin_contraction_linearity(k: int, mesh, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
+
+    a = random.random()
+    b = random.random()
+
+    vec_field_flat_1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    vec_field_flat_2 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+
+    k_cochain_1 = torch.randn(mesh.n_splx[k], dtype=mesh.dtype, device=mesh.device)
+    k_cochain_2 = torch.randn(mesh.n_splx[k], dtype=mesh.dtype, device=mesh.device)
+
+    wedge_op_r1 = WhitneyWedgeL2Projector(k=1, l=k - 1, mesh=mesh)
+
+    match mesh.dim:
+        case 3:
+            mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(mesh)
+        case 2:
+            mass_km1 = getattr(tri_masses, f"mass_{k - 1}")(mesh)
+
+    # First, test linearity in the vector field argument.
+    int_prod_sum = galerkin_contract(
+        vec_field_flat=a * vec_field_flat_1 + b * vec_field_flat_2,
+        cochain_k=k_cochain_1,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op_r1,
+        method="dense",
+    )
+
+    int_prod_1 = a * galerkin_contract(
+        vec_field_flat=vec_field_flat_1,
+        cochain_k=k_cochain_1,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op_r1,
+        method="dense",
+    )
+
+    int_prod_2 = b * galerkin_contract(
+        vec_field_flat=vec_field_flat_2,
+        cochain_k=k_cochain_1,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op_r1,
+        method="dense",
+    )
+
+    torch.testing.assert_close(int_prod_1 + int_prod_2, int_prod_sum)
+
+    # Then, test linearity in the k-form argument.
+    int_prod_sum = galerkin_contract(
+        vec_field_flat=vec_field_flat_1,
+        cochain_k=a * k_cochain_1 + b * k_cochain_2,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op_r1,
+        method="dense",
+    )
+
+    int_prod_1 = a * galerkin_contract(
+        vec_field_flat=vec_field_flat_1,
+        cochain_k=k_cochain_1,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op_r1,
+        method="dense",
+    )
+
+    int_prod_2 = b * galerkin_contract(
+        vec_field_flat=vec_field_flat_1,
+        cochain_k=k_cochain_2,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op_r1,
+        method="dense",
+    )
+
+    torch.testing.assert_close(int_prod_1 + int_prod_2, int_prod_sum)
