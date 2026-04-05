@@ -9,8 +9,8 @@ from .ext_prod.whitney import WhitneyWedgeL2Projector
 
 
 def galerkin_contract(
+    vec_field_flat: Float[Tensor, " edge *ch"],
     cochain_k: Float[Tensor, " k_splx *ch"],
-    cochain_1: Float[Tensor, " edge *ch"],
     mass_km1: Float[BaseDecoupledTensor, "km1_splx km1_splx"],
     wedge_op: WhitneyWedgeL2Projector,
     method: Literal["dense", "solver"],
@@ -56,7 +56,7 @@ def galerkin_contract(
 
     def _wedge_forward(cochain_km1: Tensor) -> Tensor:
         # pairing="scalar" preserves the *ch dimension in the output
-        return wedge_op(cochain_1, cochain_km1, pairing="scalar")
+        return wedge_op(vec_field_flat, cochain_km1, pairing="scalar")
 
     # Because the WhitneyWedgeL2Projector forward pass is a pure function, it is
     # safe for vjp(); note that, even though the wedge product __init__() does

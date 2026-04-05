@@ -55,8 +55,8 @@ def test_galerkin_contraction_1_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
     mass_0 = tet_masses.mass_0(mesh)
 
     int_prod = galerkin_contract(
+        vec_field_flat=const_vec_flat,
         cochain_k=const_1_cochain,
-        cochain_1=const_vec_flat,
         mass_km1=mass_0,
         wedge_op=wedge_op,
         method="dense",
@@ -108,8 +108,8 @@ def test_galerkin_contraction_2_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
     mass_1 = tet_masses.mass_1(mesh)
 
     int_prod = galerkin_contract(
+        vec_field_flat=const_vec_flat,
         cochain_k=const_2_cochain,
-        cochain_1=const_vec_flat,
         mass_km1=mass_1,
         wedge_op=wedge_op,
         method="dense",
@@ -159,8 +159,8 @@ def test_galerkin_contraction_3_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
     mass_2 = tet_masses.mass_2(mesh)
 
     int_prod = galerkin_contract(
+        vec_field_flat=const_vec_flat,
         cochain_k=const_3_cochain,
-        cochain_1=const_vec_flat,
         mass_km1=mass_2,
         wedge_op=wedge_op,
         method="dense",
@@ -206,8 +206,8 @@ def test_galerkin_contraction_nilpotency_2_form(two_tets_mesh: SimplicialMesh, d
     mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(mesh)
 
     int_prod_r1 = galerkin_contract(
+        vec_field_flat=const_vec_flat,
         cochain_k=const_2_cochain,
-        cochain_1=const_vec_flat,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
         method="dense",
@@ -217,8 +217,8 @@ def test_galerkin_contraction_nilpotency_2_form(two_tets_mesh: SimplicialMesh, d
     mass_km2 = getattr(tet_masses, f"mass_{k - 2}")(mesh)
 
     int_prod_r2 = galerkin_contract(
+        vec_field_flat=const_vec_flat,
         cochain_k=int_prod_r1,
-        cochain_1=const_vec_flat,
         mass_km1=mass_km2,
         wedge_op=wedge_op_r2,
         method="dense",
@@ -259,8 +259,8 @@ def test_galerkin_contraction_nilpotency_3_form(two_tets_mesh: SimplicialMesh, d
     mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(mesh)
 
     int_prod_r1 = galerkin_contract(
+        vec_field_flat=const_vec_flat,
         cochain_k=const_3_cochain,
-        cochain_1=const_vec_flat,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
         method="dense",
@@ -270,8 +270,8 @@ def test_galerkin_contraction_nilpotency_3_form(two_tets_mesh: SimplicialMesh, d
     mass_km2 = getattr(tet_masses, f"mass_{k - 2}")(mesh)
 
     int_prod_r2 = galerkin_contract(
+        vec_field_flat=const_vec_flat,
         cochain_k=int_prod_r1,
-        cochain_1=const_vec_flat,
         mass_km1=mass_km2,
         wedge_op=wedge_op_r2,
         method="dense",
