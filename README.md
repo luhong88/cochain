@@ -20,10 +20,9 @@ Cochain is a computational topology toolkit built on PyTorch, designed to facili
     * Galerkin interior product.
     * Whitney map for interpolation of discrete $k$-cochains and de Rham map for discretization of continuous $k$-forms. 
     * Flat and sharp operators for music isomorphisms between 1-cochains and vector fields.
-* Computational backends:
-    * Differentiable wrappers for sparse linear solvers SuperLU (via `scipy` and `cupy`) and cuDSS (via `nvmath-python`).
-    * Differentiable sparse eigensolvers, including the implicitly restarted Lanczos method (via `scipy`), the thick-restart Lanczos method (via `cupy`), and LOBPCG solver implementation that supports both generalized eigenvalue problems and the shift-invert mode for interior eigenvalues.
-    * Fixed-topology autograd: optimized sparse matrix primitives that pre-compute index structures, ensuring efficient backprop through operator values.
+* Sparse linear algebra utils:
+    * PyTorch-compatible wrapper for existing sparse linear solvers (SuperLU and cuDSS) and eigensolvers (Lanczos and LOBPCG), adapted to support generalized eigenvalue problems and the shift-invert mode.
+    * Fixed-topology autograd that caches sparse index structures.
 
 
 ### Planned Features:
