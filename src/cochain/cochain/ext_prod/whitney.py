@@ -16,10 +16,10 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
         Compute the load vector required to compute the L^2-projected wedge product
         (or the Galerkin wedge product).
 
-        To compute the wedge product between a k-form and an l-form, first use
-        this class to compute the load vector `b`, then, solve the linear system
-        `M@w=b` to find the wedge product (k+l)-form `w`; here, `M` is the (k+l)-
-        form mass matrix.
+        To compute the wedge product between a k-cochain and an l-cochain, first
+        use this class to compute the load vector `b`, then, solve the linear system
+        `M @ w = b` to find the wedge product (k+l)-cochain `w`; here, `M` is the
+        (k+l)-mass matrix.
 
         The Galerkin wedge product satisfies graded commutativity, but not associativity
         or Leibniz rule. However, compared the the cup product and anti-symmetric

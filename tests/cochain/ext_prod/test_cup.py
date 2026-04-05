@@ -3,7 +3,7 @@ import itertools
 import pytest
 import torch
 
-from cochain.cochain.product.cup import AntisymmetricCupProduct, CupProduct
+from cochain.cochain.ext_prod.cup import AntisymmetricCupProduct, CupProduct
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tri.tri_geometry import compute_tri_areas
 
