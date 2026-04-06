@@ -227,7 +227,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 block_perm = torch.argsort(block_idx_coo[0], stable=True)
 
                 block_val_sorted = block_val[block_perm]
-                block_idx_coo_sorted = block_idx_coo[block_perm]
+                block_idx_coo_sorted = block_idx_coo[:, block_perm]
 
                 # Convert the global row/col indices to per-block indices.
                 block_idx_coo_sorted[-2] -= row_block_sizes[:block_idx].sum()
