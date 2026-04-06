@@ -103,8 +103,11 @@ class BlockDiagConfig:
 @dataclass(frozen=True)
 class SparsityPattern:
     """
-    idx_coo must be coalesced and of shape (2, nnz) or (3, nnz).
-    This class does not check that idx_coo is coalesced.
+    A util class that stores the sparsity pattern of a sparse tensor in the form
+    of its COO matrix and provides methods for conversion to CSR and CSC representations.
+
+    Note that the input idx_coo must be coalesced (this is not checked) and of shape
+    (2, nnz) or (3, nnz), depending on whether there is a batch dimension.
     """
 
     _idx_coo: Integer[LongTensor, "sp nnz"]
@@ -190,7 +193,7 @@ class SparsityPattern:
         # If there is a batch dimension, the coo index needs to be sorted first
         # by batch item order; find the permutation for this sort. If there is no
         # batch dim, this sort does nothing.
-        batch_perm = torch.sort(idx_coo_concat[0], stable=True).indices
+        batch_perm = torch.argsort(idx_coo_concat[0], stable=True)
 
         # Determine the concatenated SparsityPattern shape.
         if rep_pattern.n_batch_dim > 0:
@@ -278,6 +281,8 @@ class SparsityPattern:
         """
         Determine how to combine a 2D grid of `SparsityPattern`s to construct a
         block matrix operator. None is allowed to represent empty/zero blocks.
+
+        Note that rows/columns with all None or degenerate blocks are allowed.
         """
         # Pick a representative SparsityPattern and use it to determine device,
         # dtype, and batch/dense dimension information.
@@ -295,7 +300,7 @@ class SparsityPattern:
 
         # Determine the input SparsityPattern sparse row/column shapes. The row
         # sizes and col sizes are each represented as a 2D tensor; None is assigned
-        # a shape of 0.
+        # a shape of -1.
         r_sizes = []
         c_sizes = []
         for pattern_row in patterns:
@@ -304,8 +309,8 @@ class SparsityPattern:
 
             for pattern in pattern_row:
                 if pattern is None:
-                    row_r_sizes.append(0)
-                    row_c_sizes.append(0)
+                    row_r_sizes.append(-1)
+                    row_c_sizes.append(-1)
                 else:
                     row_r_sizes.append(pattern.size(-2))
                     row_c_sizes.append(pattern.size(-1))
@@ -316,36 +321,27 @@ class SparsityPattern:
         r_sizes = torch.tensor(r_sizes, dtype=idx_dtype, device=device)
         c_sizes = torch.tensor(c_sizes, dtype=idx_dtype, device=device)
 
-        # Sanity checks on the row/col shape tensors.
-        for sp_op_dims in [r_sizes, c_sizes]:
-            for block_dim in [0, 1]:
-                if not (sp_op_dims.sum(dim=block_dim) > 0).all():
-                    raise ValueError(
-                        "Rows/columns with all None or degenerate blocks are not allowed."
-                    )
+        # Sanity checks on the row/col shape tensors: the r_sizes tensor should
+        # have constant rows, and the c_sizes tensor should have constant cols,
+        # with the exception being None is allowed with a -1 value.
+        for sp_op_dims, check_dim in zip([r_sizes, c_sizes], [1, 0]):
+            eq_to_max = sp_op_dims == sp_op_dims.max(dim=check_dim, keepdim=True).values
+            eq_to_null = sp_op_dims == -1
 
-        r_max_size_per_row = r_sizes.max(dim=-1, keepdim=True).values
-        r_min_size_per_row = torch.zeros_like(r_max_size_per_row)
-        if not (
-            (r_sizes == r_max_size_per_row) | (r_sizes == r_min_size_per_row)
-        ).all():
-            raise ValueError(
-                "The blocks in each row (except for None) must have the same number of rows."
-            )
+            if not (eq_to_max | eq_to_null).all():
+                raise ValueError(
+                    "Block dimensions must match along their respective rows and columns."
+                )
 
-        c_max_size_per_col = c_sizes.max(dim=0, keepdim=True).values
-        c_min_size_per_col = torch.zeros_like(c_max_size_per_col)
-        if not (
-            (c_sizes == c_max_size_per_col) | (c_sizes == c_min_size_per_col)
-        ).all():
-            raise ValueError(
-                "The blocks in each col (except for None) must have the same number of cols."
-            )
+        # Clamp the -1 values introduced by None to 0 and determine the (physical)
+        # row and col block sizes.
+        r_sizes_clamped = torch.clamp_min(r_sizes.max(dim=1).values, 0)
+        c_sizes_clamped = torch.clamp_min(c_sizes.max(dim=0).values, 0)
 
         # Construct the concatenated coo index by iterating over the block coo indices.
         idx_coo_list = []
-        r_offset = 0
-        c_offset = 0
+        r_offset = torch.tensor(0, dtype=idx_dtype, device=device)
+        c_offset = torch.tensor(0, dtype=idx_dtype, device=device)
         for r_idx, pattern_row in enumerate(patterns):
             for c_idx, pattern in enumerate(pattern_row):
                 if pattern is not None:
@@ -358,11 +354,9 @@ class SparsityPattern:
                     idx_coo[-1] += c_offset
                     idx_coo_list.append(idx_coo)
 
-                # Use max() to account for the possible that a row starts in None
-                c_offset += c_sizes[:, c_idx].max().item()
+                c_offset += c_sizes_clamped[c_idx]
 
-            # Use max() to account for the possibility that a row ends in None
-            r_offset += r_sizes[r_idx, :].max().item()
+            r_offset += r_sizes_clamped[r_idx]
             c_offset = 0
 
         idx_coo_concat = torch.hstack(idx_coo_list)
@@ -372,8 +366,8 @@ class SparsityPattern:
         batch_perm = torch.sort(idx_coo_concat[0], stable=True).indices
 
         # Determine the concatenated SparsityPattern shape.
-        n_row = r_sizes.max(dim=1).values.sum().item()
-        n_col = c_sizes.max(dim=0).values.sum().item()
+        n_row = r_sizes_clamped.sum().item()
+        n_col = c_sizes_clamped.sum().item()
         if rep_pattern.n_batch_dim > 0:
             pattern_shape_concat = torch.Size([rep_pattern.size(0), n_row, n_col])
         else:

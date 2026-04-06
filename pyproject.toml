@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cochain"
 version = "0.1.0"
-description = "Differentiable Simplicial Computation."
+description = "Differentiable operators for computational topology and DEC."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

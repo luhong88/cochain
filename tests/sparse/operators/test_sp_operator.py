@@ -581,6 +581,34 @@ def test_pack_block_diag(device):
         torch.testing.assert_close(sdt.to_dense(), ori_op.to_dense())
 
 
+def test_unpack_block_diag_via_ptrs(device):
+    a = (
+        torch.randint(0, 3, (3, 2))
+        .to_sparse_coo()
+        .to(dtype=torch.float32, device=device)
+    )
+    b = SparseDecoupledTensor.from_tensor(torch.randint(0, 3, (2, 4))).to(
+        dtype=torch.float32, device=device
+    )
+    c = DiagDecoupledTensor.from_tensor(torch.randint(0, 3, (4,))).to(
+        dtype=torch.float32, device=device
+    )
+
+    block_diag = SparseDecoupledTensor.pack_block_diag((a, b, c))
+
+    row_ptrs = torch.tensor(
+        [0, 0, 0, 1, 1, 2, 2, 2, 2], dtype=torch.long, device=device
+    )
+    col_ptrs = torch.tensor(
+        [0, 0, 1, 1, 1, 1, 2, 2, 2, 2], dtype=torch.long, device=device
+    )
+
+    sp_ops = block_diag.unpack_by_ptrs(n_blocks=3, row_ptrs=row_ptrs, col_ptrs=col_ptrs)
+
+    for sdt, ori_op in zip(sp_ops, [a, b, c]):
+        torch.testing.assert_close(sdt.to_dense(), ori_op.to_dense())
+
+
 def test_pack_block_diag_with_batch_dim(A_batched, device):
     block_diag = SparseDecoupledTensor.pack_block_diag((A_batched, -A_batched)).to(
         device
@@ -701,14 +729,22 @@ def test_bmat_with_dense_dim(device):
 def test_bmat_with_invalid_row_col(A, device):
     a = A.to(device)
 
-    with pytest.raises(ValueError):
-        SparseDecoupledTensor.bmat([[a, None], [a, None]])
+    # Test degenerate column
+    bmat_1 = SparseDecoupledTensor.bmat([[a, None], [a, None]])
+    bmat_2 = SparseDecoupledTensor.bmat([[a], [a]])
 
-    with pytest.raises(ValueError):
-        SparseDecoupledTensor.bmat([[None, a], [None, a]])
+    torch.testing.assert_close(bmat_1.to_dense(), bmat_2.to_dense())
 
+    # Test degenerate row
+    bmat_1 = SparseDecoupledTensor.bmat([[None, None], [a, a]])
+    bmat_2 = SparseDecoupledTensor.bmat([[a, a]])
+
+    torch.testing.assert_close(bmat_1.to_dense(), bmat_2.to_dense())
+
+    # Test full degenerate bmat
     with pytest.raises(ValueError):
         SparseDecoupledTensor.bmat([[None, None], [None, None]])
 
+    # Test invalid dtype
     with pytest.raises(TypeError):
         SparseDecoupledTensor.bmat([a, 3], [None, a])
