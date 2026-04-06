@@ -14,6 +14,42 @@ from ._pattern import SparsityPattern, check_pattern_equality
 
 @dataclass
 class SparseDecoupledTensor(BaseDecoupledTensor):
+    """
+    A custom sparse tensor representation that explicitly decouples non-zero numerical
+    values (`val`) from the sparsity pattern (`pattern`). The class supports
+    sparse-sparse and sparse-dense linear algebra operations using the native
+    CSR and CSC representations in pytorch, caches different index representations
+    whenever safe, and offers some basic matrix algebra and manipulation utils.
+
+    Notes
+    -----
+    * This class is primarily designed for sparse, 2D matrices; batching, if there
+      is any, is assumed to be in the form of block diagonal batching; however,
+      this class does allow for (at most) one leading batch dimension and arbitrary
+      trailing dense dimensions. Therefore, the shape of a supported tensor is
+      (*b, r, c, *d), where *b matches to at most one dimension. The number of these
+      dimensions can be queried as follows: `n_batch_dim` gives the number of batch
+      dimensions (0 or 1), `n_sp_dim` gives the number of sparse dimensions (r and c;
+      must be 2), and `n_dense_dim` gives the number of dimensions matching *d.
+      The `_nnz()` method gives the total number of nonzero elements (nnz), rather
+      than nnz per batch element.
+    * Due to pytorch CSR/CSC requirements, for a tensor with a batch dim, all
+      constituent sparse tensors must have the same nnz.
+    * If the `SparseDecoupledTensor` is initialized directly via its constructor
+      using the `pattern` and `val` arguments, it is assumed that the sparse COO
+      tensor used to generate these arguments was already coalesced. On the other
+      hand, if the `SparseDecoupledTensor` is initialized via `from_tensor()`, then
+      the input tensor is always first converted to a COO tensor and coalesced.
+    * The `pattern` attribute and the `SparsityPattern` class enforces strict
+      onwership of tensor indices via cloning during init and should be treated
+      as immutable.
+    * The `SparsityPattern` class caches CSR/CSC indices whenever they are calculated.
+      These indices are preserved by the following operations: element-wise and
+      unary operators, memory management/casting (`clone()`, `detach()`, `to()`),
+      and matrix transpose (`.T`). Operations such as matrix assembly/disassembly,
+      subsetting, and matrix multiplication will drop the index caches.
+    """
+
     pattern: Integer[SparsityPattern, "*b r c"]
     val: Float[Tensor, " nnz *d"]
 
