@@ -40,4 +40,18 @@ dev = [
 where = ["src"]
 
 [tool.ruff.lint]
-extend-ignore = ["F722", "E741"]
+extend-select = ["D"]
+extend-ignore = [
+    "F722", # Allows jaxtyping literal string shapes
+    "E741", # Allows ambiguous variable names
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D103", # Missing docstring in public function
+    "D104", # Missing docstring in public package
+    "D105", # Missing docstring in magic method
+    "D107", # Missing docstring in __init__
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
