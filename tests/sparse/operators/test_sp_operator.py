@@ -701,14 +701,22 @@ def test_bmat_with_dense_dim(device):
 def test_bmat_with_invalid_row_col(A, device):
     a = A.to(device)
 
-    with pytest.raises(ValueError):
-        SparseDecoupledTensor.bmat([[a, None], [a, None]])
+    # Test degenerate column
+    bmat_1 = SparseDecoupledTensor.bmat([[a, None], [a, None]])
+    bmat_2 = SparseDecoupledTensor.bmat([[a], [a]])
 
-    with pytest.raises(ValueError):
-        SparseDecoupledTensor.bmat([[None, a], [None, a]])
+    torch.testing.assert_close(bmat_1.to_dense(), bmat_2.to_dense())
 
+    # Test degenerate row
+    bmat_1 = SparseDecoupledTensor.bmat([[None, None], [a, a]])
+    bmat_2 = SparseDecoupledTensor.bmat([[a, a]])
+
+    torch.testing.assert_close(bmat_1.to_dense(), bmat_2.to_dense())
+
+    # Test full degenerate bmat
     with pytest.raises(ValueError):
         SparseDecoupledTensor.bmat([[None, None], [None, None]])
 
+    # Test invalid dtype
     with pytest.raises(TypeError):
         SparseDecoupledTensor.bmat([a, 3], [None, a])
