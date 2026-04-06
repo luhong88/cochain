@@ -198,7 +198,7 @@ class SimplicialMesh:
         tris: Integer[LongTensor, "tri 3"],
     ):
         """
-        Construct a special geometric simplicial 2-complex as a triangulated 2D
+        Construct a special geometric simplicial 2-complex as a t riangulated 2D
         mesh immersed in 3D Euclidean space; note that this function does not assume
         that the complex is a 2-manifold.
 
@@ -207,11 +207,13 @@ class SimplicialMesh:
         """
         unique_canon_edges, cbd_0, cbd_1 = coboundaries.cbd_from_tri_mesh(tris)
 
-        cbd_2 = torch.sparse_coo_tensor(
-            indices=torch.empty((2, 0), dtype=torch.long),
-            values=torch.empty((0,), dtype=vert_coords.dtype),
-            size=(0, tris.shape[0]),
-            device=cbd_0.device,
+        cbd_2 = SparseDecoupledTensor.from_tensor(
+            torch.sparse_coo_tensor(
+                indices=torch.empty((2, 0), dtype=torch.long),
+                values=torch.empty((0,), dtype=vert_coords.dtype),
+                size=(0, tris.shape[0]),
+                device=cbd_0.device,
+            )
         )
 
         tets = torch.empty((0, 4), dtype=torch.long, device=tris.device)
@@ -252,141 +254,83 @@ class SimplicialMesh:
         )
 
 
-class SimplicialBatch(SimplicialMesh):
+@dataclass
+class MeshBatch(SimplicialMesh):
     """
-    A "batch" of complexes, represented as a single large, disconnected complex.
-    This is what the DataLoader returns.
+    A batch of SimplicialMesh, represented as a single, disconnected complex.
     """
 
-    def __init__(
-        self,
-        batch_verts: Integer[LongTensor, " vert"],
-        batch_edges: Integer[LongTensor, " edge"],
-        batch_tris: Integer[LongTensor, " tri"],
-        batch_tets: Integer[LongTensor, " tet"],
-        *args,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-
-        # the "batch" tensor for each dimension maps a simplex back to the original
-        # simplicial complex; i.e., batch_edges[i] = k indicates that the i-th edge
-        # in the batch comes from the k-th simplicial complex.
-        self.batch_verts = batch_verts
-        self.batch_edges = batch_edges
-        self.batch_tris = batch_tris
-        self.batch_tets = batch_tets
-
-    @property
-    def n_sc(self) -> int:
-        return self.batch_verts.max().item() + 1
+    # the "ptr" tensor for each dimension maps a simplex back to the original
+    # simplicial complex; i.e., edges_ptr[i] = k indicates that the i-th edge
+    # in the batch comes from the k-th simplicial complex.
+    n_meshs: int
+    ptrs: tuple[
+        Integer[LongTensor, " vert"],
+        Integer[LongTensor, " edge"],
+        Integer[LongTensor, " tri"],
+        Integer[LongTensor, " tet"],
+    ]
 
 
-# TODO: update to use SparseDecoupledTensor
-def collate_fn(sc_batch: Sequence[SimplicialMesh]) -> SimplicialBatch:
+def collate_fn(mesh_batch: Sequence[SimplicialMesh]) -> MeshBatch:
     """
-    This function takes in a list of `SimplicialComplex` objects and collate them
+    This function takes in a list of `SimplicialMesh` objects and collate them
     into a single batched complex.
 
-    Note that this function allows batching of simplicial complexes with different
-    dimensions, but it does not allow for: 1) mixing of abstract and geometric
-    simplicial complexes (i.e., either all or none of the simplicial complexes in
-    the batch have valid `vert_coords` that is not `None`), or 2) mixing of null
-    values in the cochains (i.e., if the k-cochain is not `None` in one of the
-    simplicial complexes in the batch, then it cannot be done for any of the batch
-    element).
+    Note that this function allows batching of meshes with different dimensions.
     """
     # Assume that all simplices and their tensors are on the same device and
     # all float tensors have the same dtype.
-    device = sc_batch[0].cbd[0].device
-    dtype = sc_batch[0].cbd[0].dtype
+    device = mesh_batch[0].device
+    idx_dtype = mesh_batch[0].verts.dtype
 
-    # Generate a cumsum n_sc list for each simplex dimension
+    # Generate a cumsum n_mesh list for each simplex dimension
     n_splx_batch = torch.tensor(
         [
-            [0] + [sc.n_verts for sc in sc_batch],
-            [0] + [sc.n_edges for sc in sc_batch],
-            [0] + [sc.n_tris for sc in sc_batch],
-            [0] + [sc.n_tets for sc in sc_batch],
+            [0] + [mesh.n_verts for mesh in mesh_batch],
+            [0] + [mesh.n_edges for mesh in mesh_batch],
+            [0] + [mesh.n_tris for mesh in mesh_batch],
+            [0] + [mesh.n_tets for mesh in mesh_batch],
         ],
-        dtype=torch.long,
+        dtype=idx_dtype,
         device=device,
     )
 
-    n_splx_cumsum_batch = torch.cumsum(n_splx_batch, dim=-1, dtype=torch.long)
+    n_verts_cumsum_batch = torch.cumsum(n_splx_batch[0], dim=-1, dtype=idx_dtype)
 
-    # Generate the batch tensor for each simplex dimension
-    batch_tensor_dict = {
-        f"batch_{splx_type}": torch.repeat_interleave(
-            torch.arange(len(sc_batch), dtype=torch.long, device=device),
-            repeats=n_splx_batch[splx_dim, 1:],
+    # Generate the ptr tensor for each simplex dimension
+    ptrs = [
+        torch.repeat_interleave(
+            torch.arange(len(mesh_batch), dtype=idx_dtype, device=device),
+            repeats=n_splx_batch[dim, 1:],
         )
-        for splx_dim, splx_type in enumerate(["verts", "edges", "tris", "tets"])
-    }
+        for dim in range(4)
+    ]
 
     # Collate the coboundary operators into sparse block-diagonal forms.
-    # Increment the simplex indices for each sc in the batch.
-    coboundaries_batch = [
-        torch.sparse_coo_tensor(
-            indices=torch.hstack(
-                [
-                    sc.cbd[dim].indices()
-                    + n_splx_cumsum_batch[[dim + 1, dim], idx][:, None]
-                    for idx, sc in enumerate(sc_batch)
-                ]
-            ),
-            values=torch.hstack([sc.cbd[dim].values() for sc in sc_batch]),
-            size=(n_splx_cumsum_batch[dim + 1, -1], n_splx_cumsum_batch[dim, -1]),
-            dtype=dtype,
-            device=device,
-        ).coalesce()
-        for dim in range(3)
+    cbd_batch = [
+        SparseDecoupledTensor.pack_block_diag([mesh.cbd[idx] for mesh in mesh_batch])
+        for idx in range(3)
     ]
 
     # Collate the simplices; increment the vertex indices for each sc in the batch.
-    simplices_batch = [
+    splx_batch = [
         torch.vstack(
             [
-                getattr(sc, splx_type) + n_splx_cumsum_batch[0, idx]
-                for idx, sc in enumerate(sc_batch)
+                mesh.splx[dim] + n_verts_cumsum_batch[mesh_idx]
+                for mesh_idx, mesh in enumerate(mesh_batch)
             ]
         )
-        for splx_type in ["edges", "tris", "tets"]
+        for dim in [1, 2, 3]
     ]
 
     # Collate the vertex coordinates
-    vert_coords_list = [sc.vert_coords for sc in sc_batch]
+    vert_coords_batch = torch.vstack([sc.vert_coords for sc in mesh_batch])
 
-    if None not in vert_coords_list:
-        vert_coords_batch = torch.vstack(vert_coords_list)
-
-    elif all(vert_coords is None for vert_coords in vert_coords_list):
-        vert_coords_batch = None
-
-    else:
-        raise ValueError(
-            "All 'vert_coords' in a batch must all be either tensors or 'None's."
-        )
-
-    return SimplicialBatch(
-        **batch_tensor_dict,
-        cbd=tuple(coboundaries_batch),
-        simplices=tuple(simplices_batch),
+    return MeshBatch(
+        cbd=tuple(cbd_batch),
+        splx=tuple(splx_batch),
         vert_coords=vert_coords_batch,
+        n_meshs=len(mesh_batch),
+        ptrs=tuple(ptrs),
     )
-
-
-class DataLoader(torch.utils.data.DataLoader):
-    """
-    A user-facing DataLoader that automatically uses the collate_fn.
-    """
-
-    def __init__(self, dataset, batch_size=1, **kwargs):
-        # Prevent the user from accidentally passing a custom collate_fn() that
-        # conflicts with ours.
-        if "collate_fn" in kwargs:
-            del kwargs["collate_fn"]
-
-        super().__init__(
-            dataset, batch_size=batch_size, collate_fn=collate_fn, **kwargs
-        )
