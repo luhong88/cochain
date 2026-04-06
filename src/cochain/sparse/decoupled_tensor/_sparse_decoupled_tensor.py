@@ -5,7 +5,7 @@ from typing import Callable, Sequence
 
 import torch
 from jaxtyping import Float, Integer
-from torch import Tensor
+from torch import LongTensor, Tensor
 
 from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
@@ -108,6 +108,102 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         ]
 
         return sp_op_list
+
+    def unpack_by_ptrs(
+        self,
+        n_blocks: int,
+        row_ptrs: Integer[LongTensor, " r"],
+        col_ptrs: Integer[LongTensor, " c"],
+    ) -> list[SparseDecoupledTensor]:
+        """
+        Deconstruct a block diagonal `SparseDecoupledTensor` into a list of constituent
+        `SparseDecoupledTensor`s using row and col "pointers" that indicate the
+        "onwership structures" of constituent blocks. Useful for unpacking a block-
+        diagonal structures derived from a MeshBatch object.
+
+        Note that the block indices in `row_ptrs` and `col_ptrs` are assumed to
+        be 0-indexed.
+
+        If there is a batch dimension, the requirement that the tensor has equal
+        nnz along the batch dimension also needs to be satisfied by the constituent
+        blocks for the unpacking to be successful.
+        """
+        idx_dtype = self.pattern.dtype
+        device = self.device
+
+        # Get the row and col sizes for each block.
+        block_idx, row_sizes = row_ptrs.unique(return_counts=True)
+        row_block_sizes = torch.zeros(n_blocks, dtype=idx_dtype, device=device)
+        row_block_sizes[block_idx] = row_sizes
+
+        block_idx, col_sizes = col_ptrs.unique(return_counts=True)
+        col_block_sizes = torch.zeros(n_blocks, dtype=idx_dtype, device=device)
+        col_block_sizes[block_idx] = col_sizes
+
+        # Sort the indices and values by the row index; this undoes the sort by
+        # batch dim (if there is any).
+        block_perm_inv = torch.argsort(self.pattern.idx_coo[-2], stable=True)
+
+        val_sorted = self.val[block_perm_inv]
+        idx_coo_sorted = self.pattern.idx_coo[:, block_perm_inv]
+
+        # Assign block membership to the nonzero values. By slicing the row_ptrs
+        # by the row indices of the nonzero elements, we directly get the block
+        # membership assignment (for the row indices). Since the input tensor
+        # is assumed to be block diagonal, there is no need to repeat this
+        # calculation for the col_ptrs.
+        block_membership = row_ptrs[idx_coo_sorted[-2]]
+
+        blocks = []
+        for block_idx in range(n_blocks):
+            # Determine block size.
+            if self.n_batch_dim > 0:
+                block_shape = torch.Size(
+                    [
+                        self.size(0),
+                        row_block_sizes[block_idx],
+                        col_block_sizes[block_idx],
+                    ]
+                )
+
+            else:
+                block_shape = torch.Size(
+                    [
+                        row_block_sizes[block_idx],
+                        col_block_sizes[block_idx],
+                    ]
+                )
+
+            # Extract block values and indices.
+            block_mask = block_membership == block_idx
+
+            if block_mask.sum() == 0:
+                block_val_sorted = torch.empty((0,), dtype=self.dtype, device=device)
+                block_idx_coo_sorted = torch.empty(
+                    (self.n_batch_dim + 2, 0), dtype=idx_dtype, device=device
+                )
+
+            else:
+                block_val = val_sorted[block_mask]
+                block_idx_coo = idx_coo_sorted[:, block_mask]
+
+                # Redo the sort by batch dim (if there is any) within the block.
+                block_perm = torch.argsort(block_idx_coo[0], stable=True)
+
+                block_val_sorted = block_val[block_perm]
+                block_idx_coo_sorted = block_idx_coo[block_perm]
+
+                # Convert the global row/col indices to per-block indices.
+                block_idx_coo_sorted[-2] -= row_block_sizes[:block_idx].sum()
+                block_idx_coo_sorted[-1] -= col_block_sizes[:block_idx].sum()
+
+            # Assemble sparse tensor.
+            block_pattern = SparsityPattern(block_idx_coo_sorted, block_shape)
+            block_tensor = SparseDecoupledTensor(block_pattern, block_val_sorted)
+
+            blocks.append(block_tensor)
+
+        return blocks
 
     @classmethod
     def bmat(cls, blocks: Sequence[Sequence[Tensor | BaseDecoupledTensor | None]]):

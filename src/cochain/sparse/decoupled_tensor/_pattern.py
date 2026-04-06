@@ -103,8 +103,11 @@ class BlockDiagConfig:
 @dataclass(frozen=True)
 class SparsityPattern:
     """
-    idx_coo must be coalesced and of shape (2, nnz) or (3, nnz).
-    This class does not check that idx_coo is coalesced.
+    A util class that stores the sparsity pattern of a sparse tensor in the form
+    of its COO matrix and provides methods for conversion to CSR and CSC representations.
+
+    Note that the input idx_coo must be coalesced (this is not checked) and of shape
+    (2, nnz) or (3, nnz), depending on whether there is a batch dimension.
     """
 
     _idx_coo: Integer[LongTensor, "sp nnz"]
@@ -190,7 +193,7 @@ class SparsityPattern:
         # If there is a batch dimension, the coo index needs to be sorted first
         # by batch item order; find the permutation for this sort. If there is no
         # batch dim, this sort does nothing.
-        batch_perm = torch.sort(idx_coo_concat[0], stable=True).indices
+        batch_perm = torch.argsort(idx_coo_concat[0], stable=True)
 
         # Determine the concatenated SparsityPattern shape.
         if rep_pattern.n_batch_dim > 0:

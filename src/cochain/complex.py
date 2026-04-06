@@ -30,6 +30,7 @@ class SimplicialMesh:
     ]
     vert_coords: Float[Tensor, "vert 3"] | None
 
+    # TODO: add a check for empty input mesh.
     def __post_init__(self):
         # The list of vertices contains only redundant information, but we
         # materialize it anyways so that simplices[0] gives the list of 0-simplices.
