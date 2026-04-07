@@ -12,10 +12,7 @@ from cochain.geometry.tet.tet_geometry import (
     compute_tet_signed_vols,
     dompute_d_tet_signed_vols_d_vert_coords,
 )
-from cochain.geometry.tri.tri_geometry import (
-    compute_d_tri_areas_d_vert_coords,
-    compute_tri_areas,
-)
+from cochain.geometry.tri.tri_geometry import compute_bc_grads
 from cochain.utils.faces import enumerate_local_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 
@@ -107,13 +104,7 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     # replaced by ∇W_i(p).
     match mesh.dim:
         case 2:
-            tri_areas = rearrange(
-                compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
-            )
-            d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
-                mesh.vert_coords, mesh.tris
-            )
-            bary_coords_grad = d_tri_areas_d_vert_coords / tri_areas
+            _, bary_coords_grad = compute_bc_grads(mesh.vert_coords, mesh.tris)
             cochain_0_at_vert_faces = cochain_0[mesh.tris]
 
         case 3:
@@ -192,13 +183,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     # replaced by ∇ x W_ij(p).
     match mesh.dim:
         case 2:
-            tri_areas = rearrange(
-                compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
-            )
-            d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
-                mesh.vert_coords, mesh.tris
-            )
-            bary_coords_grad = d_tri_areas_d_vert_coords / tri_areas
+            _, bary_coords_grad = compute_bc_grads(mesh.vert_coords, mesh.tris)
 
             local_edge_idx = enumerate_local_faces(
                 splx_dim=2, face_dim=1, device=device

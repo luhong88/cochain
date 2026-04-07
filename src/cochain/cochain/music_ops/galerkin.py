@@ -11,10 +11,7 @@ from ...geometry.tet.tet_geometry import (
     dompute_d_tet_signed_vols_d_vert_coords,
 )
 from ...geometry.tri import tri_hodge_stars, tri_masses
-from ...geometry.tri.tri_geometry import (
-    compute_d_tri_areas_d_vert_coords,
-    compute_tri_areas,
-)
+from ...geometry.tri.tri_geometry import compute_bc_grads, compute_tri_areas
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     SparseDecoupledTensor,
@@ -44,13 +41,8 @@ def mixed_mass(
     """
     match mesh.dim:
         case 2:
-            tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
-
-            d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
-                mesh.vert_coords, mesh.tris
-            )
-            bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"] = (
-                d_tri_areas_d_vert_coords / tri_areas.view(-1, 1, 1)
+            tri_areas, bary_coords_grad = compute_bc_grads(
+                vert_coords=mesh.vert_coords, tris=mesh.tris
             )
 
         case 3:

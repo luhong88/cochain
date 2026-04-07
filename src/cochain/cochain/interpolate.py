@@ -10,10 +10,7 @@ from ..geometry.tet.tet_geometry import (
     compute_tet_signed_vols,
     dompute_d_tet_signed_vols_d_vert_coords,
 )
-from ..geometry.tri.tri_geometry import (
-    compute_d_tri_areas_d_vert_coords,
-    compute_tri_areas,
-)
+from ..geometry.tri.tri_geometry import compute_bc_grads
 from ..utils.faces import enumerate_local_faces
 from ..utils.search import splx_search
 
@@ -243,14 +240,8 @@ def _bary_whitney_tri(
     mesh: SimplicialMesh,
 ) -> Float[Tensor, "tri pt *ch coord"]:
     if k in [1, 2]:
-        tri_areas = rearrange(
-            compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
-        )
-        d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
-            mesh.vert_coords, mesh.tris
-        )
-        bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"] = (
-            d_tri_areas_d_vert_coords / tri_areas
+        _, bary_coords_grad = compute_bc_grads(
+            vert_coords=mesh.vert_coords, tris=mesh.tris
         )
 
     match k:
