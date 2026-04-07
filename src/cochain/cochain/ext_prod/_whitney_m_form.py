@@ -3,7 +3,11 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ...complex import SimplicialMesh
-from ._whitney_utils import compute_bc_grad_dot, compute_moments, compute_whitney_router
+from ._whitney_utils import (
+    compute_moments,
+    compute_whitney_router,
+    dispatch_bc_grad_dot,
+)
 
 
 def _inv_metric_det(
@@ -152,7 +156,7 @@ def triple_tensor_prod(
 
     moments = compute_moments(3, mesh.dim, device, dtype)
 
-    bc_grad_dot, splx_size = compute_bc_grad_dot(mesh)
+    bc_grad_dot, splx_size = dispatch_bc_grad_dot(mesh)
     wedge_dot = _inv_metric_det(bc_grad_dot, k + l)
 
     einsum_str = _get_triple_tensor_prod_einsum_str(k, l)

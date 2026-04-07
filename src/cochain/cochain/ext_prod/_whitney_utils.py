@@ -61,7 +61,7 @@ def compute_moments(
     return moments.to(device=device, dtype=dtype)
 
 
-def compute_bc_grad_dot(
+def dispatch_bc_grad_dot(
     mesh: SimplicialMesh,
 ) -> tuple[Float[Tensor, "splx vert vert"], Float[Tensor, " splx"]]:
     """
