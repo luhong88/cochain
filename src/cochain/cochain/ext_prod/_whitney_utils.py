@@ -7,7 +7,7 @@ from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
 from ...geometry.tet import tet_geometry
-from ...geometry.tri import tri_geometry
+from ...geometry.tri import _tri_geometry
 from ...utils.faces import enumerate_local_faces
 from ...utils.perm_parity import compute_lex_rel_orient
 from ...utils.search import splx_search
@@ -70,7 +70,7 @@ def dispatch_bc_grad_dot(
     """
     match mesh.dim:
         case 2:
-            splx_size, bc_grad_dot = tri_geometry.compute_bc_grad_dots(
+            splx_size, bc_grad_dot = _tri_geometry.compute_bc_grad_dots(
                 mesh.vert_coords, mesh.tris
             )
 

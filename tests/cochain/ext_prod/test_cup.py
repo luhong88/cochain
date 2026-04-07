@@ -5,7 +5,7 @@ import torch
 
 from cochain.cochain.ext_prod.cup import AntisymmetricCupProduct, CupProduct
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tri.tri_geometry import compute_tri_areas
+from cochain.geometry.tri._tri_geometry import compute_tri_areas
 
 
 def test_cup_product_patch(square_mesh: SimplicialMesh, device):

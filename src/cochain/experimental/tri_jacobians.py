@@ -3,7 +3,7 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ..complex import SimplicialMesh
-from ..geometry.tri.tri_geometry import (
+from ..geometry.tri._tri_geometry import (
     compute_bc_grad_dots,
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,

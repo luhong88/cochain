@@ -11,7 +11,7 @@ from ...geometry.tet.tet_geometry import (
     dompute_d_tet_signed_vols_d_vert_coords,
 )
 from ...geometry.tri import tri_hodge_stars, tri_masses
-from ...geometry.tri.tri_geometry import compute_bc_grads, compute_tri_areas
+from ...geometry.tri._tri_geometry import compute_bc_grads, compute_tri_areas
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     SparseDecoupledTensor,

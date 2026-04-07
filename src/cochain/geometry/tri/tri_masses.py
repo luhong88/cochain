@@ -4,7 +4,7 @@ from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
-from .tri_geometry import (
+from ._tri_geometry import (
     compute_bc_grad_dots,
     compute_tri_areas,
 )

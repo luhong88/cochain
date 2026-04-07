@@ -7,7 +7,7 @@ import torch
 from torch import Tensor
 
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tri import tri_geometry, tri_hodge_stars
+from cochain.geometry.tri import _tri_geometry, tri_hodge_stars
 
 # Test 0-, 1-, and 2-star operators on a watertight mesh and a mesh with boundaries.
 
@@ -104,7 +104,7 @@ def test_star_2_on_tet(hollow_tet_mesh: SimplicialMesh):
 
 
 def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialMesh):
-    tri_areas = tri_geometry.compute_tri_areas(
+    tri_areas = _tri_geometry.compute_tri_areas(
         flat_annulus_mesh.vert_coords, flat_annulus_mesh.tris
     )
 
@@ -122,12 +122,12 @@ def test_tri_areas_with_igl(flat_annulus_mesh: SimplicialMesh):
 def test_d_tri_areas_d_vert_coords(hollow_tet_mesh: SimplicialMesh):
     # Note that this function does not return the Jacobian; rather, for each
     # triangle, it returns the gradient of its area wrt each of its three verticies.
-    dAdV = tri_geometry.compute_d_tri_areas_d_vert_coords(
+    dAdV = _tri_geometry.compute_d_tri_areas_d_vert_coords(
         hollow_tet_mesh.vert_coords, hollow_tet_mesh.tris
     ).flatten(end_dim=1)
 
     jacobian = torch.autograd.functional.jacobian(
-        lambda vert_coords: tri_geometry.compute_tri_areas(
+        lambda vert_coords: _tri_geometry.compute_tri_areas(
             vert_coords, hollow_tet_mesh.tris
         ),
         hollow_tet_mesh.vert_coords,

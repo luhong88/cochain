@@ -4,7 +4,7 @@ from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
-from ..tri.tri_geometry import compute_tri_areas
+from ..tri._tri_geometry import compute_tri_areas
 from .tet_geometry import (
     compute_tet_signed_vols,
 )

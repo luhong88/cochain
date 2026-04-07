@@ -11,7 +11,7 @@ from ...geometry.tet.tet_geometry import (
     dompute_d_tet_signed_vols_d_vert_coords,
 )
 from ...geometry.tri import tri_hodge_stars
-from ...geometry.tri.tri_geometry import compute_bc_grads
+from ...geometry.tri._tri_geometry import compute_bc_grads
 from . import _local_element, _local_vertex
 
 
