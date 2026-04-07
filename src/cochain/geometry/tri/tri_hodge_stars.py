@@ -6,9 +6,10 @@ from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
+from ...utils.faces import enumerate_local_faces
 from ...utils.search import splx_search
 from .tri_geometry import compute_tri_areas
-from .tri_stiffness import cotan_weights
+from .tri_stiffness import compute_cotan_weights
 
 
 def star_2(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
@@ -39,15 +40,15 @@ def star_2(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
 def _star_1_circumcentric(
     tri_mesh: SimplicialMesh,
 ) -> Float[DiagDecoupledTensor, "edge edge"]:
-    vert_coords: Float[Tensor, "vert 3"] = tri_mesh.vert_coords
-    tris: Integer[LongTensor, "tri 3"] = tri_mesh.tris
-
-    n_verts = tri_mesh.n_verts
+    vert_coords: Float[Tensor, "global_vert coord=3"] = tri_mesh.vert_coords
+    tris: Integer[LongTensor, "tri local_vert=3"] = tri_mesh.tris
 
     # The cotan weights matrix (i.e., off-diagonal elements of the stiffness matrix)
     # already contains the desired values; i.e., S_ij = -0.5*sum_k[cot_k] for all
-    # k that forms a triangle with i and j.
-    weights: Float[Tensor, "vert vert"] = cotan_weights(vert_coords, tris, n_verts)
+    # vertices k such that ijk forms a triangle.
+    weights: Float[Tensor, "global_vert global_vert"] = compute_cotan_weights(
+        vert_coords, tris
+    )
 
     # Identify the location of the canonical edge ij in the sparse W_ij indices,
     # and use the location to extract the cotan values.
@@ -57,7 +58,6 @@ def _star_1_circumcentric(
         sort_key_splx=False,
         sort_key_vert=False,
         sort_query_vert=False,
-        method="polynomial_hash",
     )
     subset_vals = weights.values()[subset_idx]
 
@@ -74,15 +74,17 @@ def _star_1_barycentric(
     edges: Integer[LongTensor, "edge 2"] = tri_mesh.edges
     tri_vert_coords: Float[Tensor, "tri 3 3"] = vert_coords[tris]
 
-    i, j, k = 0, 1, 2
-
     # For each tri, find its barycenter and the barycenters of its edge faces,
     # as well as the dual edges that connect the barycenters
     tri_barys: Float[Tensor, "tri 1 3"] = torch.mean(
         tri_vert_coords, dim=-2, keepdim=True
     )
+
+    all_edge_faces = enumerate_local_faces(
+        splx_dim=2, face_dim=1, device=tri_mesh.device
+    )
     tri_edge_face_barys: Float[Tensor, "tri 3 3"] = torch.mean(
-        tri_vert_coords[:, [[i, j], [i, k], [j, k]]],
+        tri_vert_coords[:, all_edge_faces],
         dim=-2,
     )
 
@@ -158,7 +160,7 @@ def star_1(
         case "barycentric":
             return _star_1_barycentric(tri_mesh)
         case _:
-            raise ValueError()
+            raise ValueError("Unknown 'dual_complex' argument.")
 
 
 def star_0(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
@@ -188,8 +190,8 @@ def star_0(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
 
     diag = torch.zeros(
         tri_mesh.n_verts,
-        dtype=tri_mesh.vert_coords.dtype,
-        device=tri_mesh.vert_coords.device,
+        dtype=tri_mesh.dtype,
+        device=tri_mesh.device,
     )
     diag.scatter_add_(
         dim=0,
