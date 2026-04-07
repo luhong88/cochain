@@ -1,5 +1,5 @@
 import torch
-from einops import einsum
+from einops import einsum, repeat
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
@@ -54,20 +54,21 @@ def compute_d_tri_areas_d_vert_coords(
     the base edge $e_{sp}$ perpendicularly in the direction of the triangle's altitude.
     """
     # For each triangle snp, and each vertex s, find the edge vectors sn, sp, and
-    # np, and a vector normal to the triangle at s (sn x sp).
+    # np, and a vector normal to the triangle at s (sn x sp). Note that, since
+    # sn x sp is simply the area normal vector and cyclic vertex permutations
+    # (as defined by the s, n, p relation) have no effect on the orientation of
+    # the area normal, we can simply compute sn x sp once per triangle and broadcast
+    # the result to all three vertices.
     vert_s_coord: Float[Tensor, "tri 3 3"] = vert_coords[tris]
 
-    edge_sn = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
-    edge_sp = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
+    edge_sn = vert_s_coord[:, 1] - vert_s_coord[:, 0]
+    edge_sp = vert_s_coord[:, 2] - vert_s_coord[:, 0]
     edge_np = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord[:, [1, 2, 0], :]
 
-    norm_s: Float[Tensor, "tri 3 3"] = torch.cross(edge_sn, edge_sp, dim=-1)
+    norm_s: Float[Tensor, "tri 3"] = torch.cross(edge_sn, edge_sp, dim=-1)
     norm_s_len = torch.linalg.norm(norm_s, dim=-1, keepdim=True)
+    unorm_s = repeat(norm_s / norm_s_len, "tri coord -> tri vert coord", vert=3)
 
-    unorm_s = norm_s / norm_s_len
-
-    # For each triangle snp, the gradient of its area with respect to each vertex
-    # s is given by (unorm_s x edge_np)/2
     dAdV = torch.cross(unorm_s, edge_np, dim=-1) / 2.0
 
     return dAdV
@@ -141,7 +142,8 @@ def compute_bc_grad_dots(
     Note that the triple cross products in the inner product cancels out, because
     the terms such as $\hat e_{ij}\times \hat e_{ik}$ effectively rotate the edge
     vectors counter-clockwise by 90 degrees, they have no effect on the final inner
-    products between the edge vectors.
+    products between the edge vectors (this can be shown algebraically using the
+    Lagrange's identity for 4 vectors).
 
     Let us denote the expression $\left<e_{jk}, e_{ki}\right>/4A^2$ as `(jk, ki)`.
     Then, the 9 inner products can be expressed as:
@@ -186,15 +188,17 @@ def compute_cotan_weights(
     is the interior angle at vertex $k$ opposite to the edge $ij$.
     """
     # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
-    # Compute the dot product and cross product between these two vectors, and use
-    # their ratio to compute the cotan of the interior angle at s.
+    # Compute the dot product and the norm of the cross product between these two
+    # vectors, and use their ratio to compute the cotan of the interior angle at s.
     vert_s_coord: Float[Tensor, "tri 3 3"] = vert_coords[tris]
 
     edge_sn = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
     edge_sp = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
 
     edge_sn_sp_dot = torch.sum(edge_sn * edge_sp, dim=-1)
-    edge_sn_sp_cross = torch.linalg.norm(torch.cross(edge_sn, edge_sp, dim=-1), dim=-1)
+
+    # Note that the norm of sn x sp is simply twice the tri area.
+    edge_sn_sp_cross = 2 * compute_tri_areas(vert_coords, tris).view(-1, 1)
     cot_s: Float[Tensor, "tri 3"] = edge_sn_sp_dot / edge_sn_sp_cross
 
     # For each triangle snp, and each vertex s, scatter cot_s to edge np in the
