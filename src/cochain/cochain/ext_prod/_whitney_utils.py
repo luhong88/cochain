@@ -70,12 +70,8 @@ def dispatch_bc_grad_dot(
     """
     match mesh.dim:
         case 2:
-            splx_size = tri_geometry.compute_tri_areas(mesh.vert_coords, mesh.tris)
-            splx_size_grad = tri_geometry.compute_d_tri_areas_d_vert_coords(
+            splx_size, bc_grad_dot = tri_geometry.compute_bc_grad_dots(
                 mesh.vert_coords, mesh.tris
-            )
-            bc_grad_dot = tri_geometry.bary_coord_grad_inner_prods(
-                splx_size.view(-1, 1, 1), splx_size_grad
             )
 
         case 3:

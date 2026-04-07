@@ -5,8 +5,7 @@ from torch import LongTensor, Tensor
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tri_geometry import (
-    bary_coord_grad_inner_prods,
-    compute_d_tri_areas_d_vert_coords,
+    compute_bc_grad_dots,
     compute_tri_areas,
 )
 from .tri_hodge_stars import star_2
@@ -59,20 +58,17 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     n_tris = tri_mesh.n_tris
     n_edges = tri_mesh.n_edges
 
-    tri_areas = compute_tri_areas(vert_coords, tris).view(-1, 1, 1)
-    d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(vert_coords, tris)
-
     # For each tri ijk, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
-    bary_coords_grad_dot: Float[Tensor, "tri 3 3"] = bary_coord_grad_inner_prods(
-        tri_areas, d_tri_areas_d_vert_coords
-    )
+    tri_areas, bary_coords_grad_dot = compute_bc_grad_dots(vert_coords, tris)
 
     # For each tri ijk, compute all pairwise integrals of the barycentric coordinates;
     # i.e., int[lambda_i(p)lambda_j(p)dA_ijk]. Using the "magic formula", this
     # integral is A_ijk*(1 + delta_ij)/12, where delta is the Kronecker delta
     # function.
-    bary_coords_int: Float[Tensor, "tri 3 3"] = torch.abs(tri_areas / 12.0) * (
+    bary_coords_int: Float[Tensor, "tri 3 3"] = torch.abs(
+        tri_areas.view(-1, 1, 1) / 12.0
+    ) * (
         torch.ones((n_tris, 3, 3), dtype=dtype, device=device)
         + torch.eye(3, dtype=dtype, device=device).view(1, 3, 3)
     )

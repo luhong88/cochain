@@ -1,4 +1,5 @@
 import torch
+from einops import einsum
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
@@ -42,25 +43,25 @@ def compute_d_tri_areas_d_vert_coords(
     Compute the gradient of the triangle areas with respect to vertex coordinates.
 
     For a triangle $snp$, we can define its area using the cross product:
-    $$A = \frac 1 2 \|e_{ns}\times e_{ps}\|$$
+    $$A = \frac 1 2 \|e_{sn}\times e_{sp}\|$$
     with some algebra, it can be shown that the gradient of $A$ with respect to $v_s$,
     the position of vertex $s$, is given by
     $$
     \nabla_s A =
-    \frac{(e_{ns}\times e_{ps})\times e_{np}}{2\|e_{ns}\times e_{ps}\|}
+    \frac{(e_{sn}\times e_{sp})\times e_{np}}{2\|e_{sn}\times e_{sp}\|}
     $$
     Note that this is a vector in the plane of the triangle and points away from
-    the base edge $e_{ps}$ perpendicularly in the direction of the triangle's altitude.
+    the base edge $e_{sp}$ perpendicularly in the direction of the triangle's altitude.
     """
     # For each triangle snp, and each vertex s, find the edge vectors sn, sp, and
     # np, and a vector normal to the triangle at s (sn x sp).
     vert_s_coord: Float[Tensor, "tri 3 3"] = vert_coords[tris]
 
-    edge_ns = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
-    edge_ps = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
+    edge_sn = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
+    edge_sp = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
     edge_np = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord[:, [1, 2, 0], :]
 
-    norm_s: Float[Tensor, "tri 3 3"] = torch.cross(edge_ns, edge_ps, dim=-1)
+    norm_s: Float[Tensor, "tri 3 3"] = torch.cross(edge_sn, edge_sp, dim=-1)
     norm_s_len = torch.linalg.norm(norm_s, dim=-1, keepdim=True)
 
     unorm_s = norm_s / norm_s_len
@@ -94,8 +95,8 @@ def compute_bc_grads(
 
     $$
     \nabla_x\lambda_i(x) = A^{-1}\nabla_i A
-
     $$
+
     Note that this expression is independent of $x$.
     """
     tri_areas = compute_tri_areas(vert_coords, tris)
@@ -105,25 +106,71 @@ def compute_bc_grads(
     return tri_areas, bc_grads
 
 
-def bary_coord_grad_inner_prods(
-    tri_areas: Float[Tensor, " tri 1 1"],
-    d_tri_areas_d_vert_coords: Float[Tensor, "tri 3 3"],
-) -> Float[Tensor, "tri 3 3"]:
-    """
-    For a tri, let lambda_x(p) be the barycentric coordinate function for p wrt
-    a vertex x of the tri. This function computes all pairwise inner products
-    of the barycentric coordinate gradients wrt each pair of vertices; i.e., it
-    computes <grad_p[lambda_x(p)], grad_p[lambda_y(p)]> for all vertices x and y.
-    """
-    # The gradient of lambda_i(p) wrt p is given by grad_i(area_ijk)/area_ijk, a
-    # constant wrt p.
-    bary_coords_grad: Float[Tensor, "tri 3 3"] = d_tri_areas_d_vert_coords / tri_areas
+def compute_bc_grad_dots(
+    vert_coords: Float[Tensor, "global_vert coord=3"],
+    tris: Integer[LongTensor, "tri local_vert=3"],
+) -> tuple[Float[Tensor, " tri"], Float[Tensor, "tri local_vert=3 local_vert=3"]]:
+    r"""
+    Compute the inner products between barycentric coordinate gradients.
 
-    bary_coords_grad_dot: Float[Tensor, "tri 3 3"] = torch.einsum(
-        "tic,tjc->tij", bary_coords_grad, bary_coords_grad
+    Consider a triangle $snp$, from `compute_bc_grads()`, we showed that
+
+    $$\nabla_x\lambda_s(x)= A^{-1}\nabla_sA$$
+
+    Furthermore, from `compute_cotan_weights()`, we showed that
+
+    $$
+    \nabla_s A = (\hat e_{sn}\times \hat e_{sp})\times e_{np}
+    $$
+    where $\hat e$ indicates that the edge vector is length-normalized.
+
+    These two equations allow us to compute the inner products between the gradients
+    of the barycentric coordinate functions without explicit computation of the gradients.
+    For example,
+
+    $$
+    \left<\nabla_x\lambda_i, \nabla_x\lambda_j\right> =
+    \frac{1}{4A^2}
+    \left<
+    (\hat e_{ij}\times \hat e_{ik})\times e_{jk},
+    (\hat e_{jk}\times \hat e_{ji})\times e_{ki}
+    \right> =
+    \left<e_{jk}, e_{ki}\right>/4A^2
+    $$
+
+    Note that the triple cross products in the inner product cancels out, because
+    the terms such as $\hat e_{ij}\times \hat e_{ik}$ effectively rotate the edge
+    vectors counter-clockwise by 90 degrees, they have no effect on the final inner
+    products between the edge vectors.
+
+    Let us denote the expression $\left<e_{jk}, e_{ki}\right>/4A^2$ as `(jk, ki)`.
+    Then, the 9 inner products can be expressed as:
+
+    ```
+    (jk, jk)  (jk, ki)  (jk, ij)
+    (ki, jk)  (ki, ki)  (ki, ij)
+    (ij, jk)  (ij, ki)  (ij, ij)
+    ```
+    """
+    i, j, k = 0, 1, 2
+
+    # To compute the per-triangle 3x3 matrix of inner products, find, for each
+    # vertex, the opposite edge, and then use einsum() to compute all pairwise
+    # inner products between the three edges.
+    tris_verts = vert_coords[tris]
+    tris_edges = tris_verts[:, [k, i, j]] - tris_verts[:, [j, k, i]]
+    tris_edge_dots = einsum(
+        tris_edges,
+        tris_edges,
+        "tri edge_1 coord, tri edge_2 coord -> tri edge_1 edge_2",
     )
 
-    return bary_coords_grad_dot
+    tri_areas = compute_tri_areas(vert_coords, tris)
+    tri_areas_scaled = 4.0 * tri_areas**2
+
+    bc_grad_dots = tris_edge_dots / tri_areas_scaled.view(-1, 1, 1)
+
+    return tri_areas, bc_grad_dots
 
 
 def compute_cotan_weights(
@@ -143,12 +190,12 @@ def compute_cotan_weights(
     # their ratio to compute the cotan of the interior angle at s.
     vert_s_coord: Float[Tensor, "tri 3 3"] = vert_coords[tris]
 
-    edge_ns = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
-    edge_ps = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
+    edge_sn = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
+    edge_sp = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
 
-    edge_ns_ps_dot = torch.sum(edge_ns * edge_ps, dim=-1)
-    edge_ns_ps_cross = torch.linalg.norm(torch.cross(edge_ns, edge_ps, dim=-1), dim=-1)
-    cot_s: Float[Tensor, "tri 3"] = edge_ns_ps_dot / edge_ns_ps_cross
+    edge_sn_sp_dot = torch.sum(edge_sn * edge_sp, dim=-1)
+    edge_sn_sp_cross = torch.linalg.norm(torch.cross(edge_sn, edge_sp, dim=-1), dim=-1)
+    cot_s: Float[Tensor, "tri 3"] = edge_sn_sp_dot / edge_sn_sp_cross
 
     # For each triangle snp, and each vertex s, scatter cot_s to edge np in the
     # weight matrix (W_np) and assemble the asymmetric sparse weight matrix.

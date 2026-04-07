@@ -4,7 +4,7 @@ from torch import LongTensor, Tensor
 
 from ..complex import SimplicialMesh
 from ..geometry.tri.tri_geometry import (
-    bary_coord_grad_inner_prods,
+    compute_bc_grad_dots,
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
@@ -69,7 +69,7 @@ def _d2_tri_areas_d2_vert_coords(
         vert_coords, tris
     )
 
-    tri_areas: Float[Tensor, "tri 1 1 1 1"] = tri_areas(vert_coords, tris).view(
+    tri_areas: Float[Tensor, "tri 1 1 1 1"] = compute_tri_areas(vert_coords, tris).view(
         -1, 1, 1, 1, 1
     )
 
@@ -295,18 +295,15 @@ def d_mass_1_d_vert_coords(
     # its Jacobian wrt vertex p is given by
     #     grad_p[D_xy] = (hess_xp[V]*grad_y[V] + hess_yp[V]*grad_x[V])/V**2
     #                    - 2*D_xy*grad_p[V])/V
-    tri_areas: Float[Tensor, "tri"] = tri_areas(vert_coords, tris)
-    d_tri_areas_d_vert_coords: Float[Tensor, "tri 3 3"] = d_tri_areas_d_vert_coords(
-        vert_coords, tris
+    d_tri_areas_d_vert_coords: Float[Tensor, "tri 3 3"] = (
+        compute_d_tri_areas_d_vert_coords(vert_coords, tris)
     )
 
     tri_area_vhp: Float[Tensor, "tri x=3 y=3 p=3 3"] = _d2_tri_areas_d2_vert_coords(
         vert_coords, tris, d_tri_areas_d_vert_coords
     )
 
-    bary_coords_grad_dot: Float[Tensor, "tri 3 3"] = bary_coord_grad_inner_prods(
-        tri_areas, d_tri_areas_d_vert_coords
-    )
+    tri_areas, bary_coords_grad_dot = compute_bc_grad_dots(vert_coords, tris)
 
     bary_coords_grad_dot_grad: Float[Tensor, "tri x=3 y=3 p=3 3"] = (
         tri_area_vhp + tri_area_vhp.transpose(1, 2)
