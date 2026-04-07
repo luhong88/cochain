@@ -13,10 +13,23 @@ from .tri_stiffness import cotan_weights
 
 def star_2(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
     """
-    The Hodge 2-star operator maps the 2-simplices (triangles) in a mesh to their
-    dual 0-cells. This function computes the ratio of the "volume" of the dual 0-cells
-    (which is 1 by convention) to the area of the primal triangles. The returned tensor
-    forms the diagonal of the 2-star tensor.
+    Compute the discrete Hodge star operator on 2-forms for a tri mesh.
+
+    The Hodge 2-star operator maps the 2-simplices (triangles) on a mesh to their
+    dual 0-cells (points). This function computes the ratio of the "area" of the
+    dual 0-cells (which is 1 by convention) to the area of the primal triangles,
+    and this area ratio tensor forms the diagonal of the 2-star tensor. This matrix
+    is also known as the diagonal 2-form mass matrix.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+
+    Returns
+    -------
+    (tri, tri)
+        The Hodge 2-star matrix.
     """
     return DiagDecoupledTensor(
         1.0 / compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
@@ -26,12 +39,6 @@ def star_2(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
 def _star_1_circumcentric(
     tri_mesh: SimplicialMesh,
 ) -> Float[DiagDecoupledTensor, "edge edge"]:
-    """
-    The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the
-    circumcentric dual 1-cells. This function computes the length ratio of the dual
-    1-cells to the primal edges, which is given by the cotan formula. The returned
-    tensor forms the diagonal of the 1-star tensor.
-    """
     vert_coords: Float[Tensor, "vert 3"] = tri_mesh.vert_coords
     tris: Integer[LongTensor, "tri 3"] = tri_mesh.tris
 
@@ -62,9 +69,6 @@ def _star_1_circumcentric(
 def _star_1_barycentric(
     tri_mesh: SimplicialMesh,
 ) -> Float[DiagDecoupledTensor, "edge edge"]:
-    """
-    Compute the barycentric Hodge 1-star operator.
-    """
     vert_coords: Float[Tensor, "vert 3"] = tri_mesh.vert_coords
     tris: Integer[LongTensor, "tri 3"] = tri_mesh.tris
     edges: Integer[LongTensor, "edge 2"] = tri_mesh.edges
@@ -114,6 +118,40 @@ def star_1(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[DiagDecoupledTensor, "edge edge"]:
+    """
+    Compute the discrete Hodge star operator on 1-forms for a tri mesh.
+
+    The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the
+    dual 1-cells (edges). This function computes the length ratio of the dual
+    1-cells to the primal edges, and this length ratio tensor forms the diagonal
+    of the 1-star tensor.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+    dual_complex
+        The type of dual mesh used to compute the operator. See the Note section
+        for more details.
+
+    Returns
+    -------
+    (edge, edge)
+        The Hodge 1-star matrix.
+
+    Note
+    ----
+    When the `dual_complex` is "circumcentric", the dual complex is (implicitly)
+    constructed by placing the 0-cells at the circumcenters of the primal triangles;
+    when the `dual_complex` is "barycentric", the 0-cells are placed at the barycenters
+    of the primal triangles. In general, the circumcentric dual is more accurate
+    in that the dual edges are guaranteed to be orthogonal to the corresponding
+    primal edges. However, for obtuse triangles, the circumcenter of the triangle
+    is outside of the triangle, which could lead to negative dual edge lengths,
+    which destroys the positive defifnite property of the Hodge star operator.
+    The barycenter, on the other hand, is always guaranteed to be inside each
+    triangle.
+    """
     match dual_complex:
         case "circumcentric":
             return _star_1_circumcentric(tri_mesh)
@@ -125,13 +163,26 @@ def star_1(
 
 def star_0(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
+    Compute the discrete Hodge star operator on 0-forms for a tri mesh.
+
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
     barycentric dual 2-cells. This function computes the ratio of the area of the
-    dual 2-cells to the "size" of the vertices (which is 1 by convention). The
-    returned tensor forms the diagonal of the 0-star tensor.
+    dual 2-cells to the "area" of the vertices (which is 1 by convention), and this
+    area ratio tensor forms the diagonal of the 0-star tensor. This matrix is also
+    known as the diagonal 0-form mass matrix.
 
     The barycentric dual area for each vertex is the sum of 1/3 of the areas of
     all triangles that share the vertex as a face.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+
+    Returns
+    -------
+    (vert, vert)
+        The Hodge 0-star matrix.
     """
     tri_area = compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
