@@ -17,7 +17,7 @@ __all__ = ["star_0", "star_1", "star_2"]
 
 def star_2(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
     """
-    Compute the discrete Hodge 2-star operator for a tri mesh.
+    Compute the discrete Hodge star operator on 2-forms for a tri mesh.
 
     The Hodge 2-star operator maps the 2-simplices (triangles) on a mesh to their
     dual 0-cells (points). This function computes the ratio of the "area" of the
@@ -121,7 +121,7 @@ def star_1(
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[DiagDecoupledTensor, "edge edge"]:
     """
-    Compute the discrete Hodge 1-star operator for a tri mesh.
+    Compute the discrete Hodge star operator on 1-forms for a tri mesh.
 
     The Hodge 1-star operator maps the 1-simplices (edges) in a mesh to the
     dual 1-cells (edges). This function computes the length ratio of the dual
@@ -141,8 +141,8 @@ def star_1(
     (edge, edge)
         The Hodge 1-star matrix.
 
-    Note
-    ----
+    Notes
+    -----
     When the `dual_complex` is "circumcentric", the dual complex is (implicitly)
     constructed by placing the 0-cells at the circumcenters of the primal triangles;
     when the `dual_complex` is "barycentric", the 0-cells are placed at the barycenters
@@ -165,7 +165,7 @@ def star_1(
 
 def star_0(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
-    Compute the discrete, barycentric Hodge 0-star operator for a tri mesh.
+    Compute the discrete, barycentric Hodge star operator on 0-forms for a tri mesh.
 
     The Hodge 0-star operator maps the 0-simplices (vertices) in a mesh to their
     barycentric dual 2-cells. This function computes the ratio of the area of the
