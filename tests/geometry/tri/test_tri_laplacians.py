@@ -301,3 +301,34 @@ def test_codiff_2_adjoint_relation(
     dot_2 = torch.dot(x1, s1 @ (codiff_2 @ x2))
 
     torch.testing.assert_close(dot_1, dot_2)
+
+
+@pytest.mark.parametrize(
+    "laplacian, dual_complex",
+    [
+        (tri_laplacians.laplacian_0, "circumcentric"),
+        (tri_laplacians.laplacian_0, "barycentric"),
+        (
+            tri_laplacians.laplacian_1,
+            "circumcentric",
+        ),
+        (
+            tri_laplacians.laplacian_1,
+            "barycentric",
+        ),
+        (tri_laplacians.laplacian_2, "circumcentric"),
+        (tri_laplacians.laplacian_2, "barycentric"),
+    ],
+)
+def test_laplacian_backward(
+    laplacian, dual_complex, hollow_tet_mesh: SimplicialMesh, device
+):
+    mesh = hollow_tet_mesh.to(device)
+    mesh.requires_grad_()
+
+    l = laplacian(mesh, dual_complex)
+    output = l.val.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
