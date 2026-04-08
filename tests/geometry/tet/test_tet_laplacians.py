@@ -165,7 +165,7 @@ def test_laplacian_1_curl_free(two_tets_mesh: SimplicialMesh):
 
     d0 = two_tets_mesh.cbd[0]
     x0 = torch.arange(two_tets_mesh.n_verts).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
     x1_curl_free = d0 @ x0
 
@@ -187,7 +187,7 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialMesh):
     m1 = tet_masses.mass_1(two_tets_mesh).to_dense()
 
     x2 = torch.arange(two_tets_mesh.n_tris).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
     x1_div_free = torch.linalg.solve(m1, d1_T) @ x2  # inv_m1 @ d1_T @ x2
 
@@ -210,7 +210,7 @@ def test_laplacian_2_curl_free(two_tets_mesh: SimplicialMesh):
     m2 = tet_masses.mass_2(two_tets_mesh).to_dense()
 
     x3 = torch.arange(two_tets_mesh.n_tets).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
     x2_curl_free = torch.linalg.solve(m2, d2_T) @ x3  # inv_m2 @ d2_T @ x3
 
@@ -229,7 +229,7 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialMesh):
 
     d1 = two_tets_mesh.cbd[1]
     x1 = torch.arange(two_tets_mesh.n_edges).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
     x2_div_free = d1 @ x1
 
@@ -254,10 +254,10 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialMesh):
     codiff_1 = inv_m0 @ d0_T @ m1
 
     x0 = torch.arange(two_tets_mesh.n_verts).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
     x1 = torch.arange(two_tets_mesh.n_edges).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
 
     dot_1 = torch.dot(d0 @ x0, m1 @ x1)
@@ -281,10 +281,10 @@ def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialMesh):
     codiff_2 = torch.linalg.solve(m1, d1_T) @ m2  # inv_m1 @ d1_T @ m2
 
     x1 = torch.arange(two_tets_mesh.n_edges).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
     x2 = torch.arange(two_tets_mesh.n_tris).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
 
     dot_1 = torch.dot(d1 @ x1, m2 @ x2)
@@ -308,10 +308,10 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialMesh):
     codiff_3 = torch.linalg.solve(m2, d2_T) @ m3  # inv_m2 @ d2_T @ m3
 
     x2 = torch.arange(two_tets_mesh.n_tris).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
     x3 = torch.arange(two_tets_mesh.n_tets).to(
-        dtype=torch.float, device=two_tets_mesh.vert_coords.device
+        dtype=torch.float32, device=two_tets_mesh.vert_coords.device
     )
 
     dot_1 = torch.dot(d2 @ x2, m3 @ x3)

@@ -597,10 +597,10 @@ def test_unpack_block_diag_via_ptrs(device):
     block_diag = SparseDecoupledTensor.pack_block_diag((a, b, c))
 
     row_ptrs = torch.tensor(
-        [0, 0, 0, 1, 1, 2, 2, 2, 2], dtype=torch.long, device=device
+        [0, 0, 0, 1, 1, 2, 2, 2, 2], dtype=torch.int64, device=device
     )
     col_ptrs = torch.tensor(
-        [0, 0, 1, 1, 1, 1, 2, 2, 2, 2], dtype=torch.long, device=device
+        [0, 0, 1, 1, 1, 1, 2, 2, 2, 2], dtype=torch.int64, device=device
     )
 
     sp_ops = block_diag.unpack_by_ptrs(n_blocks=3, row_ptrs=row_ptrs, col_ptrs=col_ptrs)

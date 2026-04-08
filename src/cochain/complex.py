@@ -210,14 +210,14 @@ class SimplicialMesh:
 
         cbd_2 = SparseDecoupledTensor.from_tensor(
             torch.sparse_coo_tensor(
-                indices=torch.empty((2, 0), dtype=torch.long),
+                indices=torch.empty((2, 0), dtype=torch.int64),
                 values=torch.empty((0,), dtype=vert_coords.dtype),
                 size=(0, tris.shape[0]),
                 device=cbd_0.device,
             )
         )
 
-        tets = torch.empty((0, 4), dtype=torch.long, device=tris.device)
+        tets = torch.empty((0, 4), dtype=torch.int64, device=tris.device)
 
         return cls(
             cbd=(cbd_0, cbd_1, cbd_2),

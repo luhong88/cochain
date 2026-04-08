@@ -16,7 +16,7 @@ def test_stiffness_with_igl(two_tets_mesh: SimplicialMesh):
             two_tets_mesh.vert_coords.cpu().detach().numpy(),
             two_tets_mesh.tets.cpu().detach().numpy(),
         ).todense()
-    ).to(dtype=torch.float)
+    ).to(dtype=torch.float32)
 
     cochain_cotan_laplacian = stiffness_matrix(two_tets_mesh).to_dense()
 

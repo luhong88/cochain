@@ -14,7 +14,7 @@ def load_two_tris_mesh() -> SimplicialMesh:
         vert_coords=torch.tensor(
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         ),
-        tris=torch.tensor([[0, 1, 2], [1, 3, 2]], dtype=torch.long),
+        tris=torch.tensor([[0, 1, 2], [1, 3, 2]], dtype=torch.int64),
     )
 
 
@@ -33,7 +33,7 @@ def load_two_disjoint_tris_mesh() -> SimplicialMesh:
                 [0.0, 1.0, 1.0],
             ]
         ),
-        tris=torch.tensor([[0, 1, 2], [3, 4, 5]], dtype=torch.long),
+        tris=torch.tensor([[0, 1, 2], [3, 4, 5]], dtype=torch.int64),
     )
 
 
@@ -52,7 +52,7 @@ def load_square_mesh() -> SimplicialMesh:
             ]
         ),
         tris=torch.tensor(
-            [[0, 4, 1], [1, 4, 2], [2, 4, 3], [3, 4, 0]], dtype=torch.long
+            [[0, 4, 1], [1, 4, 2], [2, 4, 3], [3, 4, 0]], dtype=torch.int64
         ),
     )
 
@@ -73,7 +73,7 @@ def load_tent_mesh() -> SimplicialMesh:
             ]
         ),
         tris=torch.tensor(
-            [[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=torch.long
+            [[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=torch.int64
         ),
     )
 
@@ -92,7 +92,7 @@ def load_hollow_tet_mesh() -> SimplicialMesh:
             ]
         ),
         tris=torch.tensor(
-            [[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]], dtype=torch.long
+            [[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]], dtype=torch.int64
         ),
     )
 
@@ -142,8 +142,8 @@ def load_flat_annulus_mesh(
     annulus_tris = all_triangles[keep_mask]
 
     annulus_mesh = SimplicialMesh.from_tri_mesh(
-        torch.from_numpy(vert_coords_3d).to(dtype=torch.float),
-        torch.from_numpy(annulus_tris).to(dtype=torch.long),
+        torch.from_numpy(vert_coords_3d).to(dtype=torch.float32),
+        torch.from_numpy(annulus_tris).to(dtype=torch.int64),
     )
 
     return annulus_mesh
@@ -169,8 +169,8 @@ def load_finer_flat_annulus_mesh(
     ).triangulate()
 
     mesh = SimplicialMesh.from_tri_mesh(
-        torch.from_numpy(np.array(pv_mesh.points)).to(dtype=torch.float),
-        torch.from_numpy(np.array(pv_mesh.regular_faces)).to(dtype=torch.long),
+        torch.from_numpy(np.array(pv_mesh.points)).to(dtype=torch.float32),
+        torch.from_numpy(np.array(pv_mesh.regular_faces)).to(dtype=torch.int64),
     )
 
     return mesh

@@ -128,7 +128,7 @@ def d_mass_1_d_vert_coords(
     i, j, k, l = 0, 1, 2, 3
     unique_edges = torch.tensor(
         [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]],
-        dtype=torch.long,
+        dtype=torch.int64,
         device=device,
     )
 

@@ -331,7 +331,7 @@ def d_mass_1_d_vert_coords(
 
     i, j, k = 0, 1, 2
     unique_edges = torch.tensor(
-        [[i, j], [i, k], [j, k]], dtype=torch.long, device=device
+        [[i, j], [i, k], [j, k]], dtype=torch.int64, device=device
     )
 
     x_idx = unique_edges[:, 0][:, None]

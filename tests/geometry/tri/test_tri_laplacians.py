@@ -238,7 +238,7 @@ def test_laplacian_1_div_free(dual_complex, hollow_tet_mesh: SimplicialMesh):
     l1_div_grad = tri_laplacians.laplacian_1_grad_div(hollow_tet_mesh, dual_complex)
 
     x2 = torch.arange(hollow_tet_mesh.n_tris).to(
-        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
+        dtype=torch.float32, device=hollow_tet_mesh.vert_coords.device
     )
     x1_div_free = codiff_2 @ x2
 
@@ -263,10 +263,10 @@ def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialMesh
     codiff_1 = tri_laplacians.codifferential_1(hollow_tet_mesh, dual_complex)
 
     x0 = torch.arange(hollow_tet_mesh.n_verts).to(
-        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
+        dtype=torch.float32, device=hollow_tet_mesh.vert_coords.device
     )
     x1 = torch.arange(hollow_tet_mesh.n_edges).to(
-        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
+        dtype=torch.float32, device=hollow_tet_mesh.vert_coords.device
     )
 
     dot_1 = torch.dot(d0 @ x0, s1 @ x1)
@@ -291,10 +291,10 @@ def test_codiff_2_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialMesh
     codiff_2 = tri_laplacians.codifferential_2(hollow_tet_mesh, dual_complex)
 
     x1 = torch.arange(hollow_tet_mesh.n_edges).to(
-        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
+        dtype=torch.float32, device=hollow_tet_mesh.vert_coords.device
     )
     x2 = torch.arange(hollow_tet_mesh.n_tris).to(
-        dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
+        dtype=torch.float32, device=hollow_tet_mesh.vert_coords.device
     )
 
     dot_1 = torch.dot(d1 @ x1, s2 @ x2)

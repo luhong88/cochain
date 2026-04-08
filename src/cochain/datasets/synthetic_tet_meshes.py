@@ -11,7 +11,7 @@ def load_regular_tet_mesh() -> SimplicialMesh:
         vert_coords=torch.tensor(
             [[1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0]]
         ),
-        tets=torch.tensor([[0, 1, 2, 3]], dtype=torch.long),
+        tets=torch.tensor([[0, 1, 2, 3]], dtype=torch.int64),
     )
 
 
@@ -45,9 +45,9 @@ def load_bcc_mesh(dim: int = 5) -> SimplicialMesh:
     tet_grid = grid.triangulate()
 
     return SimplicialMesh.from_tet_mesh(
-        vert_coords=torch.from_numpy(tet_grid.points).to(dtype=torch.float),
+        vert_coords=torch.from_numpy(tet_grid.points).to(dtype=torch.float32),
         tets=torch.from_numpy(tet_grid.cells.reshape(-1, 5)[:, 1:].copy()).to(
-            dtype=torch.long
+            dtype=torch.int64
         ),
     )
 
@@ -76,8 +76,8 @@ def load_solid_torus(
     )
 
     mesh = SimplicialMesh.from_tet_mesh(
-        vert_coords=torch.from_numpy(v_tet).to(dtype=torch.float),
-        tets=torch.from_numpy(t_tet).to(dtype=torch.long),
+        vert_coords=torch.from_numpy(v_tet).to(dtype=torch.float32),
+        tets=torch.from_numpy(t_tet).to(dtype=torch.int64),
     )
 
     return mesh

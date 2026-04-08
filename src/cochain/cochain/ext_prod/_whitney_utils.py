@@ -14,7 +14,10 @@ from ...utils.search import splx_search
 
 
 def compute_whitney_router(
-    splx_dim: int, form_deg: int, device: torch.device, dtype: torch.dtype = torch.float
+    splx_dim: int,
+    form_deg: int,
+    device: torch.device,
+    dtype: torch.dtype = torch.float32,
 ) -> Float[Tensor, "face lambda *d_lambda"]:
     """
     Compute the coefficients required to construct the Whitney forms from the
@@ -36,7 +39,7 @@ def compute_whitney_router(
 
 
 def compute_moments(
-    order: int, splx_dim: int, device: torch.device, dtype: torch.dtype = torch.float
+    order: int, splx_dim: int, device: torch.device, dtype: torch.dtype = torch.float32
 ) -> Tensor:
     """
     For an n-simplex with unit area/volume and n + 1 barycentric coordinate functions
