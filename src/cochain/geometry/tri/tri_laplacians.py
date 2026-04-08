@@ -47,6 +47,15 @@ def codifferential_1(
     [vert, edge]
         The codifferential operator.
 
+    Notes
+    -----
+    The codifferential $\delta_k$ is also sometimes defined with a $(-1)^k$ or
+    $(-1)^{n+k+1}$ factor (depending on the definition of the inner product) to
+    satisfy the adjoint relation with the coboundary operator in the continuous
+    setting. These sign corrections are not included in the current implementation;
+    nevertheless, the linear algera still works out in the discrete setting such
+    that $\delta_k$ and $d_{k-1}$ are adjoint under the inner product induced
+    by the Hodge star operators (without the sign corrections).
     """
     d0_T = tri_mesh.cbd[0].T
 
@@ -81,6 +90,15 @@ def codifferential_2(
     [edge, tri]
         The codifferential operator.
 
+    Notes
+    -----
+    The codifferential $\delta_k$ is also sometimes defined with a $(-1)^k$ or
+    $(-1)^{n+k+1}$ factor (depending on the definition of the inner product) to
+    satisfy the adjoint relation with the coboundary operator in the continuous
+    setting. These sign corrections are not included in the current implementation;
+    nevertheless, the linear algera still works out in the discrete setting such
+    that $\delta_k$ and $d_{k-1}$ are adjoint under the inner product induced
+    by the Hodge star operators (without the sign corrections).
     """
     d1_T = tri_mesh.cbd[1].T
 
@@ -106,7 +124,9 @@ def laplacian_0(
 
     where $\delta_k$ is the $k$-codifferential, $\star_k$ is the Hodge $k$-star and
     $d_k$ is the $k$-coboundary operator/discrete exterior derivative. This operator
-    is also sometimes known as the vertex Laplacian.
+    is also known as the vertex Laplacian, Hodge-de Rham 0-Laplacian, the (discrete
+    equivalent of) Laplace-Beltrami operator, or the weighted graph Laplacian (in
+    the context of the mesh 1-skeleton).
 
     Parameters
     ----------
@@ -118,12 +138,19 @@ def laplacian_0(
         is "circumcentric", $L_0$ is computed via $\star_0^{-1} S$, where $S$ is the
         stiffness matrix/cotan Laplacian.
     codiff_1 : [vert, edge]
-        If provided, compute $L_0$ via $\delta_1 d_0$; if `None`, compute $L_0$ from the Hodge stars and coboundary operators.
+        If provided, compute $L_0$ via $\delta_1 d_0$; if `None`, compute $L_0$
+        from the Hodge stars and coboundary operators.
 
     Returns
     -------
     [vert, vert]
         The Laplacian operator.
+
+    Notes
+    -----
+    The Laplacian operator as defined in this function is not symmetric, but it
+    is self-adjoint w.r.t. the inner product induced by the Hodge star operators,
+    and the corresponding stiffness matrix $\star L$ is symmetric positive semidefinite.
     """
     if codiff_1 is not None:
         return codiff_1 @ tri_mesh.cbd[0]
@@ -233,7 +260,8 @@ def laplacian_1(
     $$ L_1 = \delta_2 d_1 + d_0 \delta_1$$
 
     where $\delta_k$ is the $k$-codifferential, and $d_k$ is the $k$-coboundary
-    operator/discrete exterior derivative.
+    operator/discrete exterior derivative. This operator is also known as the
+    Hodge-de Rham 1-Laplacian.
 
     Parameters
     ----------
@@ -253,6 +281,12 @@ def laplacian_1(
     -------
     [edge, edge]
         The Laplacian operator.
+
+    Notes
+    -----
+    The Laplacian operator as defined in this function is not symmetric, but it
+    is self-adjoint w.r.t. the inner product induced by the Hodge star operators,
+    and the corresponding stiffness matrix $\star L$ is symmetric positive semidefinite.
     """
     laplacian_1 = SparseDecoupledTensor.assemble(
         laplacian_1_grad_div(tri_mesh, dual_complex, codiff_1),
@@ -276,7 +310,8 @@ def laplacian_2(
 
     where $\delta_k$ is the $k$-codifferential, and $d_k$ is the $k$-coboundary
     operator/discrete exterior derivative.  Note that, unlike $L_1$, $L_2$ on a
-    tri mesh only contains a single "down" component.
+    tri mesh only contains a single "down" component. This operator is also known
+    as the Hodge-de Rham 2-Laplacian.
 
     Parameters
     ----------
@@ -293,6 +328,12 @@ def laplacian_2(
     -------
     [tri, tri]
         The Laplacian operator.
+
+    Notes
+    -----
+    The Laplacian operator as defined in this function is not symmetric, but it
+    is self-adjoint w.r.t. the inner product induced by the Hodge star operators,
+    and the corresponding stiffness matrix $\star L$ is symmetric positive semidefinite.
     """
     d1 = tri_mesh.cbd[1]
 
