@@ -6,7 +6,7 @@ from skfem.helpers import dot
 
 from cochain.complex import SimplicialMesh
 from cochain.metric.tet import tet_hodge_stars, tet_masses
-from cochain.metric.tet.tet_geometry import compute_tet_signed_vols
+from cochain.metric.tet._tet_geometry import compute_tet_signed_vols
 
 
 def test_mass_1_with_skfem(two_tets_mesh: SimplicialMesh):

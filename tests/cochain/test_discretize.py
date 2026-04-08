@@ -3,7 +3,7 @@ import torch
 from einops import einsum, repeat
 
 from cochain.cochain.discretize import DeRhamMap
-from cochain.metric.tet.tet_geometry import compute_tet_signed_vols
+from cochain.metric.tet._tet_geometry import compute_tet_signed_vols
 
 # TODO: test gradients
 

@@ -6,7 +6,7 @@ from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...metric.tet import tet_hodge_stars
-from ...metric.tet.tet_geometry import (
+from ...metric.tet._tet_geometry import (
     compute_tet_signed_vols,
     dompute_d_tet_signed_vols_d_vert_coords,
 )

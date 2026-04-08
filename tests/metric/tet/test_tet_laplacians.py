@@ -123,12 +123,12 @@ def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialMesh):
     "div_grad, curl_curl, mass",
     [
         (
-            tet_laplacians.weak_laplacian_1_div_grad,
+            tet_laplacians.weak_laplacian_1_grad_div,
             tet_laplacians.weak_laplacian_1_curl_curl,
             tet_masses.mass_1,
         ),
         (
-            tet_laplacians.weak_laplacian_2_div_grad,
+            tet_laplacians.weak_laplacian_2_grad_div,
             partial(tet_laplacians.weak_laplacian_2_curl_curl, method="dense"),
             tet_masses.mass_2,
         ),
@@ -180,7 +180,7 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialMesh):
     The div grad component of the 1-Laplacian acting on a div-free 1-cochain/
     1-form produces 0.
     """
-    l1_div_grad = tet_laplacians.weak_laplacian_1_div_grad(two_tets_mesh)
+    l1_div_grad = tet_laplacians.weak_laplacian_1_grad_div(two_tets_mesh)
 
     d1_T = two_tets_mesh.cbd[1].T.to_dense()
 
@@ -225,7 +225,7 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialMesh):
     The div grad component of the 2-Laplacian acting on a div-free 2-cochain/
     2-form produces 0.
     """
-    l2_div_grad = tet_laplacians.weak_laplacian_2_div_grad(two_tets_mesh)
+    l2_div_grad = tet_laplacians.weak_laplacian_2_grad_div(two_tets_mesh)
 
     d1 = two_tets_mesh.cbd[1]
     x1 = torch.arange(two_tets_mesh.n_edges).to(

@@ -5,10 +5,12 @@ from torch import LongTensor, Tensor
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
 from ..tri._tri_geometry import compute_tri_areas
-from .tet_geometry import (
+from ._tet_geometry import (
     compute_tet_signed_vols,
 )
 from .tet_masses import mass_3
+
+__all__ = ["star_0", "star_1", "star_2", "star_3"]
 
 star_3 = mass_3
 

@@ -6,7 +6,7 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
-from ...metric.tet import tet_geometry
+from ...metric.tet import _tet_geometry
 from ...metric.tri import _tri_geometry
 from ...utils.faces import enumerate_local_faces
 from ...utils.perm_parity import compute_lex_rel_orient
@@ -78,16 +78,16 @@ def dispatch_bc_grad_dot(
             )
 
         case 3:
-            signed_splx_size = tet_geometry.compute_tet_signed_vols(
+            signed_splx_size = _tet_geometry.compute_tet_signed_vols(
                 mesh.vert_coords, mesh.tets
             )
             splx_size = torch.abs(signed_splx_size)
             signed_splx_size_grad = (
-                tet_geometry.dompute_d_tet_signed_vols_d_vert_coords(
+                _tet_geometry.dompute_d_tet_signed_vols_d_vert_coords(
                     mesh.vert_coords, mesh.tets
                 )
             )
-            bc_grad_dot = tet_geometry.bary_coord_grad_inner_prods(
+            bc_grad_dot = _tet_geometry.bary_coord_grad_inner_prods(
                 signed_splx_size.view(-1, 1, 1), signed_splx_size_grad
             )
 

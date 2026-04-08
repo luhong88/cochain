@@ -8,7 +8,7 @@ from torch import Tensor
 
 from cochain.cochain.discretize import DeRhamMap
 from cochain.cochain.interpolate import barycentric_whitney_map
-from cochain.metric.tet.tet_geometry import (
+from cochain.metric.tet._tet_geometry import (
     compute_tet_signed_vols,
     dompute_d_tet_signed_vols_d_vert_coords,
 )

@@ -3,7 +3,9 @@ from jaxtyping import Float
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
-from .tet_geometry import cotan_weights
+from ._tet_geometry import cotan_weights
+
+__all__ = ["stiffness_matrix"]
 
 
 def stiffness_matrix(

@@ -10,6 +10,17 @@ from .tet_hodge_stars import star_0, star_1, star_2
 from .tet_masses import mass_1, mass_2, mass_3
 from .tet_stiffness import stiffness_matrix
 
+__all__ = [
+    "weak_laplacian_0",
+    "weak_laplacian_1_grad_div",
+    "weak_laplacian_1_curl_curl",
+    "weak_laplacian_1",
+    "weak_laplacian_2_curl_curl",
+    "weak_laplacian_2_grad_div",
+    "weak_laplacian_2",
+    "weak_laplacian_3",
+]
+
 # For the weak k-Laplacian,
 #
 # S_k = (
@@ -48,7 +59,7 @@ def weak_laplacian_0(
             raise ValueError()
 
 
-def weak_laplacian_1_div_grad(
+def weak_laplacian_1_grad_div(
     tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """
@@ -87,7 +98,7 @@ def weak_laplacian_1(
     S1 = d_1.T @ M_2 @ d_1 + M_1 @ d_0 @ inv_M_0 @ d_0.T @ M_1
     """
     return SparseDecoupledTensor.assemble(
-        weak_laplacian_1_div_grad(tet_mesh), weak_laplacian_1_curl_curl(tet_mesh)
+        weak_laplacian_1_grad_div(tet_mesh), weak_laplacian_1_curl_curl(tet_mesh)
     )
 
 
@@ -140,7 +151,7 @@ def weak_laplacian_2_curl_curl(
             raise ValueError()
 
 
-def weak_laplacian_2_div_grad(
+def weak_laplacian_2_grad_div(
     tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "tri tri"]:
     """
@@ -174,7 +185,7 @@ def weak_laplacian_2(
 
     elif method in ["dense", "inv_star"]:
         curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
-        div_grad = weak_laplacian_2_div_grad(tet_mesh)
+        div_grad = weak_laplacian_2_grad_div(tet_mesh)
 
         match div_grad:
             case SparseDecoupledTensor():
