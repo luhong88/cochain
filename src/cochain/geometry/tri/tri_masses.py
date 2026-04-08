@@ -1,7 +1,7 @@
 import torch
-from einops import einsum, rearrange, reduce, repeat
-from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from einops import einsum, repeat
+from jaxtyping import Float
+from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
@@ -98,17 +98,6 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     These basis functions are also known as the lowest-order Nédélec edge elements of
     the first kind.
     """
-    vert_coords: Float[Tensor, "vert 3"] = tri_mesh.vert_coords
-    tris: Integer[LongTensor, "tri 3"] = tri_mesh.tris
-
-    dtype = tri_mesh.dtype
-    device = tri_mesh.device
-
-    n_tris = tri_mesh.n_tris
-    n_edges = tri_mesh.n_edges
-
-    n_verts_per_tri = 3
-
     # To evaluate the integral for M_ij,kl per triangle, note that the integrand
     # can be decomposed into 4 terms of the form λ_i*λ_k*<∇λ_j, ∇λ_l>, where the
     # part λ_i*λ_k is coordinate-dependent while the <∇λ_j, ∇λ_l> part is a constant.
@@ -117,16 +106,17 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # within each triangle.
 
     # For each tri, compute all <∇λ_j, ∇λ_l> for each pair of vertices (j, l).
-    tri_areas, bc_grad_dots = compute_bc_grad_dots(vert_coords, tris)
+    tri_areas, bc_grad_dots = compute_bc_grad_dots(tri_mesh.vert_coords, tri_mesh.tris)
 
     # For each tri, compute all area integrals of λ_i*λ_k for each pair of vertices
     # (i, k). As shown in the mass_0() function, this integral evaluates to
     # A*(1 + δ_ik)/12, where δ is the Kronecker delta.
-    ref_bc_poly_ints = (
-        torch.ones((n_tris, n_verts_per_tri, n_verts_per_tri))
-        + torch.eye(3).view(1, n_verts_per_tri, n_verts_per_tri)
-    ).to(dtype=dtype, device=device)
-    bc_poly_ints = (tri_areas.view(-1, 1, 1) / 12.0) * ref_bc_poly_ints
+    ref_bc_poly_ints = (torch.ones((3, 3)) + torch.eye(3)).to(
+        dtype=tri_mesh.dtype, device=tri_mesh.device
+    )
+    bc_poly_ints = einsum(
+        tri_areas / 12.0, ref_bc_poly_ints, "tri, v_1 v_2 -> tri v_1 v_2"
+    )
 
     # For each tri, each pair of edges ij and kl contributes four terms to the
     # inner products of the Whitney 1-form basis functions:
@@ -139,7 +129,9 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # the two edge indices: M_ij,kl = M_kl,ij.
 
     # Enumerate all 3 unique local edges per tri.
-    all_local_edges = enumerate_local_faces(splx_dim=2, face_dim=1, device=device)
+    all_local_edges = enumerate_local_faces(
+        splx_dim=2, face_dim=1, device=tri_mesh.device
+    )
 
     # Given the 3 unique edges per tri, there are six unique edge pairs (e0, e1),
     # 00, 01, 02, 11, 12, 22.
@@ -155,7 +147,9 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     k, l = e1.unbind(dim=-1)
 
     # Sum together the 4 contribution terms for each of the 6 edge pairs.
-    whitney_dot = torch.zeros((n_tris, 6), dtype=dtype, device=device)
+    whitney_dot = torch.zeros(
+        (tri_mesh.n_tris, 6), dtype=tri_mesh.dtype, device=tri_mesh.device
+    )
     whitney_dot.add_(bc_poly_ints[:, i, k] * bc_grad_dots[:, j, l])
     whitney_dot.sub_(bc_poly_ints[:, i, l] * bc_grad_dots[:, j, k])
     whitney_dot.sub_(bc_poly_ints[:, j, k] * bc_grad_dots[:, i, l])
@@ -190,10 +184,50 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     mass = torch.sparse_coo_tensor(
         indices=idx_coo,
         values=whitney_dot_sym.flatten(),
-        size=(n_edges, n_edges),
+        size=(tri_mesh.n_edges, tri_mesh.n_edges),
     ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(mass)
 
 
-mass_2 = star_2
+def mass_2(tri_mesh) -> Float[SparseDecoupledTensor, "tri tri"]:
+    r"""
+    Compute the consistent mass matrix for discrete 2-forms.
+
+    Note that this function is equivalent to `star_2()`.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+
+    Returns
+    -------
+    (tri, tri)
+        The mass matrix.
+
+    Notes
+    -----
+    The mass matrix $M$ for discrete 2-forms is defined element-wise as the inner
+    product
+
+    $$M_{ij} = \int_\Omega \left<W_i(x), W_j(x)\right>\,dA$$
+
+    where $W_i(x)$ is the Whitney 2-form basis function associated with a triangle $i$,
+    which is defined (using its sharp) as
+
+    $$W_i(x) = 2 (\nabla\lambda_1(x) \times \nabla\lambda_2(x))$$
+
+    Note that each triangle has only one basis function, and it is constant over the
+    triangle.
+
+    For a tri mesh, the mass-2 matrix is identical to the diagonal Hodge 2-star matrix.
+    To see why, first note that $M$ is diagonal since the basis functions $W_i(x)$ is
+    only nonzero over a single triangle. Furthermore, for any two vertices $i$ and $j$
+    of a triangle,
+
+    $$\|\nabla\lambda_i(x) \times \nabla\lambda_j(x)\| = 1/2A$$
+
+    which implies that $M_{ij}= A^{-1}\delta_{ij}$.
+    """
+    return star_2(tri_mesh)
