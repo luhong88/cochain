@@ -184,3 +184,16 @@ def test_mass_1_linear_potential_dirichlet_energy(
     true_energy = torch.sum(area * torch.sum(phi_tangent**2, dim=-1))
 
     torch.testing.assert_close(energy, true_energy)
+
+
+@pytest.mark.parametrize("mass_matrix", [tri_masses.mass_0, tri_masses.mass_1])
+def test_mass_matrix_backward(mass_matrix, two_tris_mesh: SimplicialMesh, device):
+    mesh = two_tris_mesh.to(device)
+    mesh.requires_grad_()
+
+    mass = mass_matrix(mesh)
+    output = mass.val.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()

@@ -81,3 +81,15 @@ def test_stiffness_planar(flat_annulus_mesh: SimplicialMesh, device):
     torch.testing.assert_close(
         zero_tensor[~bd_mask], torch.zeros_like(zero_tensor[~bd_mask])
     )
+
+
+def test_stiffness_matrix_backward(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+    mesh.requires_grad_()
+
+    stiff = stiffness_matrix(mesh)
+    output = stiff.val.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
