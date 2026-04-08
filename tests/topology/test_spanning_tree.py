@@ -1,8 +1,8 @@
 import torch
 
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tri.tri_hodge_stars import star_1
-from cochain.geometry.tri.tri_laplacians import (
+from cochain.metric.tri.tri_hodge_stars import star_1
+from cochain.metric.tri.tri_laplacians import (
     laplacian_1,
     laplacian_1_curl_curl,
     laplacian_1_grad_div,

@@ -9,7 +9,7 @@ from torch import Tensor
 
 from cochain.cochain import music_ops
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tri import tri_masses
+from cochain.metric.tri import tri_masses
 
 
 @pytest.mark.parametrize("mass_matrix", [tri_masses.mass_0, tri_masses.mass_1])

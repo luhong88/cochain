@@ -6,11 +6,11 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ..complex import SimplicialMesh
-from ..geometry.tet.tet_geometry import (
+from ..metric.tet.tet_geometry import (
     compute_tet_signed_vols,
     dompute_d_tet_signed_vols_d_vert_coords,
 )
-from ..geometry.tri._tri_geometry import compute_bc_grads
+from ..metric.tri._tri_geometry import compute_bc_grads
 from ..utils.faces import enumerate_local_faces
 from ..utils.search import splx_search
 

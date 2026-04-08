@@ -3,12 +3,12 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ..complex import SimplicialMesh
-from ..geometry.tri._tri_geometry import (
+from ..metric.tri._tri_geometry import (
     compute_bc_grad_dots,
     compute_d_tri_areas_d_vert_coords,
     compute_tri_areas,
 )
-from ..geometry.tri.tri_hodge_stars import _star_1_circumcentric, star_0, star_2
+from ..metric.tri.tri_hodge_stars import _star_1_circumcentric, star_0, star_2
 from ..utils.constants import EPS
 
 

@@ -2,16 +2,14 @@ import random
 
 import pytest
 import torch
-from einops import einsum, rearrange, repeat
+from einops import einsum, repeat
 
-from cochain.cochain import music_ops
 from cochain.cochain.discretize import DeRhamMap
-from cochain.cochain.ext_prod.cup import AntisymmetricCupProduct
 from cochain.cochain.ext_prod.whitney import WhitneyWedgeL2Projector
 from cochain.cochain.int_prod import galerkin_contract
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tet import tet_masses
-from cochain.geometry.tri import tri_masses
+from cochain.metric.tet import tet_masses
+from cochain.metric.tri import tri_masses
 
 
 def test_galerkin_contraction_1_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, device):

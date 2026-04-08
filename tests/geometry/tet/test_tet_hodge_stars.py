@@ -1,7 +1,7 @@
 import torch
 
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tet import tet_hodge_stars
+from cochain.metric.tet import tet_hodge_stars
 
 
 def test_star_2_on_reg_tet(reg_tet_mesh: SimplicialMesh):

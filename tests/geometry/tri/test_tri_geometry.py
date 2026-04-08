@@ -2,7 +2,7 @@ import igl
 import torch
 
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tri import _tri_geometry
+from cochain.metric.tri import _tri_geometry
 
 
 def test_compute_tri_areas(flat_annulus_mesh: SimplicialMesh, device):

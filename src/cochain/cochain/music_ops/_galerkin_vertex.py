@@ -33,7 +33,7 @@ def vertex_based_tri_mixed_mass_matrix(
     consistent mass-0 matrix.
     """
     # Note that, for this calculation, the local, per-triangle mass matrix is
-    # required instead of the global mass matrices computed in geometry.tri.
+    # required instead of the global mass matrices computed in metric.tri.
     ref_local_mass_0 = ((torch.ones(3, 3) + torch.eye(3)) / 12.0).to(
         dtype=tri_areas.dtype, device=tri_areas.device
     )
@@ -114,7 +114,7 @@ def vertex_based_tet_mixed_mass_matrix(
     Compute the cross/mixed mass matrix for a tet mesh.
     """
     # Note that, for this calculation, the local, per-tet mass matrix is
-    # required instead of the global mass matrices computed in geometry.tet.
+    # required instead of the global mass matrices computed in metric.tet.
     ref_local_mass_0 = ((torch.ones(4, 4) + torch.eye(4)) / 20.0).to(
         dtype=tet_unsigned_vols.dtype, device=tet_unsigned_vols.device
     )

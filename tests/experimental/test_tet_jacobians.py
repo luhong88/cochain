@@ -2,8 +2,8 @@ import torch
 
 from cochain.complex import SimplicialMesh
 from cochain.experimental import tet_jacobians
-from cochain.geometry.tet import tet_masses
-from cochain.geometry.tet.tet_stiffness import stiffness_matrix
+from cochain.metric.tet import tet_masses
+from cochain.metric.tet.tet_stiffness import stiffness_matrix
 
 
 def tet_mass_1_aurograd(two_tets_mesh: SimplicialMesh):

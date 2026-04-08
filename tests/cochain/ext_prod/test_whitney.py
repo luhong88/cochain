@@ -6,8 +6,8 @@ import torch
 from cochain.cochain.ext_prod.cup import AntisymmetricCupProduct
 from cochain.cochain.ext_prod.whitney import WhitneyWedgeL2Projector
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tet import tet_masses
-from cochain.geometry.tri import tri_hodge_stars, tri_masses
+from cochain.metric.tet import tet_masses
+from cochain.metric.tri import tri_hodge_stars, tri_masses
 
 
 def _compute_mass_matrix(mesh: SimplicialMesh, k: int):

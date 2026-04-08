@@ -5,13 +5,13 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ...complex import SimplicialMesh
-from ...geometry.tet import tet_hodge_stars
-from ...geometry.tet.tet_geometry import (
+from ...metric.tet import tet_hodge_stars
+from ...metric.tet.tet_geometry import (
     compute_tet_signed_vols,
     dompute_d_tet_signed_vols_d_vert_coords,
 )
-from ...geometry.tri import tri_hodge_stars
-from ...geometry.tri._tri_geometry import compute_bc_grads
+from ...metric.tri import tri_hodge_stars
+from ...metric.tri._tri_geometry import compute_bc_grads
 from . import _local_element, _local_vertex
 
 

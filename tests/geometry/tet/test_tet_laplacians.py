@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tet import tet_hodge_stars, tet_laplacians, tet_masses
+from cochain.metric.tet import tet_hodge_stars, tet_laplacians, tet_masses
 
 
 @pytest.mark.parametrize(

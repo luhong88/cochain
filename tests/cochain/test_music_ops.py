@@ -3,8 +3,8 @@ import torch
 from einops import repeat
 
 from cochain.cochain import music_ops
-from cochain.geometry.tet import tet_masses
-from cochain.geometry.tri import tri_masses
+from cochain.metric.tet import tet_masses
+from cochain.metric.tri import tri_masses
 
 
 @pytest.mark.parametrize(

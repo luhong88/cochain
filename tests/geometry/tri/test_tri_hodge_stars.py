@@ -7,7 +7,7 @@ import skfem as skfem
 import torch
 
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tri import tri_hodge_stars
+from cochain.metric.tri import tri_hodge_stars
 
 # Test 0-, 1-, and 2-star operators on a watertight mesh and a mesh with boundaries.
 

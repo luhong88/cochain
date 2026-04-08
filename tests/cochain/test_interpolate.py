@@ -2,17 +2,17 @@ from random import random
 
 import pytest
 import torch
-from einops import einsum, rearrange, repeat
+from einops import einsum, repeat
 from jaxtyping import Float
 from torch import Tensor
 
 from cochain.cochain.discretize import DeRhamMap
 from cochain.cochain.interpolate import barycentric_whitney_map
-from cochain.geometry.tet.tet_geometry import (
+from cochain.metric.tet.tet_geometry import (
     compute_tet_signed_vols,
     dompute_d_tet_signed_vols_d_vert_coords,
 )
-from cochain.geometry.tri._tri_geometry import compute_bc_grads
+from cochain.metric.tri._tri_geometry import compute_bc_grads
 from cochain.utils.faces import enumerate_local_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 

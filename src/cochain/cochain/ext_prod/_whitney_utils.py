@@ -6,8 +6,8 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
-from ...geometry.tet import tet_geometry
-from ...geometry.tri import _tri_geometry
+from ...metric.tet import tet_geometry
+from ...metric.tri import _tri_geometry
 from ...utils.faces import enumerate_local_faces
 from ...utils.perm_parity import compute_lex_rel_orient
 from ...utils.search import splx_search
