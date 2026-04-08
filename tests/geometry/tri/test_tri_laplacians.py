@@ -29,7 +29,9 @@ def test_l0_direct_construction(two_tris_mesh: SimplicialMesh):
         two_tris_mesh, dual_complex="circumcentric"
     ).to_dense()
 
-    codiff_1 = tri_laplacians.codiff_1(two_tris_mesh, dual_complex="circumcentric")
+    codiff_1 = tri_laplacians.codifferential_1(
+        two_tris_mesh, dual_complex="circumcentric"
+    )
     l0 = (codiff_1 @ two_tris_mesh.cbd[0]).to_dense()
 
     torch.testing.assert_close(l0, l0_via_cotan)
@@ -232,7 +234,7 @@ def test_laplacian_1_div_free(dual_complex, hollow_tet_mesh: SimplicialMesh):
     The div grad component of the 1-Laplacian acting on a div-free 1-cochain/
     1-form produces 0.
     """
-    codiff_2 = tri_laplacians.codiff_2(hollow_tet_mesh, dual_complex)
+    codiff_2 = tri_laplacians.codifferential_2(hollow_tet_mesh, dual_complex)
     l1_div_grad = tri_laplacians.laplacian_1_grad_div(hollow_tet_mesh, dual_complex)
 
     x2 = torch.arange(hollow_tet_mesh.n_tris).to(
@@ -258,7 +260,7 @@ def test_codiff_1_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialMesh
     s1 = tri_hodge_stars.star_1(hollow_tet_mesh, dual_complex)
 
     d0 = hollow_tet_mesh.cbd[0]
-    codiff_1 = tri_laplacians.codiff_1(hollow_tet_mesh, dual_complex)
+    codiff_1 = tri_laplacians.codifferential_1(hollow_tet_mesh, dual_complex)
 
     x0 = torch.arange(hollow_tet_mesh.n_verts).to(
         dtype=torch.float, device=hollow_tet_mesh.vert_coords.device
@@ -286,7 +288,7 @@ def test_codiff_2_adjoint_relation(dual_complex, hollow_tet_mesh: SimplicialMesh
     s2 = tri_hodge_stars.star_2(hollow_tet_mesh)
 
     d1 = hollow_tet_mesh.cbd[1]
-    codiff_2 = tri_laplacians.codiff_2(hollow_tet_mesh, dual_complex)
+    codiff_2 = tri_laplacians.codifferential_2(hollow_tet_mesh, dual_complex)
 
     x1 = torch.arange(hollow_tet_mesh.n_edges).to(
         dtype=torch.float, device=hollow_tet_mesh.vert_coords.device

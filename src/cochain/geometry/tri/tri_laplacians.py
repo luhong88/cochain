@@ -24,7 +24,7 @@ from .tri_stiffness import stiffness_matrix
 # while d_k.T stands for the k-boundary operator.
 
 
-def codiff_1(
+def codifferential_1(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[SparseDecoupledTensor, "vert edge"]:
@@ -58,7 +58,7 @@ def codiff_1(
     return codiff_1
 
 
-def codiff_2(
+def codifferential_2(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[SparseDecoupledTensor, "edge tri"]:
@@ -133,7 +133,7 @@ def laplacian_0(
             return star_0(tri_mesh).inv @ stiffness_matrix(tri_mesh)
 
         case "barycentric":
-            return codiff_1(tri_mesh, dual_complex) @ tri_mesh.cbd[0]
+            return codifferential_1(tri_mesh, dual_complex) @ tri_mesh.cbd[0]
 
         case _:
             raise ValueError("Unknown 'dual_complex' argument.")
@@ -174,7 +174,7 @@ def laplacian_1_grad_div(
     d0 = tri_mesh.cbd[0]
 
     if codiff_1 is None:
-        codiff_1 = codiff_1(tri_mesh, dual_complex)
+        codiff_1 = codifferential_1(tri_mesh, dual_complex)
 
     return d0 @ codiff_1
 
@@ -214,7 +214,7 @@ def laplacian_1_curl_curl(
     d1 = tri_mesh.cbd[1]
 
     if codiff_2 is None:
-        codiff_2 = codiff_2(tri_mesh, dual_complex)
+        codiff_2 = codifferential_2(tri_mesh, dual_complex)
 
     return codiff_2 @ d1
 
@@ -286,7 +286,7 @@ def laplacian_2(
         If `codiff_2` is `None`, this argument determines the type of dual complex
         over which to compute the Hodge 1-star.
     codiff_2 : [edge, tri]
-        If provided, compute $L_2$ via $d+1 \delta_2$; if  `None`, compute $L_2$
+        If provided, compute $L_2$ via $d_1 \delta_2$; if  `None`, compute $L_2$
         from the Hodge stars and coboundary operators.
 
     Returns
@@ -297,6 +297,6 @@ def laplacian_2(
     d1 = tri_mesh.cbd[1]
 
     if codiff_2 is None:
-        codiff_2 = codiff_2(tri_mesh, dual_complex)
+        codiff_2 = codifferential_2(tri_mesh, dual_complex)
 
     return d1 @ codiff_2
