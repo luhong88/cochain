@@ -2,8 +2,6 @@ import torch
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
-from ...utils.constants import EPS
-
 
 def compute_tet_signed_vols(
     vert_coords: Float[Tensor, "vert coord=3"],
@@ -114,7 +112,7 @@ def tet_face_vector_areas(
     # can also be written as <th x o, hh x o> / 36 * vol_ijkl; here, vol_ijkl is
     # the unsigned/absolute volume of the tet ijkl.
     weight_o: Float[Tensor, "tet 6"] = (
-        torch.sum(area_vec_to * area_vec_ho, dim=-1) / (36.0 * tet_vols + EPS)[:, None]
+        torch.sum(area_vec_to * area_vec_ho, dim=-1) / (36.0 * tet_vols)[:, None]
     )
 
     return area_vec_to, area_vec_ho, weight_o

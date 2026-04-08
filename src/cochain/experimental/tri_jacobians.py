@@ -9,7 +9,6 @@ from ..metric.tri._tri_geometry import (
     compute_tri_areas,
 )
 from ..metric.tri.tri_hodge_stars import _star_1_circumcentric, star_0, star_2
-from ..utils.constants import EPS
 
 
 def _d2_tri_areas_d2_vert_coords(
@@ -194,7 +193,7 @@ def d_inv_star_1_circumcentric_d_vert_coords(
     dSdV = d_star_1_circumcentric_d_vert_coords(tri_mesh)
 
     s1 = _star_1_circumcentric(tri_mesh).val[dSdV.indices()[0]]
-    inv_scale = -1.0 / (s1.square()[:, None] + EPS)
+    inv_scale = -1.0 / (s1.square()[:, None])
 
     d_inv_S_dV = torch.sparse_coo_tensor(
         dSdV.indices(), dSdV.values() * inv_scale, dSdV.shape
@@ -266,7 +265,7 @@ def d_inv_star_0_d_vert_coords(
     dSdV = d_star_0_d_vert_coords(tri_mesh)
 
     s0 = star_0(tri_mesh).val[dSdV.indices()[0]]
-    inv_scale = -1.0 / (s0.square()[:, None] + EPS)
+    inv_scale = -1.0 / (s0.square()[:, None])
 
     d_inv_S_dV = torch.sparse_coo_tensor(
         dSdV.indices(), dSdV.values() * inv_scale, dSdV.shape
@@ -406,15 +405,15 @@ def _d_cotan_weights_d_vert_coords(
     edge_ns = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
     edge_ps = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
 
-    edge_ns_len = torch.linalg.norm(edge_ns, dim=-1, keepdim=True) + EPS
-    edge_ps_len = torch.linalg.norm(edge_ps, dim=-1, keepdim=True) + EPS
+    edge_ns_len = torch.linalg.norm(edge_ns, dim=-1, keepdim=True)
+    edge_ps_len = torch.linalg.norm(edge_ps, dim=-1, keepdim=True)
 
     uedge_ns = edge_ns / edge_ns_len
     uedge_ps = edge_ps / edge_ps_len
 
     norm_s: Float[Tensor, "tri 3 3"] = torch.cross(uedge_ns, uedge_ps, dim=-1)
-    sin_squared_s: Float[Tensor, "tri 3 1"] = (
-        torch.sum(norm_s.square(), dim=-1, keepdim=True) + EPS
+    sin_squared_s: Float[Tensor, "tri 3 1"] = torch.sum(
+        norm_s.square(), dim=-1, keepdim=True
     )
     unorm_s = norm_s / torch.sqrt(sin_squared_s)
 
