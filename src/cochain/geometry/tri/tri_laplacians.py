@@ -7,6 +7,16 @@ from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from .tri_hodge_stars import star_0, star_1, star_2
 from .tri_stiffness import stiffness_matrix
 
+__all__ = [
+    "codifferential_1",
+    "codifferential_2",
+    "laplacian_0",
+    "laplacian_1",
+    "laplacian_1_grad_div",
+    "laplacian_1_curl_curl",
+    "laplacian_2",
+]
+
 # Laplacian_k = (
 #   d_{k-1} @ inv_star_{k-1} @ d_{k-1}.T @ star_k +
 #   inv_star_k @ d_k.T @ star_{k+1} @ d_k
