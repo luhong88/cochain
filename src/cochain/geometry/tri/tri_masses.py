@@ -49,7 +49,7 @@ def mass_0(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     # then defines a local 3x3 mass-0 matrix that can be scattered to construct
     # the global mass-0 matrix.
     ref_local_mass_0 = ((torch.ones(3, 3) + torch.eye(3)) / 12.0).to(
-        dtype=tri_mesh.vert_coords.dtype, device=tri_mesh.vert_coords.device
+        dtype=tri_mesh.dtype, device=tri_mesh.device
     )
     local_mass_0: Float[Tensor, "tri 3 3"] = einsum(
         tri_areas, ref_local_mass_0, "tri, vert_1 vert_2 -> tri vert_1 vert_2"

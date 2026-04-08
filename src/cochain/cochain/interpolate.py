@@ -461,7 +461,7 @@ def _barycentric_whitney_map_boundary(
     n_pts = bary_coords.size(-2)
 
     local_face_idx: Integer[LongTensor, "k_face k_vert"] = enumerate_local_faces(
-        splx_dim=m, face_dim=k, device=mesh.vert_coords.device
+        splx_dim=m, face_dim=k, device=mesh.device
     )
 
     # Find the global indices of all k-faces.

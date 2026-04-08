@@ -28,7 +28,7 @@ def test_mass_1_with_skfem(flat_annulus_mesh: SimplicialMesh):
     skfem_mass_1_eigs = np.linalg.eigvalsh(skfem_mass_1)
     skfem_mass_1_eigs.sort()
     skfem_mass_1_eigs_torch = torch.from_numpy(skfem_mass_1_eigs).to(
-        dtype=flat_annulus_mesh.vert_coords.dtype
+        dtype=flat_annulus_mesh.dtype
     )
 
     cochain_mass_1 = tri_masses.mass_1(flat_annulus_mesh).to_dense()
@@ -71,7 +71,7 @@ def test_mass_1_matrix_connectivity(two_tris_mesh: SimplicialMesh):
 def test_mass_1_linear_potential(two_tris_mesh: SimplicialMesh):
     mass_1 = tri_masses.mass_1(two_tris_mesh)
 
-    const_vec = torch.tensor([[1.0, 3.0, 2.0]], dtype=two_tris_mesh.vert_coords.dtype)
+    const_vec = torch.tensor([[1.0, 3.0, 2.0]], dtype=two_tris_mesh.dtype)
     phi_verts: Float[Tensor, " tri"] = torch.sum(
         two_tris_mesh.vert_coords * const_vec, dim=-1
     )

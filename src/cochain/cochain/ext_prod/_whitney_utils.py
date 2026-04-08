@@ -109,7 +109,7 @@ def find_top_splx_faces(
     k = face_dim
     # Identify the k-faces of the top level simplices and their sign corrections.
     k_faces: Float[Tensor, "top_splx k_face k+1"] = mesh.splx[mesh.dim][
-        :, enumerate_local_faces(mesh.dim, k, device=mesh.vert_coords.device)
+        :, enumerate_local_faces(mesh.dim, k, device=mesh.device)
     ]
     k_faces_flat = k_faces.view(-1, k + 1)
     k_faces_idx_flat = splx_search(
@@ -132,14 +132,14 @@ def find_top_splx_faces(
         k_face_parity_global = compute_lex_rel_orient(mesh.splx[k][k_faces_idx_flat])
     else:
         k_face_parity_global = torch.ones(
-            1, dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
+            1, dtype=mesh.dtype, device=mesh.device
         ).expand_as(k_faces_idx_flat)
 
     k_face_parity_induced = compute_lex_rel_orient(k_faces_flat)
 
     k_face_parity = (
         (k_face_parity_induced * k_face_parity_global)
-        .to(dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device)
+        .to(dtype=mesh.dtype, device=mesh.device)
         .view(*k_faces.shape[:-1])
     )
 

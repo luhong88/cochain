@@ -59,8 +59,8 @@ class DeRhamMap:
                 raise ValueError()
 
     def _get_quad_rule(self):
-        dtype = self.mesh.vert_coords.dtype
-        device = self.mesh.vert_coords.device
+        dtype = self.mesh.dtype
+        device = self.mesh.device
 
         bary_coords, weights = self.quad(dtype, device).get_rule(
             self.quad_degree, allow_neg_weights=self.allow_neg_weights

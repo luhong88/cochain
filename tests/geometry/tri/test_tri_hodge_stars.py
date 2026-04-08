@@ -2,9 +2,9 @@ import math
 
 import igl
 import numpy as np
+import pytest
 import skfem as skfem
 import torch
-from torch import Tensor
 
 from cochain.complex import SimplicialMesh
 from cochain.geometry.tri import tri_hodge_stars
@@ -133,3 +133,40 @@ def test_star_2_on_tet(hollow_tet_mesh: SimplicialMesh, device):
     )
 
     np.testing.assert_allclose(s2, true_s2)
+
+
+def test_star_0_backward(hollow_tet_mesh: SimplicialMesh, device):
+    mesh = hollow_tet_mesh.to(device)
+    mesh.requires_grad_()
+
+    s0 = tri_hodge_stars.star_0(mesh)
+    output = s0.val.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+
+@pytest.mark.parametrize("dual_complex", ["circumcentric", "barycentric"])
+def test_star_1_backward(hollow_tet_mesh: SimplicialMesh, dual_complex, device):
+    mesh = hollow_tet_mesh.to(device)
+    mesh.requires_grad_()
+
+    s1 = tri_hodge_stars.star_1(mesh, dual_complex=dual_complex)
+    output = s1.val.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+
+def test_star_2_backward(hollow_tet_mesh: SimplicialMesh, device):
+    mesh = hollow_tet_mesh.to(device)
+    mesh.requires_grad_()
+
+    s2 = tri_hodge_stars.star_2(mesh)
+    output = s2.val.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()

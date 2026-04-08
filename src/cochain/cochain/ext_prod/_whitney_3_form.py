@@ -108,8 +108,8 @@ def triple_tensor_prod_3_form(
     """
     A specialized version of triple_tensor_prod() for when k + l = 3.
     """
-    device = mesh.vert_coords.device
-    dtype = mesh.vert_coords.dtype
+    device = mesh.device
+    dtype = mesh.dtype
 
     k_form_router = compute_whitney_router(mesh.dim, k, device, dtype)
     l_form_router = compute_whitney_router(mesh.dim, l, device, dtype)

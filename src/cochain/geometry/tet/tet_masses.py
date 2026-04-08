@@ -19,7 +19,7 @@ def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     tet_vols = torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
     ref_local_mass_0 = ((torch.ones(4, 4) + torch.eye(4)) / 20.0).to(
-        dtype=tet_mesh.vert_coords.dtype, device=tet_mesh.vert_coords.device
+        dtype=tet_mesh.dtype, device=tet_mesh.device
     )
     local_mass_0: Float[Tensor, "tet 4 4"] = tet_vols.view(
         -1, 1, 1

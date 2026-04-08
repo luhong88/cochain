@@ -87,6 +87,17 @@ class SimplicialMesh:
         return self.vert_coords.device
 
     @property
+    def requires_grad(self) -> bool:
+        return self.vert_coords.requires_grad
+
+    def requires_grad_(self, mode: bool = True):
+        self.vert_coords.requires_grad_(mode)
+
+    @property
+    def grad(self) -> Tensor | None:
+        return self.vert_coords.grad
+
+    @property
     def verts(self) -> Integer[LongTensor, "vert 1"]:
         return self.splx[0]
 

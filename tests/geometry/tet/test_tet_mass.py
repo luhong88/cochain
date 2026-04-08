@@ -28,7 +28,7 @@ def test_mass_1_with_skfem(two_tets_mesh: SimplicialMesh):
     skfem_mass_1_eigs = np.linalg.eigvalsh(skfem_mass_1)
     skfem_mass_1_eigs.sort()
     skfem_mass_1_eigs_torch = torch.from_numpy(skfem_mass_1_eigs).to(
-        dtype=two_tets_mesh.vert_coords.dtype
+        dtype=two_tets_mesh.dtype
     )
 
     cochain_mass_1 = tet_masses.mass_1(two_tets_mesh).to_dense()
@@ -58,7 +58,7 @@ def test_mass_2_with_skfem(two_tets_mesh: SimplicialMesh):
     skfem_mass_2_eigs = np.linalg.eigvalsh(skfem_mass_2) * 4
     skfem_mass_2_eigs.sort()
     skfem_mass_2_eigs_torch = torch.from_numpy(skfem_mass_2_eigs).to(
-        dtype=two_tets_mesh.vert_coords.dtype
+        dtype=two_tets_mesh.dtype
     )
 
     cochain_mass_2 = tet_masses.mass_2(two_tets_mesh).to_dense()
@@ -168,7 +168,7 @@ def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialMesh):
 def test_mass_1_patch(two_tets_mesh: SimplicialMesh):
     mass_1 = tet_masses.mass_1(two_tets_mesh)
 
-    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=two_tets_mesh.vert_coords.dtype)
+    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=two_tets_mesh.dtype)
 
     edges = (
         two_tets_mesh.vert_coords[two_tets_mesh.edges[:, 1]]
@@ -193,7 +193,7 @@ def test_mass_1_patch(two_tets_mesh: SimplicialMesh):
 def test_mass_2_patch(two_tets_mesh: SimplicialMesh):
     mass_2 = tet_masses.mass_2(two_tets_mesh)
 
-    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=two_tets_mesh.vert_coords.dtype)
+    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=two_tets_mesh.dtype)
 
     # Compute the triangle vector areas following the right-hand rule using the
     # canonical triangle vertex orderings.

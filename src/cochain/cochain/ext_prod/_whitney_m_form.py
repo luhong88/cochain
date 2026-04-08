@@ -147,8 +147,8 @@ def triple_tensor_prod(
     on the l-simplex v, and ϕ_w is the Whitney (k+l)-form defined on the
     (k+l)-simplex w.
     """
-    device = mesh.vert_coords.device
-    dtype = mesh.vert_coords.dtype
+    device = mesh.device
+    dtype = mesh.dtype
 
     k_form_router = compute_whitney_router(mesh.dim, k, device, dtype)
     l_form_router = compute_whitney_router(mesh.dim, l, device, dtype)
