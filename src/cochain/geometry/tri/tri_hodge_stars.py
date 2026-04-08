@@ -32,7 +32,7 @@ def star_2(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
 
     Returns
     -------
-    (tri, tri)
+    [tri, tri]
         The Hodge 2-star matrix.
     """
     return DiagDecoupledTensor(
@@ -138,7 +138,7 @@ def star_1(
 
     Returns
     -------
-    (edge, edge)
+    [edge, edge]
         The Hodge 1-star matrix.
 
     Notes
@@ -183,7 +183,7 @@ def star_0(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
 
     Returns
     -------
-    (vert, vert)
+    [vert, vert]
         The Hodge 0-star matrix.
     """
     tri_area = compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris)

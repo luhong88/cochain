@@ -24,12 +24,29 @@ from .tri_stiffness import stiffness_matrix
 # while d_k.T stands for the k-boundary operator.
 
 
-def codifferential_1(
+def codiff_1(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[SparseDecoupledTensor, "vert edge"]:
-    """
-    Compute the codifferential on 1-forms, `star_0_inv @ d0_T @ star_1`
+    r"""
+    Compute the codifferential on discrete 1-forms.
+
+    The 1-codifferential is defined as $\delta_1 = \star_0^{-1}d_0^T \star_1$,
+    where $\star_k$ is the Hodge $k$-star and $d_k$ is the $k$-coboundary operator/
+    discrete exterior derivative.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+    dual_complex
+        The type of dual complex over which to compute the Hodge 1-star.
+
+    Returns
+    -------
+    [vert, edge]
+        The codifferential operator.
+
     """
     d0_T = tri_mesh.cbd[0].T
 
@@ -41,12 +58,29 @@ def codifferential_1(
     return codiff_1
 
 
-def codifferential_2(
+def codiff_2(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[SparseDecoupledTensor, "edge tri"]:
-    """
-    Compute the codifferential on 2-forms, `star_1_inv @ d1_T @ star_2`
+    r"""
+    Compute the codifferential on discrete 2-forms.
+
+    The 2-codifferential is defined as $\delta_2 = \star_1^{-1}d_1^T \star_2$,
+    where $\star_k$ is the Hodge $k$-star and $d_k$ is the $k$-coboundary operator/
+    discrete exterior derivative.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+    dual_complex
+        The type of dual complex over which to compute the Hodge 1-star.
+
+    Returns
+    -------
+    [edge, tri]
+        The codifferential operator.
+
     """
     d1_T = tri_mesh.cbd[1].T
 
@@ -63,13 +97,33 @@ def laplacian_0(
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
 ) -> Float[SparseDecoupledTensor, "vert vert"]:
-    """
-    Compute the 0-Laplacian (vertex Laplacian).
-    L0 = codiff_1 @ d0 = inv_star_0 @ d0.T @ star_1 @ d0
+    r"""
+    Compute the Hodge 0-Laplacian.
 
-    If 'codiff_1' is provided, construct L0 via codiff_1 @ d0; otherwise,
-    construct L0 using the cotan Laplacian/stiffness matrix if 'dual_complex' is
-    circumcentric, or the barycentric 1-star if 'dual_complex' is barycentric.
+    The 0-Laplacian is defined as
+
+    $$ L_0=\delta_1 d_0 = \star_0^{-1} d_0^T \star_1 d_0$$
+
+    where $\delta_k$ is the $k$-codifferential, $\star_k$ is the Hodge $k$-star and
+    $d_k$ is the $k$-coboundary operator/discrete exterior derivative. This operator
+    is also sometimes known as the vertex Laplacian.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+    dual_complex
+        If `codiff_1` is `None`, this argument determines the type of dual complex
+        over which to compute the Hodge 1-star. In particular, if the `dual_complex`
+        is "circumcentric", $L_0$ is computed via $\star_0^{-1} S$, where $S$ is the
+        stiffness matrix/cotan Laplacian.
+    codiff_1 : [vert, edge]
+        If provided, compute $L_0$ via $\delta_1 d_0$; if `None`, compute $L_0$ from the Hodge stars and coboundary operators.
+
+    Returns
+    -------
+    [vert, vert]
+        The Laplacian operator.
     """
     if codiff_1 is not None:
         return codiff_1 @ tri_mesh.cbd[0]
@@ -79,26 +133,48 @@ def laplacian_0(
             return star_0(tri_mesh).inv @ stiffness_matrix(tri_mesh)
 
         case "barycentric":
-            return codifferential_1(tri_mesh, dual_complex) @ tri_mesh.cbd[0]
+            return codiff_1(tri_mesh, dual_complex) @ tri_mesh.cbd[0]
 
         case _:
-            raise ValueError()
+            raise ValueError("Unknown 'dual_complex' argument.")
 
 
-def laplacian_1_div_grad(
+def laplacian_1_grad_div(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
-    """
-    Compute the div grad component of the 1-Laplacian, `d0 @ codiff_1`.
+    r"""
+    Compute the grad-div component of the Hodge 1-Laplacian.
 
-    If 'codiff_1' is not provided, construct it using 1-star specified by 'dual_complex'.
+    The grad-div component of the 1-Laplacian, also known as the "down" Laplacian,
+    is defined as
+
+    $$ L_1^\text{down} = d_0 \delta_1$$
+
+    where $\delta_k$ is the $k$-codifferential, and $d_k$ is the $k$-coboundary
+    operator/discrete exterior derivative.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+    dual_complex
+        If `codiff_1` is `None`, this argument determines the type of dual complex
+        over which to compute the Hodge 1-star.
+    codiff_1 : [vert, edge]
+        If provided, compute $L_1^\text{down}$ via $d_0 \delta_1$; if `None`, compute
+        $L_1^\text{down}$ from the Hodge stars and coboundary operators.
+
+    Returns
+    -------
+    [edge, edge]
+        The Laplacian operator.
     """
     d0 = tri_mesh.cbd[0]
 
     if codiff_1 is None:
-        codiff_1 = codifferential_1(tri_mesh, dual_complex)
+        codiff_1 = codiff_1(tri_mesh, dual_complex)
 
     return d0 @ codiff_1
 
@@ -108,15 +184,37 @@ def laplacian_1_curl_curl(
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
-    """
-    Computes the curl curl component of the 1-Laplacian, `codiff_2 @ d1`.
+    r"""
+    Compute the curl-curl component of the Hodge 1-Laplacian.
 
-    If codiff_2 is not provided, construct it using 1-star specified by 'dual_complex'.
+    The curl-curl component of the 1-Laplacian, also known as the "up" Laplacian,
+    is defined as
+
+    $$ L_1^\text{up} = \delta_2 d_1$$
+
+    where $\delta_k$ is the $k$-codifferential, and $d_k$ is the $k$-coboundary
+    operator/discrete exterior derivative.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+    dual_complex
+        If `codiff_2` is `None`, this argument determines the type of dual complex
+        over which to compute the Hodge 1-star.
+    codiff_2 : [edge, tri]
+        If provided, compute $L_1^\text{up}$ via $\delta_2 d_1$; if `None`, compute
+        $L_1^\text{up}$ from the Hodge stars and coboundary operators.
+
+    Returns
+    -------
+    [edge, edge]
+        The Laplacian operator.
     """
     d1 = tri_mesh.cbd[1]
 
     if codiff_2 is None:
-        codiff_2 = codifferential_2(tri_mesh, dual_complex)
+        codiff_2 = codiff_2(tri_mesh, dual_complex)
 
     return codiff_2 @ d1
 
@@ -127,15 +225,37 @@ def laplacian_1(
     codiff_1: Float[SparseDecoupledTensor, "vert edge"] | None = None,
     codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
-    """
-    Compute the 1-Laplacian (edge/vector Laplacian).
-    L1 = (codiff_2 @ d1) + (d0 @ codiff_1)
+    r"""
+    Compute the Hodge 1-Laplacian.
 
-    If the codifferentials are not provided, construct them using 1-star specified
-    by 'dual_complex'.
+    The 1-Laplacian, is defined as
+
+    $$ L_1 = \delta_2 d_1 + d_0 \delta_1$$
+
+    where $\delta_k$ is the $k$-codifferential, and $d_k$ is the $k$-coboundary
+    operator/discrete exterior derivative.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+    dual_complex
+        If `codiff_1` or `codiff_2` is `None`, this argument determines the type of
+        dual complex over which to compute the Hodge 1-star.
+    codiff_1 : [vert, edge]
+        If provided, compute the $L_1^\text{down}$ component via $d_0 \delta_1$; if
+        `None`, compute $L_1^\text{down}$ from the Hodge stars and coboundary operators.
+    codiff_2 : [edge, tri]
+        If provided, compute the $L_1^\text{up}$ component via $\delta_2 d_1$; if
+        `None`, compute $L_1^\text{up}$ from the Hodge stars and coboundary operators.
+
+    Returns
+    -------
+    [edge, edge]
+        The Laplacian operator.
     """
     laplacian_1 = SparseDecoupledTensor.assemble(
-        laplacian_1_div_grad(tri_mesh, dual_complex, codiff_1),
+        laplacian_1_grad_div(tri_mesh, dual_complex, codiff_1),
         laplacian_1_curl_curl(tri_mesh, dual_complex, codiff_2),
     )
 
@@ -147,15 +267,36 @@ def laplacian_2(
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
     codiff_2: Float[SparseDecoupledTensor, "edge tri"] | None = None,
 ) -> Float[SparseDecoupledTensor, "tri tri"]:
-    """
-    Compute the 2-Laplacian (face Laplacian).
-    L2 = d1 @ codiff_2
+    r"""
+    Compute the Hodge 2-Laplacian.
 
-    If codiff_2 is not provided, construct it using 1-star specified by 'dual_complex'.
+    The 2-Laplacian, is defined as
+
+    $$ L_2 = d_1 \delta_2$$
+
+    where $\delta_k$ is the $k$-codifferential, and $d_k$ is the $k$-coboundary
+    operator/discrete exterior derivative.  Note that, unlike $L_1$, $L_2$ on a
+    tri mesh only contains a single "down" component.
+
+    Parameters
+    ----------
+    tri_mesh
+        A tri mesh.
+    dual_complex
+        If `codiff_2` is `None`, this argument determines the type of dual complex
+        over which to compute the Hodge 1-star.
+    codiff_2 : [edge, tri]
+        If provided, compute $L_2$ via $d+1 \delta_2$; if  `None`, compute $L_2$
+        from the Hodge stars and coboundary operators.
+
+    Returns
+    -------
+    [tri, tri]
+        The Laplacian operator.
     """
     d1 = tri_mesh.cbd[1]
 
     if codiff_2 is None:
-        codiff_2 = codifferential_2(tri_mesh, dual_complex)
+        codiff_2 = codiff_2(tri_mesh, dual_complex)
 
     return d1 @ codiff_2

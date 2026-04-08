@@ -5,7 +5,7 @@ from cochain.geometry.tri.tri_hodge_stars import star_1
 from cochain.geometry.tri.tri_laplacians import (
     laplacian_1,
     laplacian_1_curl_curl,
-    laplacian_1_div_grad,
+    laplacian_1_grad_div,
 )
 from cochain.topology.spanning_tree import compute_cotree_mask, compute_tree_mask
 from cochain.topology.topo_laplacians import laplacian_k
@@ -90,7 +90,7 @@ def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device)
     l0 = laplacian_k(mesh, k=0, component="up")
     tree_mask = compute_tree_mask(topo_laplacian_0=l0, canon_edges=mesh.edges)
 
-    l1_down = (star_1(mesh) @ laplacian_1_div_grad(mesh)).to_dense()
+    l1_down = (star_1(mesh) @ laplacian_1_grad_div(mesh)).to_dense()
     l1_fixed = l1_down[tree_mask][:, tree_mask]
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
@@ -142,7 +142,7 @@ def test_l1_down_positive_definite_absolute_bc(
     l0 = laplacian_k(mesh, k=0, component="up")
     tree_mask = compute_tree_mask(topo_laplacian_0=l0, canon_edges=mesh.edges)
 
-    l1 = (star_1(mesh) @ laplacian_1_div_grad(mesh)).to_dense()
+    l1 = (star_1(mesh) @ laplacian_1_grad_div(mesh)).to_dense()
     l1_fixed = l1[tree_mask][:, tree_mask]
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 

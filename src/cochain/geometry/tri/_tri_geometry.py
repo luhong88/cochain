@@ -22,7 +22,7 @@ from torch import LongTensor, Tensor
 
 def compute_tri_areas(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tris: Integer[LongTensor, "tri vert=3"],
+    tris: Integer[LongTensor, "tri local_vert=3"],
 ) -> Float[Tensor, " tri"]:
     """Compute the area of all triangles in a tri mesh."""
     vert_s_coord: Float[Tensor, "tri 3 3"] = vert_coords[tris]
@@ -77,7 +77,7 @@ def compute_d_tri_areas_d_vert_coords(
 def compute_bc_grads(
     vert_coords: Float[Tensor, "global_vert coord=3"],
     tris: Integer[LongTensor, "tri local_vert=3"],
-) -> tuple[Float[Tensor, " tri"], Float[Tensor, "tri vert=3 coord=3"]]:
+) -> tuple[Float[Tensor, " tri"], Float[Tensor, "tri local_vert=3 coord=3"]]:
     r"""
     Compute the gradients of the barycentric coordinates.
 
