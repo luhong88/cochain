@@ -332,3 +332,39 @@ def test_laplacian_backward(
 
     assert mesh.grad is not None
     assert torch.isfinite(mesh.grad).all()
+
+
+@pytest.mark.parametrize(
+    "laplacian, dual_complex",
+    [
+        (tri_laplacians.laplacian_0, "circumcentric"),
+        (tri_laplacians.laplacian_0, "barycentric"),
+        (
+            tri_laplacians.laplacian_1,
+            "circumcentric",
+        ),
+        (
+            tri_laplacians.laplacian_1,
+            "barycentric",
+        ),
+        (tri_laplacians.laplacian_2, "circumcentric"),
+        (tri_laplacians.laplacian_2, "barycentric"),
+    ],
+)
+def test_laplacian_gradcheck(
+    laplacian, dual_complex, hollow_tet_mesh: SimplicialMesh, device
+):
+    # Scale the vertex coordinates by a factor of 100 to improve numerical
+    # precision for gradcheck (esp. for the grad-div component of L_1).
+    vert_coords = 100.0 * hollow_tet_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def laplacian_fxn(test_vert_coords):
+        mesh = hollow_tet_mesh.to(device=device, dtype=torch.float64)
+        mesh.vert_coords = test_vert_coords
+        l = laplacian(mesh, dual_complex)
+        return l.val.sum()
+
+    assert torch.autograd.gradcheck(laplacian_fxn, (vert_coords,), fast_mode=True)
