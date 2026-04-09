@@ -13,7 +13,7 @@ try:
     import nvmath.sparse.advanced as nvmath_sp
     from cuda.core.experimental import Device
 
-    from ._nvmath_utils import (
+    from .nvmath_utils import (
         DirectSolverConfig,
         nvmath_adjoint_method,
         sp_literal_to_matrix_type,
@@ -27,6 +27,8 @@ except ImportError:
 if TYPE_CHECKING:
     import nvmath.sparse.advanced as nvmath_sp
     from cuda.core.experimental import Device
+
+__all__ = ["NVMathDirectSolver"]
 
 
 class _StatefulNvmathDirectSolverAutogradFunction(torch.autograd.Function):

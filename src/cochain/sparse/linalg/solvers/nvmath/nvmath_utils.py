@@ -8,6 +8,8 @@ from torch import LongTensor, Tensor
 
 from ....decoupled_tensor import SparsityPattern
 
+__all__ = ["DirectSolverConfig"]
+
 sp_literal_to_matrix_type = {
     "general": nvmath_sp.DirectSolverMatrixType.GENERAL,
     "symmetric": nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
