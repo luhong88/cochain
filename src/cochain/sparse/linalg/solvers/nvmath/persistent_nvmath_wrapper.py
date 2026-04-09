@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 __all__ = ["NVMathDirectSolver"]
 
 
-class _StatefulNvmathDirectSolverAutogradFunction(torch.autograd.Function):
+class _PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[Tensor, " nnz"],
@@ -230,6 +230,6 @@ class NVMathDirectSolver:
                 self.solver.free()
 
     def __call__(self, b: Float[Tensor, "*b *ch r"]) -> Float[Tensor, "*b c *ch"]:
-        return _StatefulNvmathDirectSolverAutogradFunction.apply(
+        return _PersistentNvmathDirectSolverAutogradFunction.apply(
             self.A_val, self.A_pattern, b, self.solver
         )

@@ -9,7 +9,7 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 from torch.autograd.function import once_differentiable
 
-from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 
 try:
     import cupy as cp
@@ -48,10 +48,10 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
                 ),
                 shape=tuple(A_pattern.shape),
             )
-            x_cp = cp.from_dlpack(b.detach().contiguous())
+            b_cp = cp.from_dlpack(b.detach().contiguous())
 
             solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
-            x = torch.from_dlpack(solver.solve(x_cp, trans="N"))
+            x = torch.from_dlpack(solver.solve(b_cp, trans="N"))
 
         return x, solver
 
@@ -145,10 +145,10 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
             (val, idx_row, idx_ccol),
             shape=A_pattern.shape,
         )
-        x_np = b.detach().contiguous().cpu().numpy()
+        b_np = b.detach().contiguous().cpu().numpy()
 
         solver = scipy.sparse.linalg.splu(A_scipy, **splu_kwargs)
-        x = torch.from_numpy(solver.solve(x_np, trans="N")).to(
+        x = torch.from_numpy(solver.solve(b_np, trans="N")).to(
             dtype=A_val.dtype, device=A_val.device
         )
 
