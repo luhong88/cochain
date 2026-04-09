@@ -170,3 +170,49 @@ def test_star_2_backward(hollow_tet_mesh: SimplicialMesh, device):
 
     assert mesh.grad is not None
     assert torch.isfinite(mesh.grad).all()
+
+
+def test_star_0_gradcheck(hollow_tet_mesh: SimplicialMesh, device):
+    vert_coords = hollow_tet_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def star_1_fxn(test_vert_coords):
+        mesh = hollow_tet_mesh.to(dtype=torch.float64, device=device)
+        mesh.vert_coords = test_vert_coords
+        s0 = tri_hodge_stars.star_0(mesh)
+        return s0.val.sum()
+
+    assert torch.autograd.gradcheck(star_1_fxn, (vert_coords,), fast_mode=True)
+
+
+@pytest.mark.parametrize("dual_complex", ["circumcentric", "barycentric"])
+def test_star_1_gradcheck(hollow_tet_mesh: SimplicialMesh, dual_complex, device):
+    vert_coords = hollow_tet_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def star_1_fxn(test_vert_coords):
+        mesh = hollow_tet_mesh.to(dtype=torch.float64, device=device)
+        mesh.vert_coords = test_vert_coords
+        s1 = tri_hodge_stars.star_1(mesh, dual_complex)
+        return s1.val.sum()
+
+    assert torch.autograd.gradcheck(star_1_fxn, (vert_coords,), fast_mode=True)
+
+
+def test_star_2_gradcheck(hollow_tet_mesh: SimplicialMesh, device):
+    vert_coords = hollow_tet_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def star_2_fxn(test_vert_coords):
+        mesh = hollow_tet_mesh.to(device=device, dtype=torch.float64)
+        mesh.vert_coords = test_vert_coords
+        s2 = tri_hodge_stars.star_2(mesh)
+        return s2.val.sum()
+
+    assert torch.autograd.gradcheck(star_2_fxn, (vert_coords,), fast_mode=True)
