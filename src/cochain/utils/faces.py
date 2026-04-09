@@ -4,9 +4,29 @@ from typing import NamedTuple
 import torch
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
+from torch.utils._pytree import register_pytree_node
 
 from .perm_parity import compute_lex_rel_orient
 from .search import splx_search
+
+
+class GlobalFaces(NamedTuple):
+    idx: Integer[LongTensor, "splx face"]
+    parity: Float[Tensor, "splx face"]
+
+
+# Register GlobalFaces in PyTree
+def _flatten_global_faces(faces: GlobalFaces):
+    leaves = [faces.idx, faces.parity]
+    context = None  # There is no non-tensor metadata (e.g., str, int)
+    return leaves, context
+
+
+def _unflatten_global_faces(leaves, context) -> GlobalFaces:
+    return GlobalFaces(idx=leaves[0], parity=leaves[1])
+
+
+register_pytree_node(GlobalFaces, _flatten_global_faces, _unflatten_global_faces)
 
 
 def enumerate_local_faces(
@@ -23,11 +43,6 @@ def enumerate_local_faces(
         list(itertools.combinations(list(range(splx_dim + 1)), face_dim + 1)),
         device=device,
     )
-
-
-class GlobalFaces(NamedTuple):
-    idx: Integer[LongTensor, "splx face"]
-    parity: Float[Tensor, "splx face"]
 
 
 def enumerate_global_faces(

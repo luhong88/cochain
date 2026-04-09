@@ -60,23 +60,99 @@ class SimplicialMesh:
             assert tensor.dtype == int_dtype
 
     def _apply(self, func):
-        """
-        Apply a function (recursively) to all tensor-like attributes.
-        """
+        """Apply a function (recursively) to all tensor-like attributes."""
         for key, value in self.__dict__.items():
             if _is_tensor_like(value):
                 setattr(self, key, func(value))
-            elif isinstance(value, Sequence):
-                setattr(
-                    self,
-                    key,
-                    tuple(func(v) if _is_tensor_like(v) else v for v in value),
-                )
+
+            elif isinstance(value, Sequence) and not isinstance(value, str):
+                processed_elements = [
+                    func(v) if _is_tensor_like(v) else v for v in value
+                ]
+
+                # Reconstruct the sequence while preserving its original type.
+                if isinstance(value, tuple) and hasattr(value, "_fields"):
+                    # NamedTuples require positional argument unpacking.
+                    setattr(self, key, type(value)(*processed_elements))
+                else:
+                    # Standard sequences (list, tuple) take an iterable.
+                    setattr(self, key, type(value)(processed_elements))
+
         return self
 
     # TODO: also implement .cuda() and .cpu()
     def to(self, *args, **kwargs):
-        return self._apply(lambda x: x.to(*args, **kwargs))
+        """
+        Move and/or casts the tensor-like attributes in the mesh.
+
+        Note that device casts apply to all tensors, but dtype casts follows a
+        more specific set of rules:
+        * If casting to int dtypes, only integer tensors get typecasted. In particular,
+          it is not possible to modify the sparsity pattern indices of a
+          `SparseDecoupledTensor` this way.
+        * If casting to float dtypes, only float tensors and the value of the
+          `SparseDecoupledTensor` get typecasted.
+        * Casting to bool dtype has no effect.
+        * Casting to complex dtypes is not permitted.
+        """
+        # Determine the target device and dtype from args and kwargs.
+        input_device = kwargs.get("device", None)
+        input_dtype = kwargs.get("dtype", None)
+
+        for arg in args:
+            match arg:
+                case torch.dtype():
+                    input_dtype = arg
+                case torch.device() | str():
+                    input_device = arg
+                case torch.Tensor() | SimplicialMesh():
+                    input_device = arg.device
+                    input_dtype = arg.dtype
+
+        # Reject complex dtypes.
+        if (input_dtype is not None) and input_dtype.is_complex:
+            raise TypeError(
+                f"Complex dtype {input_dtype} is not permitted for float tensors in SimplicialMesh."
+            )
+
+        # Extract remaining kwargs
+        other_kwargs = {k: v for k, v in kwargs.items() if k not in ["device", "dtype"]}
+
+        # 2. Define the type-safe casting lambda
+        def custom_cast(t: Tensor | BaseDecoupledTensor):
+            # Target the core .val dtype for BaseDecoupledTensors, and standard
+            # .dtype for native tensors.
+            current_dtype = (
+                t.val.dtype if hasattr(t, "val") else getattr(t, "dtype", None)
+            )
+            target_dtype = input_dtype
+
+            if (target_dtype is not None) and (current_dtype is not None):
+                is_target_float = target_dtype.is_floating_point
+                is_target_int = (not is_target_float) and (target_dtype != torch.bool)
+
+                is_curent_float = current_dtype.is_floating_point
+                is_current_int = (not is_curent_float) and (current_dtype != torch.bool)
+
+                # Prevent int/bool from being cast to float, and float from being cast to int
+                if is_target_float and not is_curent_float:
+                    target_dtype = None
+                elif is_target_int and not is_current_int:
+                    target_dtype = None
+                elif target_dtype == torch.bool and current_dtype != torch.bool:
+                    target_dtype = None
+
+            # Build the kwarg dictionary for this specific tensor/operator.
+            cast_kwargs = dict(other_kwargs)
+            if input_device is not None:
+                cast_kwargs["device"] = input_device
+            if target_dtype is not None:
+                cast_kwargs["dtype"] = target_dtype
+
+            return t.to(**cast_kwargs)
+
+        # Apply the custom cast recursively
+        return self._apply(custom_cast)
 
     @property
     def dtype(self) -> torch.dtype:
