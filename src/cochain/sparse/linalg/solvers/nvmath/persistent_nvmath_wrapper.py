@@ -133,11 +133,20 @@ class NVMathDirectSolver:
     See the `nvmath_direct_solver()` function for more details on the requirements
     and limitations of this wrapper. Note that, unlike the functional wrapper,
     this class only supports symmetric matrices.
+
+    The `b` vector passed to the constructor is used for specifying the size
+    of the RHS of the quation. The expected shape of b depends on whether the input
+    matrix A has a batch dimension. If A has the shape (b, r, c), then the shape
+    of b must be either (b, 1, r) or (b, ch, r). If A has the shape (r, c), then the
+    shape of b must be either (r,) or (ch, r). Note that, once the solver has been
+    initialized, all subsequent calls to the solver must use RHS with the same
+    shape as b.
     """
 
     def __init__(
         self,
-        A: Float[SparseDecoupledTensor, "*b r c"],
+        A: Float[SparseDecoupledTensor, "r c"] | Float[SparseDecoupledTensor, "b r c"],
+        b: Float[Tensor, "*ch r"] | Float[Tensor, "b ch r"],
         *,
         sparse_system_type: Literal["symmetric", "SPD"] = "symmetric",
         config: DirectSolverConfig | None = None,
@@ -177,27 +186,17 @@ class NVMathDirectSolver:
             int32=True
         )
 
-        # If A has the shape (b, r, c), then the shape of b is expected to be
-        # either (b, 1, r) or (b, ch, r). If A has the shape (r, c), then the
-        # shape of b is expected to be either (r,) or (ch, r). Here, we generate
-        # a dummy b vector with no (or trivial) ch dims.
-        if A.n_batch_dim > 0:
-            b_dummy = (
-                torch.randn((A.size(0), 1, A.size(1)), dtype=A.dtype, device=A.device)
-                .contiguous()
-                .transpose(-1, -2)
-            )
+        if b.ndim > 1:
+            b_col_major = b.contiguous().transpose(-1, -2)
         else:
-            b_dummy = torch.randn(
-                A.size(0), dtype=A.dtype, device=A.device
-            ).contiguous()
+            b_col_major = b.contiguous()
 
         # Do not give DirectSolver constructor the current stream to prevent
         # possible stream mismatch in subsequent calls to the solver by other
         # methods; instead, pass the stream to individual solver methods to ensure
         # sync between pytorch and nvmath.
         solver = nvmath_sp.DirectSolver(
-            a=A_csr, b=b_dummy, options=config.options, execution=config.execution
+            a=A_csr, b=b_col_major, options=config.options, execution=config.execution
         )
 
         # Execute the plan() and factorize() phase upfront and cache the solver.
@@ -230,7 +229,7 @@ class NVMathDirectSolver:
 
                 self.solver.free()
 
-    def solve(self, b: Float[Tensor, "*b *ch r"]) -> Float[Tensor, "*b c *ch"]:
+    def __call__(self, b: Float[Tensor, "*b *ch r"]) -> Float[Tensor, "*b c *ch"]:
         return _StatefulNvmathDirectSolverAutogradFunction.apply(
             self.A_val, self.A_pattern, b, self.solver
         )
