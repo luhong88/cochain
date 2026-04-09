@@ -93,3 +93,18 @@ def test_stiffness_matrix_backward(two_tets_mesh: SimplicialMesh, device):
 
     assert mesh.grad is not None
     assert torch.isfinite(mesh.grad).all()
+
+
+def test_stiffness_matrix_gradcheck(hollow_tet_mesh: SimplicialMesh, device):
+    vert_coords = hollow_tet_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def stiffness_fxn(test_vert_coords):
+        mesh = hollow_tet_mesh.to(device=device, dtype=torch.float64)
+        mesh.vert_coords = test_vert_coords
+        s = stiffness_matrix(mesh)
+        return s.val.sum()
+
+    assert torch.autograd.gradcheck(stiffness_fxn, (vert_coords,), fast_mode=True)

@@ -197,3 +197,19 @@ def test_mass_matrix_backward(mass_matrix, two_tris_mesh: SimplicialMesh, device
 
     assert mesh.grad is not None
     assert torch.isfinite(mesh.grad).all()
+
+
+@pytest.mark.parametrize("mass_matrix", [tri_masses.mass_0, tri_masses.mass_1])
+def test_mass_matrix_gradcheck(mass_matrix, hollow_tet_mesh: SimplicialMesh, device):
+    vert_coords = hollow_tet_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def mass_fxn(test_vert_coords):
+        mesh = hollow_tet_mesh.to(device=device, dtype=torch.float64)
+        mesh.vert_coords = test_vert_coords
+        m = mass_matrix(mesh)
+        return m.val.sum()
+
+    assert torch.autograd.gradcheck(mass_fxn, (vert_coords,), fast_mode=True)
