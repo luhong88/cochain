@@ -31,7 +31,7 @@ except ImportError:
 if TYPE_CHECKING:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
-    from ..solvers.nvmath_wrapper import DirectSolverConfig
+    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
 
 
 if _HAS_CUPY:
@@ -261,7 +261,7 @@ def cupy_eigsh(
     if not (_HAS_CUPY and _HAS_NVMATH):
         raise ImportError("cupy and nvmath-python backends required.")
 
-    from ..solvers.nvmath_wrapper import DirectSolverConfig
+    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
 
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors

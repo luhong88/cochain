@@ -20,7 +20,7 @@ except ImportError:
     _HAS_NVMATH = False
 
 if TYPE_CHECKING:
-    from ..solvers.nvmath_wrapper import DirectSolverConfig
+    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
     from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
 
@@ -264,7 +264,7 @@ def lobpcg(
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backends required.")
 
-    from ..solvers.nvmath_wrapper import DirectSolverConfig
+    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
     from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
     if lobpcg_config is None:

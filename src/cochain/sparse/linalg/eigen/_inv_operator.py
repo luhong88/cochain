@@ -4,7 +4,10 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ..solvers.nvmath_wrapper import DirectSolverConfig, sp_literal_to_matrix_type
+from ..solvers.nvmath.nvmath_wrapper import (
+    DirectSolverConfig,
+    sp_literal_to_matrix_type,
+)
 
 
 class BaseNVMathInvSymSpOp:
