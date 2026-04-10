@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from jaxtyping import Float
@@ -16,7 +16,10 @@ from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     SparseDecoupledTensor,
 )
+from ...sparse.linalg.solvers import InvSparseOperator
 from . import _galerkin_element, _galerkin_vertex
+
+# TODO: update docstrings to remove reference to 'method' args.
 
 
 def mixed_mass(
@@ -152,10 +155,11 @@ def vector_mass(
 
 def galerkin_flat(
     vec_field: Float[Tensor, "splx coord"],
-    mass_1: Float[BaseDecoupledTensor, "edge edge"],
+    mass_1: Float[BaseDecoupledTensor, "edge edge"]
+    | Float[InvSparseOperator, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
     mode: Literal["element", "vertex"],
-    method: Literal["dense", "solver", "inv_star"],
+    solver_kwargs: dict[str, Any] | None = None,
 ) -> Float[Tensor, " edge"]:
     """
     Compute the flat of a vector field using the Galerkin projection method.
@@ -173,15 +177,18 @@ def galerkin_flat(
     if `method` is "inv_star", the `mass_1` matrix is assumed to be diagonal (e.g.,
     a Hodge star-1 matrix) and directly inverted to solve the linear system.
     """
+    if solver_kwargs is None:
+        solver_kwargs = {}
+
     match mode:
         case "element":
             return _galerkin_element.element_based_galerkin_flat(
-                vec_field, mass_1, mass_mixed, method
+                vec_field, mass_1, mass_mixed, solver_kwargs
             )
 
         case "vertex":
             return _galerkin_vertex.vertex_based_galerkin_flat(
-                vec_field, mass_1, mass_mixed, method
+                vec_field, mass_1, mass_mixed, solver_kwargs
             )
 
         case _:
@@ -190,10 +197,11 @@ def galerkin_flat(
 
 def galerkin_sharp(
     cochain_1: Float[Tensor, " edge"],
-    mass_vec: Float[BaseDecoupledTensor, "splx*coord splx*coord"],
+    mass_vec: Float[BaseDecoupledTensor, "splx*coord splx*coord"]
+    | Float[InvSparseOperator, "splx*coord splx*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
     mode: Literal["element", "vertex"],
-    method: Literal["dense", "solver", "inv_star"] | None = None,
+    solver_kwargs: dict[str, Any] | None = None,
 ) -> Float[Tensor, "splx coord=3"]:
     """
     Compute the sharp of a 1-cochain using the Galerkin projection method.
@@ -222,11 +230,11 @@ def galerkin_sharp(
             )
 
         case "vertex":
-            if method is None:
-                raise ValueError()
+            if solver_kwargs is None:
+                solver_kwargs = {}
 
             return _galerkin_vertex.vertex_based_galerkin_sharp(
-                cochain_1, mass_vec, mass_mixed, method
+                cochain_1, mass_vec, mass_mixed, solver_kwargs
             )
 
         case _:

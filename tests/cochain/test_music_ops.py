@@ -5,6 +5,7 @@ from einops import repeat
 from cochain.cochain import music_ops
 from cochain.metric.tet import tet_masses
 from cochain.metric.tri import tri_masses
+from cochain.sparse.linalg.solvers import SuperLU
 
 
 @pytest.mark.parametrize(
@@ -172,7 +173,6 @@ def test_galerkin_vertex_based_const_vec_field_reconstruction(
         mass_1=mass_1,
         mass_mixed=mass_mixed,
         mode="vertex",
-        method="dense",
     )
 
     vec_field_reconstructed = music_ops.galerkin_sharp(
@@ -180,10 +180,30 @@ def test_galerkin_vertex_based_const_vec_field_reconstruction(
         mass_vec=mass_vec,
         mass_mixed=mass_mixed,
         mode="vertex",
-        method="inv_star" if diagonal else "dense",
     )
 
     torch.testing.assert_close(vec_field_reconstructed, vec_field)
+
+    # Also test the InvSparseOperator route
+    if not diagonal:
+        mass_1_op = SuperLU(mass_1, backend="scipy")
+        mass_vec_op = SuperLU(mass_vec, backend="scipy")
+
+        cochain = music_ops.galerkin_flat(
+            vec_field=vec_field,
+            mass_1=mass_1_op,
+            mass_mixed=mass_mixed,
+            mode="vertex",
+        )
+
+        vec_field_reconstructed = music_ops.galerkin_sharp(
+            cochain_1=cochain,
+            mass_vec=mass_vec_op,
+            mass_mixed=mass_mixed,
+            mode="vertex",
+        )
+
+        torch.testing.assert_close(vec_field_reconstructed, vec_field)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -205,46 +225,50 @@ def test_galerkin_element_based_const_vec_field_reconstruction(mesh, request, de
         splx=mesh.n_splx[mesh.dim],
     )
 
-    cochain = music_ops.galerkin_flat(
-        vec_field=vec_field,
-        mass_1=mass_1,
-        mass_mixed=mass_mixed,
-        mode="element",
-        method="dense",
-    )
+    mass_1_op = SuperLU(mass_1, backend="scipy")
 
-    vec_field_reconstructed = music_ops.galerkin_sharp(
-        cochain_1=cochain,
-        mass_vec=mass_vec,
-        mass_mixed=mass_mixed,
-        mode="element",
-    )
+    # Test both the dense solver and InvSparseOperator routes.
+    for m1 in [mass_1, mass_1_op]:
+        cochain = music_ops.galerkin_flat(
+            vec_field=vec_field,
+            mass_1=m1,
+            mass_mixed=mass_mixed,
+            mode="element",
+        )
 
-    match mesh.dim:
-        case 2:
-            # As before, the reconstructed vector field is in the tangent space
-            # of the triangles and the normal component of the original field
-            # needs to be projected out prior to comparison.
-            tri_verts = mesh.vert_coords[mesh.tris]
+        vec_field_reconstructed = music_ops.galerkin_sharp(
+            cochain_1=cochain,
+            mass_vec=mass_vec,
+            mass_mixed=mass_mixed,
+            mode="element",
+        )
 
-            area_normal = torch.cross(
-                tri_verts[:, 1] - tri_verts[:, 0],
-                tri_verts[:, 2] - tri_verts[:, 0],
-                dim=-1,
-            )
-            area_unormal = area_normal / torch.linalg.norm(
-                area_normal, dim=-1, keepdim=True
-            )
+        match mesh.dim:
+            case 2:
+                # As before, the reconstructed vector field is in the tangent space
+                # of the triangles and the normal component of the original field
+                # needs to be projected out prior to comparison.
+                tri_verts = mesh.vert_coords[mesh.tris]
 
-            vec_field_normal = (
-                torch.sum(vec_field * area_unormal, dim=-1, keepdim=True) * area_unormal
-            )
-            vec_field_tangent = vec_field - vec_field_normal
+                area_normal = torch.cross(
+                    tri_verts[:, 1] - tri_verts[:, 0],
+                    tri_verts[:, 2] - tri_verts[:, 0],
+                    dim=-1,
+                )
+                area_unormal = area_normal / torch.linalg.norm(
+                    area_normal, dim=-1, keepdim=True
+                )
 
-            torch.testing.assert_close(vec_field_reconstructed, vec_field_tangent)
+                vec_field_normal = (
+                    torch.sum(vec_field * area_unormal, dim=-1, keepdim=True)
+                    * area_unormal
+                )
+                vec_field_tangent = vec_field - vec_field_normal
 
-        case 3:
-            torch.testing.assert_close(vec_field_reconstructed, vec_field)
+                torch.testing.assert_close(vec_field_reconstructed, vec_field_tangent)
+
+            case 3:
+                torch.testing.assert_close(vec_field_reconstructed, vec_field)
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -281,7 +305,6 @@ def test_galerkin_element_based_adjoint_relation(mesh, request, device):
         mass_1=mass_1,
         mass_mixed=mass_mixed,
         mode="element",
-        method="dense",
     )
 
     cochain = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
@@ -317,7 +340,6 @@ def test_galerkin_vertex_based_adjoint_relation(mesh, request, device):
         mass_1=mass_1,
         mass_mixed=mass_mixed,
         mode="vertex",
-        method="dense",
     )
 
     cochain = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
@@ -326,7 +348,6 @@ def test_galerkin_vertex_based_adjoint_relation(mesh, request, device):
         mass_vec=mass_vec,
         mass_mixed=mass_mixed,
         mode="vertex",
-        method="dense",
     )
 
     lhs = torch.sum(vec_field.flatten() * (mass_vec @ cochain_sharp.flatten()))

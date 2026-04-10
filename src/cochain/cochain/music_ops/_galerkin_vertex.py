@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from einops import einsum, rearrange, repeat
@@ -10,6 +10,7 @@ from ...sparse.decoupled_tensor import (
     DiagDecoupledTensor,
     SparseDecoupledTensor,
 )
+from ...sparse.linalg.solvers import InvSparseOperator
 from ...utils.faces import enumerate_local_faces
 
 
@@ -256,9 +257,10 @@ def vertex_based_diag_vector_mass_matrix(
 
 def vertex_based_galerkin_flat(
     vec_field: Float[Tensor, "vert coord"],
-    mass_1: Float[BaseDecoupledTensor, "edge edge"],
+    mass_1: Float[BaseDecoupledTensor, "edge edge"]
+    | Float[InvSparseOperator, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "vert*coord edge"],
-    method: Literal["dense", "solver", "inv_star"],
+    solver_kwargs: dict[str, Any],
 ) -> Float[Tensor, " edge"]:
     """
     Compute the flat of a vector field defined over the vertices of the mesh using
@@ -269,25 +271,21 @@ def vertex_based_galerkin_flat(
     """
     rhs = mass_mixed.T @ vec_field.flatten()
 
-    match method:
-        case "dense":
-            return torch.linalg.solve(mass_1.to_dense(), rhs)
-
-        case "inv_star":
+    match mass_1:
+        case InvSparseOperator():
+            return mass_1(rhs, **solver_kwargs)
+        case DiagDecoupledTensor():
             return mass_1.inv @ rhs
-
-        case "solver":
-            raise NotImplementedError()
-
         case _:
-            raise ValueError()
+            return torch.linalg.solve(mass_1.to_dense(), rhs)
 
 
 def vertex_based_galerkin_sharp(
     cochain_1: Float[Tensor, " edge"],
-    mass_vec: Float[BaseDecoupledTensor, "vert*coord vert*coord"],
+    mass_vec: Float[BaseDecoupledTensor, "vert*coord vert*coord"]
+    | Float[InvSparseOperator, "vert*coord vert*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "vert*coord edge"],
-    method: Literal["dense", "solver", "inv_star"],
+    solver_kwargs: dict[str, Any],
 ) -> Float[Tensor, "vert coord=3"]:
     """
     Compute the sharp of a 1-cochain using the Galerkin projection method. The
@@ -304,18 +302,13 @@ def vertex_based_galerkin_sharp(
     """
     rhs = mass_mixed @ cochain_1
 
-    match method:
-        case "dense":
-            vec_field_flat = torch.linalg.solve(mass_vec.to_dense(), rhs)
-
-        case "inv_star":
+    match mass_vec:
+        case InvSparseOperator():
+            vec_field_flat = mass_vec(rhs, **solver_kwargs)
+        case DiagDecoupledTensor():
             vec_field_flat = mass_vec.inv @ rhs
-
-        case "solver":
-            raise NotImplementedError()
-
         case _:
-            raise ValueError()
+            vec_field_flat = torch.linalg.solve(mass_vec.to_dense(), rhs)
 
     vec_field = rearrange(vec_field_flat, "(splx coord) -> splx coord", coord=3)
 
