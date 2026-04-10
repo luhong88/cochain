@@ -10,7 +10,7 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ..factored_sparse_tensor import InvSparseOperator
+from .._inv_sparse_operator import InvSparseOperator
 
 try:
     import cupy as cp

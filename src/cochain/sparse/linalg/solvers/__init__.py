@@ -1,4 +1,4 @@
-from .factored_sparse_tensor import InvSparseOperator
+from ._inv_sparse_operator import InvSparseOperator
 from .nvmath.nvmath_utils import DirectSolverConfig
 from .nvmath.nvmath_wrapper import nvmath_direct_solver
 from .nvmath.persistent_nvmath_wrapper import NVMathDirectSolver
