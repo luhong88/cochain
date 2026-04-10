@@ -10,7 +10,7 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ..factored_sparse_tensor import FactoredSparseTensor
+from ..factored_sparse_tensor import InvSparseOperator
 
 try:
     import cupy as cp
@@ -192,7 +192,7 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
             return (dLdA_val, None, lambda_, None, None)
 
 
-class SuperLU(FactoredSparseTensor):
+class SuperLU(InvSparseOperator):
     """
     A "statefull" version of the cupy/scipy `splu()` wrapper.
 

@@ -70,6 +70,7 @@ def test_direct_solver_with_batch_channel_dim(A_batched, device):
     torch.testing.assert_close(x, x_true)
 
 
+# TODO: backward test should also test batch and channel dims
 @pytest.mark.gpu_only
 def test_direct_solver_backward(A, device):
     """

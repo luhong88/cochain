@@ -67,6 +67,7 @@ def test_splu_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device)
     torch.testing.assert_close(x, x_true)
 
 
+# TODO: backward test should also test channel dims
 @itemize_backend
 def test_splu_backward(A, backend, device):
     """

@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ..factored_sparse_tensor import FactoredSparseTensor
+from ..factored_sparse_tensor import InvSparseOperator
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
@@ -116,7 +116,7 @@ class _PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):
             return (dLdA_val, None, lambda_, None)
 
 
-class NVMathDirectSolver(FactoredSparseTensor):
+class NVMathDirectSolver(InvSparseOperator):
     """
     A "statefull" version of the nvmath `DirectSolver` wrapper.
 

@@ -10,6 +10,7 @@ from cochain.cochain.int_prod import galerkin_contract
 from cochain.complex import SimplicialMesh
 from cochain.metric.tet import tet_masses
 from cochain.metric.tri import tri_masses
+from cochain.sparse.linalg.solvers import SuperLU
 
 
 def test_galerkin_contraction_1_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, device):
@@ -59,7 +60,18 @@ def test_galerkin_contraction_1_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
         cochain_k=const_1_cochain,
         mass_km1=mass_0,
         wedge_op=wedge_op,
-        method="dense",
+    )
+
+    torch.testing.assert_close(int_prod, int_prod_true)
+
+    # Also test the InvSparseOperator route.
+    mass_0_op = SuperLU(mass_0, backend="scipy")
+
+    int_prod = galerkin_contract(
+        vec_field_flat=const_vec_flat,
+        cochain_k=const_1_cochain,
+        mass_km1=mass_0_op,
+        wedge_op=wedge_op,
     )
 
     torch.testing.assert_close(int_prod, int_prod_true)
@@ -112,7 +124,18 @@ def test_galerkin_contraction_2_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
         cochain_k=const_2_cochain,
         mass_km1=mass_1,
         wedge_op=wedge_op,
-        method="dense",
+    )
+
+    torch.testing.assert_close(int_prod, int_prod_cochain_true)
+
+    # Also test the InvSparseOperator route.
+    mass_1_op = SuperLU(mass_1, backend="scipy")
+
+    int_prod = galerkin_contract(
+        vec_field_flat=const_vec_flat,
+        cochain_k=const_2_cochain,
+        mass_km1=mass_1_op,
+        wedge_op=wedge_op,
     )
 
     torch.testing.assert_close(int_prod, int_prod_cochain_true)
@@ -163,7 +186,18 @@ def test_galerkin_contraction_3_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
         cochain_k=const_3_cochain,
         mass_km1=mass_2,
         wedge_op=wedge_op,
-        method="dense",
+    )
+
+    torch.testing.assert_close(int_prod, int_prod_cochain_true)
+
+    # Also test the InvSparseOperator route.
+    mass_2_op = SuperLU(mass_2, backend="scipy")
+
+    int_prod = galerkin_contract(
+        vec_field_flat=const_vec_flat,
+        cochain_k=const_3_cochain,
+        mass_km1=mass_2_op,
+        wedge_op=wedge_op,
     )
 
     torch.testing.assert_close(int_prod, int_prod_cochain_true)
@@ -210,7 +244,6 @@ def test_galerkin_contraction_nilpotency_2_form(two_tets_mesh: SimplicialMesh, d
         cochain_k=const_2_cochain,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
-        method="dense",
     )
 
     wedge_op_r2 = WhitneyWedgeL2Projector(k=1, l=k - 2, mesh=mesh)
@@ -221,7 +254,6 @@ def test_galerkin_contraction_nilpotency_2_form(two_tets_mesh: SimplicialMesh, d
         cochain_k=int_prod_r1,
         mass_km1=mass_km2,
         wedge_op=wedge_op_r2,
-        method="dense",
     )
 
     # The final (k-2)-cochain should be close to zero.
@@ -263,7 +295,6 @@ def test_galerkin_contraction_nilpotency_3_form(two_tets_mesh: SimplicialMesh, d
         cochain_k=const_3_cochain,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
-        method="dense",
     )
 
     wedge_op_r2 = WhitneyWedgeL2Projector(k=1, l=k - 2, mesh=mesh)
@@ -274,7 +305,6 @@ def test_galerkin_contraction_nilpotency_3_form(two_tets_mesh: SimplicialMesh, d
         cochain_k=int_prod_r1,
         mass_km1=mass_km2,
         wedge_op=wedge_op_r2,
-        method="dense",
     )
 
     # The final (k-2)-cochain should be close to zero.
@@ -319,7 +349,6 @@ def test_galerkin_contraction_linearity(k: int, mesh, request, device):
         cochain_k=k_cochain_1,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
-        method="dense",
     )
 
     int_prod_1 = a * galerkin_contract(
@@ -327,7 +356,6 @@ def test_galerkin_contraction_linearity(k: int, mesh, request, device):
         cochain_k=k_cochain_1,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
-        method="dense",
     )
 
     int_prod_2 = b * galerkin_contract(
@@ -335,7 +363,6 @@ def test_galerkin_contraction_linearity(k: int, mesh, request, device):
         cochain_k=k_cochain_1,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
-        method="dense",
     )
 
     torch.testing.assert_close(int_prod_1 + int_prod_2, int_prod_sum)
@@ -346,7 +373,6 @@ def test_galerkin_contraction_linearity(k: int, mesh, request, device):
         cochain_k=a * k_cochain_1 + b * k_cochain_2,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
-        method="dense",
     )
 
     int_prod_1 = a * galerkin_contract(
@@ -354,7 +380,6 @@ def test_galerkin_contraction_linearity(k: int, mesh, request, device):
         cochain_k=k_cochain_1,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
-        method="dense",
     )
 
     int_prod_2 = b * galerkin_contract(
@@ -362,7 +387,6 @@ def test_galerkin_contraction_linearity(k: int, mesh, request, device):
         cochain_k=k_cochain_2,
         mass_km1=mass_km1,
         wedge_op=wedge_op_r1,
-        method="dense",
     )
 
     torch.testing.assert_close(int_prod_1 + int_prod_2, int_prod_sum)
