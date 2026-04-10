@@ -5,7 +5,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
-from ..sparse.linalg.solvers import InvSparseOperator
+from ..sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from .ext_prod.whitney import WhitneyWedgeL2Projector
 
 

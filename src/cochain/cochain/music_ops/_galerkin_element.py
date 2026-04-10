@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 import torch
 from einops import einsum, rearrange, repeat
@@ -10,7 +10,7 @@ from ...sparse.decoupled_tensor import (
     DiagDecoupledTensor,
     SparseDecoupledTensor,
 )
-from ...sparse.linalg.solvers import InvSparseOperator
+from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from ...utils.faces import enumerate_local_faces
 
 

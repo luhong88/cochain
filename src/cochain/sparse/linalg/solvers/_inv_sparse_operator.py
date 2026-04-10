@@ -4,8 +4,6 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-__all__ = ["InvSparseOperator"]
-
 
 class InvSparseOperator(ABC):
     """

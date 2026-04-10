@@ -16,7 +16,7 @@ from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     SparseDecoupledTensor,
 )
-from ...sparse.linalg.solvers import InvSparseOperator
+from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from . import _galerkin_element, _galerkin_vertex
 
 # TODO: update docstrings to remove reference to 'method' args.
