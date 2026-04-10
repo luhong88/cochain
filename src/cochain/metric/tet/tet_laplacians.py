@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from jaxtyping import Float
@@ -6,6 +6,8 @@ from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
+from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
+from ._mixed_weak_laplacian_operator import MixedWeakLaplacianOperator
 from .tet_hodge_stars import star_0, star_1, star_2
 from .tet_masses import mass_1, mass_2, mass_3
 from .tet_stiffness import stiffness_matrix
@@ -110,7 +112,13 @@ def weak_laplacian_2_curl_curl(
         "solver",
         "inv_star",
     ],
-) -> Float[SparseDecoupledTensor, "tri tri"] | Float[Tensor, "tri tri"]:
+    solver_cls: InvSparseOperator | None = None,
+    solver_init_kwargs: dict[str, Any] | None = None,
+) -> (
+    Float[Tensor, "tri tri"]
+    | Float[SparseDecoupledTensor, "tri tri"]
+    | Float[MixedWeakLaplacianOperator, " tri tri"]
+):
     """
     Compute the curl curl component of the weak 2-Laplacian
     M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
@@ -128,27 +136,33 @@ def weak_laplacian_2_curl_curl(
     d1 = tet_mesh.cbd[1]
     d1_T = d1.T
 
+    m1 = mass_1(tet_mesh)
+    m2 = mass_2(tet_mesh)
+
     match method:
         case "dense":
-            m_1 = mass_1(tet_mesh)
-            m_2 = mass_2(tet_mesh)
-
-            return (m_2 @ d1) @ torch.linalg.solve(
-                m_1.to_dense(), (d1_T @ m_2).to_dense()
-            )
+            return (m2 @ d1) @ torch.linalg.solve(m1.to_dense(), (d1_T @ m2).to_dense())
 
         case "inv_star":
-            m_1 = mass_1(tet_mesh)
+            m1 = mass_1(tet_mesh)
             inv_m_1 = star_1(tet_mesh).inv
-            m_2 = mass_2(tet_mesh)
+            m2 = mass_2(tet_mesh)
 
-            return m_2 @ d1 @ inv_m_1 @ d1_T @ m_2
+            return m2 @ d1 @ inv_m_1 @ d1_T @ m2
 
         case "solver":
-            raise NotImplementedError()
+            return MixedWeakLaplacianOperator(
+                cbd_km1=d1,
+                cbd_k=None,
+                mass_km1=m1,
+                mass_k=m2,
+                mass_kp1=None,
+                solver_cls=solver_cls,
+                solver_init_kwargs=solver_init_kwargs,
+            )
 
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown 'method' argument ('{method}').")
 
 
 def weak_laplacian_2_grad_div(
@@ -173,30 +187,52 @@ def weak_laplacian_2(
         "solver",
         "inv_star",
     ],
-) -> Float[SparseDecoupledTensor, "tri tri"] | Float[Tensor, "tri tri"]:
+    solver_cls: InvSparseOperator | None = None,
+    solver_init_kwargs: dict[str, Any] | None = None,
+) -> (
+    Float[Tensor, "tri tri"]
+    | Float[SparseDecoupledTensor, "tri tri"]
+    | Float[MixedWeakLaplacianOperator, " tri tri"]
+):
     """
     Compute the weak 2-Laplacian (face Laplacian)
     S2 = d_2.T @ M_3 @ d_2 + M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
 
     If method is `solver`, returns a mixed finite element method solver function.
     """
-    if method == "solver":
-        raise NotImplementedError()
+    match method:
+        case "solver":
+            d1 = tet_mesh.cbd[1]
+            d2 = tet_mesh.cbd[2]
 
-    elif method in ["dense", "inv_star"]:
-        curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
-        div_grad = weak_laplacian_2_grad_div(tet_mesh)
+            m1 = mass_1(tet_mesh)
+            m2 = mass_2(tet_mesh)
+            m3 = mass_3(tet_mesh)
 
-        match div_grad:
-            case SparseDecoupledTensor():
-                return SparseDecoupledTensor.assemble(div_grad, curl_curl)
-            case Tensor():
-                return div_grad + curl_curl.to_dense()
-            case _:
-                raise TypeError()
+            return MixedWeakLaplacianOperator(
+                cbd_km1=d1,
+                cbd_k=d2,
+                mass_km1=m1,
+                mass_k=m2,
+                mass_kp1=m3,
+                solver_cls=solver_cls,
+                solver_init_kwargs=solver_init_kwargs,
+            )
 
-    else:
-        raise ValueError()
+        case "dense" | "inv_star":
+            curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
+            div_grad = weak_laplacian_2_grad_div(tet_mesh)
+
+            match curl_curl:
+                case SparseDecoupledTensor():
+                    return SparseDecoupledTensor.assemble(div_grad, curl_curl)
+                case Tensor():
+                    return div_grad + curl_curl.to_dense()
+                case _:
+                    raise TypeError()
+
+        case _:
+            raise ValueError(f"Unknown 'method' argument ('{method}').")
 
 
 # TODO: update docstring to remove reference to cholesky
@@ -207,7 +243,13 @@ def weak_laplacian_3(
         "solver",
         "inv_star",
     ],
-) -> Float[SparseDecoupledTensor, "tri tri"] | Float[Tensor, "tri tri"]:
+    solver_cls: InvSparseOperator | None = None,
+    solver_init_kwargs: dict[str, Any] | None = None,
+) -> (
+    Float[Tensor, "tet tet"]
+    | Float[SparseDecoupledTensor, "tet tet"]
+    | Float[MixedWeakLaplacianOperator, " tet tet"]
+):
     """
     Compute the weak 3-Laplacian (tet Laplacian)
     M_3 @ d_2 @ inv_M_2 @ d_2.T @ M_3
@@ -227,24 +269,30 @@ def weak_laplacian_3(
     d2 = tet_mesh.cbd[2]
     d2_T = d2.T
 
+    m2 = mass_2(tet_mesh)
+    m3 = mass_3(tet_mesh)
+
     match method:
         case "dense":
-            m_2 = mass_2(tet_mesh)
-            m_3 = mass_3(tet_mesh)
-
-            return (m_3 @ d2) @ torch.linalg.solve(
-                m_2.to_dense(), (d2_T @ m_3).to_dense()
-            )
-
-        case "solver":
-            raise NotImplementedError()
+            return (m3 @ d2) @ torch.linalg.solve(m2.to_dense(), (d2_T @ m3).to_dense())
 
         case "inv_star":
-            m_2 = mass_2(tet_mesh)
-            inv_m_2 = star_2(tet_mesh).inv
-            m_3 = mass_3(tet_mesh)
+            m2 = mass_2(tet_mesh)
+            inv_m2 = star_2(tet_mesh).inv
+            m3 = mass_3(tet_mesh)
 
-            return m_3 @ d2 @ inv_m_2 @ d2_T @ m_3
+            return m3 @ d2 @ inv_m2 @ d2_T @ m3
+
+        case "solver":
+            return MixedWeakLaplacianOperator(
+                cbd_km1=d2,
+                cbd_k=None,
+                mass_km1=m2,
+                mass_k=m3,
+                mass_kp1=None,
+                solver_cls=solver_cls,
+                solver_init_kwargs=solver_init_kwargs,
+            )
 
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown 'method' argument ('{method}').")

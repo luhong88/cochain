@@ -43,9 +43,7 @@ class MixedWeakLaplacianOperator:
     -----
     Consider a weak k-Laplacian
 
-    $$
-    S_k = d_k^T M_{k+1} d_k + M_k d_{k-1} M_{k-1}^{-1} d_{k-1}^T M_k
-    $$
+    $$S_k = d_k^T M_{k+1} d_k + M_k d_{k-1} M_{k-1}^{-1} d_{k-1}^T M_k$$
 
     To solve the sparse linear system $S_k x = b$ for the $k$-cochain $x$ with the
     mixed formulation, define an auxiliary $(k-1)$-cochain $y$ as the codifferential
