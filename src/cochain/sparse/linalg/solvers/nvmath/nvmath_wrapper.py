@@ -176,8 +176,15 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
 
         lambda_: Float[Tensor, "*b r *ch"] = solver.solve(stream=stream)
 
+        # Note that, the lambda_ variable needs to be transposed to conform to
+        # the shape of the input b vector in the forward pass.
+        if lambda_.ndim > 1:
+            dLdb: Float[Tensor, "*b *ch r"] = lambda_.transpose(-1, -2)
+        else:
+            dLdb = lambda_
+
         if needs_grad_b and not needs_grad_A_val:
-            return (None, None, lambda_, None)
+            return (None, None, dLdb, None)
 
         # dLdA will have the same sparsity pattern as A.
         dLdA_val = nvmath_adjoint_method(A_pattern, x, lambda_)
@@ -186,7 +193,7 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
             return (dLdA_val, None, None, None)
 
         if needs_grad_A_val and needs_grad_b:
-            return (dLdA_val, None, lambda_, None)
+            return (dLdA_val, None, dLdb, None)
 
 
 def nvmath_direct_solver(

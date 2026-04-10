@@ -122,19 +122,19 @@ def test_persistent_direct_solver_forward(A, device):
     n_dim = A_op.size(0)
     n_ch = 2
 
-    x1_true = torch.randn(n_ch, n_dim).to(device)
-    x2_true = torch.randn(n_ch, n_dim).to(device)
+    x1_true = torch.randn(n_dim, n_ch).to(device)
+    x2_true = torch.randn(n_dim, n_ch).to(device)
 
-    b1 = torch.einsum("ij,cj->ci", A_dense, x1_true)
-    b2 = torch.einsum("ij,cj->ci", A_dense, x2_true)
+    b1 = A_dense @ x1_true
+    b2 = A_dense @ x2_true
 
     solver = NVMathDirectSolver(A_op, b1)
 
     x1 = solver(b1)
     x2 = solver(b2)
 
-    torch.testing.assert_close(x1, x1_true.T)
-    torch.testing.assert_close(x2, x2_true.T)
+    torch.testing.assert_close(x1, x1_true)
+    torch.testing.assert_close(x2, x2_true)
 
 
 @pytest.mark.gpu_only

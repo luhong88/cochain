@@ -10,6 +10,7 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ..factored_sparse_tensor import FactoredSparseTensor
 
 try:
     import cupy as cp
@@ -191,7 +192,7 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
             return (dLdA_val, None, lambda_, None, None)
 
 
-class SuperLU:
+class SuperLU(FactoredSparseTensor):
     """
     A "statefull" version of the cupy/scipy `splu()` wrapper.
 
@@ -204,8 +205,12 @@ class SuperLU:
     systems.
 
     See the `splu()` function for more details on the requirements and limitations
-    of this wrapper. Note that, unlike the functional wrapper, this class is callable
-    with a "trans" option that supports directly solving a transposed linear system.
+    of this wrapper. This wrapper also differs from the functional version in the
+    following ways:
+
+    * This class is callable with a "trans" option that supports directly solving
+    a transposed linear system.
+    * This class assumes that the input vector b is always of the shape (r, *ch).
     """
 
     def __init__(
@@ -217,8 +222,11 @@ class SuperLU:
     ):
         self.A_val = A.val
         self.A_pattern = A.pattern
-        self.device = A.device
         self.backend = backend
+
+        self.dtype = A.dtype
+        self.device = A.device
+        self.shape = A.shape
 
         val = A.val[A.pattern.coo_to_csc_perm].detach().contiguous()
         idx_ccol = A.pattern.idx_ccol_int32.detach().contiguous()
@@ -272,40 +280,29 @@ class SuperLU:
     def __call__(
         self,
         b: Float[Tensor, " r *ch"],
-        channel_first: bool = False,
+        *,
         trans: Literal["N", "T"] = "N",
-    ):
-        match b.ndim:
-            case 1:
-                b_ready = b
-            case 2:
-                b_ready = b.transpose(0, 1) if channel_first else b
-            case _:
-                if channel_first:
-                    # (*ch, r) -> (r, ch_flat)
-                    b_ready = torch.movedim(b, -1, 0).reshape(b.shape[-1], -1)
-                else:
-                    # (r, *ch) -> (r, ch_flat)
-                    b_ready = b.reshape(b.shape[0], -1)
+    ) -> Float[Tensor, " c *ch"]:
+        if b.ndim > 2:
+            # Flatten multiple channel dims, (r, *ch) -> (r, ch_flat)
+            b_flat = b.reshape(b.size(0), -1)
+        else:
+            b_flat = b
 
         match self.backend:
             case "cupy":
                 x = _PersistentCuPySuperLUAutogradFunction.apply(
-                    self.A_val, self.A_pattern, b_ready, self.solver, trans
+                    self.A_val, self.A_pattern, b_flat, self.solver, trans
                 )
             case "scipy":
                 x = _PersistentSciPySuperLUAutogradFunction.apply(
-                    self.A_val, self.A_pattern, b_ready, self.solver, trans
+                    self.A_val, self.A_pattern, b_flat, self.solver, trans
                 )
 
         if x.ndim == 1:
             x_reshaped = x
         else:
-            if channel_first:
-                # (c, ch_flat) -> (*ch, c)
-                x_reshaped = x.transpose(0, 1).reshape(*b.shape[:-1], -1)
-            else:
-                # (c, ch_flat) -> (c, *ch)
-                x_reshaped = x.reshape(-1, *b.shape[1:])
+            # (c, ch_flat) -> (c, *ch)
+            x_reshaped = x.reshape(-1, *b.shape[1:])
 
         return x_reshaped

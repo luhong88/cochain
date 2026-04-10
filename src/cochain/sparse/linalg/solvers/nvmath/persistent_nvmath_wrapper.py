@@ -8,6 +8,7 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ..factored_sparse_tensor import FactoredSparseTensor
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
@@ -35,22 +36,18 @@ class _PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         A_val: Float[Tensor, " nnz"],
-        A_pattern: Integer[SparsityPattern, "*b r c"],
-        b: Float[Tensor, " r"] | Float[Tensor, "*b *ch r"],
+        A_pattern: Integer[SparsityPattern, "r c"],
+        b: Float[Tensor, " r"] | Float[Tensor, " r *ch"],
         solver: nvmath_sp.DirectSolver,
-    ) -> Float[Tensor, "*b c *ch"]:
+    ) -> Float[Tensor, " c *ch"]:
         # The A_val and A_pattern are still required for gradient tracking
         # purposes, even though they are not used in the forward pass.
-        if b.ndim > 1:
-            b_col_major = b.contiguous().transpose(-1, -2)
-        else:
-            b_col_major = b.contiguous()
-
         stream = torch.cuda.current_stream()
 
         # For a linear system A@x=b, if only b gets resetted, there is no need
-        # to call plan() and factorize() again.
-        solver.reset_operands(b=b_col_major, stream=stream)
+        # to call plan() and factorize() again. In addition, unlike the functional
+        # wrapper, the memory layout of b is assumed to be already handled.
+        solver.reset_operands(b=b, stream=stream)
         x = solver.solve(stream=stream)
 
         return x
@@ -67,11 +64,11 @@ class _PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):
     @once_differentiable
     def backward(
         ctx,
-        dLdx: Float[Tensor, "*b c *ch"],
+        dLdx: Float[Tensor, " c *ch"],
     ) -> tuple[
         Float[Tensor, " nnz"] | None,
         None,
-        Float[Tensor, "*b *ch r"] | None,
+        Float[Tensor, " r *ch"] | None,
         None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
@@ -96,14 +93,15 @@ class _PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):
         stream = torch.cuda.current_stream()
 
         if dLdx.ndim > 1:
-            dLdx_col_major: Float[Tensor, "*b c *ch"] = (
-                dLdx.transpose(-1, -2).contiguous().transpose(-1, -2)
-            )
+            dLdx_col_major: Float[Tensor, " c *ch"] = dLdx.T.contiguous().T
         else:
             dLdx_col_major = dLdx
 
         solver.reset_operands(b=dLdx_col_major, stream=stream)
-        lambda_: Float[Tensor, "*b r *ch"] = solver.solve(stream=stream)
+
+        # Note that, unlike the functional wrapper, lambda_ already has the correct
+        # shape that matches the shape of b.
+        lambda_: Float[Tensor, " r *ch"] = solver.solve(stream=stream)
 
         if needs_grad_b and not needs_grad_A_val:
             return (None, None, lambda_, None)
@@ -118,7 +116,7 @@ class _PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):
             return (dLdA_val, None, lambda_, None)
 
 
-class NVMathDirectSolver:
+class NVMathDirectSolver(FactoredSparseTensor):
     """
     A "statefull" version of the nvmath `DirectSolver` wrapper.
 
@@ -135,18 +133,16 @@ class NVMathDirectSolver:
     this class only supports symmetric matrices.
 
     The `b` vector passed to the constructor is used for specifying the size
-    of the RHS of the quation. The expected shape of b depends on whether the input
-    matrix A has a batch dimension. If A has the shape (b, r, c), then the shape
-    of b must be either (b, 1, r) or (b, ch, r). If A has the shape (r, c), then the
-    shape of b must be either (r,) or (ch, r). Note that, once the solver has been
-    initialized, all subsequent calls to the solver must use RHS with the same
-    shape as b.
+    of the RHS of the quation. Unlike the functional wrapper, this class does not
+    allow for batch dimension on the A matrix, and the shape of vector b must
+    be (r, *ch). Note that, once the solver has been initialized, all subsequent
+    calls to the solver must use RHS with the same shape as b.
     """
 
     def __init__(
         self,
-        A: Float[SparseDecoupledTensor, "r c"] | Float[SparseDecoupledTensor, "b r c"],
-        b: Float[Tensor, "*ch r"] | Float[Tensor, "b ch r"],
+        A: Float[SparseDecoupledTensor, "r c"],
+        b: Float[Tensor, " r *ch"],
         *,
         sparse_system_type: Literal["symmetric", "SPD"] = "symmetric",
         config: DirectSolverConfig | None = None,
@@ -177,8 +173,12 @@ class NVMathDirectSolver:
 
         self.config = config
 
-        # Configure the matrix and vector inputs to the solver.
+        # Register the shape, dtype, and device of the input matrix.
+        self.dtype = A.dtype
         self.device = A.device
+        self.shape = A.shape
+
+        # Configure the matrix and vector inputs to the solver.
         self.A_val = A.val
         self.A_pattern = A.pattern
 
@@ -186,8 +186,14 @@ class NVMathDirectSolver:
             int32=True
         )
 
+        # Enforce col-major layout for the b vector.
         if b.ndim > 1:
-            b_col_major = b.contiguous().transpose(-1, -2)
+            # 1. Flatten the channel dimensions: (r, *ch) -> (r, ch_flat).
+            # 2. .T changes shape to (ch_flat, r).
+            # 3. .contiguous() so the r dim has stride 1.
+            # 4. .T restores (r, ch_flat) shape but keeps the col-major stride.
+            b_col_major = b.reshape(b.size(0), -1).T.contiguous().T
+
         else:
             b_col_major = b.contiguous()
 
@@ -228,8 +234,18 @@ class NVMathDirectSolver:
                     pass
 
                 self.solver.free()
+                self.solver = None
 
-    def __call__(self, b: Float[Tensor, "*b *ch r"]) -> Float[Tensor, "*b c *ch"]:
-        return _PersistentNvmathDirectSolverAutogradFunction.apply(
-            self.A_val, self.A_pattern, b, self.solver
+    def __call__(self, b: Float[Tensor, " r *ch"]) -> Float[Tensor, " c *ch"]:
+        # Enforce col-major layout for the b vector.
+        if b.ndim > 1:
+            b_col_major = b.reshape(b.size(0), -1).T.contiguous().T
+        else:
+            b_col_major = b.contiguous()
+
+        x_flat = _PersistentNvmathDirectSolverAutogradFunction.apply(
+            self.A_val, self.A_pattern, b_col_major, self.solver
         )
+        x_shaped = x_flat.view(-1, *b.shape[1:])
+
+        return x_shaped
