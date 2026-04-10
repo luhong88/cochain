@@ -54,7 +54,17 @@ class BaseNVMathInvSymSpOp:
 
     def __del__(self):
         # DirectSolver needs an explicit free() step to free up memory/resources.
-        if hasattr(self, "solver"):
+        if hasattr(self, "solver") and self.solver is not None:
+            # Force device sync before gc.
+            try:
+                import torch
+
+                if torch.cuda.is_initialized():
+                    torch.cuda.synchronize(self.device)
+
+            except Exception:
+                pass
+
             if hasattr(self.solver, "free"):
                 self.solver.free()
                 self.solver = None
