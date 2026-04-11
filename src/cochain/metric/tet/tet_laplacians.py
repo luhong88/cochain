@@ -664,17 +664,15 @@ def weak_laplacian_2(
     product induced by the mass matrices, but it is not symmetric or sparse.
     """
     match method:
-        case "dense" | "inv_star":
+        case "dense":
             curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
-            div_grad = weak_laplacian_2_grad_div(tet_mesh)
+            grad_div = weak_laplacian_2_grad_div(tet_mesh).to_dense()
+            return curl_curl + grad_div
 
-            match curl_curl:
-                case SparseDecoupledTensor():
-                    return SparseDecoupledTensor.assemble(div_grad, curl_curl)
-                case Tensor():
-                    return div_grad + curl_curl.to_dense()
-                case _:
-                    raise TypeError()
+        case "inv_star":
+            curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
+            grad_div = weak_laplacian_2_grad_div(tet_mesh).to_dense()
+            return SparseDecoupledTensor.assemble(grad_div, curl_curl)
 
         case "mixed":
             d1 = tet_mesh.cbd[1]
