@@ -173,8 +173,7 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # Note that the way the local mass-1 matrix is constructed currently is
     # asymmetric (e.g., it accounts for the edge pair 12, but not 21). Therefore,
     # an additional index mapping step is required to generate symmetrized values
-    # and indices for the final global mass-1 matrix construction. Specifically,
-    # given the enumeration of local edge pairs 00, 01, 02, 11, 12, and 22,
+    # and indices for the final global mass-1 matrix construction.
     asym_to_sym_map = [0, 1, 2, 1, 3, 4, 2, 4, 5]
     whitney_dot_sym = whitney_dot_parity_corrected[:, asym_to_sym_map]
 

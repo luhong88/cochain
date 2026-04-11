@@ -7,6 +7,7 @@ from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
+from ...utils.faces import enumerate_local_faces
 from ._tet_geometry import (
     compute_bc_grad_dots,
     compute_d_tet_signed_vols_d_vert_coords,
@@ -114,101 +115,98 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # and the coordinate-independent part (bc_grad_dots) separately and locally
     # within each tet.
 
-    # For each tri, compute all <∇λ_j, ∇λ_l> for each pair of vertices (j, l).
-
-    # For each tet ijkl, compute all pairwise inner products of the barycentric
-    # coordinate gradients wrt each pair of vertices.
+    # For each tet, compute all <∇λ_j, ∇λ_l> for each pair of vertices (j, l).
     tet_signed_vols, bc_grad_dots = compute_bc_grad_dots(
         tet_mesh.vert_coords, tet_mesh.tets
     )
+    tet_unsigned_vols = torch.abs(tet_signed_vols)
 
-    # For each tet ijkl, compute all pairwise integrals of the barycentric coordinates;
-    # i.e., int[lambda_i(p)lambda_j(p)dvol_ijkl]. Using the "magic formula", this
-    # integral is vol_ijkl*(1 + delta_ij)/20, where delta is the Kronecker delta
-    # function.
-    bary_coords_int: Float[Tensor, "tet 4 4"] = torch.abs(
-        tet_signed_vols.view(-1, 1, 1) / 20.0
-    ) * (
-        torch.ones(
-            (tet_mesh.n_tets, 4, 4), dtype=tet_mesh.dtype, device=tet_mesh.device
-        )
-        + torch.eye(4, dtype=tet_mesh.dtype, device=tet_mesh.device).view(1, 4, 4)
+    # For each tri, compute all volume integrals of λ_i*λ_k for each pair of vertices
+    # (i, k). As shown in the mass_0() function, this integral evaluates to
+    # V*(1 + δ_ik)/20, where δ is the Kronecker delta.
+    ref_bc_poly_ints = (torch.ones((4, 4)) + torch.eye(4)).to(
+        dtype=tet_mesh.dtype, device=tet_mesh.device
+    )
+    bc_poly_ints = einsum(
+        tet_unsigned_vols / 20.0, ref_bc_poly_ints, "tet, v_1 v_2 -> tet v_1 v_2"
     )
 
-    # For each tet ijkl, each pair of its edges e1=xy and e2=pq contributes the
-    # following term to the mass matrix element M[e1,e2]:
+    # For each tet, each pair of edges ij and kl contributes four terms to the
+    # inner products of the Whitney 1-form basis functions:
     #
-    #         W_xy,pq = I_xp*D_yq - I_xq*D_yp - I_yp*D_xq + I_yq*D_xp
+    # M_ij,kl = I_ik*D_jl - I_il*D_jk - I_jk*D_il + I_jl*D_ik
     #
-    # Here, I is the barycentric integral (bary_coords_int) and D is the barycentric
-    # gradient inner product (barry_coords_grad_dot). Note that, since this expression
-    # is "skew-symmetric" wrt the edge orientations (W_yx,pq = -W_xy,pq and
-    # W_xy,qp = -W_xy,pq), each non-canonical edge orientation also contributes
-    # an overall negative sign.
+    # where I refers to bc_poly_ints and D refers to bc_grad_dots. Note that this
+    # expression is skew-symmetric wrt the edge orientations (W_ji,kl = -W_ij,kl
+    # and W_ij,lk = -W_ij,lk, however, the expression is invariant to switching
+    # the two edge indices: M_ij,kl = M_kl,ij.
 
-    # Enumerate all unique edges via their vertex position in the tet.
-    i, j, k, l = 0, 1, 2, 3
-    unique_edges = torch.tensor(
-        [[i, j], [i, k], [j, k], [j, l], [k, l], [i, l]],
-        dtype=torch.int64,
-        device=tet_mesh.device,
+    # Enumerate all 6 unique local edges per tet.
+    all_local_edges = enumerate_local_faces(
+        splx_dim=3, face_dim=1, device=tet_mesh.device
     )
 
-    x_idx = unique_edges[:, 0][:, None]
-    y_idx = unique_edges[:, 1][:, None]
-    p_idx = unique_edges[:, 0][None, :]
-    q_idx = unique_edges[:, 1][None, :]
+    # Given the 6 unique edges per tet, there are 21 unique edge pairs (e0, e1),
+    # 00, 01, 02, 03, 04, 05, 11, 12, 13, 14, 15, 22, 23, 24, 25, 33, 34, 35, 44, 45, 55
+    e0_local_edges = [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5]
+    e0 = all_local_edges[e0_local_edges]
 
-    # For each tet, find all pairs of Whitney 1-form basis function inner products,
-    # i.e., the W_xy,pq.
-    whitney_inner_prod: Float[Tensor, "tet 6 6"] = (
-        bary_coords_int[:, x_idx, p_idx] * bc_grad_dots[:, y_idx, q_idx]
-        - bary_coords_int[:, x_idx, q_idx] * bc_grad_dots[:, y_idx, p_idx]
-        - bary_coords_int[:, y_idx, p_idx] * bc_grad_dots[:, x_idx, q_idx]
-        + bary_coords_int[:, y_idx, q_idx] * bc_grad_dots[:, x_idx, p_idx]
+    e1_local_edges = [0, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5]
+    e1 = all_local_edges[e1_local_edges]
+
+    # For each edge pair, identify the start and end vertex local indices of e0,
+    # which maps onto indices i, j; similarly, for e1, indices k, l.
+    i, j = e0.unbind(dim=-1)
+    k, l = e1.unbind(dim=-1)
+
+    # Sum together the 4 contribution terms for each of the 21 edge pairs.
+    whitney_dot = torch.zeros(
+        (tet_mesh.n_tets, 21), dtype=tet_mesh.dtype, device=tet_mesh.device
+    )
+    whitney_dot.add_(bc_poly_ints[:, i, k] * bc_grad_dots[:, j, l])
+    whitney_dot.sub_(bc_poly_ints[:, i, l] * bc_grad_dots[:, j, k])
+    whitney_dot.sub_(bc_poly_ints[:, j, k] * bc_grad_dots[:, i, l])
+    whitney_dot.add_(bc_poly_ints[:, j, l] * bc_grad_dots[:, i, k])
+
+    # Before scattering the per-tet edge pair values to form the global mass-1
+    # matrix, the edge pair values need to be parity-corrected to account for
+    # the difference in local edge orientation relative to the global canonical
+    # edges.
+    global_edge_parity = tet_mesh.edge_faces.parity
+    whitney_dot_parity_corrected = (
+        whitney_dot
+        * global_edge_parity[:, e0_local_edges]
+        * global_edge_parity[:, e1_local_edges]
     )
 
-    # For each tet and each unique edge pair, find the orientations of the edges
-    # and their indices on the list of unique, canonical edges (tet_mesh.edges).
-    # Note that, given the specific unique_edges definition used in this function
-    # (related to the tet edge local ref frame definitions), the way the unique
-    # 1-faces is enumerated in unique_edges differs from the canonical edge
-    # definition used in utils.faces.enumerate_local_faces(), which gives
-    #
-    # [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]
-    #
-    # Therefore, the canonical edge definitions need to be adjusted for use in
-    # this function; however, note that, since unique_edges define 1-faces
-    # with the same orientation as the canonical 1-faces, no adjustment of edge
-    # orientation signs is required.
-    canon_edge_perm = [0, 1, 3, 4, 5, 2]
+    # Note that the way the local mass-1 matrix is constructed currently is
+    # asymmetric (e.g., it accounts for the edge pair 12, but not 21). Therefore,
+    # an additional index mapping step is required to generate symmetrized values
+    # and indices for the final global mass-1 matrix construction.
+    # fmt: off
+    asym_to_sym_map = [
+      # 01  02  03  12  13  23
+        0,  1,  2,  3,  4,  5,  # 01
+        1,  6,  7,  8,  9,  10, # 02
+        2,  7,  11, 12, 13, 14, # 03
+        3,  8,  12, 15, 16, 17, # 12
+        4,  9,  13, 16, 18, 19, # 13
+        5,  10, 14, 17, 19, 20  # 23
+    ]
+    # fmt: on
+    whitney_dot_sym = whitney_dot_parity_corrected[:, asym_to_sym_map]
 
-    edge_faces = tet_mesh.edge_faces
-    whitney_edge_signs = edge_faces.parity[:, canon_edge_perm]
-    whitney_edges_idx = edge_faces.idx[:, canon_edge_perm]
+    # Find the global edge indices of the all edge pairs to prepare for scatter.
+    global_edge_idx = tet_mesh.edge_faces.idx
+    r_idx = repeat(global_edge_idx, "tet e_1 -> (tet e_1 e_2)", e_2=6)
+    c_idx = repeat(global_edge_idx, "tet e_2 -> (tet e_1 e_2)", e_1=6)
+    idx_coo = torch.vstack((r_idx, c_idx))
 
-    # Multiply the Whitney 1-form inner product by the edge orientation signs
-    # to get the contribution from canonical edges.
-    whitney_flat_signed: Float[Tensor, "tet 36"] = (
-        whitney_inner_prod
-        * whitney_edge_signs.view(-1, 1, 6)
-        * whitney_edge_signs.view(-1, 6, 1)
-    ).flatten(start_dim=-2)
-
-    # Get the canonical edge index pairs for the Whitney 1-form inner products of
-    # all 36 edge pairs per tet.
-    whitney_flat_r_idx: Float[Tensor, " tet*36"] = (
-        whitney_edges_idx.view(-1, 6, 1).expand(-1, 6, 6).flatten()
-    )
-    whitney_flat_c_idx: Float[Tensor, " tet*36"] = (
-        whitney_edges_idx.view(-1, 1, 6).expand(-1, 6, 6).flatten()
-    )
-
-    # Assemble the mass matrix.
+    # Assemble the global mass-1 matrix.
     mass = torch.sparse_coo_tensor(
-        torch.vstack((whitney_flat_r_idx, whitney_flat_c_idx)),
-        whitney_flat_signed.flatten(),
-        (tet_mesh.n_edges, tet_mesh.n_edges),
+        indices=idx_coo,
+        values=whitney_dot_sym.flatten(),
+        size=(tet_mesh.n_edges, tet_mesh.n_edges),
     ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(mass)
