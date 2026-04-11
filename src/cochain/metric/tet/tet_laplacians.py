@@ -407,8 +407,7 @@ def weak_laplacian_0(
     The weak Laplacian operator $S_k$ as defined in this function is symmetric
     positive definite, and is related to the strong Laplacian by the relation
     $L_k = M_k^{-1} S_k$; in general, $L_k$ is self-adjoint w.r.t. the inner
-    product induced by the mass matrices, but it is in general not symmetric or
-    sparse.
+    product induced by the mass matrices, but it is not symmetric or sparse.
     """
     match method:
         case "cotan":
@@ -493,7 +492,7 @@ def weak_laplacian_1(
     r"""
     Compute the weak, hybrid 1-Laplacian/stiffness matrix.
 
-    The weak 1-Laplacian, also known as the "down" Laplacian, is defined as
+    The weak 1-Laplacian is defined as
 
     $$S_1 = d_1^T M_2 d_1 + M_1 d_0 M_0^{-1} d_0^T @ M_1$$
 
@@ -517,40 +516,50 @@ def weak_laplacian_1(
     The weak Laplacian operator $S_k$ as defined in this function is symmetric
     positive definite, and is related to the strong Laplacian by the relation
     $L_k = M_k^{-1} S_k$; in general, $L_k$ is self-adjoint w.r.t. the inner
-    product induced by the mass matrices, but it is in general not symmetric or
-    sparse.
+    product induced by the mass matrices, but it is not symmetric or sparse.
     """
     return SparseDecoupledTensor.assemble(
         weak_laplacian_1_grad_div(tet_mesh), weak_laplacian_1_curl_curl(tet_mesh)
     )
 
 
-# TODO: update docstring to remove reference to cholesky
 def weak_laplacian_2_curl_curl(
     tet_mesh: SimplicialMesh,
-    method: Literal[
-        "dense",
-        "inv_star",
-        "solver",
-    ],
+    method: Literal["dense", "inv_star", "mixed"],
 ) -> (
     Float[Tensor, "tri tri"]
     | Float[SparseDecoupledTensor, "tri tri"]
     | Float[MixedWeakLaplacianBlocks, " tri tri"]
 ):
-    """
-    Compute the curl curl component of the weak 2-Laplacian
-    M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
+    r"""
+    Compute the curl-curl component of the weak 2-Laplacian/stiffness matrix.
 
-    In general, the inverse of the sparse mass-1 matrix is not guaranteed to have
-    a similar sparse structure. The `method` argument determines how inv_M_1 is
-    handled:
+    The curl-curl component of the weak 2-Laplacian, also known as the "down" 2-Laplacian,
+    is defined as
 
-    If method is `dense`, convert the mass-1 matrix to a dense tensor and compute
-    its inverse using Cholesky decomposition.
+    $$S_2^\text{down} = M_2 d_1 M_1^{-1} d_1^T M_2$$
 
-    If method is `inv_star`, use the inverse of the barycentric 1-star in place
-    of inv_M_1.
+    where $M_k$ is the consistent mass matrix on discrete $k$-forms, and $d_k$ is
+    the $k$-coboundary operator/discrete exterior derivative.
+
+    Parameters
+    ----------
+    tet_mesh
+        A tet mesh.
+    method
+        If `method` is "dense", $M_1$ and $d_1 M_2$ are converted to dense matrices,
+        and passed to `torch.linalg.solve()` to find $M_1^{-1} d_1 M_2$;
+        the output $S_2^\text{down}$ is a dense matrix. If `method` is "inv_star",
+        $M_1^{-1}$ is approximated by the inverse of the Hodge 1-star operator,
+        and the output $S_2^\text{down}$ is a `SparseDecoupledTensor` representing
+        the hybrid operator. If `method` is "mixed", $S_2^\text{down}$ is computed
+        in the mixed formulation representation and the function returns a
+        `MixedWeakLaplacianBlocks` object.
+
+    Returns
+    -------
+    [tri, tri]
+        The weak Laplacian operator.
     """
     d1 = tet_mesh.cbd[1]
     m1 = mass_1(tet_mesh)
@@ -562,10 +571,10 @@ def weak_laplacian_2_curl_curl(
 
         case "inv_star":
             m1 = mass_1(tet_mesh)
-            inv_m_1 = star_1(tet_mesh).inv
+            inv_m1 = star_1(tet_mesh).inv
             m2 = mass_2(tet_mesh)
 
-            return m2 @ d1 @ inv_m_1 @ d1.T @ m2
+            return m2 @ d1 @ inv_m1 @ d1.T @ m2
 
         case "solver":
             return MixedWeakLaplacianBlocks(
@@ -583,9 +592,26 @@ def weak_laplacian_2_curl_curl(
 def weak_laplacian_2_grad_div(
     tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "tri tri"]:
-    """
-    Compute the div grad component of the weak 1-Laplacian
-    d_2.T @ M_3 @ d_2
+    r"""
+    Compute the grad-div component of the weak 2-Laplacian/stiffness matrix.
+
+    The grad-div component of the weak 2-Laplacian, also known as the "up" 2-Laplacian,
+    is defined as
+
+    $$S_2^\text{up} = d_2^T M_3 d_2$$
+
+    where $M_k$ is the consistent mass matrix on discrete $k$-forms, and $d_k$ is
+    the $k$-coboundary operator/discrete exterior derivative.
+
+    Parameters
+    ----------
+    tet_mesh
+        A tet mesh.
+
+    Returns
+    -------
+    [tri, tri]
+        The weak Laplacian operator.
     """
     d2 = tet_mesh.cbd[2]
     m3 = mass_3(tet_mesh)
@@ -595,24 +621,61 @@ def weak_laplacian_2_grad_div(
 
 def weak_laplacian_2(
     tet_mesh: SimplicialMesh,
-    method: Literal[
-        "dense",
-        "solver",
-        "inv_star",
-    ],
+    method: Literal["dense", "inv_star", "mixed"],
 ) -> (
     Float[Tensor, "tri tri"]
     | Float[SparseDecoupledTensor, "tri tri"]
     | Float[MixedWeakLaplacianBlocks, " tri tri"]
 ):
-    """
-    Compute the weak 2-Laplacian (face Laplacian)
-    S2 = d_2.T @ M_3 @ d_2 + M_2 @ d_1 @ inv_M_1 @ d_1.T @ M_2
+    r"""
+    Compute the weak 2-Laplacian/stiffness matrix.
 
-    If method is `solver`, returns a mixed finite element method solver function.
+    The weak 2-Laplacian is defined as
+
+    $$S_2 = d_2^T M_3 d_2 + M_2 d_1 M_1^{-1} d_1^T M_2$$
+
+    where $M_k$ is the consistent mass matrix on discrete $k$-forms, and $d_k$ is
+    the $k$-coboundary operator/discrete exterior derivative.
+
+    Parameters
+    ----------
+    tet_mesh
+        A tet mesh.
+    method
+        If `method` is "dense", $M_1$ and $d_1 M_2$ are converted to dense matrices,
+        and passed to `torch.linalg.solve()` to find $M_1^{-1} d_1 M_2$; the output
+        $S_2$ is a dense matrix. If `method` is "inv_star", $M_1^{-1}$ is approximated
+        by the inverse of the Hodge 1-star operator, and the output $S_2$ is a
+        `SparseDecoupledTensor` representing the hybrid operator. If `method` is
+        "mixed", $S_2$ is computed in the mixed formulation representation and
+        the function returns a `MixedWeakLaplacianBlocks` object.
+
+    Returns
+    -------
+    [tri, tri]
+        The weak Laplacian operator.
+
+    Notes
+    -----
+    The weak Laplacian operator $S_k$ as defined in this function is symmetric
+    positive definite, and is related to the strong Laplacian by the relation
+    $L_k = M_k^{-1} S_k$; in general, $L_k$ is self-adjoint w.r.t. the inner
+    product induced by the mass matrices, but it is not symmetric or sparse.
     """
     match method:
-        case "solver":
+        case "dense" | "inv_star":
+            curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
+            div_grad = weak_laplacian_2_grad_div(tet_mesh)
+
+            match curl_curl:
+                case SparseDecoupledTensor():
+                    return SparseDecoupledTensor.assemble(div_grad, curl_curl)
+                case Tensor():
+                    return div_grad + curl_curl.to_dense()
+                case _:
+                    raise TypeError()
+
+        case "mixed":
             d1 = tet_mesh.cbd[1]
             d2 = tet_mesh.cbd[2]
 
@@ -628,50 +691,52 @@ def weak_laplacian_2(
                 mass_kp1=m3,
             )
 
-        case "dense" | "inv_star":
-            curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
-            div_grad = weak_laplacian_2_grad_div(tet_mesh)
-
-            match curl_curl:
-                case SparseDecoupledTensor():
-                    return SparseDecoupledTensor.assemble(div_grad, curl_curl)
-                case Tensor():
-                    return div_grad + curl_curl.to_dense()
-                case _:
-                    raise TypeError()
-
         case _:
             raise ValueError(f"Unknown 'method' argument ('{method}').")
 
 
-# TODO: update docstring to remove reference to cholesky
 def weak_laplacian_3(
     tet_mesh: SimplicialMesh,
-    method: Literal[
-        "dense",
-        "solver",
-        "inv_star",
-    ],
+    method: Literal["dense", "inv_star", "mixed"],
 ) -> (
     Float[Tensor, "tet tet"]
     | Float[SparseDecoupledTensor, "tet tet"]
     | Float[MixedWeakLaplacianBlocks, " tet tet"]
 ):
-    """
-    Compute the weak 3-Laplacian (tet Laplacian)
-    M_3 @ d_2 @ inv_M_2 @ d_2.T @ M_3
+    r"""
+    Compute the weak 3-Laplacian/stiffness matrix.
 
-    In general, the inverse of the sparse mass-2 matrix is not guaranteed to have
-    a similar sparse structure. The `method` argument determines how inv_M_2 is
-    handled:
+    The weak 3-Laplacian is defined as
 
-    If method is `dense`, convert the mass-2 matrix to a dense tensor and compute
-    its inverse using Cholesky decomposition.
+    $$S_3 = M_3 d_2 M_2^{-1} d_2^T M_3$$
 
-    If method is `solver`, returns a mixed finite element method solver function.
+    where $M_k$ is the consistent mass matrix on discrete $k$-forms, and $d_k$ is
+    the $k$-coboundary operator/discrete exterior derivative.
 
-    If method is `inv_star`, use the inverse of the barycentric 2-star in place
-    of inv_M_2.
+    Parameters
+    ----------
+    tet_mesh
+        A tet mesh.
+    method
+        If `method` is "dense", $M_2$ and $d_2 M_3$ are converted to dense matrices,
+        and passed to `torch.linalg.solve()` to find $M_2^{-1} d_2 M_m$; the output
+        $S_3$ is a dense matrix. If `method` is "inv_star", $M_2^{-1}$ is approximated
+        by the inverse of the Hodge 2-star operator, and the output $S_3$ is a
+        `SparseDecoupledTensor` representing the hybrid operator. If `method` is
+        "mixed", $S_3$ is computed in the mixed formulation representation and
+        the function returns a `MixedWeakLaplacianBlocks` object.
+
+    Returns
+    -------
+    [tet, tet]
+        The weak Laplacian operator.
+
+    Notes
+    -----
+    The weak Laplacian operator $S_k$ as defined in this function is symmetric
+    positive definite, and is related to the strong Laplacian by the relation
+    $L_k = M_k^{-1} S_k$; in general, $L_k$ is self-adjoint w.r.t. the inner
+    product induced by the mass matrices, but it is not symmetric or sparse.
     """
     d2 = tet_mesh.cbd[2]
 
@@ -689,7 +754,7 @@ def weak_laplacian_3(
 
             return m3 @ d2 @ inv_m2 @ d2.T @ m3
 
-        case "solver":
+        case "mixed":
             return MixedWeakLaplacianBlocks(
                 cbd_km1=d2,
                 cbd_k=None,
