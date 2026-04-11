@@ -94,9 +94,7 @@ def compute_bc_grads(
     the gradient of $A$ w.r.t. vertex coordinate $v_i$ with vertices $j$ and $k$ fixed.
     Therefore, the gradient can be simplified as
 
-    $$
-    \nabla_x\lambda_i(x) = A^{-1}\nabla_i A
-    $$
+    $$\nabla_x\lambda_i(x) = A^{-1}\nabla_i A$$
 
     Note that this expression is independent of $x$.
     """
@@ -116,13 +114,12 @@ def compute_bc_grad_dots(
 
     Consider a triangle $snp$, from `compute_bc_grads()`, we showed that
 
-    $$\nabla_x\lambda_s(x)= A^{-1}\nabla_sA$$
+    $$\nabla_x\lambda_s(x) = A^{-1} \nabla_s A$$
 
-    Furthermore, from `compute_cotan_weights()`, we showed that
+    Furthermore, from `compute_d_tri_areas_d_vert_coords()`, we showed that
 
-    $$
-    \nabla_s A = (\hat e_{sn}\times \hat e_{sp})\times e_{np}
-    $$
+    $$\nabla_s A = (\hat e_{sn} \times \hat e_{sp})\times e_{np}$$
+
     where $\hat e$ indicates that the edge vector is length-normalized.
 
     These two equations allow us to compute the inner products between the gradients

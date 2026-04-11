@@ -5,13 +5,8 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ...complex import SimplicialMesh
-from ...metric.tet import tet_hodge_stars
-from ...metric.tet._tet_geometry import (
-    compute_d_tet_signed_vols_d_vert_coords,
-    compute_tet_signed_vols,
-)
-from ...metric.tri import tri_hodge_stars
-from ...metric.tri._tri_geometry import compute_bc_grads
+from ...metric.tet import _tet_geometry, tet_hodge_stars
+from ...metric.tri import _tri_geometry, tri_hodge_stars
 from . import _local_element, _local_vertex
 
 
@@ -85,18 +80,13 @@ def local_sharp(
     """
     match mesh.dim:
         case 2:
-            tri_areas, bary_coords_grad = compute_bc_grads(
+            tri_areas, bary_coords_grad = _tri_geometry.compute_bc_grads(
                 vert_coords=mesh.vert_coords, tris=mesh.tris
             )
 
         case 3:
-            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-
-            d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
-                mesh.vert_coords, mesh.tets
-            )
-            bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"] = (
-                d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
+            tet_signed_vols, bary_coords_grad = _tet_geometry.compute_bc_grads(
+                vert_coords=mesh.vert_coords, tets=mesh.tets
             )
 
         case _:

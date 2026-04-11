@@ -78,18 +78,10 @@ def dispatch_bc_grad_dot(
             )
 
         case 3:
-            signed_splx_size = _tet_geometry.compute_tet_signed_vols(
+            signed_splx_size, bc_grad_dot = _tet_geometry.compute_bc_grad_dots(
                 mesh.vert_coords, mesh.tets
             )
             splx_size = torch.abs(signed_splx_size)
-            signed_splx_size_grad = (
-                _tet_geometry.compute_d_tet_signed_vols_d_vert_coords(
-                    mesh.vert_coords, mesh.tets
-                )
-            )
-            bc_grad_dot = _tet_geometry.bary_coord_grad_inner_prods(
-                signed_splx_size.view(-1, 1, 1), signed_splx_size_grad
-            )
 
         case _:
             raise NotImplementedError()

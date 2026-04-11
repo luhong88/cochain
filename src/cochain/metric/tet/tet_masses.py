@@ -8,7 +8,7 @@ from torch import LongTensor, Tensor
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ._tet_geometry import (
-    bary_coord_grad_inner_prods,
+    compute_bc_grad_dots,
     compute_d_tet_signed_vols_d_vert_coords,
     compute_tet_signed_vols,
     whitney_2_form_inner_prods,
@@ -115,24 +115,20 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # within each tet.
 
     # For each tri, compute all <∇λ_j, ∇λ_l> for each pair of vertices (j, l).
-    tet_signed_vols = compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets).view(
-        -1, 1, 1
-    )
-    d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
-        tet_mesh.vert_coords, tet_mesh.tets
-    )
 
     # For each tet ijkl, compute all pairwise inner products of the barycentric
     # coordinate gradients wrt each pair of vertices.
-    bc_grad_dots: Float[Tensor, "tet 4 4"] = bary_coord_grad_inner_prods(
-        tet_signed_vols, d_signed_vols_d_vert_coords
+    tet_signed_vols, bc_grad_dots = compute_bc_grad_dots(
+        tet_mesh.vert_coords, tet_mesh.tets
     )
 
     # For each tet ijkl, compute all pairwise integrals of the barycentric coordinates;
     # i.e., int[lambda_i(p)lambda_j(p)dvol_ijkl]. Using the "magic formula", this
     # integral is vol_ijkl*(1 + delta_ij)/20, where delta is the Kronecker delta
     # function.
-    bary_coords_int: Float[Tensor, "tet 4 4"] = torch.abs(tet_signed_vols / 20.0) * (
+    bary_coords_int: Float[Tensor, "tet 4 4"] = torch.abs(
+        tet_signed_vols.view(-1, 1, 1) / 20.0
+    ) * (
         torch.ones(
             (tet_mesh.n_tets, 4, 4), dtype=tet_mesh.dtype, device=tet_mesh.device
         )

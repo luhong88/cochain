@@ -68,7 +68,7 @@ def compute_tet_signed_vols(
     A tet is assigned a positive volume if it satisfies the right-hand rule. For
     a tet with vertices (v0, v1, v2, v3), curl the right hand following the ordering
     of v1, v2, and v3; if the thumb points outwards away from v0, the tet has a
-    positive volume. Mathematically, this is sign is computed via a scalar triple
+    positive volume. Mathematically, this sign is computed via a scalar triple
     product of the e01, e02, and e03 edges.
 
     This volume sign is not to be confused with the orientation sign/parity of a
@@ -126,27 +126,64 @@ def compute_d_tet_signed_vols_d_vert_coords(
     return dVdV
 
 
-def bary_coord_grad_inner_prods(
-    tet_signed_vols: Float[Tensor, " tet 1 1"],
-    d_signed_vols_d_vert_coords: Float[Tensor, "tet vert=4 coord=3"],
-) -> Float[Tensor, "tet vert=4 vert=4"]:
+def compute_bc_grads(
+    vert_coords: Float[Tensor, "global_vert coord=3"],
+    tets: Integer[LongTensor, "tet local_vert=4"],
+) -> tuple[Float[Tensor, " tet"], Float[Tensor, "tet local_vert=4 coord=3"]]:
+    r"""
+    Compute the gradients of the barycentric coordinates.
+
+    Consider a tet $ijkl$. Let $\lambda_i(x)$ be the barycentric coordinate function
+    associated with vertex $i$ for a point $x$ on the tet. To find the gradient
+    of this function, we use the volume definition of barycentric coordinate functions.
+    Let $V_i(x)$ be the volume of the sub-tet formed by vertices $(x, j, k, l)$. Then,
+    we can write $\lambda_i(x)=V_i(x)/V$, and thus
+
+    $$\nabla_x\lambda_i(x) = V^{-1}\nabla_x V_i(x)$$
+
+    Note that, since $x$ is a vertex of the tet $V_i(x)$ with vertices $j$, $k$ and
+    $l$ fixed, taking the gradient of this function w.r.t. $x$ is equivalent to taking
+    the gradient of $V$ w.r.t. vertex coordinate $v_i$ with vertices $j$, $k$ and $l$
+    fixed. Therefore, the gradient can be simplified as
+
+    $$\nabla_x\lambda_i(x) = V^{-1}\nabla_i V$$
+
+    Note that this expression is independent of $x$.
     """
-    For a tet, let lambda_x(p) be the barycentric coordinate function for p wrt
-    a vertex x of the tet. This function computes all pairwise inner products
-    of the barycentric coordinate gradients wrt each pair of vertices; i.e., it
-    computes <grad_p[lambda_x(p)], grad_p[lambda_y(p)]> for all vertices x and y.
+    tet_signed_vols = compute_tet_signed_vols(vert_coords, tets)
+    d_tet_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
+        vert_coords, tets
+    )
+    bc_grads = d_tet_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
+
+    return tet_signed_vols, bc_grads
+
+
+def compute_bc_grad_dots(
+    vert_coords: Float[Tensor, "global_vert coord=3"],
+    tets: Integer[LongTensor, "tet local_vert=4"],
+) -> tuple[Float[Tensor, " tet"], Float[Tensor, "tet local_vert=4 local_vert=3"]]:
+    r"""
+    Compute the inner products between barycentric coordinate gradients.
+
+    Note that the geometric shortcut for computing the pairwise gradient inner
+    products on tri meshes is not applicable to tet meshes.
     """
-    # The gradient of lambda_i(p) wrt p is given by grad_i(vol_ijkl)/vol_ijkl, a
-    # constant wrt p.
-    bary_coords_grad: Float[Tensor, "tet 4 3"] = (
-        d_signed_vols_d_vert_coords / tet_signed_vols
+    tet_signed_vols = compute_tet_signed_vols(vert_coords, tets)
+    d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
+        vert_coords, tets
     )
 
-    bary_coords_grad_dot: Float[Tensor, "tet 4 4"] = torch.einsum(
-        "tic,tjc->tij", bary_coords_grad, bary_coords_grad
+    bc_grads: Float[Tensor, "tet 4 3"] = (
+        d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
+    )
+    bc_grad_dots: Float[Tensor, "tet 4 4"] = einsum(
+        bc_grads,
+        bc_grads,
+        "tet vert_1 coord, tet vert_2 coord -> tet vert_1 vert_2",
     )
 
-    return bary_coords_grad_dot
+    return tet_signed_vols, bc_grad_dots
 
 
 def whitney_2_form_inner_prods(

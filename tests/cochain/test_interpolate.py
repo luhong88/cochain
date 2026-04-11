@@ -8,11 +8,8 @@ from torch import Tensor
 
 from cochain.cochain.discretize import DeRhamMap
 from cochain.cochain.interpolate import barycentric_whitney_map
-from cochain.metric.tet._tet_geometry import (
-    compute_d_tet_signed_vols_d_vert_coords,
-    compute_tet_signed_vols,
-)
-from cochain.metric.tri._tri_geometry import compute_bc_grads
+from cochain.metric.tet import _tet_geometry
+from cochain.metric.tri import _tri_geometry
 from cochain.utils.faces import enumerate_local_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 
@@ -98,16 +95,14 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     # replaced by ∇W_i(p).
     match mesh.dim:
         case 2:
-            _, bary_coords_grad = compute_bc_grads(mesh.vert_coords, mesh.tris)
+            _, bary_coords_grad = _tri_geometry.compute_bc_grads(
+                mesh.vert_coords, mesh.tris
+            )
             cochain_0_at_vert_faces = cochain_0[mesh.tris]
 
         case 3:
-            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
+            _, bary_coords_grad = _tet_geometry.compute_bc_grads(
                 mesh.vert_coords, mesh.tets
-            )
-            bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(
-                -1, 1, 1
             )
             cochain_0_at_vert_faces = cochain_0[mesh.tets]
 
@@ -173,7 +168,9 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     # replaced by ∇ x W_ij(p).
     match mesh.dim:
         case 2:
-            _, bary_coords_grad = compute_bc_grads(mesh.vert_coords, mesh.tris)
+            _, bary_coords_grad = _tri_geometry.compute_bc_grads(
+                mesh.vert_coords, mesh.tris
+            )
 
             local_edge_idx = enumerate_local_faces(
                 splx_dim=2, face_dim=1, device=device
@@ -183,12 +180,8 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             sign_correction = mesh.edge_faces.parity
 
         case 3:
-            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
+            _, bary_coords_grad = _tet_geometry.compute_bc_grads(
                 mesh.vert_coords, mesh.tets
-            )
-            bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(
-                -1, 1, 1
             )
 
             local_edge_idx = enumerate_local_faces(
@@ -262,11 +255,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
     # repeat the same logic as in _bary_whitney_tri_cochain_2() and
     # _bary_whitney_tet_cochain_2(), but with the original basis function W_ijk(p)
     # replaced by ∇ ⋅ W_ijk(p).
-    tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-    d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
-        mesh.vert_coords, mesh.tets
-    )
-    bary_coords_grad = d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
+    _, bary_coords_grad = _tet_geometry.compute_bc_grads(mesh.vert_coords, mesh.tets)
 
     local_tri_idx = enumerate_local_faces(splx_dim=3, face_dim=2, device=device)
 

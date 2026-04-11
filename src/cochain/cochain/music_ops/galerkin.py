@@ -5,13 +5,8 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ...complex import SimplicialMesh
-from ...metric.tet import tet_hodge_stars, tet_masses
-from ...metric.tet._tet_geometry import (
-    compute_d_tet_signed_vols_d_vert_coords,
-    compute_tet_signed_vols,
-)
-from ...metric.tri import tri_hodge_stars, tri_masses
-from ...metric.tri._tri_geometry import compute_bc_grads, compute_tri_areas
+from ...metric.tet import _tet_geometry, tet_hodge_stars, tet_masses
+from ...metric.tri import _tri_geometry, tri_hodge_stars, tri_masses
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     SparseDecoupledTensor,
@@ -44,20 +39,15 @@ def mixed_mass(
     """
     match mesh.dim:
         case 2:
-            tri_areas, bary_coords_grad = compute_bc_grads(
+            tri_areas, bary_coords_grad = _tri_geometry.compute_bc_grads(
                 vert_coords=mesh.vert_coords, tris=mesh.tris
             )
 
         case 3:
-            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            tet_signed_vols, bary_coords_grad = _tet_geometry.compute_bc_grads(
+                vert_coords=mesh.vert_coords, tets=mesh.tets
+            )
             tet_unsigned_vols = torch.abs(tet_signed_vols)
-
-            d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
-                mesh.vert_coords, mesh.tets
-            )
-            bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"] = (
-                d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
-            )
 
     match (mode, mesh.dim):
         case ("element", 2):
@@ -119,12 +109,13 @@ def vector_mass(
     """
     match (mode, mesh.dim):
         case ("element", 2):
-            tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
+            tri_areas = _tri_geometry.compute_tri_areas(mesh.vert_coords, mesh.tris)
             return _galerkin_element.element_based_tri_vector_mass_matrix(tri_areas)
 
         case ("element", 3):
-            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            tet_unsigned_vols = torch.abs(tet_signed_vols)
+            tet_unsigned_vols = torch.abs(
+                _tet_geometry.compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            )
             return _galerkin_element.element_based_tet_vector_mass_matrix(
                 tet_unsigned_vols
             )

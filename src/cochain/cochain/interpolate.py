@@ -6,11 +6,8 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ..complex import SimplicialMesh
-from ..metric.tet._tet_geometry import (
-    compute_d_tet_signed_vols_d_vert_coords,
-    compute_tet_signed_vols,
-)
-from ..metric.tri._tri_geometry import compute_bc_grads
+from ..metric.tet import _tet_geometry
+from ..metric.tri import _tri_geometry
 from ..utils.faces import enumerate_local_faces
 from ..utils.search import splx_search
 
@@ -240,7 +237,7 @@ def _bary_whitney_tri(
     mesh: SimplicialMesh,
 ) -> Float[Tensor, "tri pt *ch coord"]:
     if k in [1, 2]:
-        _, bary_coords_grad = compute_bc_grads(
+        _, bary_coords_grad = _tri_geometry.compute_bc_grads(
             vert_coords=mesh.vert_coords, tris=mesh.tris
         )
 
@@ -273,15 +270,13 @@ def _bary_whitney_tet(
     bary_coords: Float[Tensor, "tet pt vert"],
     mesh: SimplicialMesh,
 ) -> Float[Tensor, "tet pt *ch coord"]:
-    if k in [1, 2, 3]:
-        tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-
     if k in [1, 2]:
-        d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
+        tet_signed_vols, bary_coords_grad = _tet_geometry.compute_bc_grads(
             mesh.vert_coords, mesh.tets
         )
-        bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"] = (
-            d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
+    elif k == 3:
+        tet_signed_vols = _tet_geometry.compute_tet_signed_vols(
+            mesh.vert_coords, mesh.tets
         )
 
     match k:
