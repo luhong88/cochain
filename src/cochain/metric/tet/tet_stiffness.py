@@ -5,7 +5,7 @@ from jaxtyping import Float
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
-from ._tet_geometry import cotan_weights
+from ._tet_geometry import compute_cotan_weights
 
 
 def stiffness_matrix(
@@ -17,7 +17,7 @@ def stiffness_matrix(
     """
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
-    sym_stiffness = cotan_weights(tet_mesh.vert_coords, tet_mesh.tets, tet_mesh.n_verts)
+    sym_stiffness = compute_cotan_weights(tet_mesh.vert_coords, tet_mesh.tets)
 
     # Compute the diagonal elements of the stiffness matrix.
     stiffness_diag = torch.sparse.sum(sym_stiffness, dim=-1)

@@ -7,8 +7,8 @@ from torch import Tensor
 from ...complex import SimplicialMesh
 from ...metric.tet import tet_hodge_stars
 from ...metric.tet._tet_geometry import (
+    compute_d_tet_signed_vols_d_vert_coords,
     compute_tet_signed_vols,
-    dompute_d_tet_signed_vols_d_vert_coords,
 )
 from ...metric.tri import tri_hodge_stars
 from ...metric.tri._tri_geometry import compute_bc_grads
@@ -92,7 +92,7 @@ def local_sharp(
         case 3:
             tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
 
-            d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
+            d_signed_vols_d_vert_coords = compute_d_tet_signed_vols_d_vert_coords(
                 mesh.vert_coords, mesh.tets
             )
             bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"] = (

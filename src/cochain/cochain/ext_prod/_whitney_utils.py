@@ -83,7 +83,7 @@ def dispatch_bc_grad_dot(
             )
             splx_size = torch.abs(signed_splx_size)
             signed_splx_size_grad = (
-                _tet_geometry.dompute_d_tet_signed_vols_d_vert_coords(
+                _tet_geometry.compute_d_tet_signed_vols_d_vert_coords(
                     mesh.vert_coords, mesh.tets
                 )
             )

@@ -1,4 +1,5 @@
 import torch
+from einops import einsum, rearrange, reduce, repeat
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
@@ -20,10 +21,10 @@ from torch import LongTensor, Tensor
 # | -- | -- | -- | -- | -- | -- |
 # | ij | kl | ik | jl | il | jk |
 # | ik | jl | ij | kl | il | jk |
+# | il | jk | jl | ik | kl | ij |
 # | jk | il | ij | kl | jl | ik |
 # | jl | ik | ij | kl | jk | il |
 # | kl | ij | ik | jl | jk | il |
-# | il | jk | jl | ik | kl | ij |
 #
 # In addition, we tabulate the following outward facing normal vectors and their
 # Jacobians. Here, the `[]` notation maps a vector `t` to a skew symmetric
@@ -40,10 +41,10 @@ from torch import LongTensor, Tensor
 # | -- | --------------------- | ---------- | ---------- | ---------- | ---------- |
 # | ij | il x kl (-> lk x li)  | [lk]=[-o]  | [ll]=0     | [il]=[th]  | [ki]=[-tt] |
 # | ik | il x jl (-> li x lj)  | [jl]=[o]   | [li]=[-th] | [ll]=0     | [ij]=[tt]  |
+# | il | kl x jk (-> kl x kj)  | [kk]=0     | [kl]=[th]  | [lj]=[-tt] | [jk]=[o]   |
 # | jk | jl x il (-> li x lj)  | [jl]=[th]  | [li]=[-o]  | [ll]=0     | [ij]=[tt]  |
 # | jl | jk x ik (-> kj x ki)  | [kj]=[-th] | [ik]=[o]   | [ji]=[-tt] | [kk]=0     |
 # | kl | jk x ij (-> ji x jk)  | [kj]=[-th] | [ik]=[tt]  | [ji]=[-o]  | [jj]=0     |
-# | il | kl x jk (-> kl x kj)  | [kk]=0     | [kl]=[th]  | [lj]=[-tt] | [jk]=[o]   |
 #
 # Then, we tabulate the `hh x o` normal vector and its gradient wrt vertex coordinates:
 #
@@ -51,10 +52,10 @@ from torch import LongTensor, Tensor
 # | -- | --------------------- | ---------- | ---------- | ---------- | ---------- |
 # | ij | jl x kl (-> lj x lk)  | [ll]=0     | [kl]=[o]   | [lj]=[-hh] | [jk]=[ht]  |
 # | ik | kl x jl (-> lj x lk)  | [ll]=0     | [kl]=[hh]  | [lj]=[-o]  | [jk]=[ht]  |
+# | il | ik x jk (-> kj x ki)  | [kj]=[-o]  | [ik]=[hh]  | [ji]=[-ht] | [kk]=0     |
 # | jk | kl x il (-> lk x li)  | [lk]=[-hh] | [ll]=0     | [il]=[o]   | [ki]=[-ht] |
 # | jl | kl x ik (-> ki x kl)  | [lk]=[-hh] | [kk]=0     | [il]=[ht]  | [ki]=[-o]  |
 # | kl | jl x ij (-> jl x ji)  | [jl]=[hh]  | [li]=[-ht] | [jj]=0     | [ij]=[o]   |
-# | il | ik x jk (-> kj x ki)  | [kj]=[-o]  | [ik]=[hh]  | [ji]=[-ht] | [kk]=0     |
 
 
 def compute_tet_signed_vols(
@@ -92,7 +93,7 @@ def compute_tet_signed_vols(
     return tet_signed_vols
 
 
-def dompute_d_tet_signed_vols_d_vert_coords(
+def compute_d_tet_signed_vols_d_vert_coords(
     vert_coords: Float[Tensor, "global_vert coord=3"],
     tets: Integer[LongTensor, "tet local_vert=4"],
 ) -> Float[Tensor, "tet local_vert=4 coord=3"]:
@@ -106,7 +107,7 @@ def dompute_d_tet_signed_vols_d_vert_coords(
     # vertex position.
     #
     # vert   base tri   area normal
-    # ----------------------------------
+    # -----------------------------
     # i      jkl        jl x jk
     # j      ikl        ik x il
     # k      ijl        il x ij
@@ -118,58 +119,11 @@ def dompute_d_tet_signed_vols_d_vert_coords(
     base_edge_1 = tet_vert_coords[:, [l, k, l, j]] - tet_vert_coords[:, [j, i, i, i]]
     base_edge_2 = tet_vert_coords[:, [k, l, j, k]] - tet_vert_coords[:, [j, i, i, i]]
 
+    # The 1/6 factor comes from the fact that the volume is 1/6 of the scalar
+    # triple product.
     dVdV = torch.cross(base_edge_1, base_edge_2, dim=-1) / 6.0
 
     return dVdV
-
-
-def tet_face_vector_areas(
-    vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
-) -> tuple[
-    Float[Tensor, "tet edge=6 coord=3"],
-    Float[Tensor, "tet edge=6 coord=3"],
-    Float[Tensor, "tet edge=6"],
-]:
-    """
-    Compute the outward pointing vector areas for triangles in a tet mesh and their
-    dihedral angles.
-
-    Specifically, for each tet and each edge s, this function computes
-    * the double area vectors for the two triangles sharing the opposite edge o,
-    * the dihedral angle between these two triangles, weighted by the length of o;
-      or, more precisely, the cotan weight -|o|cot(theta_o)/6
-    """
-    i, j, k, l = 0, 1, 2, 3
-
-    tet_vols = torch.abs(compute_tet_signed_vols(vert_coords, tets))
-
-    tet_vert_coords: Float[Tensor, "tet 4 3"] = vert_coords[tets]
-
-    # For each tet ijkl and each edge s, computes the (outward) normal on the two
-    # triangles with o as the shared edge (i.e., th x o and hh x o).
-    area_vec_to: Float[Tensor, "tet 6 3"] = torch.cross(
-        tet_vert_coords[:, [k, i, i, j, i, l]] - tet_vert_coords[:, [l, l, l, k, j, k]],
-        tet_vert_coords[:, [i, j, j, i, k, j]] - tet_vert_coords[:, [l, l, l, k, j, k]],
-        dim=-1,
-    )
-    area_vec_ho: Float[Tensor, "tet 6 3"] = torch.cross(
-        tet_vert_coords[:, [j, j, k, i, l, j]] - tet_vert_coords[:, [l, l, l, k, j, k]],
-        tet_vert_coords[:, [k, k, i, l, i, i]] - tet_vert_coords[:, [l, l, l, k, j, k]],
-        dim=-1,
-    )
-
-    # For each tet ijkl and each edge s, computes the contribution of s to the
-    # cotan Laplacian (restricted to ijkl), which is given by -|o|cot(theta_o)/6,
-    # where |o| is the length of the opposite edge, and theta_o is the dihedral
-    # angle formed by the two triangles with o as the shared edge. This contribution
-    # can also be written as <th x o, hh x o> / 36 * vol_ijkl; here, vol_ijkl is
-    # the unsigned/absolute volume of the tet ijkl.
-    weight_o: Float[Tensor, "tet 6"] = (
-        torch.sum(area_vec_to * area_vec_ho, dim=-1) / (36.0 * tet_vols)[:, None]
-    )
-
-    return area_vec_to, area_vec_ho, weight_o
 
 
 def bary_coord_grad_inner_prods(
@@ -260,33 +214,66 @@ def whitney_2_form_inner_prods(
     return sign_corrections, whitney_inner_prod_signed
 
 
-def cotan_weights(
-    vert_coords: Float[Tensor, "vert 3"],
-    tets: Integer[LongTensor, "tri 3"],
-    n_verts: int,
-) -> Float[Tensor, "vert vert"]:
+def compute_cotan_weights(
+    vert_coords: Float[Tensor, "global_vert coord=3"],
+    tets: Integer[LongTensor, "tet local_vert=4"],
+) -> Float[Tensor, "global_vert global_vert"]:
+    r"""
+    Compute the cotan weights associated with edges on a tet mesh.
+
+    For edge $e_{ij}$, the cotan weight is given by
+
+    $$W_{ij} = \frac 1 6 \sum_{kl} \|e_{kl}\| \cot\theta^{ij}_{kl}$$
+
+    where $kl$ sums over all vertices $k$ and $l$ such that $ijkl$ forms a tet,
+    $\|e_{kl}\|$ is the length of the edge $kl$, and $\theta^{ij}_{kl}$ is the
+    interior dihedral angle formed by the two triangles $ikl$ and $jkl$ that
+    shares $kl$ as an edge face.
+    """
     i, j, k, l = 0, 1, 2, 3
 
-    _, _, weight_o = tet_face_vector_areas(vert_coords, tets)
+    tet_vols = torch.abs(compute_tet_signed_vols(vert_coords, tets))
+    tet_vert_coords = vert_coords[tets]
 
-    # For each tet ijkl, each edge s contributes one term w_o to the weight matrix,
-    # thus each tet contributes six terms (in COO format):
-    #
-    # [
-    #   (i, j, w_kl = w_0),
-    #   (i, k, w_jl = w_1),
-    #   (j, k, w_il = w_2),
-    #   (j, l, w_ik = w_3),
-    #   (k, l, w_ij = w_4),
-    #   (l, i, w_jk = w_5),
-    # ]
-
-    weights_idx = (
-        tets[:, [i, i, j, j, k, l, j, k, k, l, l, i]].T.flatten().reshape(2, -1)
+    # For each tet ijkl and each edge s, compute the (outward) normal on the two
+    # triangles with o as the shared edge (i.e., th x o and hh x o).
+    th_cross_o: Float[Tensor, "tet 6 3"] = torch.cross(
+        tet_vert_coords[:, [k, i, l, i, j, i]] - tet_vert_coords[:, [l, l, k, l, k, j]],
+        tet_vert_coords[:, [i, j, j, j, i, k]] - tet_vert_coords[:, [l, l, k, l, k, j]],
+        dim=-1,
     )
-    weights_val = weight_o.T.flatten()
+    hh_cross_o: Float[Tensor, "tet 6 3"] = torch.cross(
+        tet_vert_coords[:, [j, j, j, k, i, l]] - tet_vert_coords[:, [l, l, k, l, k, j]],
+        tet_vert_coords[:, [k, k, i, i, l, i]] - tet_vert_coords[:, [l, l, k, l, k, j]],
+        dim=-1,
+    )
 
-    asym_weights = torch.sparse_coo_tensor(weights_idx, weights_val, (n_verts, n_verts))
+    # For each tet ijkl and each edge s, compute the cotan weight associated
+    # with edge s, |o| * cot(θ_o) / 6, where theta_o is the interior dihedral
+    # angle formed by the two triangles with o as the shared edge. This contribution
+    # can also be written as <th x o, hh x o> / 36V, where V is the unsigned
+    # volume of the tet. To see this, use the fact that cot(θ_o) = <th x o, hh x o>/
+    # |(th x o) x (hh x o)| and the quadruple cross product term simplifies to
+    # |<th, o x hh>| |o| because of the identity (axb)x(cxd) = (a⋅(bxd))c-(a⋅(bxc)d).
+    weight_o: Float[Tensor, "tet 6"] = einsum(
+        th_cross_o,
+        hh_cross_o,
+        1.0 / (36.0 * tet_vols),
+        "tet edge coord, tet edge coord, tet -> tet edge",
+    )
+
+    # Scatter the local edge s contributions to form the global weight matrix.
+    idx_coo = rearrange(
+        tets[:, [[i, i, i, j, j, k], [j, k, l, k, l, l]]],
+        "tet vert edge -> vert (tet edge)",
+    )
+    vals = rearrange(weight_o, "tet edge -> (tet edge)")
+
+    n_verts = vert_coords.size(0)
+
+    asym_weights = torch.sparse_coo_tensor(
+        indices=idx_coo, values=vals, size=(n_verts, n_verts)
+    )
     sym_weights = (asym_weights + asym_weights.T).coalesce()
 
     return sym_weights

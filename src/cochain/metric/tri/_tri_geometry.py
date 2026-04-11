@@ -143,7 +143,7 @@ def compute_bc_grad_dots(
     the terms such as $\hat e_{ij}\times \hat e_{ik}$ effectively rotate the edge
     vectors counter-clockwise by 90 degrees, they have no effect on the final inner
     products between the edge vectors (this can be shown algebraically using the
-    Lagrange's identity for 4 vectors).
+    Lagrange's identity/Cauchy-Binet formula).
 
     Let us denote the expression $\left<e_{jk}, e_{ki}\right>/4A^2$ as `(jk, ki)`.
     Then, the 9 inner products can be expressed as:
@@ -183,7 +183,9 @@ def compute_cotan_weights(
     Compute the cotan weights associated with edges on a tri mesh.
 
     For edge $e_{ij}$, the cotan weight is given by
+
     $$W_{ij} = -\frac 1 2 \sum_k \cot\alpha_k$$
+
     where $k$ sums over all vertices such that $ijk$ forms a triangle and $\alpha_k$
     is the interior angle at vertex $k$ opposite to the edge $ij$.
     """
