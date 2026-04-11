@@ -17,6 +17,12 @@ __all__ = ["mass_0", "mass_1", "mass_2", "mass_3"]
 def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     """
     Compute the "consistent" Galerkin vertex/0-form mass matrix.
+
+    Notes
+    -----
+    Mass-lumping of the $M_0$ matrix via row-sums is equivalent to the barycentric
+    Hodge star-0 matrix implemented in `star_0()`; note that this equivalence
+    is not true in general for $M_k$'s for $k > 0$.
     """
     tet_vols = torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 

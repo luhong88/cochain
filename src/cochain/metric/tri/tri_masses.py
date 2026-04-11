@@ -41,6 +41,10 @@ def mass_0(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     where $W_i(x)$ is the Whitney 0-form basis function associated with vertex $i$,
     which is simply the barycentric coordinate function $\lambda_i(x)$. These basis
     functions are also known as the Lagrange elements or linear hat functions.
+
+    Mass-lumping of the $M_0$ matrix via row-sums is equivalent to the barycentric
+    Hodge star-0 matrix implemented in `star_0()`; note that this equivalence
+    is not true in general for $M_k$'s for $k > 0$.
     """
     tri_areas = compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
