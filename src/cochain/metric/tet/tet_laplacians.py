@@ -1,19 +1,5 @@
-from dataclasses import dataclass
-from functools import cached_property
-from typing import Any, Literal
-
-import torch
-from jaxtyping import Float
-from torch import Tensor
-
-from ...complex import SimplicialMesh
-from ...sparse.decoupled_tensor import SparseDecoupledTensor
-from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
-from .tet_hodge_stars import star_0, star_1, star_2
-from .tet_masses import mass_1, mass_2, mass_3
-from .tet_stiffness import stiffness_matrix
-
 __all__ = [
+    "MixedWeakLaplacianBlocks",
     "weak_laplacian_0",
     "weak_laplacian_1_grad_div",
     "weak_laplacian_1_curl_curl",
@@ -23,6 +9,20 @@ __all__ = [
     "weak_laplacian_2",
     "weak_laplacian_3",
 ]
+
+from dataclasses import dataclass
+from functools import cached_property
+from typing import Literal
+
+import torch
+from jaxtyping import Float
+from torch import Tensor
+
+from ...complex import SimplicialMesh
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
+from .tet_hodge_stars import star_0, star_1, star_2
+from .tet_masses import mass_1, mass_2, mass_3
+from .tet_stiffness import stiffness_matrix
 
 # The weak k-Laplacian is defined as,
 #

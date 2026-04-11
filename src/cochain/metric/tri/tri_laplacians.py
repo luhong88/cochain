@@ -1,12 +1,3 @@
-from typing import Literal
-
-from jaxtyping import Float
-
-from ...complex import SimplicialMesh
-from ...sparse.decoupled_tensor import SparseDecoupledTensor
-from .tri_hodge_stars import star_0, star_1, star_2
-from .tri_stiffness import stiffness_matrix
-
 __all__ = [
     "codifferential_1",
     "codifferential_2",
@@ -16,6 +7,15 @@ __all__ = [
     "laplacian_1_curl_curl",
     "laplacian_2",
 ]
+
+from typing import Literal
+
+from jaxtyping import Float
+
+from ...complex import SimplicialMesh
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
+from .tri_hodge_stars import star_0, star_1, star_2
+from .tri_stiffness import stiffness_matrix
 
 # Laplacian_k = (
 #   d_{k-1} @ inv_star_{k-1} @ d_{k-1}.T @ star_k +

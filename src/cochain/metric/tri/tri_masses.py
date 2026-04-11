@@ -1,3 +1,5 @@
+__all__ = ["mass_0", "mass_1", "mass_2"]
+
 import torch
 from einops import einsum, repeat
 from jaxtyping import Float
@@ -11,8 +13,6 @@ from ._tri_geometry import (
     compute_tri_areas,
 )
 from .tri_hodge_stars import star_2
-
-__all__ = ["mass_0", "mass_1", "mass_2"]
 
 
 def mass_0(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:

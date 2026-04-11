@@ -1,3 +1,5 @@
+__all__ = ["mass_0", "mass_1", "mass_2", "mass_3"]
+
 import torch
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
@@ -10,8 +12,6 @@ from ._tet_geometry import (
     dompute_d_tet_signed_vols_d_vert_coords,
     whitney_2_form_inner_prods,
 )
-
-__all__ = ["mass_0", "mass_1", "mass_2", "mass_3"]
 
 
 def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:

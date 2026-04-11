@@ -1,11 +1,11 @@
+__all__ = ["stiffness_matrix"]
+
 import torch
 from jaxtyping import Float
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from ._tri_geometry import compute_cotan_weights
-
-__all__ = ["stiffness_matrix"]
 
 
 def stiffness_matrix(

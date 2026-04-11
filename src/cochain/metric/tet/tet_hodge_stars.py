@@ -1,3 +1,5 @@
+__all__ = ["star_0", "star_1", "star_2", "star_3"]
+
 import torch
 from einops import reduce, repeat
 from jaxtyping import Float, Integer
@@ -9,8 +11,6 @@ from ...utils.faces import enumerate_local_faces
 from ..tri._tri_geometry import compute_tri_areas
 from ._tet_geometry import compute_tet_signed_vols
 from .tet_masses import mass_3
-
-__all__ = ["star_0", "star_1", "star_2", "star_3"]
 
 
 def star_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:

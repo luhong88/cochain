@@ -1,3 +1,5 @@
+__all__ = ["star_0", "star_1", "star_2"]
+
 from typing import Literal
 
 import torch
@@ -11,8 +13,6 @@ from ...utils.faces import enumerate_local_faces
 from ...utils.search import splx_search
 from ._tri_geometry import compute_tri_areas
 from .tri_stiffness import compute_cotan_weights
-
-__all__ = ["star_0", "star_1", "star_2"]
 
 
 def star_2(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
