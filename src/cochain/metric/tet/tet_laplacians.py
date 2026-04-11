@@ -93,8 +93,9 @@ class MixedWeakLaplacianBlocks:
     $S_k x = b$ for a $k$-cochain $x$, an auxiliary $(k-1)$-cochain $y$ is introduced
     and we solve for a concatenated, "mixed" cochain $[y, x]$.
 
-    Note that, this approach also works for the down component of $S_k$ ($M_k d_{k-1}
-    M_{k-1}^{-1} d_{k-1}^T M_k$) alone, in which case the block matrix simplifies to 
+    Note that, this approach also works for the down component of $S_k$
+    ($M_k d_{k-1} M_{k-1}^{-1} d_{k-1}^T M_k$) alone, in which case the block 
+    matrix simplifies to 
 
     $$
     \begin{bmatrix}
@@ -405,7 +406,7 @@ def weak_laplacian_0(
     Notes
     -----
     The weak Laplacian operator $S_k$ as defined in this function is symmetric
-    positive definite, and is related to the strong Laplacian by the relation
+    positive semidefinite, and is related to the strong Laplacian by the relation
     $L_k = M_k^{-1} S_k$; in general, $L_k$ is self-adjoint w.r.t. the inner
     product induced by the mass matrices, but it is not symmetric or sparse.
     """
@@ -494,7 +495,7 @@ def weak_laplacian_1(
 
     The weak 1-Laplacian is defined as
 
-    $$S_1 = d_1^T M_2 d_1 + M_1 d_0 M_0^{-1} d_0^T @ M_1$$
+    $$S_1 = d_1^T M_2 d_1 + M_1 d_0 M_0^{-1} d_0^T M_1$$
 
     where $M_k$ is the consistent mass matrix on discrete $k$-forms, and $d_k$ is
     the $k$-coboundary operator/discrete exterior derivative. This function implements
@@ -514,7 +515,7 @@ def weak_laplacian_1(
     Notes
     -----
     The weak Laplacian operator $S_k$ as defined in this function is symmetric
-    positive definite, and is related to the strong Laplacian by the relation
+    positive semidefinite, and is related to the strong Laplacian by the relation
     $L_k = M_k^{-1} S_k$; in general, $L_k$ is self-adjoint w.r.t. the inner
     product induced by the mass matrices, but it is not symmetric or sparse.
     """
@@ -658,7 +659,7 @@ def weak_laplacian_2(
     Notes
     -----
     The weak Laplacian operator $S_k$ as defined in this function is symmetric
-    positive definite, and is related to the strong Laplacian by the relation
+    positive semidefinite, and is related to the strong Laplacian by the relation
     $L_k = M_k^{-1} S_k$; in general, $L_k$ is self-adjoint w.r.t. the inner
     product induced by the mass matrices, but it is not symmetric or sparse.
     """
@@ -719,7 +720,7 @@ def weak_laplacian_3(
         A tet mesh.
     method
         If `method` is "dense", $M_2$ and $d_2 M_3$ are converted to dense matrices,
-        and passed to `torch.linalg.solve()` to find $M_2^{-1} d_2 M_m$; the output
+        and passed to `torch.linalg.solve()` to find $M_2^{-1} d_2 M_3$; the output
         $S_3$ is a dense matrix. If `method` is "inv_star", $M_2^{-1}$ is approximated
         by the inverse of the Hodge 2-star operator, and the output $S_3$ is a
         `SparseDecoupledTensor` representing the hybrid operator. If `method` is
@@ -734,7 +735,7 @@ def weak_laplacian_3(
     Notes
     -----
     The weak Laplacian operator $S_k$ as defined in this function is symmetric
-    positive definite, and is related to the strong Laplacian by the relation
+    positive semidefinite, and is related to the strong Laplacian by the relation
     $L_k = M_k^{-1} S_k$; in general, $L_k$ is self-adjoint w.r.t. the inner
     product induced by the mass matrices, but it is not symmetric or sparse.
     """
