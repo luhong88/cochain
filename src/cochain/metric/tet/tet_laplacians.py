@@ -671,7 +671,7 @@ def weak_laplacian_2(
 
         case "inv_star":
             curl_curl = weak_laplacian_2_curl_curl(tet_mesh, method)
-            grad_div = weak_laplacian_2_grad_div(tet_mesh).to_dense()
+            grad_div = weak_laplacian_2_grad_div(tet_mesh)
             return SparseDecoupledTensor.assemble(grad_div, curl_curl)
 
         case "mixed":
