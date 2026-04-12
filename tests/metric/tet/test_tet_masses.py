@@ -2,8 +2,10 @@ import numpy as np
 import pytest
 import skfem as skfem
 import torch
+from einops import repeat
 from skfem.helpers import dot
 
+from cochain.cochain.discretize import DeRhamMap
 from cochain.complex import SimplicialMesh
 from cochain.metric.tet import tet_hodge_stars, tet_masses
 from cochain.metric.tet._tet_geometry import compute_tet_signed_vols
@@ -230,49 +232,97 @@ def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialMesh, device):
 
 
 def test_mass_1_patch(two_tets_mesh: SimplicialMesh, device):
+    """Check that M_1 computes the L^2 norm for a const 1-form exactly."""
     mesh = two_tets_mesh.to(device)
 
+    # Define a constant 1-form and discretize it with de Rham map.
+    de_rham = DeRhamMap(k=1, quad_degree=1, mesh=mesh)
+    n_splx, n_pts, _ = de_rham.sample_points().shape
+
+    const_vec = torch.randn(3, dtype=mesh.dtype, device=device)
+    const_1_form = repeat(
+        const_vec,
+        "coord -> splx pt coord",
+        splx=n_splx,
+        pt=n_pts,
+    )
+
+    # Compute the discrete energy for the 1-cochain over the mesh.
     mass_1 = tet_masses.mass_1(mesh)
+    cochain = de_rham.discretize(const_1_form)
+    energy = cochain @ mass_1 @ cochain
 
-    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=mesh.dtype, device=device)
-
-    edges = mesh.vert_coords[mesh.edges[:, 1]] - mesh.vert_coords[mesh.edges[:, 0]]
-
-    field_proj = torch.sum(edges * const_field, dim=-1)
-    energy = field_proj @ mass_1 @ field_proj
-
-    true_energy = (
-        torch.sum(torch.abs(compute_tet_signed_vols(mesh.vert_coords, mesh.tets)))
-        * torch.sum(const_field * const_field, dim=-1)
-    ).squeeze()
+    # Compute the energy analytically as the volume integral of the constant 1-form
+    # magnitude squared.
+    total_vols = torch.sum(
+        torch.abs(compute_tet_signed_vols(mesh.vert_coords, mesh.tets))
+    )
+    true_energy = total_vols * torch.sum(const_vec * const_vec)
 
     torch.testing.assert_close(energy, true_energy)
 
 
 def test_mass_2_patch(two_tets_mesh: SimplicialMesh, device):
+    """Check that M_2 computes the L^2 norm for a const 2-form exactly."""
     mesh = two_tets_mesh.to(device)
 
-    mass_2 = tet_masses.mass_2(mesh)
+    # Define a constant 2-form and discretize it with de Rham map.
+    de_rham = DeRhamMap(k=2, quad_degree=1, mesh=mesh)
+    n_splx, n_pts, _ = de_rham.sample_points().shape
 
-    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=mesh.dtype, device=device)
-
-    # Compute the triangle vector areas following the right-hand rule using the
-    # canonical triangle vertex orderings.
-    vec_areas = (
-        torch.cross(
-            mesh.vert_coords[mesh.tris[:, 1]] - mesh.vert_coords[mesh.tris[:, 0]],
-            mesh.vert_coords[mesh.tris[:, 2]] - mesh.vert_coords[mesh.tris[:, 0]],
-            dim=-1,
-        )
-        / 2.0
+    const_vec = torch.randn(3, dtype=mesh.dtype, device=device)
+    const_2_form = repeat(
+        const_vec,
+        "coord -> splx pt coord",
+        splx=n_splx,
+        pt=n_pts,
     )
 
-    field_proj = torch.sum(vec_areas * const_field, dim=-1)
-    energy = field_proj @ mass_2 @ field_proj
+    # Compute the discrete energy for the 2-cochain over the mesh.
+    mass_2 = tet_masses.mass_2(mesh)
+    cochain = de_rham.discretize(const_2_form)
+    energy = cochain @ mass_2 @ cochain
 
-    true_energy = (
-        torch.sum(torch.abs(compute_tet_signed_vols(mesh.vert_coords, mesh.tets)))
-        * torch.sum(const_field * const_field, dim=-1)
-    ).squeeze()
+    # Compute the energy analytically as the volume integral of the constant 1-form
+    # magnitude squared.
+    total_vols = torch.sum(
+        torch.abs(compute_tet_signed_vols(mesh.vert_coords, mesh.tets))
+    )
+    true_energy = total_vols * torch.sum(const_vec * const_vec)
 
     torch.testing.assert_close(energy, true_energy)
+
+
+@pytest.mark.parametrize(
+    "mass_matrix",
+    [tet_masses.mass_0, tet_masses.mass_1, tet_masses.mass_2, tet_masses.mass_3],
+)
+def test_mass_matrix_backward(mass_matrix, two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+    mesh.requires_grad_()
+
+    mass = mass_matrix(mesh)
+    output = mass.val.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+
+@pytest.mark.parametrize(
+    "mass_matrix",
+    [tet_masses.mass_0, tet_masses.mass_1, tet_masses.mass_2, tet_masses.mass_3],
+)
+def test_mass_matrix_gradcheck(mass_matrix, two_tets_mesh: SimplicialMesh, device):
+    vert_coords = two_tets_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def mass_fxn(test_vert_coords):
+        mesh = two_tets_mesh.to(device=device, dtype=torch.float64)
+        mesh.vert_coords = test_vert_coords
+        m = mass_matrix(mesh)
+        return m.val.sum()
+
+    assert torch.autograd.gradcheck(mass_fxn, (vert_coords,), fast_mode=True)
