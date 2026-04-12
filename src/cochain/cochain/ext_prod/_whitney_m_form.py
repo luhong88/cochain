@@ -54,8 +54,6 @@ def _inv_metric_det(
                 torch.einsum("til,tjk->tijkl", bc_grad_dot, bc_grad_dot)
             )
 
-        # TODO: memory optimization
-
         # <dλ_i ⋀ dλ_j ⋀ dλ_k, dλ_a ⋀ dλ_b ⋀ dλ_c> is equal to the determinant of
         #
         # | <grad[λ_i], grad[λ_a]> <grad[λ_i], grad[λ_b]> <grad[λ_i], grad[λ_c]> |

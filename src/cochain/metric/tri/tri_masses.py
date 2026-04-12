@@ -95,7 +95,7 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     $$M_{ij,kl} = \int_\Omega \left<W_{ij}(x), W_{kl}(x)\right>\,dA$$
 
     where $W_{ij}(x)$ is the Whitney 1-form basis function associated with the edge
-    $ij$, which is defined (using its sharp) as
+    $ij$, which is defined using its vector field proxy as
 
     $$W_{ij}(x) = \lambda_i(x)\nabla\lambda_j(x) - \lambda_j(x)\nabla\lambda_i(x)$$
 
@@ -217,7 +217,7 @@ def mass_2(tri_mesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     $$M_{ij} = \int_\Omega \left<W_i(x), W_j(x)\right>\,dA$$
 
     where $W_i(x)$ is the Whitney 2-form basis function associated with a triangle $i$,
-    which is defined (using its sharp) as
+    which is defined using its vector field proxy as
 
     $$W_i(x) = 2 (\nabla\lambda_1(x) \times \nabla\lambda_2(x))$$
 

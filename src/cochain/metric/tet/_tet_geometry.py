@@ -1,5 +1,5 @@
 import torch
-from einops import einsum, rearrange, reduce, repeat
+from einops import einsum, rearrange
 from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
@@ -184,71 +184,6 @@ def compute_bc_grad_dots(
     )
 
     return tet_signed_vols, bc_grad_dots
-
-
-def whitney_2_form_inner_prods(
-    vert_coords: Float[Tensor, "vert coord=3"],
-    tets: Integer[LongTensor, "tet vert=4"],
-    tet_tris_signs: Float[Tensor, "tet tri=4"],
-) -> tuple[Float[Tensor, "tet 1"], Float[Tensor, "tet tri=4 tri=4"]]:
-    """
-    For each tet, compute the pairwise inner product of the Whitney 2-form basis
-    functions associated with the faces of the tet, and correct for the face and
-    tet orientation.
-    """
-
-    tet_vert_coords: Float[Tensor, "tet 4 3"] = vert_coords[tets]
-
-    tet_signed_vols: Float[Tensor, " tet"] = compute_tet_signed_vols(vert_coords, tets)
-    tet_vols = torch.abs(tet_signed_vols)
-    tet_signs = torch.sign(tet_signed_vols)
-
-    # For each tet, associate the 2-form basis function with the opposite vertex.
-    # Then, the inner product between the basis functions is given by
-    #
-    #               int[W_i*W_j*dV] = sum_k,l[C_kl*<ik,jl>]/(180*V)
-    #
-    # Where C_kl = 1 + delta_kl (delta is the Kronecker delta function). Here,
-    # the summation represents the inner products between all edge vectors emanating
-    # from vertices i and j.
-    #
-    # Let G_ij = <i,j> be the symmetric, local "Gram" matrix of vertex coordinates.
-    # Since <ik,jl> can be written as G_kl - G_kj - G_il + G_ij, the inner product
-    # can be further simplified as
-    #
-    # int_ij = (20*G_ij - 5*(R_i + R_j) + (S + Tr[G]))/(180*V)
-    #
-    # here, R_i = sum_j[G_ij], S = sum_ij[G_ij], and Tr[G] is the trace of G.
-
-    gram: Float[Tensor, "tet 4 4"] = torch.sum(
-        tet_vert_coords.view(-1, 4, 1, 3) * tet_vert_coords.view(-1, 1, 4, 3), dim=-1
-    )
-
-    # Compute R_i + R_j
-    gram_partial_sum: Float[Tensor, "tet 4 4"] = torch.sum(
-        gram, dim=-1, keepdim=True
-    ) + torch.sum(gram, dim=-2, keepdim=True)
-
-    # Compute S + Tr[G]
-    gram_sum: Float[Tensor, "tet 1 1"] = (
-        torch.sum(gram, dim=(-1, -2)) + torch.einsum("tii->t", gram)
-    ).view(-1, 1, 1)
-
-    whitney_inner_prod: Float[Tensor, "tet tri=4 tri=4"] = (
-        20.0 * gram - 5.0 * gram_partial_sum + gram_sum
-    ) / (180.0 * tet_vols.view(-1, 1, 1))
-
-    # Mapping the local basis function to the global basis function requires
-    # correction of both the triangle face orientation as well as the tet orientations.
-    sign_corrections = tet_tris_signs * tet_signs.view(-1, 1)
-
-    whitney_inner_prod_signed: Float[Tensor, "tet tri=4 tri=4"] = (
-        whitney_inner_prod
-        * sign_corrections.view(-1, 1, 4)
-        * sign_corrections.view(-1, 4, 1)
-    )
-
-    return sign_corrections, whitney_inner_prod_signed
 
 
 def compute_cotan_weights(

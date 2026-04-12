@@ -1,18 +1,16 @@
 __all__ = ["mass_0", "mass_1", "mass_2", "mass_3"]
 
 import torch
-from einops import einsum, rearrange, reduce, repeat
-from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from einops import einsum, repeat
+from jaxtyping import Float
+from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ...utils.faces import enumerate_local_faces
 from ._tet_geometry import (
     compute_bc_grad_dots,
-    compute_d_tet_signed_vols_d_vert_coords,
     compute_tet_signed_vols,
-    whitney_2_form_inner_prods,
 )
 
 
@@ -36,7 +34,7 @@ def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     product
 
     $$
-    M_{ij} = \int_\Omega W_i(x)W_j(x)\,dA
+    M_{ij} = \int_\Omega W_i(x)W_j(x)\,dV
     $$
 
     where $W_i(x)$ is the Whitney 0-form basis function associated with vertex $i$,
@@ -98,7 +96,7 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     The mass matrix $M$ for discrete 1-forms is defined element-wise as the inner
     product
 
-    $$M_{ij,kl} = \int_\Omega \left<W_{ij}(x), W_{kl}(x)\right>\,dA$$
+    $$M_{ij,kl} = \int_\Omega \left<W_{ij}(x), W_{kl}(x)\right>\,dV$$
 
     where $W_{ij}(x)$ is the Whitney 1-form basis function associated with the edge
     $ij$, which is defined (using its sharp) as
@@ -213,68 +211,179 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
 
 def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
+    r"""
+    Compute the consistent mass matrix for discrete 2-forms.
+
+    Parameters
+    ----------
+    tet_mesh
+        A tet mesh.
+
+    Returns
+    -------
+    [tri, tri]
+        The mass matrix.
+
+    Notes
+    -----
+    The mass matrix $M$ for discrete 2-forms is defined element-wise as the inner
+    product
+
+    $$M_{ijk,rst} = \int_\Omega \left<W_{ijk}(x), W_{rst}(x)\right>\,dV$$
+
+    where $W_{ijk}(x)$ is the Whitney 2-form basis function associated with the tri
+    $ijk$, which is defined (using its sharp) as
+
+    $$
+    W_{ijk}(x) = 2(
+        \lambda_i\nabla\lambda_j\times\nabla\lambda_k
+        - \lambda_j\nabla\lambda_k\times\nabla\lambda_i
+        + \lambda_k\nabla\lambda_i\times\nabla\lambda_j)
+    $$
+
+    These basis functions are also known as the lowest-order Raviart-Thomas face
+    elements of the first kind. Note that, in this function, instead of working with
+    this differential form definition of the basis functions, we use the polynomial
+    representation
+
+    $$W_i(x) = \frac{x - v_i}{3V}$$
+
+    where we associate each basis function with the vertex opposite to the triangle;
+    i.e., $W_i(x)$ is the basis associated with triangle $jkl$ and $v_i$ is the
+    coordinate of vertex $i$. These two representations are mathematically equivalent.
     """
-    Compute the Galerkin triangle/2-form mass matrix.
+    tet_vert_coords: Float[Tensor, "tet 4 3"] = tet_mesh.vert_coords[tet_mesh.tets]
 
-    For each tet, each (canonical) triangle pairs xyz and rst and their associated
-    Whitney 2-form basis functions W_xyz and W_rst contribute the inner product
-    term int[W_xyz*W_rst*dV] to the mass matrix element M[xyz, rst], where
+    tet_signed_vols: Float[Tensor, " tet"] = compute_tet_signed_vols(
+        tet_mesh.vert_coords, tet_mesh.tets
+    )
 
-    W_xyz(p) = sign[xyz]*(p - v[-xyz])/3V
+    # For each tet ijkl and each 2-form basis function, associate basis function
+    # with the opposite vertex; i.e., W_i(x) = (x - v_i)/3V is the basis associated
+    # with the tri jkl (oriented such that its right-hand rule area normal vector
+    # is outward facing). Using the fact that ∑_i λ_i = 1 and x = ∑_i λ_i*v_i, we
+    # can rewrite W_i(x) as ∑_k λ_k*e_ik/3V. Then, the inner product between the
+    # basis functions is reduced to
+    #
+    # int[<W_i(x), W_j(x)> dV] = ∑_kl int[λ_k*λ_l dV]*<e_ik,e_jl>/(9V^2)
+    #
+    # The first term, int[λ_k*λ_l dV], can be evaluated using the magic formula.
+    # For the second term, define the local gram matrix g_ij = <v_i, v_j>, then
+    #
+    # <e_ik,e_jl> = g_kl - g_kj - g_il + g_ij
 
-    Here, v[-xyz] is the coordinate vector of the vertex opposite to xyz. sign[xyz]
-    is +1 whenever the triangle xyz satisfies the right-hand rule (i.e., the normal
-    vector formed by the right hand points out of the tet), and -1 if not.
-    """
-    n_tris = tet_mesh.n_tris
+    # For each tri, compute all volume integrals of λ_k*λ_l for each pair of vertices
+    # (k, l). As shown in the mass_0() function, this integral evaluates to
+    # V*(1 + δ_ik)/20, where δ is the Kronecker delta. Here, we ignore the volume
+    # term since it will get canceled out by the 1/9V^2 term in the integral.
+    ints: Float[Tensor, "4 4"] = (torch.ones((4, 4)) + torch.eye(4)).to(
+        dtype=tet_mesh.dtype, device=tet_mesh.device
+    ) / 20.0
+
+    # Compute the local gram matrix.
+    g = einsum(
+        tet_vert_coords,
+        tet_vert_coords,
+        "tet vert_1 coord, tet vert_2 coord -> tet vert_1 vert_2",
+    )
+
+    # For each tet and vertex pair (k, l), expand out ∑_kl int[λ_k*λ_l dV]*<e_ik,e_jl>
+    # using the gram matrix as
+    #
+    # ∑_kl I_kl*g_kl - ∑_kl I_kl*g_kj - ∑_kl I_kl*g_il + ∑_kl I_kl*g_ij
+    #
+    # where we have used I_kl to denote int[λ_k*λ_l dV].
+
+    whitney_dot = torch.zeros(
+        (tet_mesh.n_tets, 4, 4), dtype=tet_mesh.dtype, device=tet_mesh.device
+    )
+    whitney_dot.add_(repeat(torch.einsum("kl,tkl->t", ints, g), "t -> t i j", i=4, j=4))
+    whitney_dot.sub_(repeat(torch.einsum("kl,tkj->tj", ints, g), "t j -> t i j", i=4))
+    whitney_dot.sub_(repeat(torch.einsum("kl,til->ti", ints, g), "t i -> t i j", j=4))
+    whitney_dot.add_(torch.einsum("kl,tij->tij", ints, g))
+
+    # Scale the dot product by the 1/9V term.
+    whitney_dot_scaled = whitney_dot / (9.0 * tet_signed_vols.view(-1, 1, 1))
 
     # Note that, for the purpose of computing the mass-2 matrix, the definition
-    # of triangle faces is different from the global, "canonical" definitions
-    # used in utils.faces.enumerate_local_faces(). More specifically, the canonical
-    # triangle faces of a tet is defined locally as
+    # of tri faces is different from the global, "canonical" definitions used in
+    # utils.faces.enumerate_local_faces(). More specifically, the canonical
+    # tri faces of a tet is defined locally as
     #
     # [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
     #
-    # However, here, we enumerate the triangle faces by first enumerating the
-    # vertices that oppose the triangle faces, and the triangle vertices are
-    # enumerated such that its area normal is outward-facing (note that the way
-    # the triangles are indexed here satisfies the right-hand rule for positively
-    # oriented tets. More specifically, this results in the following triangle
-    # face definitions:
+    # However, here, we enumerate the tri faces by first enumerating the vertices
+    # that oppose the tri faces, and the tri vertices are enumerated such that
+    # its (right-hand rule) area normal is outward-facing (for positively oriented
+    # tets; this is why whitney_dot_scaled uses the signed volume, to correct for
+    # the flipped area normal direction in a negatively oriented tet). More
+    # specifically, this results in the following tri face definitions:
     #
     # [[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]]
     #
     # Therefore, the canonical 2-face definitions and orientations need to be
-    # adjusted prior for this function.
-    tri_face_idx = torch.flip(tet_mesh.tri_faces.idx, dims=(-1,))
-    tri_face_orientations = torch.tensor(
-        [[1.0, -1.0, 1.0, -1.0]], dtype=tet_mesh.dtype, device=tet_mesh.device
-    ) * torch.flip(tet_mesh.tri_faces.parity, dims=(-1,))
+    # adjusted specifically for this function.
+    global_tri_idx = torch.flip(tet_mesh.tri_faces.idx, dims=(-1,))
 
-    # First, compute the inner products of the Whitney 2-form basis functions.
-    _, whitney_inner_prod_signed = whitney_2_form_inner_prods(
-        tet_mesh.vert_coords, tet_mesh.tets, tri_face_orientations
+    boundary_sign = torch.tensor(
+        [[1.0, -1.0, 1.0, -1.0]],
+        dtype=tet_mesh.dtype,
+        device=tet_mesh.device,
+    )
+    global_tri_parity = boundary_sign * torch.flip(
+        tet_mesh.tri_faces.parity, dims=(-1,)
+    )
+
+    # Mapping the local basis function to the global basis function requires
+    # correction of both the triangle face orientation as well as the tet orientations.
+    whitney_inner_prod_signed: Float[Tensor, "tet tri=4 tri=4"] = einsum(
+        whitney_dot_scaled,
+        global_tri_parity,
+        global_tri_parity,
+        "tet tri_1 tri_2, tet tri_1, tet tri_2 -> tet tri_1 tri_2",
     )
 
     # Assemble the mass matrix by scattering the inner products according to the
-    # triangle indices.
-    mass_idx = torch.vstack(
-        (
-            tri_face_idx.view(-1, 4, 1).expand(-1, 4, 4).flatten(),
-            tri_face_idx.view(-1, 1, 4).expand(-1, 4, 4).flatten(),
-        )
-    )
-    mass_val = whitney_inner_prod_signed.flatten()
-    mass = torch.sparse_coo_tensor(mass_idx, mass_val, (n_tris, n_tris)).coalesce()
+    # tri indices.
+    r_idx = repeat(global_tri_idx, "tet tri_1 -> (tet tri_1 tri_2)", tri_2=4)
+    c_idx = repeat(global_tri_idx, "tet tri_2 -> (tet tri_1 tri_2)", tri_1=4)
+    idx_coo = torch.vstack((r_idx, c_idx))
+
+    n_tris = tet_mesh.n_tris
+
+    mass = torch.sparse_coo_tensor(
+        indices=idx_coo,
+        values=whitney_inner_prod_signed.flatten(),
+        size=(n_tris, n_tris),
+    ).coalesce()
 
     return SparseDecoupledTensor.from_tensor(mass)
 
 
 def mass_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tet tet"]:
-    """
-    Compute the diagonal of the tet/3-form mass matrix, which is a diagonal matrix
-    containing the inverse of the unsigned tet volumes, which is equivalent to
-    the 3-star.
+    r"""
+    Compute the consistent mass matrix for discrete 3-forms.
+
+    Parameters
+    ----------
+    tet_mesh
+        A tet mesh.
+
+    Returns
+    -------
+    [tet, tet]
+        The mass matrix.
+
+    Notes
+    -----
+    The mass matrix $M$ for discrete 3-forms is defined element-wise as the inner
+    product
+
+    $$M_{ij} = \int_\Omega W_i(x)W_j(x)\,dV$$
+
+    where $W_i(x)$ is the Whitney 3-form basis function associated with a tet $i$,
+    which is defined as $W_i(x) = 1/V$. Note that each tet has only one basis
+    function, and it is constant over the tet.
     """
     return DiagDecoupledTensor.from_tensor(
         1.0 / torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))

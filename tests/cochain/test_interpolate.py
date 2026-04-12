@@ -611,6 +611,7 @@ def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     shared_tri_normal_vec = torch.cross(
         mesh.vert_coords[1] - mesh.vert_coords[0],
         mesh.vert_coords[2] - mesh.vert_coords[0],
+        dim=-1,
     )
 
     form_2_normal_1 = einsum(
