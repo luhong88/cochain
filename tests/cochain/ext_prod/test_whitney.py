@@ -6,8 +6,8 @@ import torch
 from cochain.cochain.ext_prod.cup import AntisymmetricCupProduct
 from cochain.cochain.ext_prod.whitney import WhitneyWedgeL2Projector
 from cochain.complex import SimplicialMesh
-from cochain.geometry.tet import tet_masses
-from cochain.geometry.tri import tri_hodge_stars, tri_masses
+from cochain.metric.tet import tet_masses
+from cochain.metric.tri import tri_hodge_stars, tri_masses
 
 
 def _compute_mass_matrix(mesh: SimplicialMesh, k: int):
@@ -50,9 +50,7 @@ def test_const_0_form_galerkin_wedge_product(mesh_name, request, device):
 
     n_splx_map = mesh.n_splx
 
-    const_0_form = torch.ones(
-        n_splx_map[0], dtype=mesh.vert_coords.dtype, device=device
-    )
+    const_0_form = torch.ones(n_splx_map[0], dtype=mesh.dtype, device=device)
     for k in range(mesh.dim + 1):
         k_form = torch.randn(n_splx_map[k]).to(device)
 

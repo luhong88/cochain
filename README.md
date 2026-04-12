@@ -4,7 +4,7 @@
 
 Cochain is a collection of computational topology operators built on PyTorch, designed to facilitate the analysis of discrete topological objects (specifically, 2D and 3D simplicial meshes embedded in $\mathbb{R}^3$) within the context of discrete exterior calculus (DEC) and cohomology theory.
 
-## Features:
+## Features
 
 * Simplicial complexes & combinatorial topology:
     * Piecewise-linear triangular and tetrahedral meshes embedded in $\mathbb{R}^3$.
@@ -25,7 +25,7 @@ Cochain is a collection of computational topology operators built on PyTorch, de
     * Autograd support for fixed-topology sparse operations.
 
 
-### Planned Features:
+### Planned Features
 
 * Harmonic form generator.
 

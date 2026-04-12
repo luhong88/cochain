@@ -6,7 +6,11 @@ from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...utils.perm_parity import compute_lex_rel_orient
-from ._whitney_utils import compute_bc_grad_dot, compute_moments, compute_whitney_router
+from ._whitney_utils import (
+    compute_moments,
+    compute_whitney_router,
+    dispatch_bc_grad_dot,
+)
 
 
 def _compute_mask_3_form(
@@ -104,8 +108,8 @@ def triple_tensor_prod_3_form(
     """
     A specialized version of triple_tensor_prod() for when k + l = 3.
     """
-    device = mesh.vert_coords.device
-    dtype = mesh.vert_coords.dtype
+    device = mesh.device
+    dtype = mesh.dtype
 
     k_form_router = compute_whitney_router(mesh.dim, k, device, dtype)
     l_form_router = compute_whitney_router(mesh.dim, l, device, dtype)
@@ -113,7 +117,7 @@ def triple_tensor_prod_3_form(
 
     moments = compute_moments(3, mesh.dim, device, dtype)
 
-    bc_grad_dot, splx_size = compute_bc_grad_dot(mesh)
+    bc_grad_dot, splx_size = dispatch_bc_grad_dot(mesh)
     ref_det_012 = _inv_metric_det_3_form(bc_grad_dot)
 
     mask_3_form = _compute_mask_3_form(device=device, dtype=dtype)

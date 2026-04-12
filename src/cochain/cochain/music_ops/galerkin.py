@@ -1,25 +1,20 @@
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from jaxtyping import Float
 from torch import Tensor
 
 from ...complex import SimplicialMesh
-from ...geometry.tet import tet_hodge_stars, tet_masses
-from ...geometry.tet.tet_geometry import (
-    compute_tet_signed_vols,
-    dompute_d_tet_signed_vols_d_vert_coords,
-)
-from ...geometry.tri import tri_hodge_stars, tri_masses
-from ...geometry.tri.tri_geometry import (
-    compute_d_tri_areas_d_vert_coords,
-    compute_tri_areas,
-)
+from ...metric.tet import _tet_geometry, tet_hodge_stars, tet_masses
+from ...metric.tri import _tri_geometry, tri_hodge_stars, tri_masses
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     SparseDecoupledTensor,
 )
+from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from . import _galerkin_element, _galerkin_vertex
+
+# TODO: update docstrings to remove reference to 'method' args.
 
 
 def mixed_mass(
@@ -44,25 +39,15 @@ def mixed_mass(
     """
     match mesh.dim:
         case 2:
-            tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
-
-            d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
-                mesh.vert_coords, mesh.tris
-            )
-            bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"] = (
-                d_tri_areas_d_vert_coords / tri_areas.view(-1, 1, 1)
+            tri_areas, bary_coords_grad = _tri_geometry.compute_bc_grads(
+                vert_coords=mesh.vert_coords, tris=mesh.tris
             )
 
         case 3:
-            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            tet_signed_vols, bary_coords_grad = _tet_geometry.compute_bc_grads(
+                vert_coords=mesh.vert_coords, tets=mesh.tets
+            )
             tet_unsigned_vols = torch.abs(tet_signed_vols)
-
-            d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
-                mesh.vert_coords, mesh.tets
-            )
-            bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"] = (
-                d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
-            )
 
     match (mode, mesh.dim):
         case ("element", 2):
@@ -124,12 +109,13 @@ def vector_mass(
     """
     match (mode, mesh.dim):
         case ("element", 2):
-            tri_areas = compute_tri_areas(mesh.vert_coords, mesh.tris)
+            tri_areas = _tri_geometry.compute_tri_areas(mesh.vert_coords, mesh.tris)
             return _galerkin_element.element_based_tri_vector_mass_matrix(tri_areas)
 
         case ("element", 3):
-            tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-            tet_unsigned_vols = torch.abs(tet_signed_vols)
+            tet_unsigned_vols = torch.abs(
+                _tet_geometry.compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+            )
             return _galerkin_element.element_based_tet_vector_mass_matrix(
                 tet_unsigned_vols
             )
@@ -160,10 +146,11 @@ def vector_mass(
 
 def galerkin_flat(
     vec_field: Float[Tensor, "splx coord"],
-    mass_1: Float[BaseDecoupledTensor, "edge edge"],
+    mass_1: Float[BaseDecoupledTensor, "edge edge"]
+    | Float[InvSparseOperator, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
     mode: Literal["element", "vertex"],
-    method: Literal["dense", "solver", "inv_star"],
+    solver_kwargs: dict[str, Any] | None = None,
 ) -> Float[Tensor, " edge"]:
     """
     Compute the flat of a vector field using the Galerkin projection method.
@@ -181,15 +168,18 @@ def galerkin_flat(
     if `method` is "inv_star", the `mass_1` matrix is assumed to be diagonal (e.g.,
     a Hodge star-1 matrix) and directly inverted to solve the linear system.
     """
+    if solver_kwargs is None:
+        solver_kwargs = {}
+
     match mode:
         case "element":
             return _galerkin_element.element_based_galerkin_flat(
-                vec_field, mass_1, mass_mixed, method
+                vec_field, mass_1, mass_mixed, solver_kwargs
             )
 
         case "vertex":
             return _galerkin_vertex.vertex_based_galerkin_flat(
-                vec_field, mass_1, mass_mixed, method
+                vec_field, mass_1, mass_mixed, solver_kwargs
             )
 
         case _:
@@ -198,10 +188,11 @@ def galerkin_flat(
 
 def galerkin_sharp(
     cochain_1: Float[Tensor, " edge"],
-    mass_vec: Float[BaseDecoupledTensor, "splx*coord splx*coord"],
+    mass_vec: Float[BaseDecoupledTensor, "splx*coord splx*coord"]
+    | Float[InvSparseOperator, "splx*coord splx*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
     mode: Literal["element", "vertex"],
-    method: Literal["dense", "solver", "inv_star"] | None = None,
+    solver_kwargs: dict[str, Any] | None = None,
 ) -> Float[Tensor, "splx coord=3"]:
     """
     Compute the sharp of a 1-cochain using the Galerkin projection method.
@@ -230,11 +221,11 @@ def galerkin_sharp(
             )
 
         case "vertex":
-            if method is None:
-                raise ValueError()
+            if solver_kwargs is None:
+                solver_kwargs = {}
 
             return _galerkin_vertex.vertex_based_galerkin_sharp(
-                cochain_1, mass_vec, mass_mixed, method
+                cochain_1, mass_vec, mass_mixed, solver_kwargs
             )
 
         case _:

@@ -7,7 +7,7 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ...decoupled_tensor import SparsityPattern
-from ..solvers.nvmath_wrapper import DirectSolverConfig
+from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
 from ._inv_operator import BaseNVMathInvSymSpOp
 
 

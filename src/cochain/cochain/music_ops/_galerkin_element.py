@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any
 
 import torch
 from einops import einsum, rearrange, repeat
@@ -10,6 +10,7 @@ from ...sparse.decoupled_tensor import (
     DiagDecoupledTensor,
     SparseDecoupledTensor,
 )
+from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from ...utils.faces import enumerate_local_faces
 
 
@@ -173,9 +174,10 @@ def element_based_tet_vector_mass_matrix(
 
 def element_based_galerkin_flat(
     vec_field: Float[Tensor, "top_splx coord"],
-    mass_1: Float[BaseDecoupledTensor, "edge edge"],
+    mass_1: Float[BaseDecoupledTensor, "edge edge"]
+    | Float[InvSparseOperator, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "top_splx*coord edge"],
-    method: Literal["dense", "solver", "inv_star"],
+    solver_kwargs: dict[str, Any],
 ) -> Float[Tensor, " edge"]:
     """
     Compute the flat of a piecewise constant vector field defined over the top-level
@@ -186,18 +188,13 @@ def element_based_galerkin_flat(
     """
     rhs = mass_mixed.T @ vec_field.flatten()
 
-    match method:
-        case "dense":
-            return torch.linalg.solve(mass_1.to_dense(), rhs)
-
-        case "inv_star":
+    match mass_1:
+        case InvSparseOperator():
+            return mass_1(rhs, **solver_kwargs)
+        case DiagDecoupledTensor():
             return mass_1.inv @ rhs
-
-        case "solver":
-            raise NotImplementedError()
-
         case _:
-            raise ValueError()
+            return torch.linalg.solve(mass_1.to_dense(), rhs)
 
 
 def element_based_galerkin_sharp(

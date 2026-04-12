@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from cochain.complex import SimplicialMesh, collate_fn
-from cochain.geometry.tri import tri_laplacians
+from cochain.metric.tri import tri_laplacians
 
 
 @pytest.mark.parametrize("k", [0, 1, 2])

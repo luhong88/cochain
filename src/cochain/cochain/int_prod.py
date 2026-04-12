@@ -1,21 +1,25 @@
-from typing import Literal
+from typing import Any
 
 import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ..sparse.decoupled_tensor import BaseDecoupledTensor
+from ..sparse.decoupled_tensor import SparseDecoupledTensor
+from ..sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from .ext_prod.whitney import WhitneyWedgeL2Projector
 
 
 def galerkin_contract(
     vec_field_flat: Float[Tensor, " edge *ch"],
     cochain_k: Float[Tensor, " k_splx *ch"],
-    mass_km1: Float[BaseDecoupledTensor, "km1_splx km1_splx"],
+    mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
+    | Float[InvSparseOperator, "km1_splx km1_splx"],
     wedge_op: WhitneyWedgeL2Projector,
-    method: Literal["dense", "solver"],
+    solver_kwargs: dict[str, Any] | None = None,
 ) -> Float[Tensor, " km1_splx *ch"]:
     """
+    Compute the Galerkin interior product between a vector field and a k-form.
+
     Compute the interior product i_v(η) between a vector field V (represented by
     its flat v = ♭V) and a discrete k-form/k-cochain η using the Galerkin approach.
 
@@ -34,6 +38,10 @@ def galerkin_contract(
 
     The input `wedge_op` should be setup to compute the load vector for the wedge
     product between a 1-cochain and a (k-1)-cochain.
+
+    If the input `mass_km1` is a callable InvSparseOperator, the RHS will be
+    passed to the operator to solve for ξ; otherwise, `mass_km1` will be converted
+    to a dense tensor and torch.linalg.solve() will be used to solve for ξ.
 
     Note that, if the input cochains contain batch/channel dimensions, then the
     `cochain_k`, `cochain_1`, and the output (k-1)-cochain should all have the same
@@ -63,14 +71,13 @@ def galerkin_contract(
     # create store intermediate tensors in the buffer, these are considered
     # immutable for the purpose of vjp().
     _, vjp_fxn = torch.func.vjp(_wedge_forward, dummy_cochain_km1)
-    rhs = vjp_fxn(cochain_k)[0]
+    rhs: Float[Tensor, " km1_splx *ch"] = vjp_fxn(cochain_k)[0]
 
-    match method:
-        case "dense":
-            return torch.linalg.solve(mass_km1.to_dense(), rhs)
+    if isinstance(mass_km1, InvSparseOperator):
+        if solver_kwargs is None:
+            solver_kwargs = {}
 
-        case "solver":
-            raise NotImplementedError()
+        return mass_km1(rhs, **solver_kwargs)
 
-        case _:
-            raise ValueError()
+    else:
+        return torch.linalg.solve(mass_km1.to_dense(), rhs)

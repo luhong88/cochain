@@ -3,7 +3,7 @@ import torch
 from einops import einsum, repeat
 
 from cochain.cochain.discretize import DeRhamMap
-from cochain.geometry.tet.tet_geometry import compute_tet_signed_vols
+from cochain.metric.tet._tet_geometry import compute_tet_signed_vols
 
 # TODO: test gradients
 
@@ -17,9 +17,7 @@ def test_const_1_form_integration(mesh, request, device):
     pts = de_rham.sample_points()
     n_splx, n_pts, _ = pts.shape
 
-    const_form = torch.randn((2, 3)).to(
-        dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
-    )
+    const_form = torch.randn((2, 3)).to(dtype=mesh.dtype, device=mesh.device)
     sampled_form = repeat(
         const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
@@ -41,9 +39,7 @@ def test_const_2_form_integration(mesh, request, device):
     pts = de_rham.sample_points()
     n_splx, n_pts, _ = pts.shape
 
-    const_form = torch.randn((2, 3)).to(
-        dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
-    )
+    const_form = torch.randn((2, 3)).to(dtype=mesh.dtype, device=mesh.device)
     sampled_form = repeat(
         const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
@@ -66,9 +62,7 @@ def test_const_3_form_integration(two_tets_mesh, device):
     pts = de_rham.sample_points()
     n_splx, n_pts, _ = pts.shape
 
-    const_form = torch.randn((2, 1)).to(
-        dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
-    )
+    const_form = torch.randn((2, 1)).to(dtype=mesh.dtype, device=mesh.device)
     sampled_form = repeat(
         const_form, "ch coord -> splx pt ch coord", splx=n_splx, pt=n_pts
     )
@@ -109,7 +103,7 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
     # Compute dω analytically.
     grad_1_forms = torch.eye(
         3,
-        dtype=mesh.vert_coords.dtype,
+        dtype=mesh.dtype,
         device=device,
     )
 
@@ -160,7 +154,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             [[0, 0, 0], [0, 0, 0], [0, 1, 0]],  # (0, 0, y)
             [[0, 0, 0], [0, 0, 0], [0, 0, 1]],  # (0, 0, z)
         ],
-        dtype=mesh.vert_coords.dtype,
+        dtype=mesh.dtype,
         device=device,
     )
 
@@ -187,7 +181,7 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
             [1, 0, 0],  # ∇ x (0, 0, y)
             [0, 0, 0],  # ∇ x (0, 0, z)
         ],
-        dtype=mesh.vert_coords.dtype,
+        dtype=mesh.dtype,
         device=device,
     )
     # fmt:on
@@ -239,7 +233,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
             [[0, 0, 0], [0, 0, 0], [0, 1, 0]],  # (0, 0, y)
             [[0, 0, 0], [0, 0, 0], [0, 0, 1]],  # (0, 0, z)
         ],
-        dtype=mesh.vert_coords.dtype,
+        dtype=mesh.dtype,
         device=device,
     )
 
@@ -266,7 +260,7 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
             [0], # ∇ ⋅ (0, 0, y)
             [1], # ∇ ⋅ (0, 0, z)
         ],
-        dtype=mesh.vert_coords.dtype,
+        dtype=mesh.dtype,
         device=device,
     )
     # fmt:on

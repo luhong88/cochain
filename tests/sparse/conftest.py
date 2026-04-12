@@ -13,7 +13,7 @@ def A() -> Float[Tensor, "4 4"]:
         (torch.randint(0, n_dim, (2, nnz)), torch.tile(torch.arange(n_dim), (2, 1)))
     )
     val = torch.hstack((torch.randn(nnz), n_dim * torch.ones(n_dim))).to(
-        dtype=torch.float
+        dtype=torch.float32
     )
 
     A = torch.sparse_coo_tensor(idx, val, (n_dim, n_dim)).coalesce()
@@ -55,7 +55,7 @@ def A_batched() -> Float[Tensor, "2 4 4"]:
         idx = torch.hstack((idx_off_diag, idx_diag))
 
         val = torch.hstack((torch.randn(nnz), n_dim * torch.ones(n_dim))).to(
-            dtype=torch.float
+            dtype=torch.float32
         )
 
         A_list.append(torch.sparse_coo_tensor(idx, val, (n_dim, n_dim)))

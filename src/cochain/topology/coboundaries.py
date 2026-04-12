@@ -138,7 +138,7 @@ def cbd_from_tet_mesh(
     # check how many indices match the canonical order indices [0, 1, 2]; if one
     # of them do, the triangle has a negative orientation, and otherwise it has
     # a positive orientation.
-    canon_pos_orientation = torch.tensor([0, 1, 2], dtype=torch.long, device=device)
+    canon_pos_orientation = torch.tensor([0, 1, 2], dtype=torch.int64, device=device)
     tri_orientation_signs = torch.where(
         condition=torch.sum(all_tri_orientations == canon_pos_orientation, dim=-1) == 1,
         self=-1,

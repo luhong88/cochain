@@ -6,15 +6,18 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ...complex import SimplicialMesh
-from ...geometry.tet import tet_geometry
-from ...geometry.tri import tri_geometry
+from ...metric.tet import _tet_geometry
+from ...metric.tri import _tri_geometry
 from ...utils.faces import enumerate_local_faces
 from ...utils.perm_parity import compute_lex_rel_orient
 from ...utils.search import splx_search
 
 
 def compute_whitney_router(
-    splx_dim: int, form_deg: int, device: torch.device, dtype: torch.dtype = torch.float
+    splx_dim: int,
+    form_deg: int,
+    device: torch.device,
+    dtype: torch.dtype = torch.float32,
 ) -> Float[Tensor, "face lambda *d_lambda"]:
     """
     Compute the coefficients required to construct the Whitney forms from the
@@ -36,7 +39,7 @@ def compute_whitney_router(
 
 
 def compute_moments(
-    order: int, splx_dim: int, device: torch.device, dtype: torch.dtype = torch.float
+    order: int, splx_dim: int, device: torch.device, dtype: torch.dtype = torch.float32
 ) -> Tensor:
     """
     For an n-simplex with unit area/volume and n + 1 barycentric coordinate functions
@@ -61,7 +64,7 @@ def compute_moments(
     return moments.to(device=device, dtype=dtype)
 
 
-def compute_bc_grad_dot(
+def dispatch_bc_grad_dot(
     mesh: SimplicialMesh,
 ) -> tuple[Float[Tensor, "splx vert vert"], Float[Tensor, " splx"]]:
     """
@@ -70,27 +73,15 @@ def compute_bc_grad_dot(
     """
     match mesh.dim:
         case 2:
-            splx_size = tri_geometry.compute_tri_areas(mesh.vert_coords, mesh.tris)
-            splx_size_grad = tri_geometry.compute_d_tri_areas_d_vert_coords(
+            splx_size, bc_grad_dot = _tri_geometry.compute_bc_grad_dots(
                 mesh.vert_coords, mesh.tris
-            )
-            bc_grad_dot = tri_geometry.bary_coord_grad_inner_prods(
-                splx_size.view(-1, 1, 1), splx_size_grad
             )
 
         case 3:
-            signed_splx_size = tet_geometry.compute_tet_signed_vols(
+            signed_splx_size, bc_grad_dot = _tet_geometry.compute_bc_grad_dots(
                 mesh.vert_coords, mesh.tets
             )
             splx_size = torch.abs(signed_splx_size)
-            signed_splx_size_grad = (
-                tet_geometry.dompute_d_tet_signed_vols_d_vert_coords(
-                    mesh.vert_coords, mesh.tets
-                )
-            )
-            bc_grad_dot = tet_geometry.bary_coord_grad_inner_prods(
-                signed_splx_size.view(-1, 1, 1), signed_splx_size_grad
-            )
 
         case _:
             raise NotImplementedError()
@@ -110,7 +101,7 @@ def find_top_splx_faces(
     k = face_dim
     # Identify the k-faces of the top level simplices and their sign corrections.
     k_faces: Float[Tensor, "top_splx k_face k+1"] = mesh.splx[mesh.dim][
-        :, enumerate_local_faces(mesh.dim, k, device=mesh.vert_coords.device)
+        :, enumerate_local_faces(mesh.dim, k, device=mesh.device)
     ]
     k_faces_flat = k_faces.view(-1, k + 1)
     k_faces_idx_flat = splx_search(
@@ -133,14 +124,14 @@ def find_top_splx_faces(
         k_face_parity_global = compute_lex_rel_orient(mesh.splx[k][k_faces_idx_flat])
     else:
         k_face_parity_global = torch.ones(
-            1, dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device
+            1, dtype=mesh.dtype, device=mesh.device
         ).expand_as(k_faces_idx_flat)
 
     k_face_parity_induced = compute_lex_rel_orient(k_faces_flat)
 
     k_face_parity = (
         (k_face_parity_induced * k_face_parity_global)
-        .to(dtype=mesh.vert_coords.dtype, device=mesh.vert_coords.device)
+        .to(dtype=mesh.dtype, device=mesh.device)
         .view(*k_faces.shape[:-1])
     )
 

@@ -6,14 +6,8 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ..complex import SimplicialMesh
-from ..geometry.tet.tet_geometry import (
-    compute_tet_signed_vols,
-    dompute_d_tet_signed_vols_d_vert_coords,
-)
-from ..geometry.tri.tri_geometry import (
-    compute_d_tri_areas_d_vert_coords,
-    compute_tri_areas,
-)
+from ..metric.tet import _tet_geometry
+from ..metric.tri import _tri_geometry
 from ..utils.faces import enumerate_local_faces
 from ..utils.search import splx_search
 
@@ -243,14 +237,8 @@ def _bary_whitney_tri(
     mesh: SimplicialMesh,
 ) -> Float[Tensor, "tri pt *ch coord"]:
     if k in [1, 2]:
-        tri_areas = rearrange(
-            compute_tri_areas(mesh.vert_coords, mesh.tris), "tri -> tri 1 1"
-        )
-        d_tri_areas_d_vert_coords = compute_d_tri_areas_d_vert_coords(
-            mesh.vert_coords, mesh.tris
-        )
-        bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"] = (
-            d_tri_areas_d_vert_coords / tri_areas
+        _, bary_coords_grad = _tri_geometry.compute_bc_grads(
+            vert_coords=mesh.vert_coords, tris=mesh.tris
         )
 
     match k:
@@ -282,15 +270,13 @@ def _bary_whitney_tet(
     bary_coords: Float[Tensor, "tet pt vert"],
     mesh: SimplicialMesh,
 ) -> Float[Tensor, "tet pt *ch coord"]:
-    if k in [1, 2, 3]:
-        tet_signed_vols = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
-
     if k in [1, 2]:
-        d_signed_vols_d_vert_coords = dompute_d_tet_signed_vols_d_vert_coords(
+        tet_signed_vols, bary_coords_grad = _tet_geometry.compute_bc_grads(
             mesh.vert_coords, mesh.tets
         )
-        bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"] = (
-            d_signed_vols_d_vert_coords / tet_signed_vols.view(-1, 1, 1)
+    elif k == 3:
+        tet_signed_vols = _tet_geometry.compute_tet_signed_vols(
+            mesh.vert_coords, mesh.tets
         )
 
     match k:
@@ -470,7 +456,7 @@ def _barycentric_whitney_map_boundary(
     n_pts = bary_coords.size(-2)
 
     local_face_idx: Integer[LongTensor, "k_face k_vert"] = enumerate_local_faces(
-        splx_dim=m, face_dim=k, device=mesh.vert_coords.device
+        splx_dim=m, face_dim=k, device=mesh.device
     )
 
     # Find the global indices of all k-faces.
