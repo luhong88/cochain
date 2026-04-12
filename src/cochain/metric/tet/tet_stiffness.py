@@ -11,15 +11,13 @@ from ._tet_geometry import compute_cotan_weights
 def stiffness_matrix(
     tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "vert vert"]:
-    """
-    Computes the stiffness matrix for a 3D mesh, sometimes also known as the "cotan
-    Laplacian".
-    """
+    """Compute the stiffness matrix/cotan Laplacian for a tet mesh."""
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
     sym_stiffness = compute_cotan_weights(tet_mesh.vert_coords, tet_mesh.tets)
 
-    # Compute the diagonal elements of the stiffness matrix.
+    # Compute the diagonal elements of the stiffness matrix, which is the negative
+    # of the corresponding row/column sum.
     stiffness_diag = torch.sparse.sum(sym_stiffness, dim=-1)
     # laplacian_diag.indices() has shape (1, nnz_diag)
     diag_idx = torch.concatenate([stiffness_diag.indices(), stiffness_diag.indices()])
