@@ -241,8 +241,8 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
         + \lambda_k\nabla\lambda_i\times\nabla\lambda_j)
     $$
 
-    These basis functions are also known as the lowest-order Raviart-Thomas face
-    elements of the first kind. Note that, in this function, instead of working with
+    These basis functions are also known as the lowest-order Raviart-Thomas-Nédélec
+    face elements. Note that, in this function, instead of working with
     this differential form definition of the basis functions, we use the polynomial
     representation
 

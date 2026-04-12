@@ -238,17 +238,17 @@ def test_laplacian_1_curl_free(dual_complex, hollow_tet_mesh: SimplicialMesh, de
     ["circumcentric", "barycentric"],
 )
 def test_laplacian_1_div_free(dual_complex, hollow_tet_mesh: SimplicialMesh, device):
-    """The grad-div 1-Laplacian annihilates on a div-free 1-cochain produces 0."""
+    """The grad-div 1-Laplacian annihilates a div-free 1-cochain."""
     mesh = hollow_tet_mesh.to(device)
 
     codiff_2 = tri_laplacians.codifferential_2(mesh, dual_complex)
-    l1_div_grad = tri_laplacians.laplacian_1_grad_div(mesh, dual_complex)
+    l1_grad_div = tri_laplacians.laplacian_1_grad_div(mesh, dual_complex)
 
-    x2 = torch.arange(mesh.n_tris).to(dtype=torch.float32, device=mesh.device)
+    x2 = torch.randn(mesh.n_tris, dtype=torch.float32, device=mesh.device)
+
     # The curl of a vector field is divergence-free.
     x1_solenoidal = codiff_2 @ x2
-
-    x1_zero = (l1_div_grad @ x1_solenoidal).to_dense()
+    x1_zero = (l1_grad_div @ x1_solenoidal).to_dense()
 
     torch.testing.assert_close(x1_zero, torch.zeros_like(x1_zero))
 
@@ -269,8 +269,8 @@ def test_codiff_1_adjoint_relation(
     d0 = mesh.cbd[0]
     codiff_1 = tri_laplacians.codifferential_1(mesh, dual_complex)
 
-    x0 = torch.arange(mesh.n_verts).to(dtype=mesh.dtype, device=mesh.device)
-    x1 = torch.arange(mesh.n_edges).to(dtype=mesh.dtype, device=mesh.device)
+    x0 = torch.randn(mesh.n_verts, dtype=mesh.dtype, device=mesh.device)
+    x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
 
     dot_1 = torch.dot(d0 @ x0, s1 @ x1)
     dot_2 = torch.dot(x0, s0 @ (codiff_1 @ x1))
@@ -294,8 +294,8 @@ def test_codiff_2_adjoint_relation(
     d1 = mesh.cbd[1]
     codiff_2 = tri_laplacians.codifferential_2(mesh, dual_complex)
 
-    x1 = torch.arange(mesh.n_edges).to(dtype=mesh.dtype, device=mesh.device)
-    x2 = torch.arange(mesh.n_tris).to(dtype=mesh.dtype, device=mesh.device)
+    x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    x2 = torch.randn(mesh.n_tris, dtype=mesh.dtype, device=mesh.device)
 
     dot_1 = torch.dot(d1 @ x1, s2 @ x2)
     dot_2 = torch.dot(x1, s1 @ (codiff_2 @ x2))

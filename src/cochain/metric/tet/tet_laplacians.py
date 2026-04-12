@@ -577,7 +577,7 @@ def weak_laplacian_2_curl_curl(
 
             return m2 @ d1 @ inv_m1 @ d1.T @ m2
 
-        case "solver":
+        case "mixed":
             return MixedWeakLaplacianBlocks(
                 cbd_km1=d1,
                 cbd_k=None,

@@ -230,7 +230,7 @@ def star_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
     """
     tet_vol = torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
 
-    diag = torch.zeros(tet_mesh.n_verts, device=tet_mesh.device)
+    diag = torch.zeros(tet_mesh.n_verts, dtype=tet_mesh.dtype, device=tet_mesh.device)
     diag.scatter_add_(
         dim=0,
         index=tet_mesh.tets.flatten(),
