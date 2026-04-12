@@ -53,7 +53,7 @@ def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     )
 
     # Using the magic formula, the integral for M_ij can be solved analytically
-    # for each triangle. If i = j, M_ij = A/20; if i != j, M_ij = A/40. This
+    # for each triangle. If i = j, M_ij = V/20; if i != j, M_ij = V/40. This
     # then defines a local 4x4 mass-0 matrix that can be scattered to construct
     # the global mass-0 matrix.
     ref_local_mass_0 = ((torch.ones(4, 4) + torch.eye(4)) / 20.0).to(
@@ -65,8 +65,8 @@ def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
 
     # Enumerate the global vert idx pairs for each local 4x4 mass-0 matrix and
     # flatten it for scattering.
-    r_idx = repeat(tet_mesh.tets, "tri vert_1 -> (tri vert_1 vert_2)", vert_2=4)
-    c_idx = repeat(tet_mesh.tets, "tri vert_2 -> (tri vert_1 vert_2)", vert_1=4)
+    r_idx = repeat(tet_mesh.tets, "tet vert_1 -> (tet vert_1 vert_2)", vert_2=4)
+    c_idx = repeat(tet_mesh.tets, "tet vert_2 -> (tet vert_1 vert_2)", vert_1=4)
 
     mass = torch.sparse_coo_tensor(
         indices=torch.vstack((r_idx.flatten(), c_idx.flatten())),

@@ -39,10 +39,12 @@ def test_mass_0_with_skfem(two_tets_mesh: SimplicialMesh, device):
     torch.testing.assert_close(cochain_mass_0_eigs, skfem_mass_0_eigs_torch)
 
 
-def test_mass_1_with_skfem(two_tets_mesh: SimplicialMesh):
+def test_mass_1_with_skfem(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+
     skfem_mesh = skfem.MeshTet(
-        two_tets_mesh.vert_coords.T.cpu().detach().numpy(),
-        two_tets_mesh.tets.T.cpu().detach().numpy(),
+        mesh.vert_coords.T.cpu().detach().numpy(),
+        mesh.tets.T.cpu().detach().numpy(),
     )
 
     elem = skfem.ElementTetN0()
@@ -58,19 +60,21 @@ def test_mass_1_with_skfem(two_tets_mesh: SimplicialMesh):
     skfem_mass_1_eigs = np.linalg.eigvalsh(skfem_mass_1)
     skfem_mass_1_eigs.sort()
     skfem_mass_1_eigs_torch = torch.from_numpy(skfem_mass_1_eigs).to(
-        dtype=two_tets_mesh.dtype
+        dtype=mesh.dtype, device=device
     )
 
-    cochain_mass_1 = tet_masses.mass_1(two_tets_mesh).to_dense()
+    cochain_mass_1 = tet_masses.mass_1(mesh).to_dense()
     cochain_mass_1_eigs = torch.linalg.eigvalsh(cochain_mass_1).sort().values
 
     torch.testing.assert_close(cochain_mass_1_eigs, skfem_mass_1_eigs_torch)
 
 
-def test_mass_2_with_skfem(two_tets_mesh: SimplicialMesh):
+def test_mass_2_with_skfem(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+
     skfem_mesh = skfem.MeshTet(
-        two_tets_mesh.vert_coords.T.cpu().detach().numpy(),
-        two_tets_mesh.tets.T.cpu().detach().numpy(),
+        mesh.vert_coords.T.cpu().detach().numpy(),
+        mesh.tets.T.cpu().detach().numpy(),
     )
 
     elem = skfem.ElementTetRT0()
@@ -88,10 +92,10 @@ def test_mass_2_with_skfem(two_tets_mesh: SimplicialMesh):
     skfem_mass_2_eigs = np.linalg.eigvalsh(skfem_mass_2) * 4
     skfem_mass_2_eigs.sort()
     skfem_mass_2_eigs_torch = torch.from_numpy(skfem_mass_2_eigs).to(
-        dtype=two_tets_mesh.dtype
+        dtype=mesh.dtype, device=device
     )
 
-    cochain_mass_2 = tet_masses.mass_2(two_tets_mesh).to_dense()
+    cochain_mass_2 = tet_masses.mass_2(mesh).to_dense()
     cochain_mass_2_eigs = torch.linalg.eigvalsh(cochain_mass_2).sort().values
 
     torch.testing.assert_close(cochain_mass_2_eigs, skfem_mass_2_eigs_torch)
@@ -99,63 +103,88 @@ def test_mass_2_with_skfem(two_tets_mesh: SimplicialMesh):
 
 @pytest.mark.parametrize(
     "mass_matrix",
-    [
-        tet_masses.mass_1,
-        tet_masses.mass_2,
-    ],
+    [tet_masses.mass_0, tet_masses.mass_1, tet_masses.mass_2, tet_masses.mass_3],
 )
-def test_mass_matrix_symmetry(mass_matrix, two_tets_mesh: SimplicialMesh):
-    mass = mass_matrix(two_tets_mesh)
+def test_mass_matrix_symmetry(mass_matrix, two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+
+    mass = mass_matrix(mesh).to_dense()
     mass_T = mass.T
-    torch.testing.assert_close(mass.to_dense(), mass_T.to_dense())
+
+    torch.testing.assert_close(mass, mass_T)
 
 
 @pytest.mark.parametrize(
     "mass_matrix",
-    [
-        tet_masses.mass_1,
-        tet_masses.mass_2,
-    ],
+    [tet_masses.mass_0, tet_masses.mass_1, tet_masses.mass_2, tet_masses.mass_3],
 )
-def test_mass_matrix_positive_definite(mass_matrix, two_tets_mesh: SimplicialMesh):
-    mass = mass_matrix(two_tets_mesh).to_dense()
+def test_mass_matrix_positive_definite(
+    mass_matrix, two_tets_mesh: SimplicialMesh, device
+):
+    mesh = two_tets_mesh.to(device)
+
+    mass = mass_matrix(mesh).to_dense()
     eigs = torch.linalg.eigvalsh(mass)
+
     assert eigs.min() >= 1e-6
 
 
-def test_mass_0_matrix_total_vol_partition(two_tets_mesh: SimplicialMesh):
-    """
-    The sum of the diagonal 0-form mass matrices should be equal to the
-    total volume of the tet.
-    """
-    total_mass = tet_hodge_stars.star_0(two_tets_mesh).tr
+def test_mass_0_matrix_total_vol_partition(two_tets_mesh: SimplicialMesh, device):
+    """The sum of the 0-mass matrix diagonal should be equal to the total volume."""
+    mesh = two_tets_mesh.to(device)
+
+    total_mass = tet_hodge_stars.star_0(mesh).tr
     total_vol = torch.sum(
-        torch.abs(
-            compute_tet_signed_vols(two_tets_mesh.vert_coords, two_tets_mesh.tets)
-        )
+        torch.abs(compute_tet_signed_vols(mesh.vert_coords, mesh.tets))
     )
+
     torch.testing.assert_close(total_mass, total_vol)
 
 
-def test_mass_3_matrix_total_vol_partition(two_tets_mesh: SimplicialMesh):
-    """
-    The sum of the inverse of the diagonal 3-form mass matrices should be equal
-    to the total volume of the tet.
-    """
-    total_mass = tet_masses.mass_3(two_tets_mesh).inv.tr
+def test_mass_3_matrix_total_vol_partition(two_tets_mesh: SimplicialMesh, device):
+    """The sum of the inverse of the 3-mass matrix should be equal to the total volume."""
+    mesh = two_tets_mesh.to(device)
+
+    total_mass = tet_masses.mass_3(mesh).inv.tr
     total_vol = torch.sum(
-        torch.abs(
-            compute_tet_signed_vols(two_tets_mesh.vert_coords, two_tets_mesh.tets)
-        )
+        torch.abs(compute_tet_signed_vols(mesh.vert_coords, mesh.tets))
     )
+
     torch.testing.assert_close(total_mass, total_vol)
 
 
-def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialMesh):
-    mass_1 = tet_masses.mass_1(two_tets_mesh)
+def test_mass_0_matrix_connectivity(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+
+    mass_0 = tet_masses.mass_0(mesh)
+    mass_0_mask = torch.zeros_like(mass_0.to_dense(), dtype=torch.int64)
+    mass_0_mask[mass_0.pattern.idx_coo.unbind(0)] = 1
+
+    # All elements in a 4x4 block of the M_0 matrix are nonzero iff the four
+    # vertices form a tet.
+    true_mass_0_mask = torch.tensor(
+        [
+            [1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 0],
+            [1, 1, 1, 0, 1],
+        ],
+        dtype=torch.int64,
+        device=device,
+    )
+
+    torch.testing.assert_close(mass_0_mask, true_mass_0_mask)
+
+
+def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+
+    mass_1 = tet_masses.mass_1(mesh)
     mass_1_mask = torch.zeros_like(mass_1.to_dense(), dtype=torch.int64)
     mass_1_mask[mass_1.pattern.idx_coo.unbind(0)] = 1
 
+    # M_ij is nonzero iff e_i and e_j are in the same triangle.
     true_mass_1_mask = torch.tensor(
         [
             [1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -169,16 +198,20 @@ def test_mass_1_matrix_connectivity(two_tets_mesh: SimplicialMesh):
             [1, 1, 0, 1, 1, 0, 1, 0, 1],
         ],
         dtype=torch.int64,
+        device=device,
     )
 
     torch.testing.assert_close(mass_1_mask, true_mass_1_mask)
 
 
-def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialMesh):
-    mass_2 = tet_masses.mass_2(two_tets_mesh)
+def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+
+    mass_2 = tet_masses.mass_2(mesh)
     mass_2_mask = torch.zeros_like(mass_2.to_dense(), dtype=torch.int64)
     mass_2_mask[mass_2.pattern.idx_coo.unbind(0)] = 1
 
+    # M_ij is nonzero iff t_i and t_j are in the same tet.
     true_mass_2_mask = torch.tensor(
         [
             [1, 1, 1, 1, 1, 1, 1],
@@ -190,49 +223,45 @@ def test_mass_2_matrix_connectivity(two_tets_mesh: SimplicialMesh):
             [1, 0, 1, 0, 1, 0, 1],
         ],
         dtype=torch.int64,
+        device=device,
     )
 
     torch.testing.assert_close(mass_2_mask, true_mass_2_mask)
 
 
-def test_mass_1_patch(two_tets_mesh: SimplicialMesh):
-    mass_1 = tet_masses.mass_1(two_tets_mesh)
+def test_mass_1_patch(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
 
-    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=two_tets_mesh.dtype)
+    mass_1 = tet_masses.mass_1(mesh)
 
-    edges = (
-        two_tets_mesh.vert_coords[two_tets_mesh.edges[:, 1]]
-        - two_tets_mesh.vert_coords[two_tets_mesh.edges[:, 0]]
-    )
+    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=mesh.dtype, device=device)
+
+    edges = mesh.vert_coords[mesh.edges[:, 1]] - mesh.vert_coords[mesh.edges[:, 0]]
 
     field_proj = torch.sum(edges * const_field, dim=-1)
     energy = field_proj @ mass_1 @ field_proj
 
     true_energy = (
-        torch.sum(
-            torch.abs(
-                compute_tet_signed_vols(two_tets_mesh.vert_coords, two_tets_mesh.tets)
-            )
-        )
+        torch.sum(torch.abs(compute_tet_signed_vols(mesh.vert_coords, mesh.tets)))
         * torch.sum(const_field * const_field, dim=-1)
     ).squeeze()
 
     torch.testing.assert_close(energy, true_energy)
 
 
-def test_mass_2_patch(two_tets_mesh: SimplicialMesh):
-    mass_2 = tet_masses.mass_2(two_tets_mesh)
+def test_mass_2_patch(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
 
-    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=two_tets_mesh.dtype)
+    mass_2 = tet_masses.mass_2(mesh)
+
+    const_field = torch.tensor([[1.0, 3.0, 2.0]], dtype=mesh.dtype, device=device)
 
     # Compute the triangle vector areas following the right-hand rule using the
     # canonical triangle vertex orderings.
     vec_areas = (
         torch.cross(
-            two_tets_mesh.vert_coords[two_tets_mesh.tris[:, 1]]
-            - two_tets_mesh.vert_coords[two_tets_mesh.tris[:, 0]],
-            two_tets_mesh.vert_coords[two_tets_mesh.tris[:, 2]]
-            - two_tets_mesh.vert_coords[two_tets_mesh.tris[:, 0]],
+            mesh.vert_coords[mesh.tris[:, 1]] - mesh.vert_coords[mesh.tris[:, 0]],
+            mesh.vert_coords[mesh.tris[:, 2]] - mesh.vert_coords[mesh.tris[:, 0]],
             dim=-1,
         )
         / 2.0
@@ -242,11 +271,7 @@ def test_mass_2_patch(two_tets_mesh: SimplicialMesh):
     energy = field_proj @ mass_2 @ field_proj
 
     true_energy = (
-        torch.sum(
-            torch.abs(
-                compute_tet_signed_vols(two_tets_mesh.vert_coords, two_tets_mesh.tets)
-            )
-        )
+        torch.sum(torch.abs(compute_tet_signed_vols(mesh.vert_coords, mesh.tets)))
         * torch.sum(const_field * const_field, dim=-1)
     ).squeeze()
 
