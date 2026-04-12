@@ -9,6 +9,36 @@ from cochain.metric.tet import tet_hodge_stars, tet_masses
 from cochain.metric.tet._tet_geometry import compute_tet_signed_vols
 
 
+def test_mass_0_with_skfem(two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+
+    skfem_mesh = skfem.MeshTet(
+        mesh.vert_coords.T.cpu().detach().numpy(),
+        mesh.tets.T.cpu().detach().numpy(),
+    )
+
+    elem = skfem.ElementTetP1()
+    basis = skfem.InteriorBasis(skfem_mesh, elem)
+
+    @skfem.BilinearForm
+    def mass_form(u, v, w):
+        return u * v
+
+    skfem_mass_0 = mass_form.assemble(basis).todense()
+    # Here, we compare the eigenvalues of the mass matrices rather than the mass
+    # matrices themselves to avoid differences in index/orientation conventions.
+    skfem_mass_0_eigs = np.linalg.eigvalsh(skfem_mass_0)
+    skfem_mass_0_eigs.sort()
+    skfem_mass_0_eigs_torch = torch.from_numpy(skfem_mass_0_eigs).to(
+        dtype=mesh.dtype, device=device
+    )
+
+    cochain_mass_0 = tet_masses.mass_0(mesh).to_dense()
+    cochain_mass_0_eigs = torch.linalg.eigvalsh(cochain_mass_0).sort().values
+
+    torch.testing.assert_close(cochain_mass_0_eigs, skfem_mass_0_eigs_torch)
+
+
 def test_mass_1_with_skfem(two_tets_mesh: SimplicialMesh):
     skfem_mesh = skfem.MeshTet(
         two_tets_mesh.vert_coords.T.cpu().detach().numpy(),
