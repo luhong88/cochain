@@ -2,10 +2,12 @@ from functools import partial
 
 import pytest
 import torch
+from torch import Tensor
 
 from cochain.complex import SimplicialMesh
 from cochain.metric.tet import tet_hodge_stars, tet_laplacians, tet_masses
 from cochain.metric.tet.tet_laplacians import MixedWeakLaplacianBlocks
+from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.sparse.linalg.solvers import SuperLU
 
 
@@ -374,6 +376,103 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialMesh, device):
     dot_2 = torch.dot(x2, m2 @ (codiff_3 @ x3))
 
     torch.testing.assert_close(dot_1, dot_2)
+
+
+@pytest.mark.parametrize(
+    "laplacian, method",
+    [
+        (tet_laplacians.weak_laplacian_0, "cotan"),
+        (tet_laplacians.weak_laplacian_0, "consistent"),
+        (tet_laplacians.weak_laplacian_1_grad_div, None),
+        (tet_laplacians.weak_laplacian_1_curl_curl, None),
+        (tet_laplacians.weak_laplacian_1, None),
+        (tet_laplacians.weak_laplacian_2_curl_curl, "dense"),
+        (tet_laplacians.weak_laplacian_2_curl_curl, "inv_star"),
+        (tet_laplacians.weak_laplacian_2_curl_curl, "mixed"),
+        (tet_laplacians.weak_laplacian_2_grad_div, None),
+        (tet_laplacians.weak_laplacian_2, "dense"),
+        (tet_laplacians.weak_laplacian_2, "inv_star"),
+        (tet_laplacians.weak_laplacian_2, "mixed"),
+        (tet_laplacians.weak_laplacian_3, "dense"),
+        (tet_laplacians.weak_laplacian_3, "inv_star"),
+        (tet_laplacians.weak_laplacian_3, "mixed"),
+    ],
+)
+def test_laplacian_backward(laplacian, method, two_tets_mesh: SimplicialMesh, device):
+    mesh = two_tets_mesh.to(device)
+    mesh.requires_grad_()
+
+    if method is None:
+        l = laplacian(mesh)
+    else:
+        l = laplacian(mesh, method)
+
+    match l:
+        case Tensor():
+            output = torch.sum(l)
+        case SparseDecoupledTensor():
+            output = l.val.sum()
+        case MixedWeakLaplacianBlocks():
+            output = l._mixed_k_laplacian.val.sum()
+        case _:
+            raise TypeError()
+
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+
+@pytest.mark.parametrize(
+    "laplacian, method",
+    [
+        (tet_laplacians.weak_laplacian_0, "cotan"),
+        (tet_laplacians.weak_laplacian_0, "consistent"),
+        (tet_laplacians.weak_laplacian_1_grad_div, None),
+        (tet_laplacians.weak_laplacian_1_curl_curl, None),
+        (tet_laplacians.weak_laplacian_1, None),
+        (tet_laplacians.weak_laplacian_2_curl_curl, "dense"),
+        (tet_laplacians.weak_laplacian_2_curl_curl, "inv_star"),
+        (tet_laplacians.weak_laplacian_2_curl_curl, "mixed"),
+        (tet_laplacians.weak_laplacian_2_grad_div, None),
+        (tet_laplacians.weak_laplacian_2, "dense"),
+        (tet_laplacians.weak_laplacian_2, "inv_star"),
+        (tet_laplacians.weak_laplacian_2, "mixed"),
+        (tet_laplacians.weak_laplacian_3, "dense"),
+        (tet_laplacians.weak_laplacian_3, "inv_star"),
+        (tet_laplacians.weak_laplacian_3, "mixed"),
+    ],
+)
+def test_laplacian_gradcheck(laplacian, method, two_tets_mesh: SimplicialMesh, device):
+    # Scale the vertex coordinates by a factor of 100 to improve numerical
+    # precision for gradcheck.
+    vert_coords = 100.0 * two_tets_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def laplacian_fxn(test_vert_coords):
+        mesh = two_tets_mesh.to(device=device, dtype=torch.float64)
+        mesh.vert_coords = test_vert_coords
+
+        if method is None:
+            l = laplacian(mesh)
+        else:
+            l = laplacian(mesh, method)
+
+        match l:
+            case Tensor():
+                output = torch.sum(l)
+            case SparseDecoupledTensor():
+                output = l.val.sum()
+            case MixedWeakLaplacianBlocks():
+                output = l._mixed_k_laplacian.val.sum()
+            case _:
+                raise TypeError()
+
+        return output
+
+    assert torch.autograd.gradcheck(laplacian_fxn, (vert_coords,), fast_mode=True)
 
 
 # TODO: add rotation/translation/scaling invariance tests
