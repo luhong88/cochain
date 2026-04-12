@@ -277,7 +277,8 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialMesh, device):
 
 def test_laplacian_2_curl_free(two_tets_mesh: SimplicialMesh, device):
     """The curl-curl 2-Laplacian annihilates a curl-free 2-cochain."""
-    mesh = two_tets_mesh.to(device)
+    # Double precision is required for this test to pass.
+    mesh = two_tets_mesh.to(dtype=torch.float64, device=device)
 
     l2_curl_curl = tet_laplacians.weak_laplacian_2_curl_curl(mesh, method="dense")
 
