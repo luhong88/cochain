@@ -1,3 +1,5 @@
+__all__ = ["laplacian_k"]
+
 from typing import Literal
 
 from jaxtyping import Float
@@ -11,15 +13,37 @@ def laplacian_k(
     *,
     k: int,
     component: Literal["up", "down", "full"],
-    dual: bool = False,
+    dual_complex: bool = False,
 ) -> Float[SparseDecoupledTensor, "k_splx k_splx"]:
     """
-    Laplacian_k = d_j @ d_j.T + d_k.T @ d_k, where d_k is the k-coboundary
-    operator, d_k.T is the k-boundary operator, and j = k - 1.
+    Compute the topological/combinatorial $k$-Laplacian.
 
-    If dual = True, compute the topological k-Laplacian on the dual complex.
+    The topological $k$-Laplacian is defined as:
+
+    $$L_k = d_{k-1} d_{k-1}^T + d_k^T d_k$$
+
+    where $d_k$ is the $k$-coboundary operator.
+
+    Parameters
+    ----------
+    sc
+        A mesh object.
+    k
+        Which Laplacian to compute.
+    component
+        If "up", compute the up component of the $K$-Laplacian ($d_k^T d_k$);
+        if "down", compute the down component ($d_{k-1} d_{k-1}^T$); if "full",
+        compute the full Laplacian.
+    dual_complex
+        If True, compute the $k$-Laplacian on the dual complex by using the
+        dual coboundary operators.
+
+    Returns
+    -------
+    [k_splx, k_splx]
+        The $K$-Laplacian.
     """
-    if dual:
+    if dual_complex:
         cbd = sc.dual_cbd
     else:
         cbd = sc.cbd
@@ -49,4 +73,4 @@ def laplacian_k(
             return full_laplacian
 
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown 'component' argument ('{component}').")

@@ -23,7 +23,7 @@ def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialMesh) -> tuple[int, int, 
     # dual complex; therefore, we need to compute the spanning tree on the quotient
     # dual 1-skeleton using the super node method (and the edges connecting to the
     # super node need to be preserved for accounting).
-    dual_l0 = laplacian_k(tri_mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(tri_mesh, k=0, component="up", dual_complex=True)
     # This finds the dual vertices (i.e., primal triangles) that contain boundary
     # edges; such dual vertices connect to the super node when computing the dual
     # spanning tree; this same trick is used for computing the cotree decomposition.

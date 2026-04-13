@@ -43,7 +43,7 @@ def test_cbd_1_rank(icosphere_mesh: SimplicialMesh, device):
     cbd_1 = mesh.cbd[1]
     cbd_1_rank = torch.linalg.matrix_rank(cbd_1.to_dense())
 
-    dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     cotree_mask = compute_cotree_mask(
         dual_topo_laplacian_0=dual_l0,
         cbd_1=cbd_1,
@@ -61,7 +61,7 @@ def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     mesh = icosphere_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
-    dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
 
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
     tree_mask = compute_tree_mask(
@@ -100,7 +100,7 @@ def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device)
 def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     mesh = icosphere_mesh.to(device)
 
-    dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
 
     l1_up = (star_1(mesh) @ laplacian_1_curl_curl(mesh)).to_dense()
@@ -116,7 +116,7 @@ def test_l1_positive_definite_absolute_bc(
     mesh = finer_flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
-    dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
 
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
     tree_mask = compute_tree_mask(
@@ -154,7 +154,7 @@ def test_l1_up_positive_definite_absolute_bc(
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
-    dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
 
     l1 = (star_1(mesh) @ laplacian_1_curl_curl(mesh)).to_dense()
@@ -170,7 +170,7 @@ def test_l1_positive_definite_relative_bc(
     mesh = finer_flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
-    dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
 
     cotree_mask = compute_cotree_mask(
         dual_topo_laplacian_0=dual_l0,
@@ -223,7 +223,7 @@ def test_l1_up_positive_definite_relative_bc(
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
-    dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
 
     cotree_mask = compute_cotree_mask(
         dual_topo_laplacian_0=dual_l0,
@@ -249,7 +249,7 @@ def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, 
     mesh = finer_flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
-    dual_l0 = laplacian_k(mesh, k=0, component="up", dual=True)
+    dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     l1 = laplacian_1(mesh).to_dense()
 
     # First, perform tree-cotree decomposition with no geometric edge weights
