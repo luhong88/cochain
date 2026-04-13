@@ -293,7 +293,11 @@ class SimplicialMesh:
         Since no orientation is assigned to the edges using this constructor, we
         will assign a "canonical" orientation to each edge ij such that i < j.
         """
-        unique_canon_edges, cbd_0, cbd_1 = coboundaries.cbd_from_tri_mesh(tris)
+        tris = tris.long()
+
+        unique_canon_edges, cbd_0, cbd_1 = coboundaries.cbd_from_tri_mesh(
+            tris, dtype=vert_coords.dtype
+        )
 
         cbd_2 = SparseDecoupledTensor.from_tensor(
             torch.sparse_coo_tensor(
