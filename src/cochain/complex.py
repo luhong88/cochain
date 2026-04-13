@@ -331,13 +331,15 @@ class SimplicialMesh:
         that i < j and a "canonical" orientation to edge triangle ijk such that
         i < j < k.
         """
+        tets = tets.long()
+
         (
             unique_canon_edges,
             unique_canon_tris,
             cbd_0,
             cbd_1,
             cbd_2,
-        ) = coboundaries.cbd_from_tet_mesh(tets)
+        ) = coboundaries.cbd_from_tet_mesh(tets, dtype=vert_coords.dtype)
 
         return cls(
             cbd=(cbd_0, cbd_1, cbd_2),
