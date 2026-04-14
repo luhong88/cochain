@@ -5,8 +5,8 @@ from functools import cached_property
 from typing import Sequence
 
 import torch
-from jaxtyping import Integer
-from torch import LongTensor
+from jaxtyping import Bool, Integer
+from torch import LongTensor, Tensor
 
 from ._index import (
     coalesced_coo_to_col_idx,
@@ -88,7 +88,6 @@ def check_pattern_equality(
         raise ValueError(msg)
 
 
-# TODO: need a helper function to generate this from a simplicial batch
 @dataclass(frozen=True)
 class BlockDiagConfig:
     batch_perm: Integer[LongTensor, " nnz"]
@@ -98,6 +97,21 @@ class BlockDiagConfig:
     def to(self, *args, **kwargs) -> BlockDiagConfig:
         new_batch_perm = self.batch_perm.to(*args, **kwargs)
         return BlockDiagConfig(new_batch_perm, self.nnzs, self.pattern_shapes)
+
+    @property
+    def batch_perm_inv(self) -> Integer[LongTensor, " nnz"]:
+        """
+        Note that this scattering approach is strictly better than
+        torch.argsort(batch_perm) for a permutation.
+        """
+        nnz = self.block_diag_config.batch_perm.size(0)
+
+        inv = torch.empty_like(self.block_diag_config.batch_perm)
+        inv[self.block_diag_config.batch_perm] = torch.arange(
+            nnz, dtype=self.batch_perm.dtype, device=self.batch_perm.device
+        )
+
+        return inv
 
 
 @dataclass(frozen=True)
@@ -230,10 +244,9 @@ class SparsityPattern:
         device = self.device
         idx_dtype = self.dtype
 
-        block_perm_inv = torch.argsort(self.block_diag_config.batch_perm)
-
         # Undo the batch dim sort, so that the idx_coo is back in a per-block
         # ordering. Fancy indexing guarantees copying.
+        block_perm_inv = self.block_diag_config.batch_perm_inv
         idx_coo_concat = self.idx_coo[:, block_perm_inv]
 
         # Undo the per-block, cumulative index offsets.
@@ -379,6 +392,131 @@ class SparsityPattern:
         )
 
         return pattern_concat, batch_perm
+
+    def submatrix(
+        self, row_mask: Bool[Tensor, " r"], col_mask: Bool[Tensor, " c"] | None = None
+    ) -> tuple[Bool[Tensor, " nnz"], SparsityPattern]:
+        r_idx = self.idx_coo[-2]
+        c_idx = self.idx_coo[-1]
+
+        # Determine the submatrix nonzero elements mask.
+        r_idx_submat_mask = row_mask[r_idx]
+        if col_mask is None:
+            c_idx_submat_mask = r_idx_submat_mask
+        else:
+            c_idx_submat_mask = col_mask[c_idx]
+
+        idx_coo_submat_mask = r_idx_submat_mask & c_idx_submat_mask
+
+        # Determine the size of the submatrix.
+        r_submat_size = row_mask.sum().item()
+        if col_mask is None:
+            c_submat_size = r_submat_size
+        else:
+            c_submat_size = col_mask.sum().item()
+
+        if self.n_batch_dim > 0:
+            submat_shape = torch.Size([self.size(0), r_submat_size, c_submat_size])
+        else:
+            submat_shape = torch.Size([r_submat_size, c_submat_size])
+
+        # Adjust the COO index to account for subsetting.
+        # The cumsum() on the index mask maps the old indices to new indices.
+        r_idx_map = torch.cumsum(row_mask, dim=0) - 1
+        if col_mask is None:
+            c_idx_map = r_idx_map
+        else:
+            c_idx_map = torch.cumsum(col_mask, dim=0) - 1
+
+        idx_coo_row_submat = r_idx_map[r_idx[idx_coo_submat_mask]]
+        idx_coo_col_submat = c_idx_map[c_idx[idx_coo_submat_mask]]
+
+        # Adjust the block_diag_config, if there is any.
+        if self.block_diag_config is None:
+            submat_block_diag_config = None
+
+        else:
+            # Update pattern_shapes.
+            r_idx_submat_block_masks = torch.split(
+                row_mask, [s[-2] for s in self.block_diag_config.pattern_shapes]
+            )
+            if col_mask is None:
+                c_idx_submat_block_masks = r_idx_submat_block_masks
+            else:
+                c_idx_submat_block_masks = torch.split(
+                    col_mask, [s[-1] for s in self.block_diag_config.pattern_shapes]
+                )
+
+            submat_pattern_sizes = []
+            for block_shape_original, block_r_idx_mask, block_c_idx_mask in zip(
+                self.block_diag_config.pattern_shapes,
+                r_idx_submat_block_masks,
+                c_idx_submat_block_masks,
+                strict=True,
+            ):
+                if self.n_batch_dim > 0:
+                    submat_pattern_sizes.append(
+                        torch.Size(
+                            [
+                                block_shape_original[0],
+                                block_r_idx_mask.sum().item(),
+                                block_c_idx_mask.sum().item(),
+                            ]
+                        )
+                    )
+                else:
+                    submat_pattern_sizes.append(
+                        torch.Size(
+                            [
+                                block_r_idx_mask.sum().item(),
+                                block_c_idx_mask.sum().item(),
+                            ]
+                        )
+                    )
+
+            # Update nnzs.
+            block_perm_inv = self.block_diag_config.batch_perm_inv
+
+            # Undo the batch dim sort on idx_coo_submat_mask.
+            idx_coo_submat_mask_block_concat = idx_coo_submat_mask[block_perm_inv]
+            idx_coo_submat_block_masks = torch.split(
+                idx_coo_submat_mask_block_concat, self.block_diag_config.nnzs
+            )
+            submat_block_nnzs = [
+                mask.sum().item() for mask in idx_coo_submat_block_masks
+            ]
+
+            # Update batch_perm.
+            batch_perm_idx_map = (
+                torch.cumsum(idx_coo_submat_mask_block_concat, dim=0) - 1
+            )
+            submat_batch_perm = batch_perm_idx_map[
+                self.block_diag_config.batch_perm[idx_coo_submat_mask]
+            ]
+
+            # Construct new BlockDiagConfig for the submatrix.
+            submat_block_diag_config = BlockDiagConfig(
+                batch_perm=submat_batch_perm,
+                nnzs=submat_block_nnzs,
+                pattern_shapes=submat_pattern_sizes,
+            )
+
+        # Construct the new submatrix SparsityPattern.
+        if self.n_batch_dim > 0:
+            idx_coo_batch_submat = self.idx_coo[0][idx_coo_submat_mask]
+            submat_idx_coo = torch.stack(
+                (idx_coo_batch_submat, idx_coo_row_submat, idx_coo_col_submat)
+            )
+        else:
+            submat_idx_coo = torch.stack((idx_coo_row_submat, idx_coo_col_submat))
+
+        submat_pattern = SparsityPattern(
+            submat_idx_coo,
+            shape=submat_shape,
+            block_diag_config=submat_block_diag_config,
+        )
+
+        return idx_coo_submat_mask, submat_pattern
 
     def size(self, dim: int | None = None) -> int | torch.Size:
         if dim is None:

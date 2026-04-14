@@ -375,6 +375,7 @@ def _bary_embed(
         :, k_faces_local_vert_idx
     ]
 
+    # TODO: simplify the logic and remove one argsort with scattering.
     # Note that the two argsort() here is required; the first argsort() computes
     # the permutation required to reorder the k-face to match the canonical
     # k-simplex, and the second argsort() computes the inverse of this mapping.
