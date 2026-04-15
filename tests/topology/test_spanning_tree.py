@@ -13,9 +13,11 @@ from cochain.topology.topo_laplacians import laplacian_k
 
 def test_cbd_0_rank(finer_flat_annulus_mesh: SimplicialMesh, device):
     """
-    The tree decomposition for the down 1-Laplacian of a triangular mesh identifies
-    the same number of edges as the rank of the 0-coboundary operator (assuming
-    that the mesh has no relative boundary conditions).
+    Check that the rank of the down 1-Laplacian is equal to that of the 0-cbd.
+
+    The tree decomposition identifies the same number of edges as the rank of the
+    down 1-Laplacian of a tri mesh, which is the same as the rank of the 0-coboundary
+    operator (assuming that the mesh has no relative boundary conditions).
     """
     mesh = finer_flat_annulus_mesh.to(device)
 
@@ -34,9 +36,11 @@ def test_cbd_0_rank(finer_flat_annulus_mesh: SimplicialMesh, device):
 
 def test_cbd_1_rank(icosphere_mesh: SimplicialMesh, device):
     """
-    The cotree decomposition for the up 1-Laplacian of a triangular mesh identifies
-    the same number of edges as the rank of the 1-coboundary operator (assuming
-    that the mesh has no boundaries).
+    Check that the rank of the up 1-Laplacian is equal to that of the 1-cbd.
+
+    The cotree decomposition identifies the same number of edges as the rank of the
+    up 1-Laplacian of a tri mesh, which is the same as the rank of the 1-coboundary
+    operator (assuming that the mesh has no boundaries).
     """
     mesh = icosphere_mesh.to(device)
 
@@ -54,10 +58,7 @@ def test_cbd_1_rank(icosphere_mesh: SimplicialMesh, device):
 
 
 def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
-    """
-    The 1-Laplacian after tree-cotree gauge fixing should be strictly positive
-    definite.
-    """
+    """Check that the 1-Laplacian after tree-cotree gauge fixing is positive definite."""
     mesh = icosphere_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
@@ -75,6 +76,7 @@ def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     # Test tree-cotree disjointness
     assert not (tree_mask & cotree_mask).any()
 
+    # Test positive definiteness
     free_edge_mask = tree_mask | cotree_mask
 
     l1 = (star_1(mesh) @ laplacian_1(mesh)).to_dense()
@@ -85,6 +87,7 @@ def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
 
 
 def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
+    """Check that the down 1-Laplacian after tree gauge fixing is positive definite."""
     mesh = icosphere_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
