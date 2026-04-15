@@ -406,6 +406,8 @@ class SparsityPattern:
         else:
             c_idx_submat_mask = col_mask[c_idx]
 
+        # Only nonzero elements that are covered by both the row and col masks
+        # are preserved.
         idx_coo_submat_mask = r_idx_submat_mask & c_idx_submat_mask
 
         # Determine the size of the submatrix.
@@ -421,7 +423,16 @@ class SparsityPattern:
             submat_shape = torch.Size([r_submat_size, c_submat_size])
 
         # Adjust the COO index to account for subsetting.
+
         # The cumsum() on the index mask maps the old indices to new indices.
+        # For example, let idx = [0, 1, 3, 4] and mask = [T, F, F, T, T].
+        # Then idx_map = [0, 0, 0, 1, 2] and
+        #
+        #    mask[idx] = [T, F, T, T]             # mask for subsetting the idx
+        #    idx[mask[idx]] = [0, 3, 4]           # subsetted idx
+        #    idx_map[idx[mask[idx]]] = [0, 1, 2]  # map to renumbered idx
+        #
+        # This gives the correct subsetting and renumbering of the original idx.
         r_idx_map = torch.cumsum(row_mask, dim=0) - 1
         if col_mask is None:
             c_idx_map = r_idx_map
@@ -437,6 +448,8 @@ class SparsityPattern:
 
         else:
             # Update pattern_shapes.
+
+            # Split the row_mask and col_mask into its block components.
             r_idx_submat_block_masks = torch.split(
                 row_mask, [s[-2] for s in self.block_diag_config.pattern_shapes]
             )
@@ -447,6 +460,7 @@ class SparsityPattern:
                     col_mask, [s[-1] for s in self.block_diag_config.pattern_shapes]
                 )
 
+            # For each block, sum the per-block row/col mask to get the subset shape.
             submat_pattern_sizes = []
             for block_shape_original, block_r_idx_mask, block_c_idx_mask in zip(
                 self.block_diag_config.pattern_shapes,
@@ -477,19 +491,34 @@ class SparsityPattern:
             # Update nnzs.
             block_perm_inv = self.block_diag_config.batch_perm_inv
 
-            # Undo the batch dim sort on idx_coo_submat_mask.
+            # Undo the batch dim sort on idx_coo_submat_mask to put it in a
+            # per-block odering.
             idx_coo_submat_mask_block_concat = idx_coo_submat_mask[block_perm_inv]
+            # Split the block-ordered idx_coo_submat_mask into its block components.
             idx_coo_submat_block_masks = torch.split(
                 idx_coo_submat_mask_block_concat, self.block_diag_config.nnzs
             )
+            # Sum the per-block idx_coo_submat_mask to get per-block nnzs.
             submat_block_nnzs = [
                 mask.sum().item() for mask in idx_coo_submat_block_masks
             ]
 
             # Update batch_perm.
+            # The batch_perm index tensor can be subsetted and renumbered the
+            # same way as the idx_coo tensor using the cumsum() method. However,
+            # since the indices in batch_perm refer to elements in the per-block
+            # ordering, the cumsum() needs to be applied to the the mask in the
+            # same per-block ordering (idx_coo_submat_mask_block_concat) rather
+            # than the per-batch element ordering (idx_coo_submat_mask).
             batch_perm_idx_map = (
                 torch.cumsum(idx_coo_submat_mask_block_concat, dim=0) - 1
             )
+            # Note that, to subset the batch_perm, we use the per-batch element
+            # ordered mask (idx_coo_submat_mask) rather than the per-block ordered
+            # mask (idx_coo_submat_mask_block_concat), because, even though the
+            # indices in batch_perm refer to elements in the per-block ordering,
+            # the position of these indices in batch_perm is in the per-batch
+            # element order.
             submat_batch_perm = batch_perm_idx_map[
                 self.block_diag_config.batch_perm[idx_coo_submat_mask]
             ]
