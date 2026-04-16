@@ -748,3 +748,69 @@ def test_bmat_with_invalid_row_col(A, device):
     # Test invalid dtype
     with pytest.raises(TypeError):
         SparseDecoupledTensor.bmat([a, 3], [None, a])
+
+
+def test_submatrix(A, device):
+    A_tensor = A.to(device).to_dense()
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    A_sub_op1 = A_op.submatrix(r_mask).to_dense()
+    A_sub_op2 = A_op.submatrix(r_mask, r_mask).to_dense()
+    A_sub_op3 = A_op.submatrix(r_mask, c_mask).to_dense()
+
+    A_sub_t1 = A_tensor[r_mask][:, r_mask]
+    A_sub_t2 = A_tensor[r_mask][:, c_mask]
+
+    torch.testing.assert_close(A_sub_op1, A_sub_t1)
+    torch.testing.assert_close(A_sub_op2, A_sub_t1)
+    torch.testing.assert_close(A_sub_op3, A_sub_t2)
+
+
+def test_submatrix_with_batch_dim(A_batched, device):
+    A_tensor = A_batched.to(device).to_dense()
+    A_operator = SparseDecoupledTensor.from_tensor(A_batched).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    A_sub_op1 = A_operator.submatrix(r_mask).to_dense()
+    A_sub_op2 = A_operator.submatrix(r_mask, r_mask).to_dense()
+    A_sub_op3 = A_operator.submatrix(r_mask, c_mask).to_dense()
+
+    A_sub_t1 = A_tensor[:, r_mask][:, :, r_mask]
+    A_sub_t2 = A_tensor[:, r_mask][:, :, c_mask]
+
+    torch.testing.assert_close(A_sub_op1, A_sub_t1)
+    torch.testing.assert_close(A_sub_op2, A_sub_t1)
+    torch.testing.assert_close(A_sub_op3, A_sub_t2)
+
+
+def test_submatrix_with_block_diag_config(A, device):
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+    A_block_op = SparseDecoupledTensor.pack_block_diag((A_op, A_op))
+
+    mask_1 = torch.tensor([True, False, True, True], device=device)
+    mask_2 = torch.tensor([False, True, True, False], device=device)
+    mask_3 = torch.tensor([False, False, False, False], device=device)
+
+    r_mask = torch.cat((mask_1, mask_2))
+    c_mask = torch.cat((mask_2, mask_3))
+
+    A_b1, A_b2 = A_block_op.submatrix(r_mask).unpack_block_diag()
+    A_b1_true = A_op.submatrix(mask_1)
+    A_b2_true = A_op.submatrix(mask_2)
+
+    torch.testing.assert_close(A_b1.to_dense(), A_b1_true.to_dense())
+    torch.testing.assert_close(A_b2.to_dense(), A_b2_true.to_dense())
+
+    # Test an edge case where one block is completely degenerate after masking.
+    A_b1, A_b2 = A_block_op.submatrix(r_mask, c_mask).unpack_block_diag()
+    A_b1_true = A_op.submatrix(mask_1, mask_2)
+    A_b2_true = A_op.submatrix(mask_2, mask_3)
+
+    torch.testing.assert_close(A_b1.to_dense(), A_b1_true.to_dense())
+    torch.testing.assert_close(A_b2.to_dense(), A_b2_true.to_dense())
+    assert A_b2.shape == A_b2_true.shape

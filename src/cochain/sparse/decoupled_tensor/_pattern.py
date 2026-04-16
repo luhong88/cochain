@@ -104,10 +104,10 @@ class BlockDiagConfig:
         Note that this scattering approach is strictly better than
         torch.argsort(batch_perm) for a permutation.
         """
-        nnz = self.block_diag_config.batch_perm.size(0)
+        nnz = self.batch_perm.size(0)
 
-        inv = torch.empty_like(self.block_diag_config.batch_perm)
-        inv[self.block_diag_config.batch_perm] = torch.arange(
+        inv = torch.empty_like(self.batch_perm)
+        inv[self.batch_perm] = torch.arange(
             nnz, dtype=self.batch_perm.dtype, device=self.batch_perm.device
         )
 
@@ -399,12 +399,12 @@ class SparsityPattern:
         r_idx = self.idx_coo[-2]
         c_idx = self.idx_coo[-1]
 
+        if col_mask is None:
+            col_mask = row_mask
+
         # Determine the submatrix nonzero elements mask.
         r_idx_submat_mask = row_mask[r_idx]
-        if col_mask is None:
-            c_idx_submat_mask = r_idx_submat_mask
-        else:
-            c_idx_submat_mask = col_mask[c_idx]
+        c_idx_submat_mask = col_mask[c_idx]
 
         # Only nonzero elements that are covered by both the row and col masks
         # are preserved.
@@ -412,10 +412,7 @@ class SparsityPattern:
 
         # Determine the size of the submatrix.
         r_submat_size = row_mask.sum().item()
-        if col_mask is None:
-            c_submat_size = r_submat_size
-        else:
-            c_submat_size = col_mask.sum().item()
+        c_submat_size = col_mask.sum().item()
 
         if self.n_batch_dim > 0:
             submat_shape = torch.Size([self.size(0), r_submat_size, c_submat_size])
@@ -434,10 +431,7 @@ class SparsityPattern:
         #
         # This gives the correct subsetting and renumbering of the original idx.
         r_idx_map = torch.cumsum(row_mask, dim=0) - 1
-        if col_mask is None:
-            c_idx_map = r_idx_map
-        else:
-            c_idx_map = torch.cumsum(col_mask, dim=0) - 1
+        c_idx_map = torch.cumsum(col_mask, dim=0) - 1
 
         idx_coo_row_submat = r_idx_map[r_idx[idx_coo_submat_mask]]
         idx_coo_col_submat = c_idx_map[c_idx[idx_coo_submat_mask]]
@@ -453,12 +447,9 @@ class SparsityPattern:
             r_idx_submat_block_masks = torch.split(
                 row_mask, [s[-2] for s in self.block_diag_config.pattern_shapes]
             )
-            if col_mask is None:
-                c_idx_submat_block_masks = r_idx_submat_block_masks
-            else:
-                c_idx_submat_block_masks = torch.split(
-                    col_mask, [s[-1] for s in self.block_diag_config.pattern_shapes]
-                )
+            c_idx_submat_block_masks = torch.split(
+                col_mask, [s[-1] for s in self.block_diag_config.pattern_shapes]
+            )
 
             # For each block, sum the per-block row/col mask to get the subset shape.
             submat_pattern_sizes = []
