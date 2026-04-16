@@ -58,6 +58,11 @@ class BaseDecoupledTensor(ABC):
     def from_tensor(cls, tensor: Tensor) -> BaseDecoupledTensor: ...
 
     @abstractmethod
+    def submatrix(
+        self, row_mask: Tensor, col_mask: Tensor | None = None
+    ) -> BaseDecoupledTensor: ...
+
+    @abstractmethod
     def apply(self, fn: Callable, **kwargs) -> BaseDecoupledTensor: ...
 
     @abstractmethod

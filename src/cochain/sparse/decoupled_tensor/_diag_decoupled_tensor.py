@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import torch
+from einops import repeat
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
@@ -44,6 +45,13 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
     def submatrix(
         self, row_mask: Bool[Tensor, " r"], col_mask: Bool[Tensor, " c"] | None = None
     ) -> BaseDecoupledTensor:
+        """
+        Extract a submatrix using row and col masks.
+
+        If both the row_mask and col_mask are provided and they are not identical,
+        then the resulting submatrix is no longer diagonal and a SparseDecoupledTensor
+        needs to be constructed.
+        """
         if col_mask is None:
             return DiagDecoupledTensor(self.val[..., row_mask])
 
@@ -52,10 +60,6 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
                 return DiagDecoupledTensor(self.val[..., row_mask])
 
             else:
-                # If both the row_mask and col_mask are provided and they are
-                # not identical, then the resulting submatrix is no longer diagonal
-                # and a SparseDecoupledTensor needs to be constructed.
-
                 # Find the mask for the subsetted nonzero elements.
                 submat_mask = row_mask & col_mask
 
@@ -67,21 +71,31 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
                 r_idx_map = torch.cumsum(row_mask, dim=0) - 1
                 c_idx_map = torch.cumsum(col_mask, dim=0) - 1
 
-                idx_coo = self._get_idx_coo()
-                idx_coo_row_submat = r_idx_map[idx_coo[-2, submat_mask]]
-                idx_coo_col_submat = c_idx_map[idx_coo[-1, submat_mask]]
+                diag_idx_subset = torch.arange(self.size(-1), device=self.device)[
+                    submat_mask
+                ]
 
+                idx_coo_row_submat = r_idx_map[diag_idx_subset]
+                idx_coo_col_submat = c_idx_map[diag_idx_subset]
+
+                # Tile the coo index if batched.
                 if self.n_batch_dim > 0:
-                    submat_idx_coo = torch.stack(
-                        (idx_coo_row_submat, idx_coo_col_submat)
+                    batch_size = self.size(0)
+                    nnz_per_batch = submat_mask.sum().item()
+
+                    b_idx = repeat(
+                        torch.arange(batch_size, device=self.device),
+                        "b -> (b nz)",
+                        nz=nnz_per_batch,
                     )
+                    r_idx = repeat(idx_coo_row_submat, "nz -> (b nz)", b=batch_size)
+                    c_idx = repeat(idx_coo_col_submat, "nz -> (b nz)", b=batch_size)
+
+                    submat_idx_coo = torch.vstack((b_idx, r_idx, c_idx))
+
                 else:
-                    submat_idx_coo = torch.stack(
-                        (
-                            idx_coo[0, submat_mask],
-                            idx_coo_row_submat,
-                            idx_coo_col_submat,
-                        )
+                    submat_idx_coo = torch.vstack(
+                        (idx_coo_row_submat, idx_coo_col_submat)
                     )
 
                 # Determine the size of the submatrix.
