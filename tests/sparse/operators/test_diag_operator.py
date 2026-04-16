@@ -21,6 +21,44 @@ def diag_batched():
     return torch.randn(n_batch, n_dim)
 
 
+def test_submatrix(diag, device):
+    A_tensor = torch.diagflat(diag).to(device)
+    A_operator = DiagDecoupledTensor.from_tensor(diag).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    A_sub_op1 = A_operator.submatrix(r_mask).to_dense()
+    A_sub_op2 = A_operator.submatrix(r_mask, r_mask).to_dense()
+    A_sub_op3 = A_operator.submatrix(r_mask, c_mask).to_dense()
+
+    A_sub_t1 = A_tensor[r_mask][:, r_mask]
+    A_sub_t2 = A_tensor[r_mask][:, c_mask]
+
+    torch.testing.assert_close(A_sub_op1, A_sub_t1)
+    torch.testing.assert_close(A_sub_op2, A_sub_t1)
+    torch.testing.assert_close(A_sub_op3, A_sub_t2)
+
+
+def test_submatrix_with_batch_dim(diag_batched, device):
+    A_tensor = torch.diag_embed(diag_batched).to(device)
+    A_operator = DiagDecoupledTensor.from_tensor(diag_batched).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    A_sub_op1 = A_operator.submatrix(r_mask).to_dense()
+    A_sub_op2 = A_operator.submatrix(r_mask, r_mask).to_dense()
+    A_sub_op3 = A_operator.submatrix(r_mask, c_mask).to_dense()
+
+    A_sub_t1 = A_tensor[:, r_mask][:, :, r_mask]
+    A_sub_t2 = A_tensor[:, r_mask][:, :, c_mask]
+
+    torch.testing.assert_close(A_sub_op1, A_sub_t1)
+    torch.testing.assert_close(A_sub_op2, A_sub_t1)
+    torch.testing.assert_close(A_sub_op3, A_sub_t2)
+
+
 def test_dense_conversion(diag, device):
     A_tensor = diag.to(device)
     A_tensor_expanded = torch.diagflat(A_tensor)
