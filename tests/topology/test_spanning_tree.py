@@ -58,7 +58,7 @@ def test_cbd_1_rank(icosphere_mesh: SimplicialMesh, device):
 
 
 def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
-    """Check that the 1-Laplacian after tree-cotree gauge fixing is positive definite."""
+    """Check that L-1 after tree-cotree gauge fixing is SPD on a mesh with no boundaries."""
     mesh = icosphere_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
@@ -78,36 +78,36 @@ def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
 
     # Test positive definiteness
     free_edge_mask = tree_mask | cotree_mask
-
-    l1 = (star_1(mesh) @ laplacian_1(mesh)).to_dense()
-    l1_fixed = l1[free_edge_mask][:, free_edge_mask]
+    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
 
 
 def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
-    """Check that the down 1-Laplacian after tree gauge fixing is positive definite."""
+    """Check that L-1 down after tree gauge fixing is SPD on a mesh with no boundaries."""
     mesh = icosphere_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
     tree_mask = compute_tree_mask(topo_laplacian_0=l0, canon_edges=mesh.edges)
 
-    l1_down = (star_1(mesh) @ laplacian_1_grad_div(mesh)).to_dense()
-    l1_fixed = l1_down[tree_mask][:, tree_mask]
+    l1_down = star_1(mesh) @ laplacian_1_grad_div(mesh)
+    l1_fixed = l1_down.submatrix(tree_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
 
 
 def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
+    """Check that L-1 up after cotree gauge fixing is SPD on a mesh with no boundaries."""
     mesh = icosphere_mesh.to(device)
 
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
 
-    l1_up = (star_1(mesh) @ laplacian_1_curl_curl(mesh)).to_dense()
-    l1_fixed = l1_up[cotree_mask][:, cotree_mask]
+    l1_up = star_1(mesh) @ laplacian_1_curl_curl(mesh)
+    l1_fixed = l1_up.submatrix(cotree_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -116,6 +116,7 @@ def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
 def test_l1_positive_definite_absolute_bc(
     finer_flat_annulus_mesh: SimplicialMesh, device
 ):
+    """Check that L-1 after tree-cotree guage fixing is SPD on a mesh with absolute BC."""
     mesh = finer_flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
@@ -128,10 +129,11 @@ def test_l1_positive_definite_absolute_bc(
 
     assert not (tree_mask & cotree_mask).any()
 
+    # Absolute BC does not require any further masking.
     free_edge_mask = tree_mask | cotree_mask
 
-    l1 = (star_1(mesh) @ laplacian_1(mesh)).to_dense()
-    l1_fixed = l1[free_edge_mask][:, free_edge_mask]
+    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -140,13 +142,15 @@ def test_l1_positive_definite_absolute_bc(
 def test_l1_down_positive_definite_absolute_bc(
     finer_flat_annulus_mesh: SimplicialMesh, device
 ):
+    """Check that L-1 down after tree guage fixing is SPD on a mesh with absolute BC."""
     mesh = finer_flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
     tree_mask = compute_tree_mask(topo_laplacian_0=l0, canon_edges=mesh.edges)
 
-    l1 = (star_1(mesh) @ laplacian_1_grad_div(mesh)).to_dense()
-    l1_fixed = l1[tree_mask][:, tree_mask]
+    l1 = star_1(mesh) @ laplacian_1_grad_div(mesh)
+    # Absolute BC does not require any further masking.
+    l1_fixed = l1.submatrix(tree_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -155,13 +159,15 @@ def test_l1_down_positive_definite_absolute_bc(
 def test_l1_up_positive_definite_absolute_bc(
     finer_flat_annulus_mesh: SimplicialMesh, device
 ):
+    """Check that L-1 up after cotree guage fixing is SPD on a mesh with absolute BC."""
     mesh = finer_flat_annulus_mesh.to(device)
 
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
 
-    l1 = (star_1(mesh) @ laplacian_1_curl_curl(mesh)).to_dense()
-    l1_fixed = l1[cotree_mask][:, cotree_mask]
+    l1 = star_1(mesh) @ laplacian_1_curl_curl(mesh)
+    # Absolute BC does not require any further masking.
+    l1_fixed = l1.submatrix(cotree_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -170,6 +176,7 @@ def test_l1_up_positive_definite_absolute_bc(
 def test_l1_positive_definite_relative_bc(
     finer_flat_annulus_mesh: SimplicialMesh, device
 ):
+    """Check that L-1 after tree-cotree guage fixing is SPD on a mesh with relative BC."""
     mesh = finer_flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
@@ -190,11 +197,11 @@ def test_l1_positive_definite_relative_bc(
     assert not (tree_mask & cotree_mask).any()
 
     # Note that the boundary edges also need to be excluded from the free edges
-    # since they are fixed by the boundary condition.
+    # since they are fixed by the relative boundary condition.
     free_edge_mask = (~mesh.bd_edge_mask) & (tree_mask | cotree_mask)
 
-    l1 = (star_1(mesh) @ laplacian_1(mesh)).to_dense()
-    l1_fixed = l1[free_edge_mask][:, free_edge_mask]
+    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -203,6 +210,7 @@ def test_l1_positive_definite_relative_bc(
 def test_l1_down_positive_definite_relative_bc(
     finer_flat_annulus_mesh: SimplicialMesh, device
 ):
+    """Check that L-1 down after tree guage fixing is SPD on a mesh with relative BC."""
     mesh = finer_flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
@@ -214,8 +222,8 @@ def test_l1_down_positive_definite_relative_bc(
 
     free_edge_mask = (~mesh.bd_edge_mask) & tree_mask
 
-    l1 = (star_1(mesh) @ laplacian_1(mesh)).to_dense()
-    l1_fixed = l1[free_edge_mask][:, free_edge_mask]
+    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -224,6 +232,7 @@ def test_l1_down_positive_definite_relative_bc(
 def test_l1_up_positive_definite_relative_bc(
     finer_flat_annulus_mesh: SimplicialMesh, device
 ):
+    """Check that L-1 up after cotree guage fixing is SPD on a mesh with relative BC."""
     mesh = finer_flat_annulus_mesh.to(device)
 
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
@@ -236,8 +245,8 @@ def test_l1_up_positive_definite_relative_bc(
 
     free_edge_mask = (~mesh.bd_edge_mask) & cotree_mask
 
-    l1 = (star_1(mesh) @ laplacian_1(mesh)).to_dense()
-    l1_fixed = l1[free_edge_mask][:, free_edge_mask]
+    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -245,6 +254,8 @@ def test_l1_up_positive_definite_relative_bc(
 
 def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, device):
     """
+    Check the effect of edge mass weighting on gauge fixed condition number.
+
     In general, using a maximum spanning tree weighted by edge mass should result
     in a gauge-fixed linear system with better condition number than a purely
     topological spanning tree.
@@ -253,7 +264,7 @@ def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, 
 
     l0 = laplacian_k(mesh, k=0, component="up")
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
-    l1 = laplacian_1(mesh).to_dense()
+    weak_l1 = star_1(mesh) @ laplacian_1(mesh)
 
     # First, perform tree-cotree decomposition with no geometric edge weights
     cotree_mask = compute_cotree_mask(
@@ -268,7 +279,7 @@ def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, 
         cotree_mask=cotree_mask,
     )
     free_edge_mask = (~mesh.bd_edge_mask) & (tree_mask | cotree_mask)
-    l1_fixed_topo = l1[free_edge_mask][:, free_edge_mask]
+    l1_fixed_topo = weak_l1.submatrix(free_edge_mask).to_dense()
 
     # Next, perform the same decomposition but using the hodge star for edge weights
     s1 = star_1(mesh)
@@ -288,7 +299,7 @@ def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, 
         cotree_mask=cotree_mask,
     )
     free_edge_mask = (~mesh.bd_edge_mask) & (tree_mask | cotree_mask)
-    l1_fixed_geo = l1[free_edge_mask][:, free_edge_mask]
+    l1_fixed_geo = weak_l1.submatrix(free_edge_mask).to_dense()
 
     topo_cond = torch.linalg.cond(l1_fixed_topo)
     geo_cond = torch.linalg.cond(l1_fixed_geo)
