@@ -814,3 +814,55 @@ def test_submatrix_with_block_diag_config(A, device):
     torch.testing.assert_close(A_b1.to_dense(), A_b1_true.to_dense())
     torch.testing.assert_close(A_b2.to_dense(), A_b2_true.to_dense())
     assert A_b2.shape == A_b2_true.shape
+
+
+def test_constrain(device):
+    A = torch.randn(5, 5, device=device)
+    A_sym = A + A.T
+    A_diag_dom = A_sym + 2.0 * torch.eye(5, device=device)
+
+    A_op = SparseDecoupledTensor.from_tensor(A_diag_dom)
+
+    mask = torch.tensor([True, True, False, True, False], device=device)
+
+    A_op_constrained = A_op.constrain(mask).to_dense()
+
+    A_tensor = A_op.to_dense()
+    A_tensor[~mask] = 0.0
+    A_tensor[:, ~mask] = 0.0
+    A_tensor[~mask, ~mask] = 1.0
+
+    torch.testing.assert_close(A_op_constrained, A_tensor)
+
+
+def test_constrain_exceptions(device):
+    with pytest.raises(ValueError) as excinfo:
+        A = torch.randn(5, 5, device=device)
+        A_op = SparseDecoupledTensor.from_tensor(A)
+        mask = torch.tensor([True, True, False, True, False], device=device)
+        A_op.constrain(mask)
+
+    assert "symmetric" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        A = torch.randn(6, 5, device=device)
+        A_op = SparseDecoupledTensor.from_tensor(A)
+        mask = torch.tensor([True, True, False, True, False], device=device)
+        A_op.constrain(mask)
+
+    assert "square" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        A = torch.sparse_coo_tensor(
+            indices=torch.tensor([[0, 1, 2, 3], [0, 1, 2, 2]], device=device),
+            values=torch.randn(4, device=device),
+            size=torch.Size([4, 4]),
+        )
+
+        A_op = SparseDecoupledTensor.from_tensor(A)
+
+        mask = torch.tensor([True, True, False, False], device=device)
+
+        A_op.constrain(mask)
+
+    assert "nonzero" in str(excinfo.value)
