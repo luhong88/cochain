@@ -42,7 +42,19 @@ def laplacian_k(
     -------
     [k_splx, k_splx]
         The $K$-Laplacian.
+
+    Notes
+    -----
+    For $k = 0$, the topological/combinatorial Laplacian is equivalent to the
+    (unweighted) graph Laplacian in graph theory.
     """
+    if k > sc.dim:
+        raise ValueError(
+            f"The argument k ({k}) cannot be higher than the mesh dimension ({sc.dim})."
+        )
+    if k < 0:
+        raise ValueError(f"The argument k ({k}) must be a nonnegative integer.")
+
     if dual_complex:
         cbd = sc.dual_cbd
     else:
@@ -60,15 +72,29 @@ def laplacian_k(
             return down_laplacian
 
         case "full":
-            d_k = cbd[k]
-            up_laplacian = d_k.T @ d_k
+            if k < sc.dim:
+                d_k = cbd[k]
+                up_laplacian = d_k.T @ d_k
+            else:
+                up_laplacian = None
 
-            d_j = cbd[k - 1]
-            down_laplacian = d_j @ d_j.T
+            if k > 0:
+                d_j = cbd[k - 1]
+                down_laplacian = d_j @ d_j.T
+            else:
+                down_laplacian = None
 
-            full_laplacian = SparseDecoupledTensor.assemble(
-                up_laplacian, down_laplacian
-            )
+            match down_laplacian, up_laplacian:
+                case None, None:
+                    raise ValueError()
+                case None, _:
+                    full_laplacian = up_laplacian
+                case _, None:
+                    full_laplacian = down_laplacian
+                case _:
+                    full_laplacian = SparseDecoupledTensor.assemble(
+                        up_laplacian, down_laplacian
+                    )
 
             return full_laplacian
 
