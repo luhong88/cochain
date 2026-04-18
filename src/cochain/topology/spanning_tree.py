@@ -299,7 +299,7 @@ def compute_cotree_mask(
     edge_rel_bc_mask: Bool[Tensor, " edge"] | None = None,
 ) -> Bool[Tensor, " edge"]:
     """
-    Compute the spanning forest on the dual 1-skeleton of a tri mesh.
+    Compute the spanning forest on the dual 1-skeleton of a manifold tri mesh.
 
     The dual spanning tree/forest (also known as the cotree) can be used to fix
     the gauge freedom of the up/curl-curl component of the weak 1-Laplacian.
@@ -323,6 +323,18 @@ def compute_cotree_mask(
     -------
     [edge,]
         A boolean mask that mark edges that belong to the dual spanning forest.
+
+    Notes
+    -----
+    Note that the dual spanning tree approach as implemented in this function
+    will fail for nonmanifold meshes. Specifically, this function assumes that
+    one can enumerate and index all interior dual edges by checking for primal
+    edges that are shared by exactly two primal triangles; this approach ignores
+    the nonmanifold creases shared by more than two triangles and the dual edges
+    that map to such creases. More generally, for a nonmanifold mesh, the mapping
+    between primal and dual interior edges is not a one-to-one correspondence and
+    this may cause the cotree decomposition to miscount the number of independent
+    rows/columns in the up 1-Laplacian.
     """
     # The dual 1-skeleton of a tri mesh consists of dual vertices that correspond
     # to the primal triangles, and two dual vertices are connected by a dual
@@ -337,6 +349,10 @@ def compute_cotree_mask(
     # sharing the primal edge; need to convert this representation of the dual
     # edges to the indices of the corresponding primal edges.
     dual_edges = adjacency.pattern.idx_coo.T
+    # Note that, because of the degree=2 argument, nonmanifold creases (edges
+    # that are shared by more than two tris) are ignored. Therefore, if any dual
+    # edge corresponding to such a crease is selected by the dual spanning tree,
+    # the splx_search() will fail to identify the corresponding primal edge.
     edge_face_idx, edge_coface_idx = _cbd_to_coface(cbd_1, degree=2)
     primal_edge_idx = edge_face_idx[
         splx_search(

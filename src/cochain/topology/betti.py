@@ -7,7 +7,7 @@ from .topo_laplacians import laplacian_k
 
 def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialMesh) -> tuple[int, int, int]:
     """
-    Compute the first three Betti numbers for a tri mesh.
+    Compute the first three Betti numbers for a manifold tri mesh.
 
     Parameters
     ----------
@@ -26,6 +26,8 @@ def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialMesh) -> tuple[int, int, 
     Notes
     -----
     This function uses the tree-cotree decomposition to compute the Betti numbers.
+    As such, it inherits the limitation of the cotree decomposition to manifold
+    meshes.
     """
     # First, construct the spanning tree on the 1-skeleton, which identifies
     # |V| - b_0 edges. Note that no special considerations are needed for meshes
