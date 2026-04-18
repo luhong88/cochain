@@ -18,6 +18,22 @@ def _is_tensor_like(obj: Any) -> bool:
 
 @dataclass
 class SimplicialMesh:
+    """
+    A dataclass containing the topology and vertex coordinates of a mesh.
+
+    A valid mesh satisfies the following requirements:
+
+    * The mesh is a pure simplicial $k$-complex (i.e., every $l$-simplex in the
+      mesh for $l < k$ must be the face/subset of a $k$-simplex).
+    * The mesh vertices are 0-indexed and the indices are strictly consecutive.
+    * The mesh is an immersion in the 3D Euclidean space; Specifically, this
+      means that all vertex coordinates must be three-dimensional, and degenerate
+      edges, triangles, or tetrahedra with zero length/area/volume are not allowed;
+      however, self-intersection is allowed.
+
+    In general, no assumptions are made on whether the mesh is manifold or orientable.
+    """
+
     cbd: tuple[
         Float[SparseDecoupledTensor, "edge vert"],
         Float[SparseDecoupledTensor, "tri edge"],
@@ -293,7 +309,11 @@ class SimplicialMesh:
         Since no orientation is assigned to the edges using this constructor, we
         will assign a "canonical" orientation to each edge ij such that i < j.
         """
-        unique_canon_edges, cbd_0, cbd_1 = coboundaries.cbd_from_tri_mesh(tris)
+        tris = tris.long()
+
+        unique_canon_edges, cbd_0, cbd_1 = coboundaries.cbd_from_tri_mesh(
+            tris, dtype=vert_coords.dtype
+        )
 
         cbd_2 = SparseDecoupledTensor.from_tensor(
             torch.sparse_coo_tensor(
@@ -327,13 +347,15 @@ class SimplicialMesh:
         that i < j and a "canonical" orientation to edge triangle ijk such that
         i < j < k.
         """
+        tets = tets.long()
+
         (
             unique_canon_edges,
             unique_canon_tris,
             cbd_0,
             cbd_1,
             cbd_2,
-        ) = coboundaries.cbd_from_tet_mesh(tets)
+        ) = coboundaries.cbd_from_tet_mesh(tets, dtype=vert_coords.dtype)
 
         return cls(
             cbd=(cbd_0, cbd_1, cbd_2),

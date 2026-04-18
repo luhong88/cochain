@@ -1,3 +1,5 @@
+__all__ = ["compute_tree_mask", "compute_cotree_mask"]
+
 import numpy as np
 import torch
 from jaxtyping import Bool, Float, Integer
@@ -5,7 +7,7 @@ from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
 from torch import LongTensor, Tensor
 
-from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
+from cochain.sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
 from cochain.utils.search import splx_search
 
 
@@ -16,15 +18,45 @@ def _minimum_spanning_tree(
     weights: Float[Tensor, " edge"] | None = None,
     keep_super_node: bool = False,
 ) -> Integer[LongTensor, "2 mst_node"]:
-    """
-    the root_mask is a boolean mask that specifies the node(s) that will serve as
-    the root(s) of the spanning tree/forest.
+    r"""
+    Compute the minimum spanning forest over a graph.
 
-    The exclusion_mask is a boolean mask whose elements correspond to the nonzero
-    elements of the adjacency matrix; an edge in the adjacency matrix marked as
-    True by the exclusion_mask is disallowed in constructing the spanning tree/forest.
+    Parameters
+    ----------
+    adjacency : [node, node]
+        The adjacency matrix of the undirected graph. The adjacency matrix needs
+        not be symmetric; if $A_{ij} \ne A_{ji}$, then the minimum nonzero value
+        of the two will be used as the edge weight.
+    root_mask : [node,]
+        A boolean mask that specifies the node(s) that will serve as the root(s)
+        of the spanning tree/forest. If a valid root_mask is provided, this function
+        will augment the adjacency matrix with a "super node" that connects to the
+        root vertices using a nonzero weight strictly smaller than all other edge
+        weights in the graph, such that, once the super node is removed, the
+        root vertices are guaranteed to be the roots of the spanning forest.
+    exclusion_mask : [edge,]
+        A boolean mask whose elements correspond to the nonzero elements of the
+        adjacency matrix; an edge in the adjacency matrix marked as True by the
+        this mask is disallowed when constructing the spanning forest.
+    weights : [edge,]
+        A list of weights that, when provided, override the edge weights in the
+        adjacency matrix.
+    keep_super_node
+        Whether to keep the super node in the output spanning forest. If no
+        valid `root_mask` is provided, this argument is ignored.
+
+    Returns
+    -------
+    [2, mst_node]
+        The computed minimum spanning forest; each column in the tensor represents
+        the indices of a graph node pair that is connected by an edge in the forest.
+
+    Notes
+    -----
+    This function uses `scipy.sparse.csgraph.minimum_spanning_tree()` to construct
+    the minimum spanning forest.
     """
-    n_nodes = adjacency.shape[0]
+    n_nodes = adjacency.size(0)
 
     # int32 is required for scipy sparse array indices
     idx_coo_full = adjacency.pattern.idx_coo.to(dtype=torch.int32)
@@ -57,7 +89,7 @@ def _minimum_spanning_tree(
         data_dtype = coo_data.dtype
 
         # If the root(s) of the tree is specified, add a new "super node" to the
-        # graph and connect the super node to all boundary nodes with a weight of 0.
+        # graph and connect the super node to all root nodes with a small weight.
         super_node_idx = n_nodes
         root_idx = np.argwhere(root_mask_np).flatten().astype(idx_dtype)
 
@@ -81,7 +113,7 @@ def _minimum_spanning_tree(
 
     else:
         aug_adjacency = coo_array(
-            (coo_data, (idx_coo_rows, idx_coo_cols)), shape=adjacency.shape
+            (coo_data, (idx_coo_rows, idx_coo_cols)), shape=tuple(adjacency.shape)
         )
 
     mst = minimum_spanning_tree(aug_adjacency)
@@ -92,7 +124,9 @@ def _minimum_spanning_tree(
         tree_v = mst_coo.col
 
     else:
-        # Filter out edges connected to the super node.
+        # Filter out edges connected to the super node. Note that, if no super
+        # node was added to the graph, this mask does nothing, since no node
+        # will be indexed at n_nodes.
         valid_mask = (mst_coo.row != n_nodes) & (mst_coo.col != n_nodes)
 
         tree_u = mst_coo.row[valid_mask]
@@ -107,35 +141,45 @@ def _minimum_spanning_tree(
 
 # TODO: update to accommodate tet meshes
 def compute_tree_mask(
-    topo_laplacian_0: Float[SparseDecoupledTensor, "vert vert"],
-    canon_edges: Integer[LongTensor, "edge 2"],
-    mass_1: Float[SparseDecoupledTensor, "edge edge"] | None = None,
-    vert_rel_bc_mask: Bool[Tensor, " vert"] | None = None,
-    cotree_mask: Bool[Tensor, " edge"] | None = None,
-) -> Bool[Tensor, " edge"]:
+    topo_laplacian_0: Float[SparseDecoupledTensor, "global_vert global_vert"],
+    canon_edges: Integer[LongTensor, "global_edge local_vert=2"],
+    mass_1: Float[BaseDecoupledTensor, "global_edge global_edge"] | None = None,
+    vert_rel_bc_mask: Bool[Tensor, " global_vert"] | None = None,
+    cotree_mask: Bool[Tensor, " global_edge"] | None = None,
+) -> Bool[Tensor, " global_edge"]:
     """
-    Compute the spanning tree on the 1-skeleton of a triangular mesh, which
-    can be used to fix the gauge freedom of the down/grad-div component of the
-    weak 1-Laplacian.
+    Compute the spanning forest on the 1-skeleton of a tri mesh.
 
-    If the edge masses are provided using the `mass_1` argument (in the form of
-    either the Hodge star or the mass matrix), the function will compute a
-    maximum spanning tree using the edge masses as weights, which should result
-    in better condition number for the gauge fixed linear system.
+    The forest can be used to fix the gauge freedom of the down/grad-div component
+    of the weak 1-Laplacian. Note that, if this function is used as part of the
+    tree-cotree decomposition for the full 1-Laplacian guage fixing, the
+    `compute_cotree_mask()` function needs to be called first, and its result
+    should be passed to the `cotree_mask` argument of this function. This order
+    of operation ensures that the tree and cotree remain disjoint.
 
-    If the triangular mesh contains boundaries subject to relative boundary
-    conditions, a mask of the boundary vertices should be passed to the
-    `vert_rel_bc_mask` argument.
+    Parameters
+    ----------
+    topo_laplacian_0 : [global_vert, global_vert]
+        The topological/combinatorial 0-Laplacian of the tri mesh.
+    canon_edges : [global_edge, local_vert=2]
+        The list of canonical edges in the mesh (mesh.edges).
+    mass_1 : [global_edge, global_edge]
+        The Hodge 1-star or consistent 1-mass operator. If provided, this function
+        will compute a maximum spanning forest using the the diagonal elements
+        of the matrix as weights/edge masses, which should result in a better condition
+        number for the gauge fixed linear system.
+    vert_rel_bc_mask : [global_vert,]
+        A boolean mask that mark vertices subject to relative boundary condition(s).
+    cotree_mask : [global_edge,]
+        A boolean mask that mark edges that belong to the cotree.
 
-    Note that, if this function is used as part of the tree-cotree decomposition
-    for the full 1-Laplacian guage fixing, the `compute_cotree_mask()` function
-    needs to be called first, and its result should be passed to the `cotree_mask`
-    argument of this function. This order of operation ensures that the tree
-    and cotree remain disjoint.
+    Returns
+    -------
+    [global_edge,]
+        A boolean mask that mark edges that belong to the spanning forest.
     """
     # Compute the vertex adjacency matrix from the (topological) 0-Laplacian
-    # Use the upper diagonal portion of the adjacency matrix since the scipy
-    # MinST function interprets the adjacency matrix as an undirected graph.
+    # Use the upper diagonal portion of the adjacency matrix.
     adjacency = topo_laplacian_0.triu(diagonal=1).abs()
 
     # Find the indices of the adjacency edges on the canonical edge list, and
@@ -157,11 +201,13 @@ def compute_tree_mask(
         # Hodge star, then this is exact.)
         diag_mass = mass_1.diagonal()
         # Note that we take the negative mass so that the MinST function performs
-        # a MaxST calculation.
+        # a MaxST calculation; in particular, a larger edge mass translates into
+        # a more negative edge weight, which translates into a shorter path on
+        # the tree.
         edge_weights = -diag_mass[edge_idx]
 
     # Compute the MaxST and find the indices of the MaxST edges on the canonical
-    # edge list. If
+    # edge list.
     mst = _minimum_spanning_tree(
         adjacency=adjacency,
         root_mask=vert_rel_bc_mask,
@@ -187,17 +233,34 @@ def compute_tree_mask(
 
 
 def _cbd_to_coface(
-    cbd, degree: int = 2
-) -> tuple[Integer[LongTensor, " face"], Integer[LongTensor, "face coface"]]:
+    cbd: Float[Tensor, "kp1_splx k_splx"], degree: int
+) -> tuple[Integer[LongTensor, " face"], Integer[LongTensor, "face degree"]]:
     """
+    Find the cofaces of all k-simplices of a given degree.
+
     For a given k-coboundary operator, find the indices of all k-simplices of
     degree d (i.e., the number of cofaces of the k-simplices), and, for each
     k-simplex of degree d, determine the indices of the d (k+1)-simplices that
     share the k-simplex as a face.
 
-    Note that the returned list of k-simplex indices is in ascending order, and
-    the returned list of (k+1)-simplex index tuples are sorted in ascending order
-    within each tuple (but the list itself is not necessarily in lex order).
+    Parameters
+    ----------
+    cbd : [kp1_splx, k_splx]
+        The k-coboundary operator.
+    degree
+        The degree of k-simplices.
+
+    Returns
+    -------
+    unique_face_idx : [face,]
+        The indices of all k-simplices of the given degree. the indices are
+        sorted in ascending order.
+    coface_idx : [face, degree]
+        Each row corresponds to a k-simplex of the given degree in the
+        `unique_face_idx` list, and each row contains the indices of the (k+1)-
+        simplices that contain the k-simplex as a face. The (k+1)-simplex
+        indices are sorted in ascending order within each row; however, the
+        coface_idx as a whole is not guaranteed to be in lex-order.
     """
     idx_coo = cbd.pattern.idx_coo
     # The row indices correspond to the (k+1)-simplex indices, and the col indices
@@ -227,40 +290,69 @@ def _cbd_to_coface(
     return unique_face_idx, coface_idx
 
 
+# TODO: check whether applicable to nonmanifold meshes.
 # TODO: update to accommodate tet meshes
 def compute_cotree_mask(
-    dual_topo_laplacian_0: Float[SparseDecoupledTensor, "vert vert"],
+    dual_topo_laplacian_0: Float[SparseDecoupledTensor, "dual_vert dual_vert"],
     cbd_1: Float[SparseDecoupledTensor, "tri edge"],
     inv_mass_1: Float[SparseDecoupledTensor, "edge edge"] | None = None,
     edge_rel_bc_mask: Bool[Tensor, " edge"] | None = None,
 ) -> Bool[Tensor, " edge"]:
     """
-    Compute the dual spanning tree (i.e., cotree) on the dual 1-skeleton of a
-    triangular mesh, which can be used to fix the gauge freedom of the up/curl-curl
-    component of the weak 1-Laplacian.
+    Compute the spanning forest on the dual 1-skeleton of a manifold tri mesh.
 
-    If the dual edge masses are provided using the `inv_mass_1` argument (in the
-    form of either the inverse Hodge star or the inverse mass matrix), the function
-    will compute a maximum dual spanning tree using the inverse edge masses as
-    weights, which should result in better condition number for the gauge fixed
-    linear system.
+    The dual spanning tree/forest (also known as the cotree) can be used to fix
+    the gauge freedom of the up/curl-curl component of the weak 1-Laplacian.
 
-    If the triangular mesh contains boundaries subject to relative boundary
-    conditions, a mask of the boundary edges should be passed to the
-    `edge_rel_bc_mask` argument.
+    Parameters
+    ----------
+    dual_topo_laplacian_0 : [dual_vert, dual_vert]
+        The topological/combinatorial 0-Laplacian of the dual complex of a tri mesh.
+    cbd_1 : [tri, edge]
+        The 1-coboundary operator of the mesh.
+    inv_mass_1 : [edge, edge]
+        The inverse of the Hodge 1-star or consistent 1-mass operator. If provided,
+        this function will compute a maximum dual spanning forest using the the
+        diagonal elements of the matrix as weights/inverse edge masses, which should
+        result in a better condition number for the gauge fixed linear system.
+    edge_rel_bc_mask : [edge,]
+        A boolean mask that mark (primal) edges subject to relative boundary
+        condition(s).
+
+    Returns
+    -------
+    [edge,]
+        A boolean mask that mark edges that belong to the dual spanning forest.
+
+    Notes
+    -----
+    Note that the dual spanning tree approach as implemented in this function
+    will fail for nonmanifold meshes. Specifically, this function assumes that
+    one can enumerate and index all interior dual edges by checking for primal
+    edges that are shared by exactly two primal triangles; this approach ignores
+    the nonmanifold creases shared by more than two triangles and the dual edges
+    that map to such creases. More generally, for a nonmanifold mesh, the mapping
+    between primal and dual interior edges is not a one-to-one correspondence and
+    this may cause the cotree decomposition to miscount the number of independent
+    rows/columns in the up 1-Laplacian.
     """
-    # Technically speaking, we should use the dual topological 0-Laplacian restricted
-    # to the interior primal edges of the mesh. However, such dual meshes show up
-    # in the diagonal of the 0-Laplacian, which are disgarded when taking the upper
-    # triangular part of the matrix; thus, this procedure guarantees that the
-    # adjacency matrix only contains information on dual vertices and their connections
-    # by the interior dual edges.
+    # The dual 1-skeleton of a tri mesh consists of dual vertices that correspond
+    # to the primal triangles, and two dual vertices are connected by a dual
+    # edge iff they share a primal edge as a face. The dual topological 0-Laplacian
+    # encodes the adjacency information for this dual 1-skeleton, plus the
+    # truncated/clipped dual edges that correspond to primal boundary edges (if
+    # there are any). Such truncated edges show up in the diagonal of the 0-Laplacian,
+    # which are disgarded when taking the upper triangular part of the matrix.
     adjacency = dual_topo_laplacian_0.triu(diagonal=1).abs()
 
     # Here, the dual edges are indexed by the indices of the two primal triangles
     # sharing the primal edge; need to convert this representation of the dual
     # edges to the indices of the corresponding primal edges.
     dual_edges = adjacency.pattern.idx_coo.T
+    # Note that, because of the degree=2 argument, nonmanifold creases (edges
+    # that are shared by more than two tris) are ignored. Therefore, if any dual
+    # edge corresponding to such a crease is selected by the dual spanning tree,
+    # the splx_search() will fail to identify the corresponding primal edge.
     edge_face_idx, edge_coface_idx = _cbd_to_coface(cbd_1, degree=2)
     primal_edge_idx = edge_face_idx[
         splx_search(
@@ -279,9 +371,10 @@ def compute_cotree_mask(
         edge_weights = -diag_mass[primal_edge_idx]
 
     # For the primal edges satisfying relative boundary conditions, the corresponding
-    # clipped dual edges corresponding need to connect its dual triangle coface
-    # to the super node. To do so, we check whether each row of the 1-coboundary
-    # operator contains edges marked with a relative boundary condition.
+    # clipped dual edges need to connect the dual vertex corresponding to its
+    # primal triangle coface to the super node. To find such dual vertices/primal
+    # triangles, we check for rows of the 1-coboundary operator that contain
+    # edges marked with a relative boundary condition.
     if edge_rel_bc_mask is None:
         bd_dual_vert_mask = torch.zeros(
             cbd_1.shape[0], dtype=torch.bool, device=cbd_1.device

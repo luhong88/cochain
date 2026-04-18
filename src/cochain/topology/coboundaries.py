@@ -1,91 +1,125 @@
+__all__ = ["cbd_from_tri_mesh", "cbd_from_tet_mesh"]
+
 import torch
+from einops import rearrange, repeat
 from jaxtyping import Float, Integer
 from torch import LongTensor
 
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
+from ..utils.faces import enumerate_local_faces
+from ..utils.perm_parity import compute_lex_rel_orient
 
 
 def cbd_from_tri_mesh(
-    tris: Integer[LongTensor, "tri 3"],
+    tris: Integer[LongTensor, "tri tri_vert=3"],
+    dtype: torch.dtype = torch.float32,
 ) -> tuple[
-    Integer[LongTensor, "edge 2"],
+    Integer[LongTensor, "edge edge_vert=2"],
     Float[SparseDecoupledTensor, "edge vert"],
     Float[SparseDecoupledTensor, "tri edge"],
 ]:
-    tris = tris.long()
+    """
+    Compute the coboundary operators/discrete exterior derivatives for a tri mesh.
 
+    Parameters
+    ----------
+    tris : [tri, tri_vert=3]
+        A list of top-level, 2-simplices that define the mesh. It is assumed that
+        the tri vertices are labeled using strictly consecutive, zero-based
+        numbering.
+    dtype : torch.dtype
+        The dtype for the coboundary operators.
+
+    Returns
+    -------
+    unique_canon_edges : [edge, edge_vert=2]
+        The list of all edges (up to vertex permutation) in the mesh. Both the
+        edge vertices and the ordering of the edges are in lex order. This tensor
+        has the same dtype as tris.
+    cbd_0 : [edge, vert]
+        The 0-coboundary operator.
+    cbd_1 : [tri, edge]
+        The 1-coboundary operator.
+    """
+    int_dtype = tris.dtype
+    float_dtype = dtype
     device = tris.device
 
-    # For the triangles ijk, get all the i-th face jk, all the j-th face ik,
-    # and all the k-th face ij and stack them together; this provides a redundant
-    # list of all oriented edges in the mesh.
-    all_oriented_edges = torch.concatenate(
-        (tris[:, [1, 2]], tris[:, [0, 2]], tris[:, [0, 1]])
+    # For the triangles ijk, find all of its 1-faces and stack them together; this
+    # provides a redundant list of all oriented edges in the mesh.
+    all_local_edges = enumerate_local_faces(splx_dim=2, face_dim=1, device=device)
+    all_oriented_edges = rearrange(
+        tris[:, all_local_edges], "tri edge vert -> (tri edge) vert"
     )
-    # Convert oriented edges to the canonical orientation, and check whether
-    # each oriented edge conforms to the canonical orientation.
-    all_canon_edges, all_edge_orientations = all_oriented_edges.sort(dim=-1)
-    # Generate an ordered list of canonical edges, and get the indices of all
-    # the oriented edges in this ordered list (ignoring their orientations).
+
+    # For each oriented edge, find its canonical, lex-order representation.
+    all_canon_edges = all_oriented_edges.sort(dim=-1).values
+    # Generate a lex-ordered list of unique, canonical edges, and get the indices
+    # that map this list of canonical edges to the list of all oriented edges
+    # (ignoring potential orientation differences).
     unique_canon_edges, all_edge_idx = all_canon_edges.unique(
         dim=0, return_inverse=True
     )
 
     n_verts = torch.max(tris).item() + 1
-    n_edges = unique_canon_edges.shape[0]
-    n_tris = tris.shape[0]
+    n_edges = unique_canon_edges.size(0)
+    n_tris = tris.size(0)
 
-    # Generate the 0th-coboundary operator as a sparse tensor. A canonically
+    # Generate the 0-coboundary operator as a sparse tensor. A canonically
     # oriented edge ij at index n in unique_canonical_edges is represented by
     # (n, i, -1) and (n, j, 1) (using COO format).
     d0_idx = torch.stack(
-        [
-            torch.repeat_interleave(torch.arange(n_edges), 2),
-            unique_canon_edges.flatten(),
-        ]
-    ).to(device=device)
-    d0_val = torch.tile(torch.tensor([-1.0, 1.0], device=device), (n_edges,))
-    cbd_0 = (
-        torch.sparse_coo_tensor(
-            d0_idx,
-            d0_val,
-            (n_edges, n_verts),
+        (
+            repeat(
+                torch.arange(n_edges, dtype=int_dtype, device=device),
+                "edge -> (edge vert)",
+                vert=2,
+            ),
+            rearrange(unique_canon_edges, "edge vert -> (edge vert)"),
         )
-        .coalesce()
-        .to(device)
     )
+    d0_val = repeat(
+        torch.tensor([-1.0, 1.0], dtype=float_dtype, device=device),
+        "vert -> (edge vert)",
+        edge=n_edges,
+    )
+    cbd_0 = torch.sparse_coo_tensor(
+        indices=d0_idx,
+        values=d0_val,
+        size=(n_edges, n_verts),
+    ).coalesce()
 
-    # Generate the 1st-coboundary operator.
-    # For a triangle ijk, d1(ijk) = jk - ik + ij, which is represented by the
-    # "topological signs".
-    edge_topo_signs = torch.repeat_interleave(
-        torch.tensor([1.0, -1.0, 1.0], device=device), n_tris
-    )
-    # Each oriented edge ji that has the opposite orientation as the corresponding
-    # canonical edge ij gets an additional -1 "orientation signs"; the orientation
-    # sign can be determined by the vertex indices returned by sort() in
-    # all_edge_orientations.
-    edge_orientation_signs = torch.where(
-        all_edge_orientations[:, 1] > 0, all_edge_orientations[:, 1], -1
+    # Generate the 1-coboundary operator.
+    # Each edge in the cbd requires two "sign corrections". The first sign correction
+    # comes from the boundary operator; for a triangle ijk, ∂(ijk) = ij - ik + jk.
+    edge_topo_signs = torch.tensor([1.0, -1.0, 1.0], dtype=float_dtype, device=device)
+    # The second sign correction comes from the parity of the vertex permutation
+    # required to map a tri edge face to a canonical edge (i.e., the permutation
+    # required to lex sort the tri edge faces).
+    edge_orientation_signs = compute_lex_rel_orient(
+        all_oriented_edges, dtype=float_dtype
     )
 
     d1_idx = torch.stack(
         [
-            torch.tile(torch.arange(n_tris), (3,)),
+            repeat(
+                torch.arange(n_tris, dtype=int_dtype, device=device),
+                "tri -> (tri edge)",
+                edge=3,
+            ),
             all_edge_idx,
         ]
-    ).to(device)
-    d1_val = edge_topo_signs * edge_orientation_signs
-
-    cbd_1 = (
-        torch.sparse_coo_tensor(
-            d1_idx,
-            d1_val,
-            (n_tris, n_edges),
-        )
-        .coalesce()
-        .to(device)
     )
+    # 1 edge, tri edge -> (tri edge)
+    d1_val = (
+        edge_topo_signs.view(1, -1) * edge_orientation_signs.view(n_tris, 3)
+    ).flatten()
+
+    cbd_1 = torch.sparse_coo_tensor(
+        indices=d1_idx,
+        values=d1_val,
+        size=(n_tris, n_edges),
+    ).coalesce()
 
     return (
         unique_canon_edges,
@@ -95,67 +129,97 @@ def cbd_from_tri_mesh(
 
 
 def cbd_from_tet_mesh(
-    tets: Integer[LongTensor, "tet 4"],
+    tets: Integer[LongTensor, "tet tet_vert=4"],
+    dtype: torch.dtype = torch.float32,
 ) -> tuple[
-    Integer[LongTensor, "edge 2"],
-    Integer[LongTensor, "tri 3"],
+    Integer[LongTensor, "edge edge_vert=2"],
+    Integer[LongTensor, "tri tri_vert=3"],
     Float[SparseDecoupledTensor, "edge vert"],
     Float[SparseDecoupledTensor, "tri edge"],
     Float[SparseDecoupledTensor, "tet tri"],
 ]:
-    tets = tets.long()
+    """
+    Compute the coboundary operators/discrete exterior derivatives for a tri mesh.
 
+    Parameters
+    ----------
+    tets : [tet, tet_vert=4]
+        A list of top-level, 3-simplices that define the mesh. It is assumed that
+        the tet vertices are labeled using strictly consecutive, zero-based
+        numbering.
+    dtype : torch.dtype
+        The dtype for the coboundary operators.
+
+    Returns
+    -------
+    unique_canon_edges : [edge, edge_vert=2]
+        The list of all edges (up to vertex permutation) in the mesh. Both the
+        edge vertices and the ordering of the edges are in lex order. This tensor
+        has the same dtype as tets.
+    unique_canon_tris : [tri, tri_vert=2]
+        The list of all tris (up to vertex permutation) in the mesh. Both the
+        tri vertices and the ordering of the tris are in lex order. This tensor
+        has the same dtype as tets.
+    cbd_0 : [edge, vert]
+        The 0-coboundary operator.
+    cbd_1 : [tri, edge]
+        The 1-coboundary operator.
+    cbd_2 : [tet, tri]
+        The 2-coboundary operator.
+    """
+    int_dtype = tets.dtype
+    float_dtype = dtype
     device = tets.device
 
-    # For the tets ijkl, get all the i-th face jkl, all the j-th face ikl, all
-    # the k-th face ijl, and all the l-th face ijk and stack them together; this
-    # provides a redundant list of all oriented edges in the mesh.
-    all_oriented_tris = torch.concatenate(
-        (tets[:, [1, 2, 3]], tets[:, [0, 2, 3]], tets[:, [0, 1, 3]], tets[:, [0, 1, 2]])
+    # For the tets ijkl, find all of its 2-faces and stack them together; this
+    # provides a redundant list of all oriented tris in the mesh.
+    all_local_tris = enumerate_local_faces(splx_dim=3, face_dim=2, device=device)
+    all_oriented_tris = rearrange(
+        tets[:, all_local_tris], "tet tri vert -> (tet tri) vert"
     )
-    # Convert oriented tris to the canonical orientation, and check whether each
-    # oriented tris conforms to the canonical orientation.
-    all_canon_tris, all_tri_orientations = all_oriented_tris.sort(dim=-1)
-    # Generate an ordered list of canonical tris, and get the indices of all the
-    # oriented tris in this ordered list (ignoring their orientations).
+
+    # For each oriented tri, find its canonical, lex-order representation.
+    all_canon_tris = all_oriented_tris.sort(dim=-1).values
+    # Generate a lex-ordered list of unique, canonical tris, and get the indices
+    # that map this list of canonical tris to the list of all oriented tris
+    # (ignoring potential orientation differences).
     unique_canon_tris, all_tri_idx = all_canon_tris.unique(dim=0, return_inverse=True)
 
-    n_tris = unique_canon_tris.shape[0]
-    n_tets = tets.shape[0]
+    n_tris = unique_canon_tris.size(0)
+    n_tets = tets.size(0)
 
-    # Generate the 2nd-coboundary operator.
-    # For a tet ijkl, d2(ijkl) = jkl - ikl + ijl - ijk, which is represented by
-    # the "topological signs".
-    tri_topo_signs = torch.repeat_interleave(
-        torch.tensor([1.0, -1.0, 1.0, -1.0], device=device), n_tets
+    # Generate the 2-coboundary operator.
+    # Each edge in the cbd requires two "sign corrections". The first sign correction
+    # comes from the boundary operator; for a tet ijkl, ∂(ijkl) = - ijk + ijl - ikl + jkl.
+    tri_topo_signs = torch.tensor(
+        [-1.0, 1.0, -1.0, 1.0], dtype=float_dtype, device=device
     )
-    # Each oriented tris that has the opposite orientation as the corresponding
-    # canonical tris gets an additional -1 "orientation signs". In total, there
-    # are 6 ways to arrange the indices of a triangle, three of which get the
-    # positive orientation (ijk, kij, jki), and three of which get the negative
-    # orientation (ikj, jik, kji). This orientation sign can be determined by
-    # taking the vertex indices returned by sort() in all_tris_orientations, and
-    # check how many indices match the canonical order indices [0, 1, 2]; if one
-    # of them do, the triangle has a negative orientation, and otherwise it has
-    # a positive orientation.
-    canon_pos_orientation = torch.tensor([0, 1, 2], dtype=torch.int64, device=device)
-    tri_orientation_signs = torch.where(
-        condition=torch.sum(all_tri_orientations == canon_pos_orientation, dim=-1) == 1,
-        self=-1,
-        other=1,
-    )
+    # The second sign correction comes from the parity of the vertex permutation
+    # required to map a tet tri face to a canonical tri (i.e., the permutation
+    # required to lex sort the tet tri faces).
+    tri_orientation_signs = compute_lex_rel_orient(all_oriented_tris, dtype=float_dtype)
 
-    d2_idx = torch.stack([torch.tile(torch.arange(n_tets), (4,)), all_tri_idx]).to(
-        device=device
+    d2_idx = torch.stack(
+        [
+            repeat(
+                torch.arange(n_tets, dtype=int_dtype, device=device),
+                "tet -> (tet tri)",
+                tri=4,
+            ),
+            all_tri_idx,
+        ]
     )
-    d2_val = tri_topo_signs * tri_orientation_signs
+    # 1 tri, tet tri -> (tet tri)
+    d2_val = (
+        tri_topo_signs.view(1, -1) * tri_orientation_signs.view(n_tets, 4)
+    ).flatten()
 
     cbd_2 = torch.sparse_coo_tensor(
-        d2_idx, d2_val, (n_tets, n_tris), device=device
+        indices=d2_idx, values=d2_val, size=(n_tets, n_tris)
     ).coalesce()
 
-    # Generate the 1st- and 0th-coboundary operators. This can be done via
-    # coboundaries_from_tri_mesh(), using unique_canon_tris as the triangle mesh.
+    # Generate the 1- and 0-coboundary operators. This can be done via
+    # cbd_from_tri_mesh(), using unique_canon_tris as the triangle mesh.
     unique_canon_edges, cbd_0, cbd_1 = cbd_from_tri_mesh(unique_canon_tris)
 
     return (

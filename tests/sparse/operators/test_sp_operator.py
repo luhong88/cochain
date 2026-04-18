@@ -748,3 +748,121 @@ def test_bmat_with_invalid_row_col(A, device):
     # Test invalid dtype
     with pytest.raises(TypeError):
         SparseDecoupledTensor.bmat([a, 3], [None, a])
+
+
+def test_submatrix(A, device):
+    A_tensor = A.to(device).to_dense()
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    A_sub_op1 = A_op.submatrix(r_mask).to_dense()
+    A_sub_op2 = A_op.submatrix(r_mask, r_mask).to_dense()
+    A_sub_op3 = A_op.submatrix(r_mask, c_mask).to_dense()
+
+    A_sub_t1 = A_tensor[r_mask][:, r_mask]
+    A_sub_t2 = A_tensor[r_mask][:, c_mask]
+
+    torch.testing.assert_close(A_sub_op1, A_sub_t1)
+    torch.testing.assert_close(A_sub_op2, A_sub_t1)
+    torch.testing.assert_close(A_sub_op3, A_sub_t2)
+
+
+def test_submatrix_with_batch_dim(A_batched, device):
+    A_tensor = A_batched.to(device).to_dense()
+    A_operator = SparseDecoupledTensor.from_tensor(A_batched).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    A_sub_op1 = A_operator.submatrix(r_mask).to_dense()
+    A_sub_op2 = A_operator.submatrix(r_mask, r_mask).to_dense()
+    A_sub_op3 = A_operator.submatrix(r_mask, c_mask).to_dense()
+
+    A_sub_t1 = A_tensor[:, r_mask][:, :, r_mask]
+    A_sub_t2 = A_tensor[:, r_mask][:, :, c_mask]
+
+    torch.testing.assert_close(A_sub_op1, A_sub_t1)
+    torch.testing.assert_close(A_sub_op2, A_sub_t1)
+    torch.testing.assert_close(A_sub_op3, A_sub_t2)
+
+
+def test_submatrix_with_block_diag_config(A, device):
+    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+    A_block_op = SparseDecoupledTensor.pack_block_diag((A_op, A_op))
+
+    mask_1 = torch.tensor([True, False, True, True], device=device)
+    mask_2 = torch.tensor([False, True, True, False], device=device)
+    mask_3 = torch.tensor([False, False, False, False], device=device)
+
+    r_mask = torch.cat((mask_1, mask_2))
+    c_mask = torch.cat((mask_2, mask_3))
+
+    A_b1, A_b2 = A_block_op.submatrix(r_mask).unpack_block_diag()
+    A_b1_true = A_op.submatrix(mask_1)
+    A_b2_true = A_op.submatrix(mask_2)
+
+    torch.testing.assert_close(A_b1.to_dense(), A_b1_true.to_dense())
+    torch.testing.assert_close(A_b2.to_dense(), A_b2_true.to_dense())
+
+    # Test an edge case where one block is completely degenerate after masking.
+    A_b1, A_b2 = A_block_op.submatrix(r_mask, c_mask).unpack_block_diag()
+    A_b1_true = A_op.submatrix(mask_1, mask_2)
+    A_b2_true = A_op.submatrix(mask_2, mask_3)
+
+    torch.testing.assert_close(A_b1.to_dense(), A_b1_true.to_dense())
+    torch.testing.assert_close(A_b2.to_dense(), A_b2_true.to_dense())
+    assert A_b2.shape == A_b2_true.shape
+
+
+def test_constrain(device):
+    A = torch.randn(5, 5, device=device)
+    A_sym = A + A.T
+    A_diag_dom = A_sym + 2.0 * torch.eye(5, device=device)
+
+    A_op = SparseDecoupledTensor.from_tensor(A_diag_dom)
+
+    mask = torch.tensor([True, True, False, True, False], device=device)
+
+    A_op_constrained = A_op.constrain(mask).to_dense()
+
+    A_tensor = A_op.to_dense()
+    A_tensor[~mask] = 0.0
+    A_tensor[:, ~mask] = 0.0
+    A_tensor[~mask, ~mask] = 1.0
+
+    torch.testing.assert_close(A_op_constrained, A_tensor)
+
+
+def test_constrain_exceptions(device):
+    with pytest.raises(ValueError) as excinfo:
+        A = torch.randn(5, 5, device=device)
+        A_op = SparseDecoupledTensor.from_tensor(A)
+        mask = torch.tensor([True, True, False, True, False], device=device)
+        A_op.constrain(mask)
+
+    assert "symmetric" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        A = torch.randn(6, 5, device=device)
+        A_op = SparseDecoupledTensor.from_tensor(A)
+        mask = torch.tensor([True, True, False, True, False], device=device)
+        A_op.constrain(mask)
+
+    assert "square" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        A = torch.sparse_coo_tensor(
+            indices=torch.tensor([[0, 1, 2, 3], [0, 1, 2, 2]], device=device),
+            values=torch.randn(4, device=device),
+            size=torch.Size([4, 4]),
+        )
+
+        A_op = SparseDecoupledTensor.from_tensor(A)
+
+        mask = torch.tensor([True, True, False, False], device=device)
+
+        A_op.constrain(mask)
+
+    assert "nonzero" in str(excinfo.value)

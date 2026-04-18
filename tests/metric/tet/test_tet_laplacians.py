@@ -92,6 +92,7 @@ def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialMesh, devic
 
     weak_laplacian_i = weak_laplacian(mesh)
     weak_laplacian_i_T = weak_laplacian_i.T
+
     torch.testing.assert_close(
         weak_laplacian_i.to_dense(), weak_laplacian_i_T.to_dense()
     )

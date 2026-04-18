@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable, Sequence
 
 import torch
-from jaxtyping import Float, Integer
+from jaxtyping import Bool, Float, Integer
 from torch import LongTensor, Tensor
 
 from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
@@ -302,6 +302,87 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             val_concat = torch.vstack(val_list_uniform)[batch_perm]
 
         return SparseDecoupledTensor(pattern_concat, val_concat)
+
+    def submatrix(
+        self, row_mask: Bool[Tensor, " r"], col_mask: Bool[Tensor, " c"] | None = None
+    ) -> SparseDecoupledTensor:
+        """
+        Extract a submatrix using row and col masks.
+
+        This method preserves and updates BlockDiagConfig, if there is any.
+
+        This method supports tensors with an explicit batch dimension; however,
+        the submatrix extraction will fail if the resulting submatrices in the
+        batch violate the equal nnz per batch element assumption. As such, when
+        batch dimensions are involved, this method is most suitable if the
+        2D tensors in the batch all share exactly the same sparsity pattern.
+        """
+        idx_coo_submat_mask, submat_pattern = self.pattern.submatrix(row_mask, col_mask)
+
+        submat_val = self.val[idx_coo_submat_mask]
+
+        return SparseDecoupledTensor(submat_pattern, submat_val)
+
+    def constrain(self, mask: Bool[Tensor, " r"]) -> SparseDecoupledTensor:
+        """
+        Perform a soft masking on a symmetric semidefinite SparseDecoupledTensor.
+
+        For a symmetric sparse tensor $A$, if index $i$ is marked as `False`
+        in the input `mask`, then all off-diagonal nonzero elements $A_{ij}$
+        get set to zero, and the diagonal element $A_{ii}$ get set to one. A key
+        assumption of this method is that the diagonal elements are not zero.
+
+        This approach is called "soft" in the sense that the off-diagonal masking
+        does not alter the underlying SparsityPattern; here, it is worth making
+        a distinction between a "structurally" vs a "numerically" zero element:
+        it is possible for an element in a sparse tensor to be numerically zero
+        but still explicitly represented in the list of (structurally) nonzero
+        elements. This soft masking approach is to be contrasted with the `submatrix()`
+        method, which performs a functionally similar submatrix extraction using
+        boolean masks that eliminates the masked rows/columns and results in a
+        subsetted SparsityPattern.
+        """
+        if self.size(-1) != self.size(-2):
+            raise ValueError(
+                "constrain() is only applicable to (batched) sparse square matrices."
+            )
+
+        if not torch.allclose(self.val, self.val[self.pattern.coo_to_csc_perm]):
+            raise ValueError("constrain() is only applicable to symmetric matrices.")
+
+        r_idx = self.pattern.idx_coo[-2]
+        c_idx = self.pattern.idx_coo[-1]
+
+        r_idx_mask = ~mask[r_idx]
+        c_idx_mask = ~mask[c_idx]
+
+        diag_mask = r_idx == c_idx
+
+        # Check that none of the masked rows/columns contain zero at the diagonal.
+        nnz_masked_diag = (diag_mask & r_idx_mask).sum().item()
+        if self.n_batch_dim > 0:
+            n_masked_diag = (~mask).sum().item() * self.size(0)
+        else:
+            n_masked_diag = (~mask).sum().item()
+
+        if nnz_masked_diag != n_masked_diag:
+            raise ValueError(
+                "constrain() can only be used to mask rows/colums where the "
+                "diagonal element is nonzero."
+            )
+
+        # A nonzero element is numerically set to zero if (1) it is off-diagonal
+        # and (2) its row or col index is masked.
+        zero_mask = (~diag_mask) & (r_idx_mask | c_idx_mask)
+
+        # A nonzero element is numerically set to one if (1) it is diagonal and
+        # (2) its row/col index is masked.
+        one_mask = diag_mask & r_idx_mask
+
+        val_zeroed = torch.where(zero_mask, 0.0, self.val)
+        val_oned = torch.where(one_mask, 1.0, val_zeroed)
+
+        return SparseDecoupledTensor(self.pattern, val_oned)
 
     def apply(self, fn: Callable, **kwargs) -> SparseDecoupledTensor:
         """
