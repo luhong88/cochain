@@ -18,6 +18,22 @@ def _is_tensor_like(obj: Any) -> bool:
 
 @dataclass
 class SimplicialMesh:
+    """
+    A dataclass containing the topology and vertex coordinates of a mesh.
+
+    A valid mesh satisfies the following requirements:
+
+    * The mesh is a pure simplicial $k$-complex (i.e., every $l$-simplex in the
+      mesh for $l < k$ must be the face/subset of a $k$-simplex).
+    * The mesh vertices are 0-indexed and the indices are strictly consecutive.
+    * The mesh is an immersion in the 3D Euclidean space; Specifically, this
+      means that all vertex coordinates must be three-dimensional, and degenerate
+      edges, triangles, or tetrahedra with zero length/area/volume are not allowed;
+      however, self-intersection is allowed.
+
+    In general, no assumptions are made on whether the mesh is manifold or orientable.
+    """
+
     cbd: tuple[
         Float[SparseDecoupledTensor, "edge vert"],
         Float[SparseDecoupledTensor, "tri edge"],
