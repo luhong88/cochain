@@ -1,14 +1,16 @@
-from typing import Any
+__all__ = ["compute_morse_complex"]
+
 
 import numba
 import numpy as np
 import numpy.typing as npt
 import torch
-from einops import einsum, rearrange, reduce, repeat
+from einops import reduce
 from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ..complex import SimplicialMesh
+from ..sparse.decoupled_tensor import SparseDecoupledTensor
 
 
 def _to_np(tensor: Tensor, dtype: np.dtype | None = None) -> npt.NDArray:
@@ -21,7 +23,7 @@ def _to_np(tensor: Tensor, dtype: np.dtype | None = None) -> npt.NDArray:
 def _prepare_inputs(
     mesh: SimplicialMesh,
     scalar_field: Float[Tensor, " vert"],
-    int_dtype: np.dtype = np.int32,
+    int_dtype: np.dtype,
 ):
     """
     Prepare input mesh and scalar field for discrete Morse theory analysis.
@@ -129,6 +131,7 @@ def _prepare_inputs(
     )
 
 
+@numba.jit(nopython=True)
 def _process_lower_stars(
     ordered_verts: npt.NDArray,
     vert_coface_indices: tuple[npt.NDArray, ...],
@@ -246,7 +249,7 @@ def _process_lower_stars(
 def _find_critical_splx(
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
-) -> tuple[npt.NDArray]:
+) -> tuple[npt.NDArray, ...]:
     # Find all the critical simplices by identifying the unpaired simplices.
     crit_splx = np.argwhere(pairing_map == -1).flatten()
 
@@ -257,6 +260,7 @@ def _find_critical_splx(
     return tuple(crit_splx_by_dim)
 
 
+@numba.jit(nopython=True)
 def _construct_morse_cbds(
     codim1_face_indices: tuple[npt.NDArray, ...],
     codim1_face_offset: tuple[npt.NDArray, ...],
@@ -382,3 +386,123 @@ def _construct_morse_cbds(
             cbd_val.append(val[:nnz])
 
     return cbd_idx_coo, cbd_val
+
+
+def _construct_sdt(
+    cbd_idx_coo: tuple[npt.NDArray, ...],
+    cbd_val: tuple[npt.NDArray, ...],
+    crit_splx_by_dim: tuple[npt.NDArray, ...],
+    int_dtype: torch.dtype,
+    float_dtype: torch.dtype,
+    device: torch.device,
+) -> tuple[tuple[SparseDecoupledTensor, ...], tuple[Tensor, ...]]:
+    morse_cbd_list = []
+    for k, idx_coo, val in zip([3, 2, 1], cbd_idx_coo, cbd_val, strict=True):
+        shape = (crit_splx_by_dim[k].size, crit_splx_by_dim[k - 1].size)
+
+        idx_coo_torch = torch.from_numpy(idx_coo).to(dtype=int_dtype, device=device)
+        val_torch = torch.from_numpy(val).to(dtype=float_dtype, device=device)
+
+        cbd_coo = torch.sparse_coo_tensor(
+            indices=idx_coo_torch, values=val_torch, size=shape
+        ).coalesce()
+        cbd_sdt = SparseDecoupledTensor.from_tensor(cbd_coo)
+
+        morse_cbd_list.append(cbd_sdt)
+
+    morse_cbd_list.reverse()
+
+    crit_splx_by_dim_torch = [
+        torch.from_numpy(crit_splx).to(dtype=int_dtype, device=device)
+        for crit_splx in crit_splx_by_dim
+    ]
+
+    return tuple(morse_cbd_list), tuple(crit_splx_by_dim_torch)
+
+
+def compute_morse_complex(
+    mesh: SimplicialMesh,
+    scalar_field: Float[Tensor, " vert"] | None = None,
+) -> tuple[
+    tuple[
+        Float[SparseDecoupledTensor, "crit_edge crit_vert"],
+        Float[SparseDecoupledTensor, "crit_tri crit_edge"],
+        Float[SparseDecoupledTensor, "crit_tet crit_tri"],
+    ],
+    tuple[
+        Integer[Tensor, " crit_vert"],
+        Integer[Tensor, " crit_edge"],
+        Integer[Tensor, " crit_tri"],
+        Integer[Tensor, " crit_tet"],
+    ],
+]:
+    """Compute the Morse coboundary operators for a mesh."""
+    with torch.no_grad():
+        # If no scalar_field is provided, compute a simple one that measures the
+        # distance from the center of the mesh.
+        if scalar_field is None:
+            mesh_center = torch.mean(mesh.vert_coords, dim=0, keepdim=True)
+            verts_from_center = mesh.vert_coords - mesh_center
+            scalar_field = torch.linalg.norm(verts_from_center, dim=-1)
+
+        # Record the mesh cbd int dtype and determine the safe numpy int dtype.
+        torch_int_dtype = mesh.cbd[0].pattern.dtype
+        torch_float_dtype = mesh.dtype
+        torch_device = mesh.device
+
+        if sum(mesh.n_splx) < np.iinfo(np.int32).max:
+            np_int_dtype = np.int32
+        else:
+            np_int_dtype = np.int64
+
+        # Execute subroutines.
+        (
+            ordered_verts,
+            vert_coface_indices,
+            vert_coface_offset,
+            codim1_coface_indices,
+            codim1_coface_offset,
+            codim1_face_indices,
+            codim1_face_offset,
+            codim1_face_signs,
+            pairing_map,
+            splx_dim_offsets,
+            scalar_field_np,
+            splx_scalar_sum,
+            splx_scalar_max,
+        ) = _prepare_inputs(mesh, scalar_field, np_int_dtype)
+
+        pairing_map = _process_lower_stars(
+            ordered_verts,
+            vert_coface_indices,
+            vert_coface_offset,
+            codim1_coface_indices,
+            codim1_coface_offset,
+            pairing_map,
+            splx_dim_offsets,
+            scalar_field_np,
+            splx_scalar_sum,
+            splx_scalar_max,
+        )
+
+        crit_splx_by_dim_np = _find_critical_splx(pairing_map, splx_dim_offsets)
+
+        cbd_idx_coo, cbd_val = _construct_morse_cbds(
+            codim1_face_indices,
+            codim1_face_offset,
+            codim1_face_signs,
+            pairing_map,
+            splx_dim_offsets,
+            crit_splx_by_dim_np,
+        )
+
+        morse_cbd, crit_splx = _construct_sdt(
+            cbd_idx_coo,
+            cbd_val,
+            crit_splx_by_dim_np,
+            torch_int_dtype,
+            torch_float_dtype,
+            torch_device,
+        )
+
+        return morse_cbd, crit_splx
