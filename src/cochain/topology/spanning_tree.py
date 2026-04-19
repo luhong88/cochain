@@ -290,7 +290,6 @@ def _cbd_to_coface(
     return unique_face_idx, coface_idx
 
 
-# TODO: check whether applicable to nonmanifold meshes.
 # TODO: update to accommodate tet meshes
 def compute_cotree_mask(
     dual_topo_laplacian_0: Float[SparseDecoupledTensor, "dual_vert dual_vert"],

@@ -11,6 +11,7 @@ requires-python = ">=3.13"
 dependencies = [
     "einops>=0.8.2",
     "jaxtyping>=0.3.3",
+    "numba>=0.65.0",
     "numpy>=2.3.4",
     "pytetwild>=0.1.1",
     "pyvista[jupyter]>=0.46.4",
