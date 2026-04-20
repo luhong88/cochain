@@ -133,6 +133,18 @@ def _prepare_inputs(
         _to_np(mesh.cbd[2].val),
     )
 
+    # Determine the max possible lower star size. To compute this size, we
+    # determine, for each vert, the number of its vert, edge, tri, and tet cofaces
+    # and sum them together, and take the max of this value over the list of verts.
+    # Note that the difference between consecutive elements in the ccol index
+    # tensor of a coboundary operator gives the number of nonzero elements in each
+    # column of the operator, which is equal to the number of faces.
+    n_cofaces = np.stack(
+        [idx_ccol[1:] - idx_ccol[:-1] for idx_ccol in vert_coface_offset]
+    )
+    # + 1 to account for vert cofaces (which is just itself).
+    max_n_cofaces = 1 + int((n_cofaces.sum(axis=0)).max().item())
+
     # Prepare the pairing map; if τ is a codim 1 face of σ and τ is paired with
     # σ, then p[τ] = σ and p[σ] = τ.
     pairing_map = np.full(sum(mesh.n_splx), -1, dtype=int_dtype)
@@ -146,6 +158,7 @@ def _prepare_inputs(
         codim1_face_indices,
         codim1_face_offset,
         codim1_face_signs,
+        max_n_cofaces,
         pairing_map,
         splx_dim_offsets,
         splx_scalar_sum,
@@ -161,6 +174,7 @@ def _process_lower_stars(
     vert_coface_offset: tuple[npt.NDArray, ...],
     codim1_coface_indices: tuple[npt.NDArray, ...],
     codim1_coface_offset: tuple[npt.NDArray, ...],
+    max_n_cofaces: int,
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
     splx_scalar_sum: npt.NDArray,
@@ -170,17 +184,13 @@ def _process_lower_stars(
     """
     Perform greedy lower star filtration/acyclic pairing.
     """
-    # It is safe to assume that the lower star of a vert does not contain more
-    # than a few thousand simplices.
-    buffer_capacity = 2048
-
     # We will need to find the lower star of each vert in the mesh; for a vert v,
     # the lower star is the set of all k-simplices σ such that v <= σ and v has
     # the max scalar value among all vertices of σ. For accessing the lower star
     # simplex indices, we use a pre-allocated lower_star_buffer; for checking
     # membership in the lower star, we use a flat bool mask.
-    lower_star_idx_buffer = np.empty(buffer_capacity, dtype=pairing_map.dtype)
-    lower_star_dim_buffer = np.empty(buffer_capacity, dtype=pairing_map.dtype)
+    lower_star_idx_buffer = np.empty(max_n_cofaces, dtype=pairing_map.dtype)
+    lower_star_dim_buffer = np.empty(max_n_cofaces, dtype=pairing_map.dtype)
     lower_star_mask = np.zeros(splx_dim_offsets[-1], dtype=np.bool)
 
     for vert in ordered_verts:
@@ -304,9 +314,9 @@ def _construct_morse_cbds(
     float_dtype = codim1_face_signs[0].dtype
 
     # Generate LIFO buffer/stack for depth-first simplex search.
-    buffer_size = 2**15
-    stack_splx = np.empty(buffer_size, dtype=int_dtype)
-    stack_sign = np.empty(buffer_size, dtype=float_dtype)
+    stack_size = 2**15
+    stack_splx = np.empty(stack_size, dtype=int_dtype)
+    stack_sign = np.empty(stack_size, dtype=float_dtype)
     stack_top = 0
 
     cbd_idx_coo = []
@@ -314,15 +324,18 @@ def _construct_morse_cbds(
 
     for splx_dim in [3, 2, 1]:
         # Pre allocate the memories for the morse coboundary operator coo indices
-        # and values. Since we don't actually know how many nonzero elements there
-        # are per reduced coboundary operator, we assume that the operators are dense
-        # in the pre allocation.
-        max_nnz = crit_splx_by_dim[splx_dim].size * crit_splx_by_dim[splx_dim - 1].size
+        # and values. Since we don't actually know how many non-coalesced nonzero
+        # elements there are per reduced coboundary operator ahead of time, we
+        # use a heuristic that allocates 50*n_row*n_col nonzero slots. If this
+        # is not enough, the buffer gets doubled dynamically (we set a minimum
+        # buffer size of 10,000 to avoid potential, repeated size adjustments).
+        cbd_size = crit_splx_by_dim[splx_dim].size * crit_splx_by_dim[splx_dim - 1].size
+        cbd_buffer_size = max(10_000, cbd_size * 50)
         idx_coo = np.empty(
-            (2, max_nnz),
+            (2, cbd_buffer_size),
             dtype=int_dtype,
         )
-        val = np.empty(max_nnz, dtype=float_dtype)
+        val = np.empty(cbd_buffer_size, dtype=float_dtype)
         nnz = 0
 
         # Determine the index offset required to map from the global simplex
@@ -346,6 +359,19 @@ def _construct_morse_cbds(
 
             face_idx = cbd_idx[start:end]
             face_sign = bd_signs[start:end]
+
+            # Before adding the faces to the search queue, check if at the stack
+            # size limit; if so, double the stack size before proceeding.
+            if stack_top + n_faces > stack_size:
+                stack_size *= 2
+                new_stack_splx = np.empty(stack_size, dtype=int_dtype)
+                new_stack_sign = np.empty(stack_size, dtype=float_dtype)
+
+                new_stack_splx[:stack_top] = stack_splx[:stack_top]
+                new_stack_sign[:stack_top] = stack_sign[:stack_top]
+
+                stack_splx = new_stack_splx
+                stack_sign = new_stack_sign
 
             stack_splx[stack_top : stack_top + n_faces] = face_idx
             stack_sign[stack_top : stack_top + n_faces] = face_sign
@@ -372,6 +398,23 @@ def _construct_morse_cbds(
                 # Add the current_face_sign to (crit_splx, current_face_idx)
                 # position of the coboundary operator.
                 if not is_paired:
+                    # Before adding the entry to the coboundary operator, check
+                    # if at the buffer size limit; if so, double the buffer size
+                    # before proceeding.
+                    if nnz + 1 > cbd_buffer_size:
+                        cbd_buffer_size *= 2
+                        new_idx_coo = np.empty(
+                            (2, cbd_buffer_size),
+                            dtype=int_dtype,
+                        )
+                        new_val = np.empty(cbd_buffer_size, dtype=float_dtype)
+
+                        new_idx_coo[:, :nnz] = idx_coo[:, :nnz]
+                        new_val[:nnz] = val[:nnz]
+
+                        idx_coo = new_idx_coo
+                        val = new_val
+
                     idx_coo[0, nnz] = crit_splx - global_splx_offset
                     idx_coo[1, nnz] = current_face_idx - global_face_offset
                     val[nnz] = current_face_sign
@@ -406,6 +449,20 @@ def _construct_morse_cbds(
 
                             next_splx_idx = coface_face_idx
                             next_splx_sign = current_face_sign * coface_face_sign
+
+                            # Before adding the face to the search queue, check if
+                            # at the stack size limit; if so, double the stack size
+                            # before proceeding.
+                            if stack_top + 1 > stack_size:
+                                stack_size *= 2
+                                new_stack_splx = np.empty(stack_size, dtype=int_dtype)
+                                new_stack_sign = np.empty(stack_size, dtype=float_dtype)
+
+                                new_stack_splx[:stack_top] = stack_splx[:stack_top]
+                                new_stack_sign[:stack_top] = stack_sign[:stack_top]
+
+                                stack_splx = new_stack_splx
+                                stack_sign = new_stack_sign
 
                             stack_splx[stack_top] = next_splx_idx
                             stack_sign[stack_top] = next_splx_sign
@@ -495,6 +552,7 @@ def compute_morse_complex(
             codim1_face_indices,
             codim1_face_offset,
             codim1_face_signs,
+            max_n_cofaces,
             pairing_map,
             splx_dim_offsets,
             splx_scalar_sum,
@@ -508,6 +566,7 @@ def compute_morse_complex(
             vert_coface_offset,
             codim1_coface_indices,
             codim1_coface_offset,
+            max_n_cofaces,
             pairing_map,
             splx_dim_offsets,
             splx_scalar_sum,
