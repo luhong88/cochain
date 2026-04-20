@@ -38,13 +38,13 @@ def _prepare_inputs(
         _to_np(scalar_field[mesh.tets]),
     )
 
-    splx_scalar_sum = torch.cat(
+    splx_scalar_sum = np.concat(
         [
             reduce(splx_scalar_field, "splx vert -> splx", reduction="sum")
             for splx_scalar_field in splx_scalar_fields
         ]
     )
-    splx_scalar_max = torch.cat(
+    splx_scalar_max = np.concat(
         [
             reduce(splx_scalar_field, "splx vert -> splx", reduction="max")
             for splx_scalar_field in splx_scalar_fields
@@ -64,7 +64,7 @@ def _prepare_inputs(
 
     # Precompute the coface relations between vertices and higher-order simplices.
     cbd_02 = mesh.cbd[1].abs() @ mesh.cbd[0].abs()
-    cbd_03 = mesh.cbd[2].abs() @ mesh.cbd[0].abs()
+    cbd_03 = mesh.cbd[2].abs() @ cbd_02
 
     vert_coface_indices = (
         _to_np(mesh.cbd[0].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[1],
@@ -78,6 +78,9 @@ def _prepare_inputs(
     )
 
     # Also compute the coface relations between k-simplices and (k+1)-simplices.
+    # Note that, for the k-coboundary operator, its idx_row_csc index tensor
+    # contains the 0-indices of the k-simplices, and we need to shift this local
+    # 0-index scheme to the global simplex index scheme described above.
     codim1_coface_indices = (
         _to_np(mesh.cbd[0].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[1],
         _to_np(mesh.cbd[1].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[2],
@@ -90,11 +93,14 @@ def _prepare_inputs(
     )
 
     # Similarly compute the face relations between (k+1)-simplices and k-simplices
-    # as well as the boundary signs.
+    # as well as the boundary signs. Note that, for the k-coboundary operator,
+    # its idx_col index tensor contains the 0-indices of the (k-1)-simplices, and
+    # we need to shift this local 0-index scheme to the global index scheme
+    # described above.
     codim1_face_indices = (
-        _to_np(mesh.cbd[0].pattern.idx_col, int_dtype) + splx_dim_offsets[1],
-        _to_np(mesh.cbd[1].pattern.idx_col, int_dtype) + splx_dim_offsets[2],
-        _to_np(mesh.cbd[2].pattern.idx_col, int_dtype) + splx_dim_offsets[3],
+        _to_np(mesh.cbd[0].pattern.idx_col, int_dtype) + splx_dim_offsets[0],
+        _to_np(mesh.cbd[1].pattern.idx_col, int_dtype) + splx_dim_offsets[1],
+        _to_np(mesh.cbd[2].pattern.idx_col, int_dtype) + splx_dim_offsets[2],
     )
     codim1_face_offset = (
         _to_np(mesh.cbd[0].pattern.idx_crow, int_dtype),
@@ -109,7 +115,7 @@ def _prepare_inputs(
 
     # Prepare the pairing map; if τ is a codim 1 face of σ and τ is paired with
     # σ, then p[τ] = σ and p[σ] = τ.
-    pairing_map = _to_np(np.full(sum(mesh.n_splx), -1), int_dtype)
+    pairing_map = np.full(sum(mesh.n_splx), -1, dtype=int_dtype)
 
     # Additional conversion to numpy arrays
     scalar_field_np = _to_np(scalar_field)
@@ -131,7 +137,7 @@ def _prepare_inputs(
     )
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _process_lower_stars(
     ordered_verts: npt.NDArray,
     vert_coface_indices: tuple[npt.NDArray, ...],
@@ -158,7 +164,7 @@ def _process_lower_stars(
     # membership in the lower star, we use a flat bool mask.
     lower_star_idx_buffer = np.empty(buffer_capacity, dtype=pairing_map.dtype)
     lower_star_dim_buffer = np.empty(buffer_capacity, dtype=pairing_map.dtype)
-    lower_star_mask = np.zeros(splx_dim_offsets[-1], dtype=bool)
+    lower_star_mask = np.zeros(splx_dim_offsets[-1], dtype=np.bool)
 
     for vert in ordered_verts:
         # A "pointer" that keeps track of the size of the lower star of a vert.
@@ -214,7 +220,7 @@ def _process_lower_stars(
             cbd_offset = codim1_coface_offset[coface_dim]
             # Note that the offset index still operates on the local index
             # scheme (0-index for all splx of a given dim), so we need to first
-            # convert th global vert_coface index back to the local 0-index.
+            # convert the global vert_coface index back to the local 0-index.
             vert_coface_local = vert_coface - splx_dim_offsets[coface_dim]
             coface_cofaces = cbd_idx[
                 cbd_offset[vert_coface_local] : cbd_offset[vert_coface_local + 1]
@@ -260,7 +266,7 @@ def _find_critical_splx(
     return tuple(crit_splx_by_dim)
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _construct_morse_cbds(
     codim1_face_indices: tuple[npt.NDArray, ...],
     codim1_face_offset: tuple[npt.NDArray, ...],
@@ -325,10 +331,12 @@ def _construct_morse_cbds(
 
             # When the search queue is not empty.
             while stack_top > 0:
-                # Pop the last simplex in the search queue.
+                # Pop the last simplex in the search queue; note that stack_top
+                # needs to be decreased first since stack_top points to the
+                # location right after the last valid element in the stack.
+                stack_top -= 1
                 current_face_idx = stack_splx[stack_top]
                 current_face_sign = stack_sign[stack_top]
-                stack_top -= 1
 
                 paired_coface = pairing_map[current_face_idx]
 
@@ -381,11 +389,11 @@ def _construct_morse_cbds(
                             stack_sign[stack_top] = next_splx_sign
                             stack_top += 1
 
-            # Once the search queue has been exhausted, return the reduced cbd.
-            cbd_idx_coo.append(idx_coo[:nnz])
-            cbd_val.append(val[:nnz])
+        # Once the search queue has been exhausted, return the reduced cbd.
+        cbd_idx_coo.append(idx_coo[:, :nnz])
+        cbd_val.append(val[:nnz])
 
-    return cbd_idx_coo, cbd_val
+    return tuple(cbd_idx_coo), tuple(cbd_val)
 
 
 def _construct_sdt(
