@@ -167,7 +167,7 @@ def _prepare_inputs(
     )
 
 
-# @numba.jit(nopython=True)
+@numba.jit(nopython=True)
 def _process_lower_stars(
     ordered_verts: npt.NDArray,
     vert_coface_indices: tuple[npt.NDArray, ...],
@@ -287,7 +287,7 @@ def _process_lower_stars(
 def _find_critical_splx(
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
-) -> tuple[npt.NDArray, ...]:
+) -> tuple[tuple[npt.NDArray, ...], npt.NDArray]:
     # Find all the critical simplices by identifying the unpaired simplices.
     crit_splx = np.argwhere(pairing_map == -1).flatten()
 
@@ -295,10 +295,15 @@ def _find_critical_splx(
     split_points = np.searchsorted(crit_splx, splx_dim_offsets[1:-1])
     crit_splx_by_dim = np.split(crit_splx, split_points)
 
-    return tuple(crit_splx_by_dim)
+    crit_splx_reduced_idx = np.full(splx_dim_offsets[-1], -1, dtype=pairing_map.dtype)
+    for crit_splx in crit_splx_by_dim:
+        crit_splx_local_idx = np.arange(crit_splx.size, dtype=pairing_map.dtype)
+        crit_splx_reduced_idx[crit_splx] = crit_splx_local_idx
+
+    return tuple(crit_splx_by_dim), crit_splx_reduced_idx
 
 
-# @numba.jit(nopython=True)
+@numba.jit(nopython=True)
 def _construct_morse_cbds(
     codim1_face_indices: tuple[npt.NDArray, ...],
     codim1_face_offset: tuple[npt.NDArray, ...],
@@ -306,7 +311,8 @@ def _construct_morse_cbds(
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
     crit_splx_by_dim: tuple[npt.NDArray, ...],
-) -> tuple[tuple[npt.NDArray, ...], tuple[npt.NDArray]]:
+    crit_splx_reduced_idx: npt.NDArray,
+) -> tuple[list[npt.NDArray], list[npt.NDArray]]:
     """
     Construct the reduced Morse coboundary operators.
     """
@@ -415,8 +421,11 @@ def _construct_morse_cbds(
                         idx_coo = new_idx_coo
                         val = new_val
 
-                    idx_coo[0, nnz] = crit_splx - global_splx_offset
-                    idx_coo[1, nnz] = current_face_idx - global_face_offset
+                    # Use the crit_splx_reduced_idx to map the global indices
+                    # of the critical simplices to the reduced, local, per-dim
+                    # 0-indices.
+                    idx_coo[0, nnz] = crit_splx_reduced_idx[crit_splx]
+                    idx_coo[1, nnz] = crit_splx_reduced_idx[current_face_idx]
                     val[nnz] = current_face_sign
                     nnz += 1
 
@@ -472,12 +481,12 @@ def _construct_morse_cbds(
         cbd_idx_coo.append(idx_coo[:, :nnz])
         cbd_val.append(val[:nnz])
 
-    return tuple(cbd_idx_coo), tuple(cbd_val)
+    return cbd_idx_coo, cbd_val
 
 
 def _construct_sdt(
-    cbd_idx_coo: tuple[npt.NDArray, ...],
-    cbd_val: tuple[npt.NDArray, ...],
+    cbd_idx_coo: list[npt.NDArray],
+    cbd_val: list[npt.NDArray],
     crit_splx_by_dim: tuple[npt.NDArray, ...],
     int_dtype: torch.dtype,
     float_dtype: torch.dtype,
@@ -574,7 +583,9 @@ def compute_morse_complex(
             splx_vert_rank_max,
         )
 
-        crit_splx_by_dim_np = _find_critical_splx(pairing_map, splx_dim_offsets)
+        crit_splx_by_dim, crit_splx_reduced_idx = _find_critical_splx(
+            pairing_map, splx_dim_offsets
+        )
 
         cbd_idx_coo, cbd_val = _construct_morse_cbds(
             codim1_face_indices,
@@ -582,13 +593,14 @@ def compute_morse_complex(
             codim1_face_signs,
             pairing_map,
             splx_dim_offsets,
-            crit_splx_by_dim_np,
+            crit_splx_by_dim,
+            crit_splx_reduced_idx,
         )
 
         morse_cbd, crit_splx = _construct_sdt(
             cbd_idx_coo,
             cbd_val,
-            crit_splx_by_dim_np,
+            crit_splx_by_dim,
             torch_int_dtype,
             torch_float_dtype,
             torch_device,
