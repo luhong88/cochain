@@ -44,16 +44,36 @@ def _prepare_inputs(
             for splx_scalar_field in splx_scalar_fields
         ]
     )
-    splx_scalar_max = np.concat(
-        [
-            reduce(splx_scalar_field, "splx vert -> splx", reduction="max")
-            for splx_scalar_field in splx_scalar_fields
-        ]
-    )
 
     # Sort the vertices in ascending order by the scalar value; stable=True
     # ensures tiebreak using vertex indices.
-    ordered_verts = _to_np(torch.argsort(scalar_field, stable=True, dim=0), int_dtype)
+    ordered_verts = torch.argsort(scalar_field, stable=True, dim=0)
+    ordered_verts_np = _to_np(ordered_verts, int_dtype)
+
+    # Use the vert ordering to assign a ranking to each vert, which establishes
+    # a strict total ordering of the verts.
+    vert_ranks = torch.empty_like(
+        ordered_verts, dtype=ordered_verts.dtype, device=ordered_verts.device
+    )
+    vert_ranks[ordered_verts] = torch.arange(
+        ordered_verts.size(0), dtype=ordered_verts.dtype, device=ordered_verts.device
+    )
+    vert_ranks_np = _to_np(vert_ranks, int_dtype)
+
+    # Use the max vert rank to assign a rank score per simplex.
+    splx_vert_ranks = (
+        _to_np(vert_ranks.view(-1, 1), int_dtype),
+        _to_np(vert_ranks[mesh.edges], int_dtype),
+        _to_np(vert_ranks[mesh.tris], int_dtype),
+        _to_np(vert_ranks[mesh.tets], int_dtype),
+    )
+
+    splx_vert_rank_max = np.concat(
+        [
+            reduce(splx_vert_rank, "splx vert -> splx", reduction="max")
+            for splx_vert_rank in splx_vert_ranks
+        ]
+    )
 
     # Prepare index data for a global simplex indexing scheme, where all 0-, 1-,
     # 2-, and 3-simplices are ordered in a flattened list and assigned a 0-index.
@@ -117,11 +137,8 @@ def _prepare_inputs(
     # σ, then p[τ] = σ and p[σ] = τ.
     pairing_map = np.full(sum(mesh.n_splx), -1, dtype=int_dtype)
 
-    # Additional conversion to numpy arrays
-    scalar_field_np = _to_np(scalar_field)
-
     return (
-        ordered_verts,
+        ordered_verts_np,
         vert_coface_indices,
         vert_coface_offset,
         codim1_coface_indices,
@@ -131,9 +148,9 @@ def _prepare_inputs(
         codim1_face_signs,
         pairing_map,
         splx_dim_offsets,
-        scalar_field_np,
         splx_scalar_sum,
-        splx_scalar_max,
+        vert_ranks_np,
+        splx_vert_rank_max,
     )
 
 
@@ -146,9 +163,9 @@ def _process_lower_stars(
     codim1_coface_offset: tuple[npt.NDArray, ...],
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
-    scalar_field: npt.NDArray,
     splx_scalar_sum: npt.NDArray,
-    splx_scalar_max: npt.NDArray,
+    vert_ranks: npt.NDArray,
+    splx_vert_rank_max: npt.NDArray,
 ) -> Integer[Tensor, " splx"]:
     """
     Perform greedy lower star filtration/acyclic pairing.
@@ -169,7 +186,7 @@ def _process_lower_stars(
     for vert in ordered_verts:
         # A "pointer" that keeps track of the size of the lower star of a vert.
         lower_star_size = 0
-        vert_scalar = scalar_field[vert]
+        vert_rank = vert_ranks[vert]
 
         # For each vert, there is only one coface of codimension 0: the vert itself.
         lower_star_idx_buffer[lower_star_size] = vert
@@ -183,9 +200,14 @@ def _process_lower_stars(
             cbd_offset = vert_coface_offset[coface_dim - 1]
             cofaces = cbd_idx[cbd_offset[vert] : cbd_offset[vert + 1]]
 
-            # Check whether the identified cofaces are in the lower star.
-            coface_scalar_max = splx_scalar_max[cofaces]
-            lower_mask = coface_scalar_max <= vert_scalar
+            # Check whether the identified cofaces are in the lower star. By
+            # checking that the vert rank is equal to the coface rank score,
+            # we ensure that the vert has the max scalar field value (and, in
+            # the event of ties, the vert has lower index). This ensures that
+            # the lower stars of the verts form a partition of the simplicial
+            # complex.
+            coface_vert_rank_max = splx_vert_rank_max[cofaces]
+            lower_mask = coface_vert_rank_max <= vert_rank
 
             lower_cofaces = cofaces[lower_mask]
             n_lower_cofaces = lower_mask.sum()
@@ -475,9 +497,9 @@ def compute_morse_complex(
             codim1_face_signs,
             pairing_map,
             splx_dim_offsets,
-            scalar_field_np,
             splx_scalar_sum,
-            splx_scalar_max,
+            vert_ranks,
+            splx_vert_rank_max,
         ) = _prepare_inputs(mesh, scalar_field, np_int_dtype)
 
         pairing_map = _process_lower_stars(
@@ -488,9 +510,9 @@ def compute_morse_complex(
             codim1_coface_offset,
             pairing_map,
             splx_dim_offsets,
-            scalar_field_np,
             splx_scalar_sum,
-            splx_scalar_max,
+            vert_ranks,
+            splx_vert_rank_max,
         )
 
         crit_splx_by_dim_np = _find_critical_splx(pairing_map, splx_dim_offsets)
