@@ -126,6 +126,27 @@ def test_torus_homology_group_dims(k, betti, solid_torus_mesh: SimplicialMesh, d
 
 @pytest.mark.parametrize(
     "k, betti",
+    [(0, 1), (1, 0), (2, 1), (3, 0)],
+)
+def test_spherical_shell_homology_group_dims(
+    k, betti, solid_spherical_shell_mesh: SimplicialMesh, device
+):
+    mesh = solid_spherical_shell_mesh.to(device)
+
+    operator = laplacian_k(mesh, k=k, component="full").to_dense()
+    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+    torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
+
+    # Also test Poincare duality.
+    dual_operator = laplacian_k(
+        mesh, k=mesh.dim - k, component="full", dual_complex=True
+    ).to_dense()
+    dual_dim_ker = dual_operator.shape[0] - torch.linalg.matrix_rank(dual_operator)
+    torch.testing.assert_close(dim_ker, dual_dim_ker)
+
+
+@pytest.mark.parametrize(
+    "k, betti",
     [(0, 1), (1, 0), (2, 0)],
 )
 def test_disk_homology_group_dims(k, betti, tent_mesh: SimplicialMesh, device):
