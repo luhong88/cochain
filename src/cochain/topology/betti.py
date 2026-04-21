@@ -1,11 +1,12 @@
-__all__ = ["compute_tri_mesh_betti_numbers"]
+import torch
 
 from ..complex import SimplicialMesh
+from .morse import compute_morse_complex
 from .spanning_tree import _minimum_spanning_tree
 from .topo_laplacians import laplacian_k
 
 
-def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialMesh) -> tuple[int, int, int]:
+def _tri_manifold_betti_via_trees(tri_mesh: SimplicialMesh) -> tuple[int, int, int]:
     """
     Compute the first three Betti numbers for a manifold tri mesh.
 
@@ -70,3 +71,23 @@ def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialMesh) -> tuple[int, int, 
     b1 = tri_mesh.n_edges - n_primal_mst_edges - n_dual_mst_edges
 
     return b0, b1, b2
+
+
+def _betti_via_morse(mesh: SimplicialMesh) -> tuple[int, int, int]:
+    morse_cbd, crit_splx = compute_morse_complex(mesh)
+
+    n_crit_splx = [splx.size(0) for splx in crit_splx]
+
+    cbd_dense = [cbd.to_dense() for cbd in morse_cbd]
+    cbd_rank = [torch.linalg.matrix_rank(cbd).item() for cbd in cbd_dense]
+
+    # b_0 = |K_0| - rank(d_0)
+    b_0 = n_crit_splx[0] - cbd_rank[0]
+
+    # b_1 = |K_1| - rank(d_0) - rank(d_1)
+    b_1 = n_crit_splx[1] - cbd_rank[0] - cbd_rank[1]
+
+    # b_2 = |K_2| - rank(d_1) - rankd(d_2)
+    b_2 = n_crit_splx[2] - cbd_rank[1] - cbd_rank[2]
+
+    return b_0, b_1, b_2
