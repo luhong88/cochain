@@ -532,7 +532,15 @@ def compute_morse_complex(
         Integer[Tensor, " crit_tet"],
     ],
 ]:
-    """Compute the Morse coboundary operators for a mesh."""
+    """
+    Compute the Morse coboundary operators for a mesh.
+
+    This function makes the following assumptions about the mesh:
+    * Contiguous, 0-based indexing of vertices.
+    * Up to three-dimensional.
+    * If no scalar_field is provided, the vertices must be associated with coordinate
+      vectors.
+    """
     with torch.no_grad():
         # If no scalar_field is provided, compute a simple one that measures the
         # distance from the center of the mesh.

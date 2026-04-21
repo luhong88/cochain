@@ -1,6 +1,10 @@
 import pytest
 
-from cochain.topology.betti import _betti_via_morse, _tri_manifold_betti_via_trees
+from cochain.topology.betti import (
+    _betti_via_morse,
+    _tri_manifold_betti_via_trees,
+    compute_betti_numbers,
+)
 
 
 @pytest.mark.parametrize(
@@ -40,3 +44,8 @@ def test_betti_via_morse(mesh, betti_true, request, device):
 
     for b, b_true in zip(betti, betti_true):
         assert b == b_true
+
+
+def test_betti_smoke(two_tris_mesh, two_tets_mesh, device):
+    compute_betti_numbers(two_tris_mesh.to(device), manifold=True)
+    compute_betti_numbers(two_tets_mesh.to(device))

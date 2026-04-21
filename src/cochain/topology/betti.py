@@ -1,3 +1,5 @@
+__all__ = ["compute_betti_numbers"]
+
 import torch
 
 from ..complex import SimplicialMesh
@@ -10,22 +12,6 @@ def _tri_manifold_betti_via_trees(tri_mesh: SimplicialMesh) -> tuple[int, int, i
     """
     Compute the first three Betti numbers for a manifold tri mesh.
 
-    Parameters
-    ----------
-    tri_mesh
-        A tri mesh.
-
-    Returns
-    -------
-    b_0
-        The 0th Betti number, which measures the number of connected components.
-    b_1
-        The 1st Betti number, which measures the number of holes.
-    b_2
-        The 2nd Betti number, which measures the number of voids.
-
-    Notes
-    -----
     This function uses the tree-cotree decomposition to compute the Betti numbers.
     As such, it inherits the limitation of the cotree decomposition to manifold
     meshes.
@@ -74,6 +60,12 @@ def _tri_manifold_betti_via_trees(tri_mesh: SimplicialMesh) -> tuple[int, int, i
 
 
 def _betti_via_morse(mesh: SimplicialMesh) -> tuple[int, int, int]:
+    """
+    Compute the first three Betti numbers for a tri or tet mesh.
+
+    This function uses the discrete Morse complex to compute the Betti numbers,
+    and works on arbitrary immersed meshes.
+    """
     morse_cbd, crit_splx = compute_morse_complex(mesh)
 
     n_crit_splx = [splx.size(0) for splx in crit_splx]
@@ -91,3 +83,33 @@ def _betti_via_morse(mesh: SimplicialMesh) -> tuple[int, int, int]:
     b_2 = n_crit_splx[2] - cbd_rank[1] - cbd_rank[2]
 
     return b_0, b_1, b_2
+
+
+def compute_betti_numbers(
+    mesh: SimplicialMesh, manifold: bool = False
+) -> tuple[int, int, int]:
+    """
+    Compute the first three Betti numbers for a mesh.
+
+    Parameters
+    ----------
+    mesh
+        A tri or tet mesh.
+    manifold
+        If the input mesh is 2D and manifold, compute the betti numbers via
+        tree-cotree decomposition; otherwise compute the betti numbers via
+        discrete Morse complex.
+
+    Returns
+    -------
+    b_0
+        The 0th Betti number, which measures the number of connected components.
+    b_1
+        The 1st Betti number, which measures the number of holes.
+    b_2
+        The 2nd Betti number, which measures the number of voids.
+    """
+    if manifold and (mesh.dim == 2):
+        return _tri_manifold_betti_via_trees(mesh)
+    else:
+        return _betti_via_morse(mesh)
