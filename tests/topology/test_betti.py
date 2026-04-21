@@ -1,34 +1,42 @@
-from cochain.complex import SimplicialMesh
-from cochain.topology.betti import compute_tri_mesh_betti_numbers
+import pytest
+
+from cochain.topology.betti import _betti_via_morse, _tri_manifold_betti_via_trees
 
 
-def test_icosphere_betti(icosphere_mesh: SimplicialMesh, device):
-    b0, b1, b2 = compute_tri_mesh_betti_numbers(icosphere_mesh.to(device))
+@pytest.mark.parametrize(
+    "mesh,betti_true",
+    [
+        ("icosphere_mesh", [1, 0, 1]),
+        ("two_tris_mesh", [1, 0, 0]),
+        ("two_disjoint_tris_mesh", [2, 0, 0]),
+        ("finer_flat_annulus_mesh", [1, 1, 0]),
+    ],
+)
+def test_tri_manifold_betti_via_trees(mesh, betti_true, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
 
-    assert b0 == 1
-    assert b1 == 0
-    assert b2 == 1
+    betti = _tri_manifold_betti_via_trees(mesh)
 
-
-def test_two_tris_betti(two_tris_mesh: SimplicialMesh, device):
-    b0, b1, b2 = compute_tri_mesh_betti_numbers(two_tris_mesh.to(device))
-
-    assert b0 == 1
-    assert b1 == 0
-    assert b2 == 0
-
-
-def test_two_disjoint_tris_betti(two_disjoint_tris_mesh: SimplicialMesh, device):
-    b0, b1, b2 = compute_tri_mesh_betti_numbers(two_disjoint_tris_mesh.to(device))
-
-    assert b0 == 2
-    assert b1 == 0
-    assert b2 == 0
+    for b, b_true in zip(betti, betti_true):
+        assert b == b_true
 
 
-def test_annulus_betti(finer_flat_annulus_mesh: SimplicialMesh, device):
-    b0, b1, b2 = compute_tri_mesh_betti_numbers(finer_flat_annulus_mesh.to(device))
+@pytest.mark.parametrize(
+    "mesh,betti_true",
+    [
+        ("icosphere_mesh", [1, 0, 1]),
+        ("two_tris_mesh", [1, 0, 0]),
+        ("two_disjoint_tris_mesh", [2, 0, 0]),
+        ("finer_flat_annulus_mesh", [1, 1, 0]),
+        ("two_tets_mesh", [1, 0, 0]),
+        ("solid_torus_mesh", [1, 1, 0]),
+        ("solid_spherical_shell_mesh", [1, 0, 1]),
+    ],
+)
+def test_betti_via_morse(mesh, betti_true, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
 
-    assert b0 == 1
-    assert b1 == 1
-    assert b2 == 0
+    betti = _betti_via_morse(mesh)
+
+    for b, b_true in zip(betti, betti_true):
+        assert b == b_true
