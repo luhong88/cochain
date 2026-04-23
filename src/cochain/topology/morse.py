@@ -181,14 +181,37 @@ def _process_lower_stars(
     vert_ranks: npt.NDArray,
     splx_vert_rank_max: npt.NDArray,
 ) -> Integer[Tensor, " splx"]:
+    r"""
+    Construct an acyclic partial matching using lower star filtrations.
+
+    Let $f(v)$ be a scalar field associated with each vertex on a mesh. For each
+    vert $v$ in the mesh, we define the lower star $L(v)$ of $v$ to be the set of
+    all simplices $\sigma$ such that $v \le \sigma$ and $f(v) > f(v')$ for all
+    other vert faces $v'$ of $\sigma$; in case of a tie where $f(v) = f(v')$,
+    $\sigma \in L(v)$ if the index of $v$ is lower than that of $v'$.
+
+    For each simplex $\sigma \in L(v)$, identify all of its cofaces $\tau$ of
+    codimension 1. We pair/match $\sigma$ with $\tau$ if all following three
+    conditions are met:
+
+    * $\tau \in L(v)$,
+    * $\tau$ has not been paired/matched, and
+    * The sum of $f$ over the vert faces of $\tau$ is the smallest among all
+      codim 1 cofaces of $\sigma$ (in case of a tie, the first coface after a
+      lex sort is picked.)
+
+    Simplices that remain unpaired after this process are called critical.
+
+    This function returns a `pairing_map` array, where `pairing_map[i] = j` for
+    `i, j >= 0` indicates that the simplices `i` and `j` are paired, and
+    `pairing_map[i] = -1` indicates that simplex `i` is critical. Here, the simplices
+    are 0-indexed consecutively, where the lower-dimensional simplices are placed
+    before higher-dimensional ones, and simplices of the same dimension are
+    lex-sorted.
     """
-    Perform greedy lower star filtration/acyclic pairing.
-    """
-    # We will need to find the lower star of each vert in the mesh; for a vert v,
-    # the lower star is the set of all k-simplices σ such that v <= σ and v has
-    # the max scalar value among all vertices of σ. For accessing the lower star
-    # simplex indices, we use a pre-allocated lower_star_buffer; for checking
-    # membership in the lower star, we use a flat bool mask.
+    # For accessing the lower star simplex indices, we use a pre-allocated
+    # lower_star_buffer; for checking membership in the lower star, we use a flat
+    # bool mask.
     lower_star_idx_buffer = np.empty(max_n_cofaces, dtype=pairing_map.dtype)
     lower_star_dim_buffer = np.empty(max_n_cofaces, dtype=pairing_map.dtype)
     lower_star_mask = np.zeros(splx_dim_offsets[-1], dtype=np.bool)
@@ -288,6 +311,18 @@ def _find_critical_splx(
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
 ) -> tuple[tuple[npt.NDArray, ...], npt.NDArray]:
+    """
+    Identify the critical simplices in an acyclic partial matching.
+
+    This function takes in a `pairing_map` representing an acyclic partial
+    matching and performs two processing steps: (1) it finds the "global" indices
+    of the critical simplices and order them into separate arrays, one for
+    each dimension, and (2) it returns a `crit_splx_reduced_idx` array, where
+    `crit_splx_reduced_idx[i] = j` indicates that simplex `i` (indexed globally)
+    is the `j`th critical simplex among all critical simplices of the same
+    dimension as simplex `i`, and `crit_splx_reduced_idx[i] = -1` indicates that
+    simplex `i` is not a critical simplex.
+    """
     # Find all the critical simplices by identifying the unpaired simplices.
     crit_splx = np.argwhere(pairing_map == -1).flatten()
 
@@ -303,6 +338,7 @@ def _find_critical_splx(
     return tuple(crit_splx_by_dim), crit_splx_reduced_idx
 
 
+# TODO: option to save the gradient paths
 @numba.jit(nopython=True)
 def _construct_morse_cbds(
     codim1_face_indices: tuple[npt.NDArray, ...],
@@ -313,8 +349,35 @@ def _construct_morse_cbds(
     crit_splx_by_dim: tuple[npt.NDArray, ...],
     crit_splx_reduced_idx: npt.NDArray,
 ) -> tuple[list[npt.NDArray], list[npt.NDArray]]:
-    """
+    r"""
     Construct the reduced Morse coboundary operators.
+
+    Consider the $k$-th Morse coboundary operator $d$. The element $d_{ij}$ is
+    nonzero iff there is at least one gradient path connecting the $(k+1)$-simplex
+    $\tau_i$ to the $k$-simplex $\sigma_j$, and $d_{ij}$ is the sum of the weights
+    associated with all such gradient paths.
+
+    A gradient path $\rho$ between $\tau_i$ and $\sigma_j$ is a sequence of
+    alternating $(k+1)$- and $k$-dimensional simplices that satisfies either of
+    the following two conditions:
+
+    * The sequence contains only $\tau_i$ and $\sigma_j$, where $\sigma_j \le \tau_i$, or
+    * The $\sigma_j$ is not a face of $\tau_i$ and the sequence contains additional
+      simplices, whereby every "step-down" satisfies a face relation and every
+      "step-up" is part of an acyclic partial matching.
+
+    We assign each step of the gradient path a weight: a step-down is assigned
+    a weight equal to the boundary sign of the face, and a step-up is assigned
+    a weight equal to the negative boundary sign of the face. Then, the weight
+    associated with a gradient path is the product of the weight assigned to
+    each step along the path.
+
+    In this function, we perform the path search using a depth-first search
+    approach.
+
+    Note that, while the Morse complex is chain homotopic to the original simplicial
+    complex, the Morse complex itself is a CW complex, rather than a simplicial
+    complex.
     """
     int_dtype = pairing_map.dtype
     float_dtype = codim1_face_signs[0].dtype
@@ -347,7 +410,6 @@ def _construct_morse_cbds(
         # Determine the index offset required to map from the global simplex
         # indices to the local, per-dim simplex indices.
         global_splx_offset = splx_dim_offsets[splx_dim]
-        global_face_offset = splx_dim_offsets[splx_dim - 1]
 
         # Fetch cbd indices and values for face relation lookup.
         cbd_idx = codim1_face_indices[splx_dim - 1]
