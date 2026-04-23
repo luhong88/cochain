@@ -26,9 +26,65 @@ def _prepare_inputs(
     int_dtype: np.dtype,
 ):
     """
-    Prepare input mesh and scalar field for discrete Morse theory analysis.
+    Prepare input mesh and scalar field for discrete Morse theory.
 
-    int dtype must be signed.
+    Parameters
+    ----------
+    mesh
+        A simplicial complex.
+    scalar_field
+        A scalar function defined/sampled at the verts of the mesh.
+    int_dtype
+        The integer dtype used to represent simplex indices, typically either
+        np.int32 or np.int64. Must be a signed dtype because -1 will be used
+        to flag certain simplices.
+
+    Returns
+    -------
+    ordered_verts_np
+        The indices of mesh verts ordered by their associated scalar field values
+        (in ascending order) with tie break by vert indices.
+    vert_ranks_np
+        Integer ranks assigned to verts based on ordered_verts_np.
+    splx_vert_rank_max
+        The max vert rank among all vert faces of a simplex.
+    splx_scalar_sum
+        The scalar value sum over all vert faces for each simplex.
+    vert_coface_indices
+        The csc nonzero element row indices of the coboundary operators $d_0$,
+        $|d_1||d_0|$, and $|d_2||d_1||d_0|$, which contains vert coface global
+        indices.
+    vert_coface_offset
+        The csc nonzero element ccol indices of the coboundary operators $d_0$,
+        $|d_1||d_0|$, and $|d_2||d_1||d_0|$, which contains information on the
+        number of cofaces for each vert.
+    codim1_coface_indices
+        The csc nonzero element row indices of the coboundary operators $d_0$,
+        $d_1$, and $d_2$, which contains codimension 1 coface global indices.
+    codim1_coface_offset
+        The csc nonzero element ccol indices of the coboundary operators $d_0$,
+        $d_1$, and $d_2$, which contains information on the number of codimension
+        1 cofaces for each simplex..
+    codim1_face_indices
+        The csr nonzero element col indices of the coboundary operators $d_0$,
+        $d_1$, and $d_2$, which contains codimension 1 face global indices.
+    codim1_face_offset
+        The csr nonzero element crow indices of the coboundary operators $d_0$,
+        $d_1$, and $d_2$, which contains information on the number of codimension
+        1 faces for each simplex.
+    codim1_face_signs
+        The csr nonzero element values of the coboundary operators $d_0$, $d_1$,
+        and $d_2$, which contains face boundary signs.
+    max_n_cofaces
+        The maximum number of vert, edge, tri, and tet cofaces among the verts
+        in the mesh, which is used to allocate a buffer array later for tracking
+        lower star membership for acyclic partial matching.
+    pairing_map
+        An integer array for tracking acyclic partial matching; initialized to
+        -1 everywhere; see _process_lower_stars() for more details.
+    splx_dim_offsets
+        An integer array containing cumulative simplex counts; more explicitly,
+        it is [0, V, V+E, V+E+F, V+E+F+T].
     """
     # Attach the scalar field to higher-order simplices
     splx_scalar_fields = (
@@ -145,12 +201,15 @@ def _prepare_inputs(
     # + 1 to account for vert cofaces (which is just itself).
     max_n_cofaces = 1 + int((n_cofaces.sum(axis=0)).max().item())
 
-    # Prepare the pairing map; if τ is a codim 1 face of σ and τ is paired with
-    # σ, then p[τ] = σ and p[σ] = τ.
+    # Prepare the pairing map; if σ is a codim 1 face of τ and they are paired/matched,
+    # then p[τ] = σ and p[σ] = τ.
     pairing_map = np.full(sum(mesh.n_splx), -1, dtype=int_dtype)
 
     return (
         ordered_verts_np,
+        vert_ranks_np,
+        splx_vert_rank_max,
+        splx_scalar_sum,
         vert_coface_indices,
         vert_coface_offset,
         codim1_coface_indices,
@@ -161,15 +220,15 @@ def _prepare_inputs(
         max_n_cofaces,
         pairing_map,
         splx_dim_offsets,
-        splx_scalar_sum,
-        vert_ranks_np,
-        splx_vert_rank_max,
     )
 
 
 @numba.jit(nopython=True)
 def _process_lower_stars(
     ordered_verts: npt.NDArray,
+    vert_ranks: npt.NDArray,
+    splx_vert_rank_max: npt.NDArray,
+    splx_scalar_sum: npt.NDArray,
     vert_coface_indices: tuple[npt.NDArray, ...],
     vert_coface_offset: tuple[npt.NDArray, ...],
     codim1_coface_indices: tuple[npt.NDArray, ...],
@@ -177,9 +236,6 @@ def _process_lower_stars(
     max_n_cofaces: int,
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
-    splx_scalar_sum: npt.NDArray,
-    vert_ranks: npt.NDArray,
-    splx_vert_rank_max: npt.NDArray,
 ) -> Integer[Tensor, " splx"]:
     r"""
     Construct an acyclic partial matching using lower star filtrations.
@@ -254,8 +310,8 @@ def _process_lower_stars(
             lower_star_mask[cofaces[lower_mask]] = True
             lower_star_size += n_lower_cofaces
 
-        # For each simplex τ in the lower star of v, attempt to pair it with a
-        # coface σ of codimension 1 greedily by finding an unpaired coface σ that
+        # For each simplex σ in the lower star of v, attempt to pair it with a
+        # coface τ of codimension 1 greedily by finding an unpaired coface τ that
         # has the lowest sum of scalar field over its vertices ("steepest descent").
         for i in range(lower_star_size):
             coface_dim = lower_star_dim_buffer[i]
@@ -270,7 +326,7 @@ def _process_lower_stars(
             if coface_dim == 3:
                 continue
 
-            # For each vert coface τ, find all of its cofaces (of codim 1) σ's.
+            # For each vert coface σ, find all of its cofaces (of codim 1) τ's.
             cbd_idx = codim1_coface_indices[coface_dim]
             cbd_offset = codim1_coface_offset[coface_dim]
             # Note that the offset index still operates on the local index
@@ -281,9 +337,9 @@ def _process_lower_stars(
                 cbd_offset[vert_coface_local] : cbd_offset[vert_coface_local + 1]
             ]
 
-            # Iterate over all the σ's, ignore any σ that is not in the
-            # lower star or already paired, find the σ with the lowest
-            # sum of scalar field and pair this σ with τ.
+            # Iterate over all the τ's, ignore any τ that is not in the
+            # lower star or already paired, find the τ with the lowest
+            # sum of scalar field and pair this τ with σ.
             best_coface_coface = -1
             min_sum = np.inf
             for coface_coface in coface_cofaces:
@@ -624,6 +680,9 @@ def compute_morse_complex(
         # Execute subroutines.
         (
             ordered_verts,
+            vert_ranks,
+            splx_vert_rank_max,
+            splx_scalar_sum,
             vert_coface_indices,
             vert_coface_offset,
             codim1_coface_indices,
@@ -634,13 +693,13 @@ def compute_morse_complex(
             max_n_cofaces,
             pairing_map,
             splx_dim_offsets,
-            splx_scalar_sum,
-            vert_ranks,
-            splx_vert_rank_max,
         ) = _prepare_inputs(mesh, scalar_field, np_int_dtype)
 
         pairing_map = _process_lower_stars(
             ordered_verts,
+            vert_ranks,
+            splx_vert_rank_max,
+            splx_scalar_sum,
             vert_coface_indices,
             vert_coface_offset,
             codim1_coface_indices,
@@ -648,9 +707,6 @@ def compute_morse_complex(
             max_n_cofaces,
             pairing_map,
             splx_dim_offsets,
-            splx_scalar_sum,
-            vert_ranks,
-            splx_vert_rank_max,
         )
 
         crit_splx_by_dim, crit_splx_reduced_idx = _find_critical_splx(
