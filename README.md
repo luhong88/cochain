@@ -12,6 +12,7 @@ Cochain is a collection of computational topology operators built on PyTorch, de
     * Reduced coboundary operators via discrete Morse theory.
     * Combinatorial Laplacians on both the primal and dual meshes.
     * Tree-cotree decomposition for 1-Laplacians on triangular meshes.
+    * Betti numbers.
 * Metric-dependent operators:
     * DEC Hodge stars (circumcentric and barycentric duals) and consistent mass matrices.
     * DEC Hodge Laplacians (for triangular meshes) and weak Laplacians/stiffness matrices (for tetrahedral meshes).
