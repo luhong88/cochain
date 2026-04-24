@@ -2,13 +2,14 @@
 
 **Status**: Pre-alpha, in early development.
 
-Cochain is a collection of computational topology operators built on PyTorch, designed to facilitate the analysis of discrete topological objects (specifically, 2D and 3D simplicial meshes embedded in $\mathbb{R}^3$) within the context of discrete exterior calculus (DEC) and cohomology theory.
+Cochain is a collection of computational topology operators built on PyTorch, designed to facilitate the analysis of discrete topological objects—specifically, simplicial meshes immersed in $\mathbb R^3$ and their associated discrete cochains—within the context of discrete exterior calculus (DEC) and cohomology theory; the underlying chain complexes are defined over $\mathbb{R}$.
 
 ## Features
 
 * Simplicial complexes & combinatorial topology:
-    * Piecewise-linear triangular and tetrahedral meshes embedded in $\mathbb{R}^3$.
+    * Piecewise-linear triangular and tetrahedral meshes immersed in $\mathbb{R}^3$.
     * Coboundary operators (discrete exterior derivatives).
+    * Reduced coboundary operators via discrete Morse theory.
     * Combinatorial Laplacians on both the primal and dual meshes.
     * Tree-cotree decomposition for 1-Laplacians on triangular meshes.
 * Metric-dependent operators:
