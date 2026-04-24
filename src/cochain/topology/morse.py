@@ -238,7 +238,7 @@ def _process_lower_stars(
     splx_dim_offsets: npt.NDArray,
 ) -> Integer[Tensor, " splx"]:
     r"""
-    Construct an acyclic partial matching using lower star filtrations.
+    Construct an acyclic partial matching using lower star filtration.
 
     Let $f(v)$ be a scalar field associated with each vertex on a mesh. For each
     vert $v$ in the mesh, we define the lower star $L(v)$ of $v$ to be the set of
@@ -653,11 +653,38 @@ def compute_morse_complex(
     """
     Compute the Morse coboundary operators for a mesh.
 
-    This function makes the following assumptions about the mesh:
-    * Contiguous, 0-based indexing of vertices.
-    * Up to three-dimensional.
-    * If no scalar_field is provided, the vertices must be associated with coordinate
-      vectors.
+    This function construct an acyclic partial matching induced by the lower
+    star filtration of a scalar field, and then construct the reduced coboundary
+    operators using a depth-first search strategy. The core algorithms are
+    accelerated by Numba.
+
+    Parameters
+    ----------
+    mesh
+        A simplicial complex; see the Notes on the assumptions made about the
+        complex in this function.
+    scalar_field : [vert,]
+        A scalar field associated/sampled at the mesh vertices. If not provided,
+        then associate each vert with its distance to the center of the mesh.
+
+    Returns
+    -------
+    morse_cbd
+        A tuple containing the reduced 0-, 1-, and 2-coboundary operators of the
+        Morse complex.
+    crit_splx
+        A tuple of integer tensors containing the indices of the critical 0-, 1-,
+        2-, and 3-simplices in the complex.
+
+    Notes
+    -----
+    This function only makes the following assumptions about the input simplicial
+    complex:
+
+    * The vertices are numbered with contiguous, 0-based indices.
+    * The simplicial complex is at most three-dimensional.
+    * If no `scalar_field` is provided, the vertices must be associated with
+      coordinate vectors.
     """
     with torch.no_grad():
         # If no scalar_field is provided, compute a simple one that measures the
