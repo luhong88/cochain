@@ -174,3 +174,17 @@ def load_finer_flat_annulus_mesh(
     )
 
     return mesh
+
+
+def load_icosphere_mesh(r: float = 1.0, n_sub: int = 1):
+    pv_sphere = pv.Icosphere(radius=r, nsub=n_sub)
+
+    vert_coords_np = np.asarray(pv_sphere.points)
+    tris_np = np.asarray(pv_sphere.regular_faces)
+
+    vert_coords_t = torch.from_numpy(vert_coords_np).to(dtype=torch.float32)
+    tris_t = torch.from_numpy(tris_np).to(dtype=torch.int64)
+
+    cochain_sphere = SimplicialMesh.from_tri_mesh(vert_coords_t, tris_t)
+
+    return cochain_sphere

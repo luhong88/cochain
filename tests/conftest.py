@@ -116,17 +116,7 @@ def hollow_tet_mesh() -> SimplicialMesh:
 
 @pytest.fixture
 def icosphere_mesh() -> SimplicialMesh:
-    pv_sphere = pv.Icosphere(nsub=1)
-
-    vert_coords_np = np.asarray(pv_sphere.points)
-    tris_np = np.asarray(pv_sphere.regular_faces)
-
-    vert_coords_t = torch.from_numpy(vert_coords_np).to(dtype=torch.float32)
-    tris_t = torch.from_numpy(tris_np).to(dtype=torch.int64)
-
-    cochain_sphere = SimplicialMesh.from_tri_mesh(vert_coords_t, tris_t)
-
-    return cochain_sphere
+    return synthetic_tri_meshes.load_icosphere_mesh(r=1.0, n_sub=1)
 
 
 @pytest.fixture
@@ -165,4 +155,11 @@ def simple_bcc_mesh() -> SimplicialMesh:
 def solid_torus_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_solid_torus(
         major_r=1.0, minor_r=0.5, u_res=5, v_res=5, edge_length_frac=1.0
+    )
+
+
+@pytest.fixture
+def solid_spherical_shell_mesh() -> SimplicialMesh:
+    return synthetic_tet_meshes.load_spherical_shell(
+        outer_r=2.0, inner_r=1.0, theta_res=6, phi_res=6, edge_length_frac=1.0
     )

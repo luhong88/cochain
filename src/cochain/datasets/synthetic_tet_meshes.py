@@ -67,7 +67,7 @@ def load_solid_torus(
     surface = surface.triangulate()
     surface = surface.clean()
 
-    # 3. Extract vertices and faces for tetrahedralization with pytetwild
+    # Extract vertices and faces for tetrahedralization with pytetwild
     v_surf = surface.points
     f_surf = surface.faces.reshape(-1, 4)[:, 1:]
 
@@ -75,6 +75,50 @@ def load_solid_torus(
         v_surf, f_surf, edge_length_fac=edge_length_frac
     )
 
+    mesh = SimplicialMesh.from_tet_mesh(
+        vert_coords=torch.from_numpy(v_tet).to(dtype=torch.float32),
+        tets=torch.from_numpy(t_tet).to(dtype=torch.int64),
+    )
+
+    return mesh
+
+
+def load_spherical_shell(
+    outer_r: float,
+    inner_r: float,
+    theta_res: int,
+    phi_res: int,
+    edge_length_frac: float,
+) -> SimplicialMesh:
+    # Generate the outer bounding surface.
+    outer_sphere = pv.Sphere(
+        radius=outer_r, theta_resolution=theta_res, phi_resolution=phi_res
+    )
+
+    # Generate the inner bounding surface (the hollow core).
+    inner_sphere = pv.Sphere(
+        radius=inner_r, theta_resolution=theta_res, phi_resolution=phi_res
+    )
+
+    # Flip the normals of the inner sphere to point towards the origin. This ensures
+    # the winding number accurately resolves to 0 inside the cavity.
+    inner_sphere.flip_faces(inplace=True)
+
+    # Combine both surfaces into a single disjoint mesh.
+    surface = outer_sphere + inner_sphere
+    surface = surface.triangulate()
+    surface = surface.clean()
+
+    # Extract vertices and faces for PyTetWild.
+    v_surf = surface.points
+    f_surf = surface.faces.reshape(-1, 4)[:, 1:]
+
+    # Tetrahedralize.
+    v_tet, t_tet = pytetwild.tetrahedralize(
+        v_surf, f_surf, edge_length_fac=edge_length_frac
+    )
+
+    # Wrap in mesh class
     mesh = SimplicialMesh.from_tet_mesh(
         vert_coords=torch.from_numpy(v_tet).to(dtype=torch.float32),
         tets=torch.from_numpy(t_tet).to(dtype=torch.int64),

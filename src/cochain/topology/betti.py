@@ -1,30 +1,17 @@
-__all__ = ["compute_tri_mesh_betti_numbers"]
+__all__ = ["compute_betti_numbers"]
+
+import torch
 
 from ..complex import SimplicialMesh
+from .morse import compute_morse_complex
 from .spanning_tree import _minimum_spanning_tree
 from .topo_laplacians import laplacian_k
 
 
-def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialMesh) -> tuple[int, int, int]:
+def _tri_manifold_betti_via_trees(tri_mesh: SimplicialMesh) -> tuple[int, int, int]:
     """
     Compute the first three Betti numbers for a manifold tri mesh.
 
-    Parameters
-    ----------
-    tri_mesh
-        A tri mesh.
-
-    Returns
-    -------
-    b_0
-        The 0th Betti number, which measures the number of connected components.
-    b_1
-        The 1st Betti number, which measures the number of holes.
-    b_2
-        The 2nd Betti number, which measures the number of voids.
-
-    Notes
-    -----
     This function uses the tree-cotree decomposition to compute the Betti numbers.
     As such, it inherits the limitation of the cotree decomposition to manifold
     meshes.
@@ -70,3 +57,59 @@ def compute_tri_mesh_betti_numbers(tri_mesh: SimplicialMesh) -> tuple[int, int, 
     b1 = tri_mesh.n_edges - n_primal_mst_edges - n_dual_mst_edges
 
     return b0, b1, b2
+
+
+def _betti_via_morse(mesh: SimplicialMesh) -> tuple[int, int, int]:
+    """
+    Compute the first three Betti numbers for a tri or tet mesh.
+
+    This function uses the discrete Morse complex to compute the Betti numbers,
+    and works on arbitrary immersed meshes.
+    """
+    morse_cbd, crit_splx = compute_morse_complex(mesh)
+
+    n_crit_splx = [splx.size(0) for splx in crit_splx]
+
+    cbd_dense = [cbd.to_dense() for cbd in morse_cbd]
+    cbd_rank = [torch.linalg.matrix_rank(cbd).item() for cbd in cbd_dense]
+
+    # b_0 = |K_0| - rank(d_0)
+    b_0 = n_crit_splx[0] - cbd_rank[0]
+
+    # b_1 = |K_1| - rank(d_0) - rank(d_1)
+    b_1 = n_crit_splx[1] - cbd_rank[0] - cbd_rank[1]
+
+    # b_2 = |K_2| - rank(d_1) - rankd(d_2)
+    b_2 = n_crit_splx[2] - cbd_rank[1] - cbd_rank[2]
+
+    return b_0, b_1, b_2
+
+
+def compute_betti_numbers(
+    mesh: SimplicialMesh, manifold: bool = False
+) -> tuple[int, int, int]:
+    """
+    Compute the first three Betti numbers for a mesh.
+
+    Parameters
+    ----------
+    mesh
+        A tri or tet mesh.
+    manifold
+        If the input mesh is 2D and manifold, compute the betti numbers via
+        tree-cotree decomposition; otherwise compute the betti numbers via
+        discrete Morse complex.
+
+    Returns
+    -------
+    b_0
+        The 0th Betti number, which measures the number of connected components.
+    b_1
+        The 1st Betti number, which measures the number of holes.
+    b_2
+        The 2nd Betti number, which measures the number of voids.
+    """
+    if manifold and (mesh.dim == 2):
+        return _tri_manifold_betti_via_trees(mesh)
+    else:
+        return _betti_via_morse(mesh)

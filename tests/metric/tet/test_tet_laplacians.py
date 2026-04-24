@@ -57,6 +57,29 @@ def test_torus_homology_group_dims(
     torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
 
 
+@pytest.mark.parametrize(
+    "weak_laplacian, betti",
+    [
+        (partial(tet_laplacians.weak_laplacian_0, method="cotan"), 1),
+        (partial(tet_laplacians.weak_laplacian_0, method="consistent"), 1),
+        (tet_laplacians.weak_laplacian_1, 0),
+        (partial(tet_laplacians.weak_laplacian_2, method="dense"), 1),
+        (partial(tet_laplacians.weak_laplacian_2, method="inv_star"), 1),
+        (partial(tet_laplacians.weak_laplacian_3, method="dense"), 0),
+        (partial(tet_laplacians.weak_laplacian_3, method="inv_star"), 0),
+    ],
+)
+def test_spherical_shell_homology_group_dims(
+    weak_laplacian, betti, solid_spherical_shell_mesh: SimplicialMesh, device
+):
+    mesh = solid_spherical_shell_mesh.to(device)
+
+    operator = weak_laplacian(mesh).to_dense()
+    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+
+    torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
+
+
 def test_laplacian_0_equivalence(two_tets_mesh: SimplicialMesh, device):
     """
     Check consistency in weak 0-Laplacian construction methods.
