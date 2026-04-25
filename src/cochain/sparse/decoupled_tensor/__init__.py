@@ -1,3 +1,10 @@
+__all__ = [
+    "BaseDecoupledTensor",
+    "DiagDecoupledTensor",
+    "SparseDecoupledTensor",
+    "SparsityPattern",
+]
+
 from ._base_decoupled_tensor import BaseDecoupledTensor
 from ._diag_decoupled_tensor import DiagDecoupledTensor
 from ._pattern import SparsityPattern
