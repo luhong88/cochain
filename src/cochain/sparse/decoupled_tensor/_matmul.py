@@ -3,7 +3,7 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ._index import project_and_extract_cnz_vals
-from ._pattern import SparsityPattern
+from .pattern import SparsityPattern
 
 
 class _FixedTopoSpDenseMM(torch.autograd.Function):

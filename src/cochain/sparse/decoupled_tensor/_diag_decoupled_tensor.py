@@ -15,8 +15,8 @@ from ._matmul import (
     diag_sp_mm,
     sp_diag_mm,
 )
-from ._pattern import SparsityPattern
 from ._sparse_decoupled_tensor import SparseDecoupledTensor
+from .pattern import SparsityPattern
 
 
 @dataclass

@@ -114,7 +114,7 @@ def get_csc_sort_perm(
 
     The input `coo_idx` is assumed to be coalesced and allowed to have either
     one or zero batch dim. The output permutation tensor is guaranteed to
-    be contiguous.
+    be contiguous and always in int64 dtype.
     """
     match len(shape):
         case 2:
@@ -146,12 +146,12 @@ def get_csc_sort_perm(
 
 
 def coalesced_coo_to_csc_row_idx(
-    coo_idx: Integer[LongTensor, "sp nnz"],
+    coo_idx: Integer[LongTensor, "sp nz"],
     shape: torch.Size,
-    perm: Integer[LongTensor, " nnz"],
+    perm: Integer[LongTensor, " nz"],
     *,
     dtype: torch.dtype | None = None,
-) -> Integer[LongTensor, "*b nnz/b"]:
+) -> Integer[LongTensor, "*b nz_per_b"]:
     """
     Extract the row indices from a COO index tensor.
 
