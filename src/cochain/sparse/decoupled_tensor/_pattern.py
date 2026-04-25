@@ -9,9 +9,9 @@ from jaxtyping import Bool, Integer
 from torch import LongTensor, Tensor
 
 from ._index import (
-    coalesced_coo_to_col_idx,
     coalesced_coo_to_compressed_idx,
-    coalesced_coo_to_row_idx,
+    coalesced_coo_to_csc_row_idx,
+    coalesced_coo_to_csr_col_idx,
     get_csc_sort_perm,
 )
 
@@ -682,11 +682,11 @@ class SparsityPattern:
     # TODO: consider renaming this to idx_col_csr to avoid confusion.
     @cached_property
     def idx_col(self) -> Integer[LongTensor, "*b nnz/b"]:
-        return coalesced_coo_to_col_idx(self.idx_coo, self.shape)
+        return coalesced_coo_to_csr_col_idx(self.idx_coo, self.shape)
 
     @cached_property
     def idx_col_int32(self) -> Integer[torch.IntTensor, "*b nnz/b"]:
-        return coalesced_coo_to_col_idx(self.idx_coo, self.shape, dtype=torch.int32)
+        return coalesced_coo_to_csr_col_idx(self.idx_coo, self.shape, dtype=torch.int32)
 
     @cached_property
     def coo_to_csc_perm(self) -> Integer[LongTensor, " nnz"]:
@@ -704,10 +704,12 @@ class SparsityPattern:
 
     @cached_property
     def idx_row_csc(self) -> Integer[LongTensor, "*b nnz/b"]:
-        return coalesced_coo_to_row_idx(self.idx_coo, self.shape, self.coo_to_csc_perm)
+        return coalesced_coo_to_csc_row_idx(
+            self.idx_coo, self.shape, self.coo_to_csc_perm
+        )
 
     @cached_property
     def idx_row_csc_int32(self) -> Integer[torch.IntTensor, "*b nnz/b"]:
-        return coalesced_coo_to_row_idx(
+        return coalesced_coo_to_csc_row_idx(
             self.idx_coo, self.shape, self.coo_to_csc_perm, dtype=torch.int32
         )

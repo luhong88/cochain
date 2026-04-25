@@ -234,8 +234,7 @@ class _FixedTopoSpSpMM(torch.autograd.Function):
             dLdA_val = project_and_extract_cnz_vals(
                 src_coo=dLdA.indices(),
                 src_val=dLdA.values(),
-                target_coo=a_pattern.idx_coo,
-                target_shape=a_pattern.shape,
+                template_coo=a_pattern.idx_coo,
             )
 
         if needs_dLdB:
@@ -251,8 +250,7 @@ class _FixedTopoSpSpMM(torch.autograd.Function):
             dLdB_val = project_and_extract_cnz_vals(
                 src_coo=dLdB.indices(),
                 src_val=dLdB.values(),
-                target_coo=b_pattern.idx_coo,
-                target_shape=b_pattern.shape,
+                template_coo=b_pattern.idx_coo,
             )
 
         return (dLdA_val, dLdA_pattern, dLdB_val, dLdB_pattern)
