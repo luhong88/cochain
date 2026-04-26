@@ -8,15 +8,15 @@ from einops import repeat
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
-from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from ._matmul import (
     dense_diag_mm,
     diag_dense_mm,
     diag_sp_mm,
     sp_diag_mm,
 )
-from ._sparse_decoupled_tensor import SparseDecoupledTensor
+from .base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from .pattern import SparsityPattern
+from .sparse_decoupled_tensor import SparseDecoupledTensor
 
 
 @dataclass

@@ -7,8 +7,8 @@ import torch
 from jaxtyping import Bool, Float, Integer
 from torch import LongTensor, Tensor
 
-from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
+from .base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from .pattern import SparsityPattern, check_pattern_equality
 
 
