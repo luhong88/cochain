@@ -203,9 +203,9 @@ class SparsityPattern:
     idx_coo : [sp, nz]
         A "read-only" view of `_idx_coo`.
     n_batch_dim
-        The number of batch dimensions (either 1 or 0).
+        The number of batch dimensions (either one or zero).
     n_sp_dim
-        The number of sparse dimensions (which is always 2).
+        The number of sparse dimensions (which is always two).
     T
         The matrix transpose on the two sparse dimensions.
     dtype
@@ -268,6 +268,18 @@ class SparsityPattern:
 
         # Coerse shape dtype.
         object.__setattr__(self, "shape", torch.Size(self.shape))
+
+    # TODO: investigate safety of auto-casting to int32 for csc/csr reps.
+    @cached_property
+    def _is_int32_safe(self) -> bool:
+        """Check whether the sparsity pattern can be represented with int32 dtype."""
+        int32_max = torch.iinfo(torch.int32).max
+
+        nnz_is_safe = self._nnz() < int32_max
+        n_row_is_safe = self.size(-2) < int32_max
+        n_col_is_safe = self.size(-1) < int32_max
+
+        return nnz_is_safe & n_row_is_safe & n_col_is_safe
 
     @classmethod
     def pack_block_diag(
@@ -667,13 +679,13 @@ class SparsityPattern:
 
     @property
     def n_batch_dim(self) -> int:
-        """The number of batch dimensions (either 1 or 0)."""
+        """The number of batch dimensions (either one or zero)."""
         return self.idx_coo.size(0) - 2
 
     @property
     def n_sp_dim(self) -> int:
         """
-        The number of sparse dimensions (which is always 2).
+        The number of sparse dimensions (which is always two).
 
         In Pytorch, for sparse CSC/CSR tensors, the leading batch dimension(s) do
         not count towards `sparse_dim()`; for sparse COO tensors, no such distinction

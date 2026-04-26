@@ -8,9 +8,14 @@ from torch import Tensor
 
 
 def is_scalar_like(other) -> bool:
-    """Check whether an object is a float, int, or a tensor with one element."""
+    """
+    Check whether an object is "scalar-like".
+
+    An object is "scalar-like" if it is a float, a int, or a 1D or 0D tensor with
+    one element.
+    """
     return isinstance(other, (float, int)) or (
-        isinstance(other, Tensor) and other.numel() == 1
+        isinstance(other, Tensor) and (other.numel() == 1) and (other.ndim <= 1)
     )
 
 
@@ -194,7 +199,7 @@ class BaseDecoupledTensor(ABC):
     def to_dense(self) -> Tensor: ...
 
     @abstractmethod
-    def to_sparse_operator(self) -> BaseDecoupledTensor: ...
+    def to_sdt(self) -> BaseDecoupledTensor: ...
 
     @abstractmethod
     def to_sparse_coo(self) -> Tensor: ...
