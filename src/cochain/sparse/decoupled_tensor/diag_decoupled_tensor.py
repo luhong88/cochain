@@ -424,7 +424,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
             idx_coo = torch.vstack(
                 (
                     repeat(b_arange, "b -> (b diag)", diag=diag),
-                    repeat(diag_arange, "diag -> sp (b diag)", sp=2, b=b),
+                    repeat(diag_arange, "diag -> sp (b diag)", sp=self.n_sp_dim, b=b),
                 )
             )
 
@@ -454,6 +454,12 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
     def _to_compressed_sparse_tensor(
         self, constructor: Callable, idx_dtype: torch.dtype
     ) -> Float[Tensor, "*b diag diag"]:
+        """
+        Convert self to a sparse CSC/CSR tensor.
+
+        The following code is written with variable names assuming the CSR format,
+        but for a diagonal matrix, the two formats are indexed identically.
+        """
         if self.n_batch_dim == 0:
             idx_crow = torch.arange(
                 self._nnz() + 1, dtype=idx_dtype, device=self.device
@@ -464,11 +470,15 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
             b = self.size(0)
             diag = self.size(-1)
 
-            idx_crow = torch.tile(
-                torch.arange(diag + 1, dtype=idx_dtype, device=self.device), (b, 1)
+            idx_crow = repeat(
+                torch.arange(diag + 1, dtype=idx_dtype, device=self.device),
+                "crow -> b crow",
+                b=b,
             )
-            idx_col = torch.tile(
-                torch.arange(diag, dtype=idx_dtype, device=self.device), (b, 1)
+            idx_col = repeat(
+                torch.arange(diag, dtype=idx_dtype, device=self.device),
+                "col -> b col",
+                b=b,
             )
 
         return constructor(
@@ -481,11 +491,37 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         )
 
     def to_sparse_csr(self, int32: bool = False) -> Float[Tensor, "*b diag diag"]:
+        """
+        Convert self to a sparse CSR tensor.
+
+        Parameters
+        ----------
+        int32
+            Whether to use int32 dtype for the crow and col indices.
+
+        Returns
+        -------
+        [*b, diag, diag]
+            A sparse CSR tensor.
+        """
         return self._to_compressed_sparse_tensor(
             torch.sparse_csr_tensor, torch.int32 if int32 else torch.int64
         )
 
     def to_sparse_csc(self, int32: bool = False) -> Float[Tensor, "*b diag diag"]:
+        """
+        Convert self to a sparse CSC tensor.
+
+        Parameters
+        ----------
+        int32
+            Whether to use int32 dtype for the ccol and row indices.
+
+        Returns
+        -------
+        [*b, diag, diag]
+            A sparse CSC tensor.
+        """
         return self._to_compressed_sparse_tensor(
             torch.sparse_csc_tensor, torch.int32 if int32 else torch.int64
         )

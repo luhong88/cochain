@@ -214,22 +214,14 @@ class SparsityPattern:
         The device of the `idx_coo` tensor.
     idx_crow : [*b, r+1]
         The CSR format compressed row index of the tensor (`crow_indices`).
-    idx_crow_int32 : [*b, r+1]
-        The int32 version of `idx_crow`.
     idx_col : [*b, nz_per_b]
         The CSR format col index of the tensor (`col_indices`).
-    idx_col_int32 : [*b, nz_per_b]
-        The int32 version of `idx_col`.
     coo_to_csc_perm : [nz,]
         The permutation that converts row-major to col-major index ordering.
     idx_ccol : [*b, c+1]
         The CSC format compressed col index of the tensor (`ccol_indices`).
-    idx_ccol_int32 : [*b, c+1]
-        The int32 version of `idx_ccol`.
     idx_row_csc : [*b, nz_per_b]
         The CSC format row index of the tensor (`row_indices`).
-    idx_row_csc_int32 : [*b, nz_per_b]
-        The int32 version of `idx_row_csc`.
     """
 
     _idx_coo: Integer[LongTensor, "sp nz"]
@@ -269,7 +261,6 @@ class SparsityPattern:
         # Coerse shape dtype.
         object.__setattr__(self, "shape", torch.Size(self.shape))
 
-    # TODO: investigate safety of auto-casting to int32 for csc/csr reps.
     @cached_property
     def _is_int32_safe(self) -> bool:
         """Check whether the sparsity pattern can be represented with int32 dtype."""
@@ -815,9 +806,17 @@ class SparsityPattern:
         """
         The CSR format compressed row index of the tensor (`crow_indices`).
 
-        this property is cached once computed and has the same dtype as `idx_coo`.
+        this property is cached once computed. This tensor will be cast to int32
+        dtype if it is safe to do so; otherwise it has the same dtype as `idx_coo`.
         """
-        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="crow")
+        if self._is_int32_safe:
+            return coalesced_coo_to_compressed_idx(
+                self.idx_coo, self.shape, format="crow", dtype=torch.int32
+            )
+        else:
+            return coalesced_coo_to_compressed_idx(
+                self.idx_coo, self.shape, format="crow"
+            )
 
     @cached_property
     def idx_crow_int32(self) -> Integer[torch.IntTensor, "*b r+1"]:

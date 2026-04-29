@@ -152,7 +152,7 @@ class BaseDecoupledTensor(ABC):
 
     @property
     def n_dim(self) -> int:
-        """Return the total number of dimensions."""
+        """The total number of dimensions."""
         return self.n_batch_dim + self.n_sp_dim + self.n_dense_dim
 
     @property
