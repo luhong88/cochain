@@ -3,13 +3,13 @@ from jaxtyping import Float, Integer
 from torch import LongTensor, Tensor
 
 from ._index import project_and_extract_cnz_vals
-from ._pattern import SparsityPattern
+from .pattern import SparsityPattern
 
 
-class _FixedTopoSpDenseMM(torch.autograd.Function):
+class FixedTopoSpDenseMM(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " nnz"],
+        a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "i j"],
         b_dense: Float[Tensor, "j k"],
     ) -> Float[Tensor, "i k"]:
@@ -38,7 +38,7 @@ class _FixedTopoSpDenseMM(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdC: Float[Tensor, "i k"]
-    ) -> tuple[Float[Tensor, " nnz"] | None, None, Float[Tensor, "j k"] | None]:
+    ) -> tuple[Float[Tensor, " nz"] | None, None, Float[Tensor, "j k"] | None]:
         a_val, b_dense = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
 
@@ -71,10 +71,10 @@ class _FixedTopoSpDenseMM(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdB)
 
 
-class _FixedTopoDenseSpMM(torch.autograd.Function):
+class FixedTopoDenseSpMM(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " nnz"],
+        a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "j k"],
         b_dense: Float[Tensor, "i j"],
     ) -> Float[Tensor, "i k"]:
@@ -103,7 +103,7 @@ class _FixedTopoDenseSpMM(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdC: Float[Tensor, "i k"]
-    ) -> tuple[Float[Tensor, " nnz"] | None, None, Float[Tensor, "i j"] | None]:
+    ) -> tuple[Float[Tensor, " nz"] | None, None, Float[Tensor, "i j"] | None]:
         a_val, b_dense = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
 
@@ -138,7 +138,7 @@ class _FixedTopoDenseSpMM(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdB)
 
 
-class _FixedTopoSpSpMM(torch.autograd.Function):
+class FixedTopoSpSpMM(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " a_nnz"],
@@ -234,8 +234,7 @@ class _FixedTopoSpSpMM(torch.autograd.Function):
             dLdA_val = project_and_extract_cnz_vals(
                 src_coo=dLdA.indices(),
                 src_val=dLdA.values(),
-                target_coo=a_pattern.idx_coo,
-                target_shape=a_pattern.shape,
+                template_coo=a_pattern.idx_coo,
             )
 
         if needs_dLdB:
@@ -251,17 +250,16 @@ class _FixedTopoSpSpMM(torch.autograd.Function):
             dLdB_val = project_and_extract_cnz_vals(
                 src_coo=dLdB.indices(),
                 src_val=dLdB.values(),
-                target_coo=b_pattern.idx_coo,
-                target_shape=b_pattern.shape,
+                template_coo=b_pattern.idx_coo,
             )
 
         return (dLdA_val, dLdA_pattern, dLdB_val, dLdB_pattern)
 
 
-class _FixedTopoSpMV(torch.autograd.Function):
+class FixedTopoSpMV(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " nnz"],
+        a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "i j"],
         b_dense: Float[Tensor, " j"],
     ) -> Float[Tensor, " i"]:
@@ -290,7 +288,7 @@ class _FixedTopoSpMV(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdc: Float[Tensor, " i"]
-    ) -> tuple[Float[Tensor, " nnz"] | None, None, Float[Tensor, " j"] | None]:
+    ) -> tuple[Float[Tensor, " nz"] | None, None, Float[Tensor, " j"] | None]:
         a_val, b_dense = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
 
@@ -318,10 +316,10 @@ class _FixedTopoSpMV(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdb)
 
 
-class _FixedTopoSpVM(torch.autograd.Function):
+class FixedTopoSpVM(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " nnz"],
+        a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "i j"],
         b_dense: Float[Tensor, " i"],
     ) -> Float[Tensor, " j"]:
@@ -350,7 +348,7 @@ class _FixedTopoSpVM(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdc: Float[Tensor, " j"]
-    ) -> tuple[Float[Tensor, " nnz"] | None, None, Float[Tensor, " i"] | None]:
+    ) -> tuple[Float[Tensor, " nz"] | None, None, Float[Tensor, " i"] | None]:
         a_val, b_dense = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
 
@@ -379,19 +377,21 @@ class _FixedTopoSpVM(torch.autograd.Function):
 
 
 def sp_dense_mm(
-    a_val: Float[Tensor, " nnz"],
+    a_val: Float[Tensor, " nz"],
     a_pattern: Integer[SparsityPattern, "i j"],
     b_dense: Float[Tensor, "j k"],
 ) -> Float[Tensor, "i k"]:
-    return _FixedTopoSpDenseMM.apply(a_val, a_pattern, b_dense)
+    """Sparse-dense 2D matrix multiplication with fixed sparsity autograd."""
+    return FixedTopoSpDenseMM.apply(a_val, a_pattern, b_dense)
 
 
 def dense_sp_mm(
     b_dense: Float[Tensor, "i j"],
-    a_val: Float[Tensor, " nnz"],
+    a_val: Float[Tensor, " nz"],
     a_pattern: Integer[SparsityPattern, "j k"],
 ) -> Float[Tensor, "i k"]:
-    return _FixedTopoDenseSpMM.apply(a_val, a_pattern, b_dense)
+    """Dense-sparse 2D matrix multiplication with fixed sparsity autograd."""
+    return FixedTopoDenseSpMM.apply(a_val, a_pattern, b_dense)
 
 
 def sp_sp_mm(
@@ -405,23 +405,31 @@ def sp_sp_mm(
     Float[Tensor, " c_nnz"],
     torch.Size,
 ]:
-    return _FixedTopoSpSpMM.apply(a_val, a_pattern, b_val, b_pattern)
+    """Sparse-Sparse 2D matrix multiplication with fixed sparsity autograd."""
+    return FixedTopoSpSpMM.apply(a_val, a_pattern, b_val, b_pattern)
 
 
 def sp_mv(
-    a_val: Float[Tensor, " nnz"],
+    a_val: Float[Tensor, " nz"],
     a_pattern: Integer[SparsityPattern, "i j"],
     b_dense: Float[Tensor, " j"],
 ) -> Float[Tensor, " i"]:
-    return _FixedTopoSpMV.apply(a_val, a_pattern, b_dense)
+    """Sparse 2D matrix-vector multiplication with fixed sparsity autograd."""
+    return FixedTopoSpMV.apply(a_val, a_pattern, b_dense)
 
 
 def sp_vm(
     b_dense: Float[Tensor, " i"],
-    a_val: Float[Tensor, " nnz"],
+    a_val: Float[Tensor, " nz"],
     a_pattern: Integer[SparsityPattern, "i j"],
 ) -> Float[Tensor, " j"]:
-    return _FixedTopoSpVM.apply(a_val, a_pattern, b_dense)
+    """
+    Sparse 2D vector-matrix multiplication with fixed sparsity autograd.
+
+    The vector argument (b_dense) is interpreted as a row vector multiplying
+    the matrix from the left.
+    """
+    return FixedTopoSpVM.apply(a_val, a_pattern, b_dense)
 
 
 # Specialized functions for diagonal operators that do not require custom backward()
@@ -429,10 +437,12 @@ def sp_vm(
 
 def diag_sp_mm(
     diag_val: Float[Tensor, " r"],
-    sp_val: Float[Tensor, " nnz"],
+    sp_val: Float[Tensor, " nz"],
     pattern: Integer[SparsityPattern, "r c"],
-) -> tuple[Float[Tensor, " nnz"], Integer[SparsityPattern, "r c"]]:
+) -> tuple[Float[Tensor, " nz"], Integer[SparsityPattern, "r c"]]:
     """
+    Diagonal-sparse matrix multiplication.
+
     `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
     """
     rows = pattern.idx_coo[0]
@@ -445,17 +455,21 @@ def diag_dense_mm(
     dense: Float[Tensor, "r c"],
 ) -> Float[Tensor, "r c"]:
     """
+    Diagonal-dense matrix multiplication.
+
     `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
     """
     return diag_val.view(-1, 1) * dense
 
 
 def sp_diag_mm(
-    sp_val: Float[Tensor, " nnz"],
+    sp_val: Float[Tensor, " nz"],
     pattern: Integer[SparsityPattern, "r c"],
     diag_val: Float[Tensor, " c"],
-) -> tuple[Float[Tensor, " nnz"], Integer[SparsityPattern, "r c"]]:
+) -> tuple[Float[Tensor, " nz"], Integer[SparsityPattern, "r c"]]:
     """
+    Sparse-diagonal matrix multiplication.
+
     `A@D` scales the `i`th col of `A` by the `i`th element of `D`.
     """
     cols = pattern.idx_coo[1]
@@ -469,6 +483,8 @@ def dense_diag_mm(
     diag_val: Float[Tensor, " c"],
 ) -> Float[Tensor, "r c"]:
     """
+    Dense-diagonal matrix multiplication.
+
     `A@D` scales the `i`th col of `A` by the `i`th element of `D`.
     """
     return dense * diag_val.view(1, -1)

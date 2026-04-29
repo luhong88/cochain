@@ -7,9 +7,13 @@ import torch
 from jaxtyping import Bool, Float, Integer
 from torch import LongTensor, Tensor
 
-from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
-from ._pattern import SparsityPattern, check_pattern_equality
+from .base_decoupled_tensor import (
+    BaseDecoupledTensor,
+    is_scalar_like,
+    validate_matmul_args,
+)
+from .pattern import SparsityPattern, check_pattern_equality
 
 
 @dataclass
@@ -100,7 +104,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 case Tensor():
                     sp_op_list.append(SparseDecoupledTensor.from_tensor(block))
                 case BaseDecoupledTensor():
-                    sp_op_list.append(block.to_sparse_operator())
+                    sp_op_list.append(block.to_sdt())
                 case _:
                     raise TypeError()
 
@@ -269,7 +273,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                             rep_sp_op = sdt
 
                     case BaseDecoupledTensor():
-                        sdt = block.to_sparse_operator()
+                        sdt = block.to_sdt()
                         pattern_row.append(sdt.pattern)
                         val_list.append(sdt.val)
 
@@ -498,7 +502,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """
         return (
             SparseDecoupledTensor(self.pattern, self.val * other)
-            if is_scalar(other)
+            if is_scalar_like(other)
             else NotImplemented
         )
 
@@ -508,7 +512,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """
         return (
             SparseDecoupledTensor(self.pattern, self.val / other)
-            if is_scalar(other)
+            if is_scalar_like(other)
             else NotImplemented
         )
 
@@ -626,7 +630,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     def to_dense(self) -> Float[Tensor, "*b r c *d"]:
         return self.to_sparse_coo().to_dense()
 
-    def to_sparse_operator(self) -> SparseDecoupledTensor:
+    def to_sdt(self) -> SparseDecoupledTensor:
         return self
 
     def to_sparse_coo(self) -> Float[Tensor, "*b r c *d"]:
