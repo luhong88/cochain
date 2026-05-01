@@ -94,8 +94,11 @@ class _CuPyEigshAutogradFunction(torch.autograd.Function):
         stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             if cp_config.sigma is None:
+                # cupy supports CSR matrices with int64 indices.
                 A_cp = sp_op_comps_to_cp_csr(A_val, A_pattern)
             else:
+                # CuPyShiftInvSymOp only supports int32 index tensors due to
+                # sparse solver limitations.
                 A_cp = CuPyShiftInvSymOp(
                     A_val, A_pattern, cp_config.sigma, nvmath_config
                 )
@@ -213,6 +216,8 @@ def cupy_eigsh(
     nvmath_config: DirectSolverConfig | None = None,
 ) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "c k"] | None]:
     """
+    Sparse eigensolver for symmetric square matrices using CuPy.
+
     This function provides a differentiable wrapper for the GPU-based
     `cupyx.scipy.sparse.linalg.eigsh()` method.
 
@@ -226,6 +231,10 @@ def cupy_eigsh(
       CuPy CSR matrix. The `v0` argument can be a torch tensor, but will be converted
       to a cupy array and copied. The use of CuPy `LinearOperator` objects for `A`
       is not supported.
+    * The shift-invert mode requires that the sparse CSR index tensors of `A` be
+      downcast to int32 due to underlying sparse solver requirement. The standard
+      mode can support both int32 and int64 index dtypes, but will automatically
+      downcast to int32 if possible.
     * The `eps` argument is used for Lorentzian broadening/regularization in the
       gradient calculation to prevent gradient explosion when the eigenvalues are
       (near) degenerate.

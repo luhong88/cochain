@@ -106,6 +106,7 @@ class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
         else:
             A_scipy = _sdt_to_scipy_csc(A_val, A_pattern)
 
+        # In both cases, scipy supports CSC/CSR arrays with int64 index tensors.
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
             k=k,
@@ -183,6 +184,7 @@ class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
         # M should always be in CSC format for LU factorization.
         M_scipy = _sdt_to_scipy_csc(M_val, M_pattern)
 
+        # In both cases, scipy supports CSC/CSR arrays with int64 index tensors.
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
             k=k,
@@ -306,6 +308,8 @@ def scipy_eigsh(
     config: SciPyEigshConfig | None = None,
 ) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "c k"] | None]:
     """
+    Sparse eigensolver for symmetric square matrices using SciPy.
+
     This function provides a differentiable wrapper for the CPU-based
     `scipy.sparse.linalg.eigsh()` method.
 
@@ -332,6 +336,8 @@ def scipy_eigsh(
       eigenvectors are not returned.
     * The autograd through eigenvectors do not account for contributions from the
       unresolved eigenvectors.
+    * The sparse CSR/CSC index tensors of `A` and `M` can be either in int32 or
+      int64 dtype, but will be automatically downcast to int32 if possible.
     * The `eigsh()` function does not natively support batching. if
       `block_diag_batch` is True, the `A` `SparseDecoupledTensor` (and `M` if not `None`)
       will be split into individual sparse matrices and solved sequentially. The

@@ -217,7 +217,7 @@ def lobpcg(
     precond_config: LOBPCGPrecondConfig | None = None,
 ) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "m k"]]:
     """
-    A custom implementation of LOBPCG.
+    Sparse eigensolver for SPD matrices using LOBPCG.
 
     Note that this function requires `nvmath-python` for the shift-invert mode.
     In addition, some preconditioners have `nvmath-python` or `cupy` dependencies.
@@ -260,6 +260,16 @@ def lobpcg(
       In this limit, the algorithm effectively performs an exact diagonalization
       similar to `torch.linalg.eigh()`, but less efficiently due to the subspace
       construction and projection steps.
+
+    Notes on sparse index tensor dtype requirements:
+    * If using the `ilu` and `cholesky` preconditioners, the sparse CSC/CSR index
+      tensors of `A` will be downcast to `int32`.
+    * For the shift-invert mode, the sparse CSC/CSR index tensors of `A` will be
+      downcast to `int32`.
+    * For the shift-invert GEP mode, the sparse CSC/CSR index tensors of both `A`
+      and `M` will be downcast to `int32`.
+    * In all other cases, both `int32` and `int64` are supported, but `int32` is
+      still preferred whenever possible.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backends required.")

@@ -184,7 +184,7 @@ class ChoPrecond(BaseNVMathInvSymSpOp):
         )
 
         if diag_damp == 0:
-            op = A_op.to_sparse_csr(int32=True)
+            op = A_op.to_sparse_csr()
         else:
             if diag_damp is None:
                 eps = 1e-4 * A_op.tr / A_op.size(0)

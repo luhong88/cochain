@@ -117,7 +117,7 @@ class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
 
         if not M_op.pattern._is_int32_safe:
             raise ValueError(
-                "The sparse indices of the input tensor 'A' cannot be safely "
+                "The sparse indices of the input tensor 'M' cannot be safely "
                 "cast to int32 dtype."
             )
 
