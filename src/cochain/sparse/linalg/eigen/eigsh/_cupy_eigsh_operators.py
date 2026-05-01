@@ -6,9 +6,9 @@ from cuda.core.experimental import Device
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ...decoupled_tensor import SparsityPattern
-from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
-from ._inv_operator import BaseNVMathInvSymSpOp
+from ....decoupled_tensor import SparsityPattern
+from ...solvers import DirectSolverConfig
+from ..base._inv_operator import BaseNVMathInvSymSpOp
 
 
 def sp_op_comps_to_cp_csr(

@@ -4,8 +4,9 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ...decoupled_tensor import SparseDecoupledTensor
-from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+from ....decoupled_tensor import SparseDecoupledTensor
+from ...solvers import DirectSolverConfig
+from ..base.utils import M_orthonormalize
 from ._lobpcg_operators import (
     IdentityOperator,
     ShiftInvSymGEPSpOp,
@@ -18,7 +19,6 @@ from ._lobpcg_preconditioners import (
     JacobiPrecond,
     LOBPCGPrecondConfig,
 )
-from .utils import M_orthonormalize
 
 type SparseDecoupledTensorLike = (
     IdentityOperator

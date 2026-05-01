@@ -3,8 +3,11 @@ from jaxtyping import Float
 from torch import Tensor
 
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
-from cochain.sparse.linalg.eigen import SciPyEigshConfig, scipy_eigsh
-from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
+from cochain.sparse.linalg.eigen import (
+    SciPyEigshConfig,
+    canonicalize_eig_vec_signs,
+    scipy_eigsh,
+)
 
 # TODO: test handling of degenerate eigenvalues
 # TODO: test handling of batching

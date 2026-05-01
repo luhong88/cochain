@@ -3,9 +3,9 @@ from cuda.core.experimental import Device
 from jaxtyping import Float
 from torch import Tensor
 
-from ...decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
-from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
-from ._inv_operator import BaseNVMathInvSymSpOp
+from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
+from ...solvers import DirectSolverConfig
+from ..base._inv_operator import BaseNVMathInvSymSpOp
 
 
 class IdentityOperator:

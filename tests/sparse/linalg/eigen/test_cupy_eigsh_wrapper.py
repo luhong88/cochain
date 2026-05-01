@@ -4,8 +4,11 @@ from jaxtyping import Float
 from torch import Tensor
 
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
-from cochain.sparse.linalg.eigen import CuPyEigshConfig, cupy_eigsh
-from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
+from cochain.sparse.linalg.eigen import (
+    CuPyEigshConfig,
+    canonicalize_eig_vec_signs,
+    cupy_eigsh,
+)
 
 # TODO: test handling of degenerate eigenvalues
 

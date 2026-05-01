@@ -7,8 +7,8 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ._backward import dLdA_backward, dLdA_dLdM_backward
+from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 from ._lobpcg_routines import lobpcg_forward
 
 try:
@@ -20,7 +20,7 @@ except ImportError:
     _HAS_NVMATH = False
 
 if TYPE_CHECKING:
-    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+    from ...solvers import DirectSolverConfig
     from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
 
@@ -274,7 +274,7 @@ def lobpcg(
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backends required.")
 
-    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+    from ...solvers import DirectSolverConfig
     from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
     if lobpcg_config is None:

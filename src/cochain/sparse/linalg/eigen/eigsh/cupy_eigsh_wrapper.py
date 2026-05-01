@@ -8,8 +8,8 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ._backward import dLdA_backward
+from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ..base._backward import dLdA_backward
 
 try:
     import cupy as cp
@@ -31,7 +31,7 @@ except ImportError:
 if TYPE_CHECKING:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
-    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+    from ...solvers import DirectSolverConfig
 
 
 if _HAS_CUPY:
@@ -270,7 +270,7 @@ def cupy_eigsh(
     if not (_HAS_CUPY and _HAS_NVMATH):
         raise ImportError("cupy and nvmath-python backends required.")
 
-    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+    from ...solvers import DirectSolverConfig
 
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors
