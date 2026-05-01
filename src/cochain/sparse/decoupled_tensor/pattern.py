@@ -7,9 +7,10 @@ from functools import cached_property
 from typing import Sequence
 
 import torch
-from jaxtyping import Bool, Integer
-from torch import LongTensor, Tensor
+from jaxtyping import Bool, Int64, Integer
+from torch import Tensor
 
+from ...utils.parsing import parse_to
 from ._index import (
     coalesced_coo_to_compressed_idx,
     coalesced_coo_to_csc_row_idx,
@@ -18,7 +19,7 @@ from ._index import (
 )
 
 
-def _validate_coo_idx_shape(coo_idx: Integer[LongTensor, "sp nz"], shape: torch.Size):
+def _validate_coo_idx_shape(coo_idx: Int64[Tensor, "sp nz"], shape: torch.Size):
     """
     Validate the shape of a COO index.
 
@@ -120,7 +121,7 @@ class BlockDiagConfig:
     Parameters
     ----------
     batch_perm : [nz,]
-        An integer tensor that represents the permutation required to sort the
+        An int64 tensor that represents the permutation required to sort the
         row-major concatenated COO index tensor to a batch-major tensor. If the
         tensor has no batch dimension, this tensor contains the identity permutation.
     nnzs : [b,]
@@ -140,17 +141,29 @@ class BlockDiagConfig:
     `unpack_by_ptrs()` method of `SparseDecoupledTensor`.
     """
 
-    batch_perm: Integer[LongTensor, " nz"]
+    batch_perm: Int64[Tensor, " nz"]
     nnzs: list[int]
     pattern_shapes: list[torch.Size]
 
     def to(self, *args, **kwargs) -> BlockDiagConfig:
-        """Perform dtype and/or device conversion on the batch_perm tensor."""
-        new_batch_perm = self.batch_perm.to(*args, **kwargs)
+        """
+        Call to() on attached tensor batch_perm.
+
+        Note that dtype conversions are ignored.
+        """
+        device, dtype, copy_flag, non_blocking, memory_format = parse_to(
+            *args, **kwargs
+        )
+        new_batch_perm = self.batch_perm.to(
+            device=device,
+            copy=copy_flag,
+            non_blocking=non_blocking,
+            memory_format=memory_format,
+        )
         return BlockDiagConfig(new_batch_perm, self.nnzs, self.pattern_shapes)
 
     @property
-    def batch_perm_inv(self) -> Integer[LongTensor, " nz"]:
+    def batch_perm_inv(self) -> Int64[Tensor, " nz"]:
         """
         The inverse of the batch_perm permutation.
 
@@ -222,14 +235,23 @@ class SparsityPattern:
         The CSC format compressed col index of the tensor (`ccol_indices`).
     idx_row_csc : [*b, nz_per_b]
         The CSC format row index of the tensor (`row_indices`).
+
+    Notes
+    -----
+    This class follows the following rules for integer tensor dtypes:
+
+    * `idx_coo` must be int64 to conform to PyTorch Sparse COO tensor requirement.
+    * `coo_to_csc_perm` must be int64 for tensor indexing.
+    * All other integer/index tensors are cast to int32 if it is safe to do so;
+      otherwise they follow the same dtype as `idx_coo`.
     """
 
-    _idx_coo: Integer[LongTensor, "sp nz"]
+    _idx_coo: Int64[Tensor, "sp nz"]
     shape: tuple[int, ...] | torch.Size
     block_diag_config: BlockDiagConfig | None = None
 
     @property
-    def idx_coo(self) -> Integer[LongTensor, "sp nz"]:
+    def idx_coo(self) -> Int64[Tensor, "sp nz"]:
         """A "read-only" view of `_idx_coo`."""
         return self._idx_coo
 
@@ -250,12 +272,14 @@ class SparsityPattern:
             if not (upper_ok and lower_ok):
                 raise ValueError("idx_coo contains out-of-bound indices.")
 
-        # Enforce ownership and contiguous memory layout. Use object.__setattr__()
-        # to bypass frozen=True.
+        # Enforce dtype, ownership and contiguous memory layout. Use
+        # object.__setattr__() to bypass frozen=True.
         object.__setattr__(
             self,
             "_idx_coo",
-            self._idx_coo.detach().clone(memory_format=torch.contiguous_format),
+            self._idx_coo.detach().to(
+                dtype=torch.int64, memory_format=torch.contiguous_format, copy=True
+            ),
         )
 
         # Coerse shape dtype.
@@ -342,7 +366,7 @@ class SparsityPattern:
 
     def unpack_block_diag(
         self,
-    ) -> tuple[list[SparsityPattern], Integer[LongTensor, " nz"]]:
+    ) -> tuple[list[SparsityPattern], Int64[Tensor, " nz"]]:
         """Deconstruct a block-diagonal `SparsityPattern` into its constituents."""
         if not isinstance(self.block_diag_config, BlockDiagConfig):
             raise ValueError("A valid 'block_diag_config' is required for disassembly.")
@@ -396,7 +420,7 @@ class SparsityPattern:
     @classmethod
     def bmat(
         cls, patterns: Sequence[Sequence[SparsityPattern | None]]
-    ) -> tuple[SparsityPattern, Integer[LongTensor, " nz"]]:
+    ) -> tuple[SparsityPattern, Int64[Tensor, " nz"]]:
         """
         Determine the `SparsityPattern` of a block matrix.
 
@@ -502,7 +526,7 @@ class SparsityPattern:
 
     def submatrix(
         self, row_mask: Bool[Tensor, " r"], col_mask: Bool[Tensor, " c"] | None = None
-    ) -> tuple[Bool[Tensor, " nnz"], SparsityPattern]:
+    ) -> tuple[Bool[Tensor, " nz"], SparsityPattern]:
         """
         Determine the `SparsityPattern` of a submatrix using row and col masks.
 
@@ -704,13 +728,9 @@ class SparsityPattern:
 
         attr_map = {
             "idx_ccol": "idx_crow",
-            "idx_ccol_int32": "idx_crow_int32",
             "idx_crow": "idx_ccol",
-            "idx_crow_int32": "idx_ccol_int32",
             "idx_col": "idx_row_csc",
-            "idx_col_int32": "idx_row_csc_int32",
             "idx_row_csc": "idx_col",
-            "idx_row_csc_int32": "idx_col_int32",
         }
 
         for attr, attr_trans in attr_map.items():
@@ -733,20 +753,22 @@ class SparsityPattern:
         """
         Perform dtype and/or device conversion.
 
-        This function accept all PyTorch `to()` arguments and apply them to all
+        This function accept some PyTorch `to()` arguments and apply them to all
         tensor attributes attached to the `SparsityPattern` (including any cached
-        index tensors) with the following exceptions:
-
-        * Conversion to float or complex dtypes is not allowed.
-        * The `coo_to_csc_perm` tensor ignores dtype conversions.
-        * All index tensors named with the suffix `_int32` ignore dtype conversions.
-        * All index tensors ignore the `memory_format` argument.
+        index tensors) and its `BlockDiagConfig`. In particular, the index tensors
+        associated with self ignore dtype conversions and `memory_format`, while
+        tensors associated with `BlockDiagConfig` ignores dtype conversion only.
         """
-        # idx_coo respect all to() arguments, including dtype, device, non_blocking,
-        # copy, and memory_format.
-        new_idx_coo = self.idx_coo.to(*args, **kwargs)
+        # Parse input arguments.
+        device, dtype, copy_flag, non_blocking, memory_format = parse_to(
+            *args, **kwargs
+        )
 
-        # block_diag_config repsect all to() arguments as well.
+        new_idx_coo = self.idx_coo.to(
+            device=device, copy=copy_flag, non_blocking=non_blocking
+        )
+
+        # block_diag_config handles its own to() call.
         if self.block_diag_config is None:
             new_block_diag_config = None
         else:
@@ -754,154 +776,95 @@ class SparsityPattern:
 
         new_pattern = SparsityPattern(new_idx_coo, self.shape, new_block_diag_config)
 
-        # Handle the cached index tensors. Extract the device and dtype arguments
-        # from the new_idx_coo, and get the non_blocking and copy arguments from
-        # kwargs. Ignores the memory_format argument, since index tensors will
-        # always be contiguous.
-        target_device = new_idx_coo.device
-        target_dtype = new_idx_coo.dtype
-
-        # Forbid conversion to (most) non-int dtypes.
-        if target_dtype.is_floating_point or target_dtype.is_complex:
-            raise ValueError("SparsityPattern indices cannot be float or complex.")
-
-        cache_kwargs = {
-            "non_blocking": kwargs.get("non_blocking", False),
-            "copy": kwargs.get("copy", False),
-        }
-
-        # All cached index tensors respect the dtype, device, non_blocking, and
-        # copy argument, but the coo_to_csc_perm and *_int32 tensors will ignore
-        # the dtype argument.
-        cached_attrs_dtype_covariant = [
+        # Handle the cached index tensors.
+        cached_idx_tensors = [
+            "coo_to_csc_perm",
             "idx_ccol",
             "idx_crow",
             "idx_col",
             "idx_row_csc",
         ]
-        cached_attrs_dtype_invariant = [
-            "coo_to_csc_perm",
-            "idx_ccol_int32",
-            "idx_crow_int32",
-            "idx_col_int32",
-            "idx_row_csc_int32",
-        ]
 
-        for attr in cached_attrs_dtype_covariant:
+        for attr in cached_idx_tensors:
             if attr in self.__dict__:
                 new_pattern.__dict__[attr] = self.__dict__[attr].to(
-                    dtype=target_dtype, device=target_device, **cache_kwargs
-                )
-
-        for attr in cached_attrs_dtype_invariant:
-            if attr in self.__dict__:
-                new_pattern.__dict__[attr] = self.__dict__[attr].to(
-                    device=target_device, **cache_kwargs
+                    device=device, copy=copy_flag, non_blocking=non_blocking
                 )
 
         return new_pattern
 
     @cached_property
-    def idx_crow(self) -> Integer[LongTensor, "*b r+1"]:
+    def idx_crow(self) -> Integer[Tensor, "*b r+1"]:
         """
         The CSR format compressed row index of the tensor (`crow_indices`).
 
-        this property is cached once computed. This tensor will be cast to int32
+        this property is cached once computed. This tensor will be cast to `int32`
         dtype if it is safe to do so; otherwise it has the same dtype as `idx_coo`.
         """
-        if self._is_int32_safe:
-            return coalesced_coo_to_compressed_idx(
-                self.idx_coo, self.shape, format="crow", dtype=torch.int32
-            )
-        else:
-            return coalesced_coo_to_compressed_idx(
-                self.idx_coo, self.shape, format="crow"
-            )
-
-    @cached_property
-    def idx_crow_int32(self) -> Integer[torch.IntTensor, "*b r+1"]:
-        """
-        The int32 version of `idx_crow`.
-
-        This property is cached once computed.
-        """
         return coalesced_coo_to_compressed_idx(
-            self.idx_coo, self.shape, format="crow", dtype=torch.int32
+            self.idx_coo,
+            self.shape,
+            format="crow",
+            dtype=torch.int32 if self._is_int32_safe else self.dtype,
         )
 
-    # TODO: consider renaming this to idx_col_csr to avoid confusion.
     @cached_property
-    def idx_col(self) -> Integer[LongTensor, "*b nz_per_b"]:
+    def idx_col(self) -> Integer[Tensor, "*b nz_per_b"]:
         """
         The CSR format col index of the tensor (`col_indices`).
 
-        This property is cached once computed and has the same dtype as `idx_coo`.
+        This property is cached once computed. This tensor will be cast to `int32`
+        dtype if it is safe to do so; otherwise it has the same dtype as `idx_coo`.
 
         If the tensor has no batch dimension, then `idx_col` is identical to
         `idx_coo[-1]`; if there is a batch dimension, then `idx_col` differs from
         `idx_coo[-1]` in that it has an explicit batch dimension.
         """
-        return coalesced_coo_to_csr_col_idx(self.idx_coo, self.shape)
+        return coalesced_coo_to_csr_col_idx(
+            self.idx_coo,
+            self.shape,
+            dtype=torch.int32 if self._is_int32_safe else self.dtype,
+        )
 
     @cached_property
-    def idx_col_int32(self) -> Integer[torch.IntTensor, "*b nz_per_b"]:
-        """
-        The int32 version of `idx_col`.
-
-        This property is cached once computed.
-        """
-        return coalesced_coo_to_csr_col_idx(self.idx_coo, self.shape, dtype=torch.int32)
-
-    @cached_property
-    def coo_to_csc_perm(self) -> Integer[LongTensor, " nz"]:
+    def coo_to_csc_perm(self) -> Int64[Tensor, " nz"]:
         """
         The permutation that converts row-major to col-major index ordering.
 
         This property is cached once computed. Unlike other index tensors,
-        this tensor always has an int64 dtype.
+        this tensor always has an `int64` dtype.
         """
         return get_csc_sort_perm(self.idx_coo, self.shape)
 
     @cached_property
-    def idx_ccol(self) -> Integer[LongTensor, "*b c+1"]:
+    def idx_ccol(self) -> Integer[Tensor, "*b c+1"]:
         """
         The CSC format compressed col index of the tensor (`ccol_indices`).
 
-        this property is cached once computed and has the same dtype as `idx_coo`.
-        """
-        return coalesced_coo_to_compressed_idx(self.idx_coo, self.shape, format="ccol")
-
-    @cached_property
-    def idx_ccol_int32(self) -> Integer[torch.IntTensor, "*b c+1"]:
-        """
-        The int32 version of `idx_ccol`.
-
-        This property is cached once computed.
+        this property is cached once computed. This tensor will be cast to `int32`
+        dtype if it is safe to do so; otherwise it has the same dtype as `idx_coo`.
         """
         return coalesced_coo_to_compressed_idx(
-            self.idx_coo, self.shape, format="ccol", dtype=torch.int32
+            self.idx_coo,
+            self.shape,
+            format="ccol",
+            dtype=torch.int32 if self._is_int32_safe else self.dtype,
         )
 
     @cached_property
-    def idx_row_csc(self) -> Integer[LongTensor, "*b nz_per_b"]:
+    def idx_row_csc(self) -> Integer[Tensor, "*b nz_per_b"]:
         """
         The CSC format row index of the tensor (`row_indices`).
 
-        This property is cached once computed and has the same dtype as `idx_coo`.
+        This property is cached once computed. This tensor will be cast to `int32`
+        dtype if it is safe to do so; otherwise it has the same dtype as `idx_coo`.
+
         Note that this tensor is different from `idx_coo[-2]` because the indices
         in the CSC format are sorted in col-major order.
         """
         return coalesced_coo_to_csc_row_idx(
-            self.idx_coo, self.shape, self.coo_to_csc_perm
-        )
-
-    @cached_property
-    def idx_row_csc_int32(self) -> Integer[torch.IntTensor, "*b nz_per_b"]:
-        """
-        The int32 version of `idx_row_csc`.
-
-        This property is cached once computed.
-        """
-        return coalesced_coo_to_csc_row_idx(
-            self.idx_coo, self.shape, self.coo_to_csc_perm, dtype=torch.int32
+            self.idx_coo,
+            self.shape,
+            self.coo_to_csc_perm,
+            dtype=torch.int32 if self._is_int32_safe else self.dtype,
         )

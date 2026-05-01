@@ -92,8 +92,14 @@ class ILUPrecond:
         if not _HAS_CUPY:
             raise ImportError("cupy backend required.")
 
+        if not A_op.pattern._is_int32_safe:
+            raise ValueError(
+                "The sparse indices of the input tensor 'A' cannot be safely "
+                "cast to int32 dtype."
+            )
+
         if diag_damp == 0:
-            op = A_op.to_sparse_csc(int32=True)
+            op = A_op.to_sparse_csc()
         else:
             if diag_damp is None:
                 eps = 1e-4 * A_op.tr / A_op.size(0)
@@ -106,9 +112,15 @@ class ILUPrecond:
                 A_op.size(-1), dtype=A_op.dtype, device=A_op.device
             )
 
-            op = SparseDecoupledTensor.assemble(A_op, eps * eye).to_sparse_csc(
-                int32=True
-            )
+            op_sdt = SparseDecoupledTensor.assemble(A_op, eps * eye)
+
+            if not op_sdt.pattern._is_int32_safe:
+                raise ValueError(
+                    "The sparse indices of the tensor A + ϵI cannot be safely "
+                    "cast to int32 dtype."
+                )
+
+            op = op_sdt.to_sparse_csc()
 
         stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
@@ -155,6 +167,12 @@ class ChoPrecond(BaseNVMathInvSymSpOp):
         diag_damp: float | int | None,
         nvmath_config: DirectSolverConfig,
     ):
+        if not A_op.pattern._is_int32_safe:
+            raise ValueError(
+                "The sparse indices of the input tensor 'A' cannot be safely "
+                "cast to int32 dtype."
+            )
+
         self.n = n
 
         # Solve a linear system with at most 3n channel dims
@@ -179,9 +197,15 @@ class ChoPrecond(BaseNVMathInvSymSpOp):
                 A_op.size(-1), dtype=A_op.dtype, device=A_op.device
             )
 
-            op = SparseDecoupledTensor.assemble(A_op, eps * eye).to_sparse_csr(
-                int32=True
-            )
+            op_sdt = SparseDecoupledTensor.assemble(A_op, eps * eye)
+
+            if not op_sdt.pattern._is_int32_safe:
+                raise ValueError(
+                    "The sparse indices of the tensor A + ϵI cannot be safely "
+                    "cast to int32 dtype."
+                )
+
+            op = op_sdt.to_sparse_csr()
 
         super().__init__(op, b_dummy, nvmath_config, torch.cuda.current_stream())
 

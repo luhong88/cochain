@@ -15,7 +15,7 @@ from cochain.metric.tri import tri_hodge_stars
 def test_star_0_on_tent(tent_mesh: SimplicialMesh, device):
     mesh = tent_mesh.to(device)
 
-    s0 = tri_hodge_stars.star_0(mesh).val
+    s0 = tri_hodge_stars.star_0(mesh).values
 
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
@@ -31,7 +31,7 @@ def test_star_0_on_tent(tent_mesh: SimplicialMesh, device):
 def test_star_0_on_tet(hollow_tet_mesh: SimplicialMesh, device):
     mesh = hollow_tet_mesh.to(device)
 
-    s0 = tri_hodge_stars.star_0(mesh).val.cpu().detach().numpy()
+    s0 = tri_hodge_stars.star_0(mesh).values.cpu().detach().numpy()
 
     true_s0 = igl.massmatrix(
         mesh.vert_coords.cpu().detach().numpy(),
@@ -45,7 +45,7 @@ def test_star_0_on_tet(hollow_tet_mesh: SimplicialMesh, device):
 def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialMesh, device):
     mesh = tent_mesh.to(device)
 
-    s1 = tri_hodge_stars.star_1(mesh, dual_complex="circumcentric").val
+    s1 = tri_hodge_stars.star_1(mesh, dual_complex="circumcentric").values
 
     # Find the tangent of the angle between a base edge and side edge
     tan_ang = 2 * math.sqrt(1.25)
@@ -66,7 +66,7 @@ def test_star_1_circumcentric_on_tent(tent_mesh: SimplicialMesh, device):
 def test_star_1_barycentric_on_tent(tent_mesh: SimplicialMesh, device):
     mesh = tent_mesh.to(device)
 
-    s1 = tri_hodge_stars.star_1(mesh, dual_complex="barycentric").val
+    s1 = tri_hodge_stars.star_1(mesh, dual_complex="barycentric").values
 
     face_bary = torch.tensor([1.5, 0.5, 1.0], dtype=mesh.dtype, device=device) / 3.0
     side_edge_bary = (
@@ -93,7 +93,7 @@ def test_star_1_barycentric_on_tent(tent_mesh: SimplicialMesh, device):
 def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialMesh, device):
     mesh = hollow_tet_mesh.to(device)
 
-    s1 = tri_hodge_stars.star_1(mesh, dual_complex="circumcentric").val
+    s1 = tri_hodge_stars.star_1(mesh, dual_complex="circumcentric").values
 
     # extract the Hodge 1-star from `igl.cotmatrix()`.
     igl_cotan_laplacian = torch.from_numpy(
@@ -113,7 +113,7 @@ def test_star_1_circumcentric_on_tet(hollow_tet_mesh: SimplicialMesh, device):
 def test_star_2_on_tent(tent_mesh: SimplicialMesh, device):
     mesh = tent_mesh.to(device)
 
-    s2 = tri_hodge_stars.star_2(mesh).val
+    s2 = tri_hodge_stars.star_2(mesh).values
     # All triangles in this mesh have the same area
     tri_area = math.sqrt(1.25) / 2.0
 
@@ -125,7 +125,7 @@ def test_star_2_on_tent(tent_mesh: SimplicialMesh, device):
 def test_star_2_on_tet(hollow_tet_mesh: SimplicialMesh, device):
     mesh = hollow_tet_mesh.to(device)
 
-    s2 = tri_hodge_stars.star_2(mesh).val.cpu().detach().numpy()
+    s2 = tri_hodge_stars.star_2(mesh).values.cpu().detach().numpy()
 
     true_s2 = 2.0 / igl.doublearea(
         mesh.vert_coords.cpu().detach().numpy(),
@@ -140,7 +140,7 @@ def test_star_0_backward(hollow_tet_mesh: SimplicialMesh, device):
     mesh.requires_grad_()
 
     s0 = tri_hodge_stars.star_0(mesh)
-    output = s0.val.sum()
+    output = s0.values.sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -153,7 +153,7 @@ def test_star_1_backward(hollow_tet_mesh: SimplicialMesh, dual_complex, device):
     mesh.requires_grad_()
 
     s1 = tri_hodge_stars.star_1(mesh, dual_complex=dual_complex)
-    output = s1.val.sum()
+    output = s1.values.sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -165,7 +165,7 @@ def test_star_2_backward(hollow_tet_mesh: SimplicialMesh, device):
     mesh.requires_grad_()
 
     s2 = tri_hodge_stars.star_2(mesh)
-    output = s2.val.sum()
+    output = s2.values.sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -182,7 +182,7 @@ def test_star_0_gradcheck(hollow_tet_mesh: SimplicialMesh, device):
         mesh = hollow_tet_mesh.to(dtype=torch.float64, device=device)
         mesh.vert_coords = test_vert_coords
         s0 = tri_hodge_stars.star_0(mesh)
-        return s0.val.sum()
+        return s0.values.sum()
 
     assert torch.autograd.gradcheck(star_1_fxn, (vert_coords,), fast_mode=True)
 
@@ -198,7 +198,7 @@ def test_star_1_gradcheck(hollow_tet_mesh: SimplicialMesh, dual_complex, device)
         mesh = hollow_tet_mesh.to(dtype=torch.float64, device=device)
         mesh.vert_coords = test_vert_coords
         s1 = tri_hodge_stars.star_1(mesh, dual_complex)
-        return s1.val.sum()
+        return s1.values.sum()
 
     assert torch.autograd.gradcheck(star_1_fxn, (vert_coords,), fast_mode=True)
 
@@ -213,6 +213,6 @@ def test_star_2_gradcheck(hollow_tet_mesh: SimplicialMesh, device):
         mesh = hollow_tet_mesh.to(device=device, dtype=torch.float64)
         mesh.vert_coords = test_vert_coords
         s2 = tri_hodge_stars.star_2(mesh)
-        return s2.val.sum()
+        return s2.values.sum()
 
     assert torch.autograd.gradcheck(star_2_fxn, (vert_coords,), fast_mode=True)

@@ -5,7 +5,7 @@ from typing import Callable
 
 import torch
 from einops import repeat
-from jaxtyping import Bool, Float, Integer
+from jaxtyping import Bool, Float, Int64, Integer
 from torch import Tensor
 
 from ._matmul import (
@@ -33,7 +33,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
     Parameters
     ----------
-    val : [*b, diag]
+    values : [*b, diag]
         A dense tensor representing the diagonal elements of the matrix. If the
         input tensor is not contiguous, this class will create and store a
         contiguous copy of the input.
@@ -77,22 +77,22 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
       the `DiagDecoupledTensor` is allowed.
     """
 
-    val: Float[Tensor, "*b diag"]
+    values: Float[Tensor, "*b diag"]
 
     def __post_init__(self):
-        if self.val.layout != torch.strided:
+        if self.values.layout != torch.strided:
             raise TypeError(
-                "'val' must be a dense tensor of shape (diag,) or (b, diag)."
+                "'values' must be a dense tensor of shape (diag,) or (b, diag)."
             )
 
-        if self.val.ndim < 1 or self.val.ndim > 2:
-            raise ValueError("'val' must be either of shape (diag,) or (b, diag).")
+        if self.values.ndim < 1 or self.values.ndim > 2:
+            raise ValueError("'values' must be either of shape (diag,) or (b, diag).")
 
-        if not torch.isfinite(self.val).all():
+        if not torch.isfinite(self.values).all():
             raise ValueError("DiagDecoupledTensor values contain NaN or Inf.")
 
         # Enforce contiguous memory layout.
-        self.val = self.val.contiguous()
+        self.values = self.values.contiguous()
 
     @classmethod
     def from_tensor(cls, tensor: Float[Tensor, "*b diag"]) -> DiagDecoupledTensor:
@@ -135,18 +135,18 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
             submatrix is represented as a `SparseDecoupledTensor`.
         """
         if col_mask is None:
-            return DiagDecoupledTensor(self.val[..., row_mask])
+            return DiagDecoupledTensor(self.values[..., row_mask])
 
         else:
             if (row_mask == col_mask).all():
-                return DiagDecoupledTensor(self.val[..., row_mask])
+                return DiagDecoupledTensor(self.values[..., row_mask])
 
             else:
                 # Find the mask for the subsetted nonzero elements.
                 submat_mask = row_mask & col_mask
 
                 # Find the subsetted diagonal values.
-                submat_val = self.val[..., submat_mask].flatten()
+                submat_val = self.values[..., submat_mask].flatten()
 
                 # Determine the subsetted and renumbered coo index, using the
                 # same cumsum() method as in SparsityPattern.submatrix().
@@ -207,19 +207,19 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
     def apply(self, fn: Callable, **kwargs) -> DiagDecoupledTensor:
         """
-        Apply a callable to the `val` tensor.
+        Apply a callable to the `values` tensor.
 
         This function returns a new `DiagDecoupledTensor` using the transformed
-        `val` tensor as the new diagonal.
+        `values` tensor as the new diagonal.
         """
-        new_val = fn(self.val, **kwargs)
+        new_val = fn(self.values, **kwargs)
         return DiagDecoupledTensor(new_val)
 
     def __neg__(self) -> DiagDecoupledTensor:
-        return DiagDecoupledTensor(-self.val)
+        return DiagDecoupledTensor(-self.values)
 
     def __pow__(self, exp: float | int) -> DiagDecoupledTensor:
-        return DiagDecoupledTensor(self.val**exp)
+        return DiagDecoupledTensor(self.values**exp)
 
     def pow(self, exp: float | int) -> DiagDecoupledTensor:
         """Compute the (elementwise) matrix power."""
@@ -227,40 +227,40 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
     def abs(self) -> DiagDecoupledTensor:
         """Take the absolute value of the diagonal matrix."""
-        return DiagDecoupledTensor(self.val.abs())
+        return DiagDecoupledTensor(self.values.abs())
 
     def diagonal(self) -> Float[Tensor, "*b diag"]:
         """
         Return the diagonal values.
 
-        This function is equivalent to accessing the self `val` tensor.
+        This function is equivalent to accessing the self `values` tensor.
         """
-        return self.val
+        return self.values
 
     @property
     def inv(self) -> DiagDecoupledTensor:
         """The inverse of the diagonal matrix."""
-        return DiagDecoupledTensor(1.0 / self.val)
+        return DiagDecoupledTensor(1.0 / self.values)
 
     @property
     def tr(self) -> Float[Tensor, "*b"]:
         """The trace of the diagonal matrix."""
         if self.n_batch_dim == 0:
-            return self.val.sum()
+            return self.values.sum()
         else:
-            return self.val.sum(dim=-1)
+            return self.values.sum(dim=-1)
 
     def __add__(self, other) -> DiagDecoupledTensor:
         match other:
             case DiagDecoupledTensor():
-                return DiagDecoupledTensor(self.val + other.val)
+                return DiagDecoupledTensor(self.values + other.values)
             case _:
                 return NotImplemented
 
     def __sub__(self, other) -> DiagDecoupledTensor:
         match other:
             case DiagDecoupledTensor():
-                return DiagDecoupledTensor(self.val - other.val)
+                return DiagDecoupledTensor(self.values - other.values)
             case _:
                 return NotImplemented
 
@@ -268,15 +268,15 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         if isinstance(other, DiagDecoupledTensor):
             return self.__matmul(other)
         elif is_scalar_like(other):
-            return DiagDecoupledTensor(self.val * other)
+            return DiagDecoupledTensor(self.values * other)
         else:
             return NotImplemented
 
     def __truediv__(self, other) -> DiagDecoupledTensor:
         if isinstance(other, DiagDecoupledTensor):
-            return DiagDecoupledTensor(self.val / other.val)
+            return DiagDecoupledTensor(self.values / other.values)
         elif is_scalar_like(other):
-            return DiagDecoupledTensor(self.val / other)
+            return DiagDecoupledTensor(self.values / other)
         else:
             return NotImplemented
 
@@ -286,19 +286,19 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
         match other:
             case DiagDecoupledTensor():
-                return DiagDecoupledTensor(self.val * other.val)
+                return DiagDecoupledTensor(self.values * other.values)
 
             case SparseDecoupledTensor():
-                val, pattern = diag_sp_mm(self.val, other.val, other.pattern)
+                val, pattern = diag_sp_mm(self.values, other.values, other.pattern)
                 diag_sp = SparseDecoupledTensor(pattern, val)
                 return diag_sp
 
             case Tensor():
                 match other.ndim:
                     case 1:
-                        return self.val * other
+                        return self.values * other
                     case 2:
-                        return diag_dense_mm(self.val, other)
+                        return diag_dense_mm(self.values, other)
 
             case _:
                 return NotImplemented
@@ -310,16 +310,16 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         match other:
             # Do not check for case DiagDecoupledTensor(), which is handled by __matmul__
             case SparseDecoupledTensor():
-                val, pattern = sp_diag_mm(other.val, other.pattern, self.val)
+                val, pattern = sp_diag_mm(other.values, other.pattern, self.values)
                 sp_diag = SparseDecoupledTensor(pattern, val)
                 return sp_diag
 
             case Tensor():
                 match other.ndim:
                     case 1:
-                        return other * self.val
+                        return other * self.values
                     case 2:
-                        return dense_diag_mm(other, self.val)
+                        return dense_diag_mm(other, self.values)
 
             case _:
                 return NotImplemented
@@ -327,7 +327,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
     @property
     def shape(self) -> torch.Size:
         """The shape of the diagonal matrix."""
-        return torch.Size(self.val.shape + (self.val.shape[-1],))
+        return torch.Size(self.values.shape + (self.values.shape[-1],))
 
     def _nnz(self) -> int:
         """
@@ -338,12 +338,12 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         the _nnz() method returns the total number of nonzero elements, regardless
         of batch dimensions. Here we follow the sparse COO convention.
         """
-        return self.val.numel()
+        return self.values.numel()
 
     @property
     def n_batch_dim(self) -> int:
         """The number of batch dimensions (either one or zero)."""
-        return self.val.ndim - 1
+        return self.values.ndim - 1
 
     @property
     def n_sp_dim(self) -> int:
@@ -380,30 +380,30 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         self, memory_format: torch.memory_format = torch.contiguous_format
     ) -> DiagDecoupledTensor:
         """Return a copy of self."""
-        return DiagDecoupledTensor(self.val.clone(memory_format=memory_format))
+        return DiagDecoupledTensor(self.values.clone(memory_format=memory_format))
 
     def detach(self) -> DiagDecoupledTensor:
-        """Return a new `DiagDecoupledTensor` with the `val` tensor detached."""
-        return DiagDecoupledTensor(self.val.detach())
+        """Return a new `DiagDecoupledTensor` with the `values` tensor detached."""
+        return DiagDecoupledTensor(self.values.detach())
 
     def to(self, *args, **kwargs) -> DiagDecoupledTensor:
         """
         Perform dtype and/or device conversion.
 
-        This function calls `.to()` on the self `val` tensor and returns a
-        new `DiagDecoupledTensor` using the converted `val` tensor.
+        This function calls `.to()` on the self `values` tensor and returns a
+        new `DiagDecoupledTensor` using the converted `values` tensor.
         """
-        return DiagDecoupledTensor(self.val.to(*args, **kwargs))
+        return DiagDecoupledTensor(self.values.to(*args, **kwargs))
 
     def to_dense(self) -> Float[Tensor, "*b diag diag"]:
         """Create a dense/strided copy of self."""
         if self.n_batch_dim == 0:
-            return torch.diagflat(self.val)
+            return torch.diagflat(self.values)
         else:
-            return torch.diag_embed(self.val)
+            return torch.diag_embed(self.values)
 
     # TODO: check int64 dtype.
-    def _get_idx_coo(self) -> Integer[Tensor, " sp diag"]:
+    def _get_idx_coo(self) -> Int64[Tensor, " sp diag"]:
         """
         Generate the coalesced COO index tensor for the diagonal matrix.
 
@@ -435,7 +435,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         idx_coo = self._get_idx_coo()
         pattern = SparsityPattern(idx_coo, self.shape)
 
-        val = self.val.flatten()
+        val = self.values.flatten()
 
         return SparseDecoupledTensor(pattern, val)
 
@@ -445,14 +445,14 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
         return torch.sparse_coo_tensor(
             idx_coo,
-            self.val.flatten(),
+            self.values.flatten(),
             self.shape,
             dtype=self.dtype,
             device=self.device,
         ).coalesce()
 
     def _to_compressed_sparse_tensor(
-        self, constructor: Callable, idx_dtype: torch.dtype
+        self, constructor: Callable
     ) -> Float[Tensor, "*b diag diag"]:
         """
         Convert self to a sparse CSC/CSR tensor.
@@ -460,6 +460,12 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         The following code is written with variable names assuming the CSR format,
         but for a diagonal matrix, the two formats are indexed identically.
         """
+        # Determine if it is safe to use int32 for CSC/CSR index tensors.
+        if self._nnz() < torch.iinfo(torch.int32).max:
+            idx_dtype = torch.int32
+        else:
+            idx_dtype = torch.int64
+
         if self.n_batch_dim == 0:
             idx_crow = torch.arange(
                 self._nnz() + 1, dtype=idx_dtype, device=self.device
@@ -484,44 +490,36 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         return constructor(
             idx_crow,
             idx_col,
-            self.val,
+            self.values,
             self.shape,
             dtype=self.dtype,
             device=self.device,
         )
 
-    def to_sparse_csr(self, int32: bool = False) -> Float[Tensor, "*b diag diag"]:
+    def to_sparse_csr(self) -> Float[Tensor, "*b diag diag"]:
         """
         Convert self to a sparse CSR tensor.
 
-        Parameters
-        ----------
-        int32
-            Whether to use int32 dtype for the crow and col indices.
+        This function will use int32 dtype for the crow and col indices, whenever
+        it is safe to do so.
 
         Returns
         -------
         [*b, diag, diag]
             A sparse CSR tensor.
         """
-        return self._to_compressed_sparse_tensor(
-            torch.sparse_csr_tensor, torch.int32 if int32 else torch.int64
-        )
+        return self._to_compressed_sparse_tensor(torch.sparse_csr_tensor)
 
-    def to_sparse_csc(self, int32: bool = False) -> Float[Tensor, "*b diag diag"]:
+    def to_sparse_csc(self) -> Float[Tensor, "*b diag diag"]:
         """
         Convert self to a sparse CSC tensor.
 
-        Parameters
-        ----------
-        int32
-            Whether to use int32 dtype for the ccol and row indices.
+        This function will use int32 dtype for the crow and col indices, whenever
+        it is safe to do so.
 
         Returns
         -------
         [*b, diag, diag]
             A sparse CSC tensor.
         """
-        return self._to_compressed_sparse_tensor(
-            torch.sparse_csc_tensor, torch.int32 if int32 else torch.int64
-        )
+        return self._to_compressed_sparse_tensor(torch.sparse_csc_tensor)

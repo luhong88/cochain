@@ -220,7 +220,13 @@ class SuperLU(InvSparseOperator):
         backend: Literal["cupy", "scipy"],
         **splu_kwargs,
     ):
-        self.A_val = A.val
+        if not A.pattern._is_int32_safe:
+            raise ValueError(
+                "The sparse indices of the input tensor 'A' cannot be safely "
+                "cast to int32 dtype."
+            )
+
+        self.A_val = A.values
         self.A_pattern = A.pattern
         self.backend = backend
 
@@ -228,9 +234,9 @@ class SuperLU(InvSparseOperator):
         self.device = A.device
         self.shape = A.shape
 
-        val = A.val[A.pattern.coo_to_csc_perm].detach().contiguous()
-        idx_ccol = A.pattern.idx_ccol_int32.detach().contiguous()
-        idx_row = A.pattern.idx_row_csc_int32.detach().contiguous()
+        val = A.values[A.pattern.coo_to_csc_perm].detach().contiguous()
+        idx_ccol = A.pattern.idx_ccol.detach().contiguous()
+        idx_row = A.pattern.idx_row_csc.detach().contiguous()
 
         match backend:
             case "cupy":

@@ -87,7 +87,7 @@ def test_stiffness_matrix_backward(simple_bcc_mesh: SimplicialMesh, device):
     mesh.requires_grad_()
 
     stiff = stiffness_matrix(mesh)
-    output = stiff.val.sum()
+    output = stiff.values.sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -104,6 +104,6 @@ def test_stiffness_matrix_gradcheck(simple_bcc_mesh: SimplicialMesh, device):
         mesh = simple_bcc_mesh.to(device=device, dtype=torch.float64)
         mesh.vert_coords = test_vert_coords
         s = stiffness_matrix(mesh)
-        return s.val.sum()
+        return s.values.sum()
 
     assert torch.autograd.gradcheck(stiffness_fxn, (vert_coords,), fast_mode=True)

@@ -109,25 +109,17 @@ def test_csr_conversion(diag, device):
     A_csr = A_operator.to_sparse_csr()
 
     assert A_csr.shape == A_csr_true.shape
-    assert A_csr.crow_indices().dtype == torch.int64
-    assert A_csr.col_indices().dtype == torch.int64
+    assert A_csr.crow_indices().dtype == torch.int32
+    assert A_csr.col_indices().dtype == torch.int32
     assert A_csr.dtype == A_csr_true.dtype
 
-    torch.testing.assert_close(A_csr.crow_indices(), A_csr_true.crow_indices())
-    torch.testing.assert_close(A_csr.col_indices(), A_csr_true.col_indices())
+    torch.testing.assert_close(
+        A_csr.crow_indices().to(torch.int64), A_csr_true.crow_indices()
+    )
+    torch.testing.assert_close(
+        A_csr.col_indices().to(torch.int64), A_csr_true.col_indices()
+    )
     torch.testing.assert_close(A_csr.values(), A_csr_true.values())
-
-    A_csr_int32 = A_operator.to_sparse_csr(int32=True)
-
-    assert A_csr_int32.crow_indices().dtype == torch.int32
-    assert A_csr_int32.col_indices().dtype == torch.int32
-
-    torch.testing.assert_close(
-        A_csr.crow_indices(), A_csr_int32.crow_indices().to(torch.int64)
-    )
-    torch.testing.assert_close(
-        A_csr.col_indices(), A_csr_int32.col_indices().to(torch.int64)
-    )
 
 
 def test_csr_conversion_with_batch_dim(diag_batched, device):
@@ -137,21 +129,9 @@ def test_csr_conversion_with_batch_dim(diag_batched, device):
     A_csr = A_operator.to_sparse_csr()
 
     assert A_csr.shape == A_operator.shape
-    assert A_csr.crow_indices().dtype == torch.int64
-    assert A_csr.col_indices().dtype == torch.int64
+    assert A_csr.crow_indices().dtype == torch.int32
+    assert A_csr.col_indices().dtype == torch.int32
     assert A_csr.dtype == A_operator.dtype
-
-    A_csr_int32 = A_operator.to_sparse_csr(int32=True)
-
-    assert A_csr_int32.crow_indices().dtype == torch.int32
-    assert A_csr_int32.col_indices().dtype == torch.int32
-
-    torch.testing.assert_close(
-        A_csr.crow_indices(), A_csr_int32.crow_indices().to(torch.int64)
-    )
-    torch.testing.assert_close(
-        A_csr.col_indices(), A_csr_int32.col_indices().to(torch.int64)
-    )
 
     # Since it is not possible to directly convert a batched sparse coo tensor
     # to a batched sparse csr tensor, we directly check for value agreement in
@@ -167,25 +147,17 @@ def test_csc_conversion(diag, device):
     A_csc = A_operator.to_sparse_csc()
 
     assert A_csc.shape == A_csc_true.shape
-    assert A_csc.ccol_indices().dtype == torch.int64
-    assert A_csc.row_indices().dtype == torch.int64
+    assert A_csc.ccol_indices().dtype == torch.int32
+    assert A_csc.row_indices().dtype == torch.int32
     assert A_csc.dtype == A_csc_true.dtype
 
-    torch.testing.assert_close(A_csc.ccol_indices(), A_csc_true.ccol_indices())
-    torch.testing.assert_close(A_csc.row_indices(), A_csc_true.row_indices())
+    torch.testing.assert_close(
+        A_csc.ccol_indices().to(torch.int64), A_csc_true.ccol_indices()
+    )
+    torch.testing.assert_close(
+        A_csc.row_indices().to(torch.int64), A_csc_true.row_indices()
+    )
     torch.testing.assert_close(A_csc.values(), A_csc_true.values())
-
-    A_csc_int32 = A_operator.to_sparse_csc(int32=True)
-
-    assert A_csc_int32.ccol_indices().dtype == torch.int32
-    assert A_csc_int32.row_indices().dtype == torch.int32
-
-    torch.testing.assert_close(
-        A_csc.ccol_indices(), A_csc_int32.ccol_indices().to(torch.int64)
-    )
-    torch.testing.assert_close(
-        A_csc.row_indices(), A_csc_int32.row_indices().to(torch.int64)
-    )
 
 
 def test_csc_conversion_with_batch_dim(diag_batched, device):
@@ -195,21 +167,9 @@ def test_csc_conversion_with_batch_dim(diag_batched, device):
     A_csc = A_operator.to_sparse_csc()
 
     assert A_csc.shape == A_operator.shape
-    assert A_csc.ccol_indices().dtype == torch.int64
-    assert A_csc.row_indices().dtype == torch.int64
+    assert A_csc.ccol_indices().dtype == torch.int32
+    assert A_csc.row_indices().dtype == torch.int32
     assert A_csc.dtype == A_operator.dtype
-
-    A_csc_int32 = A_operator.to_sparse_csc(int32=True)
-
-    assert A_csc_int32.ccol_indices().dtype == torch.int32
-    assert A_csc_int32.row_indices().dtype == torch.int32
-
-    torch.testing.assert_close(
-        A_csc.ccol_indices(), A_csc_int32.ccol_indices().to(torch.int64)
-    )
-    torch.testing.assert_close(
-        A_csc.row_indices(), A_csc_int32.row_indices().to(torch.int64)
-    )
 
     # Since it is not possible to directly convert a batched sparse coo tensor
     # to a batched sparse csc tensor, we directly check for value agreement in
@@ -428,7 +388,7 @@ def test_requires_grad_(diag, device):
     A_operator = DiagDecoupledTensor.from_tensor(A_tensor)
 
     A_operator.requires_grad_()
-    assert A_operator.val.requires_grad
+    assert A_operator.values.requires_grad
 
 
 def test_nnz(diag, device):
@@ -459,14 +419,14 @@ def test_to_float64(diag, device):
     A_tensor = diag.to(device)
     A_operator = DiagDecoupledTensor.from_tensor(A_tensor).to(torch.float64)
 
-    assert A_operator.val.dtype == torch.float64
+    assert A_operator.values.dtype == torch.float64
 
 
 def test_to_device(diag, device):
     A_tensor = diag
     A_operator = DiagDecoupledTensor.from_tensor(A_tensor).to(device)
 
-    assert A_operator.val.device.type == device.type
+    assert A_operator.values.device.type == device.type
 
 
 def test_apply(diag, device):

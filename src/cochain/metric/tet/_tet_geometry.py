@@ -1,7 +1,7 @@
 import torch
 from einops import einsum, rearrange
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 # Naming conventions for 3D mesh edges
 #
@@ -60,7 +60,7 @@ from torch import LongTensor, Tensor
 
 def compute_tet_signed_vols(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> Float[Tensor, " tet"]:
     """
     Compute the signed volume of each tetrahedron in a 3D mesh.
@@ -95,7 +95,7 @@ def compute_tet_signed_vols(
 
 def compute_d_tet_signed_vols_d_vert_coords(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> Float[Tensor, "tet local_vert=4 coord=3"]:
     """Compute the gradient of the signed volume with respect to vertex coordinates."""
     i, j, k, l = 0, 1, 2, 3
@@ -128,7 +128,7 @@ def compute_d_tet_signed_vols_d_vert_coords(
 
 def compute_bc_grads(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> tuple[Float[Tensor, " tet"], Float[Tensor, "tet local_vert=4 coord=3"]]:
     r"""
     Compute the gradients of the barycentric coordinates.
@@ -161,7 +161,7 @@ def compute_bc_grads(
 
 def compute_bc_grad_dots(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> tuple[Float[Tensor, " tet"], Float[Tensor, "tet local_vert=4 local_vert=3"]]:
     r"""
     Compute the inner products between barycentric coordinate gradients.
@@ -188,7 +188,7 @@ def compute_bc_grad_dots(
 
 def compute_cotan_weights(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> Float[Tensor, "global_vert global_vert"]:
     r"""
     Compute the cotan weights associated with edges on a tet mesh.

@@ -1,7 +1,7 @@
 import torch
 from einops import einsum, repeat
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 # We adopt the following convention for describing the relation between vertices
 # locally in a triangle. For a given triangle represented by three vertex indices,
@@ -22,7 +22,7 @@ from torch import LongTensor, Tensor
 
 def compute_tri_areas(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tris: Integer[LongTensor, "tri local_vert=3"],
+    tris: Integer[Tensor, "tri local_vert=3"],
 ) -> Float[Tensor, " tri"]:
     """Compute the area of all triangles in a tri mesh."""
     vert_s_coord: Float[Tensor, "tri 3 3"] = vert_coords[tris]
@@ -37,7 +37,7 @@ def compute_tri_areas(
 
 def compute_d_tri_areas_d_vert_coords(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tris: Integer[LongTensor, "tri local_vert=3"],
+    tris: Integer[Tensor, "tri local_vert=3"],
 ) -> Float[Tensor, "tri local_vert=3 coord=3"]:
     r"""
     Compute the gradient of the triangle areas with respect to vertex coordinates.
@@ -76,7 +76,7 @@ def compute_d_tri_areas_d_vert_coords(
 
 def compute_bc_grads(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tris: Integer[LongTensor, "tri local_vert=3"],
+    tris: Integer[Tensor, "tri local_vert=3"],
 ) -> tuple[Float[Tensor, " tri"], Float[Tensor, "tri local_vert=3 coord=3"]]:
     r"""
     Compute the gradients of the barycentric coordinates.
@@ -107,7 +107,7 @@ def compute_bc_grads(
 
 def compute_bc_grad_dots(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tris: Integer[LongTensor, "tri local_vert=3"],
+    tris: Integer[Tensor, "tri local_vert=3"],
 ) -> tuple[Float[Tensor, " tri"], Float[Tensor, "tri local_vert=3 local_vert=3"]]:
     r"""
     Compute the inner products between barycentric coordinate gradients.
@@ -174,7 +174,7 @@ def compute_bc_grad_dots(
 
 def compute_cotan_weights(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tris: Integer[LongTensor, "tri local_vert=3"],
+    tris: Integer[Tensor, "tri local_vert=3"],
 ) -> Float[Tensor, "global_vert global_vert"]:
     r"""
     Compute the cotan weights associated with edges on a tri mesh.

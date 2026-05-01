@@ -3,7 +3,7 @@ __all__ = ["star_0", "star_1", "star_2", "star_3"]
 import torch
 from einops import reduce, repeat
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
@@ -78,7 +78,7 @@ def star_2(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
 
     # For each tri, find all tet containing the tri as a face, and sum together
     # the tet-tri pair dual edge lengths.
-    all_canon_tris_idx: Integer[LongTensor, "tet 4"] = tet_mesh.tri_faces.idx
+    all_canon_tris_idx: Integer[Tensor, "tet 4"] = tet_mesh.tri_faces.idx
 
     dual_edge_lens_agg = torch.zeros(
         tet_mesh.n_tris,

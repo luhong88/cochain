@@ -1,7 +1,7 @@
 import torch
 from einops import einsum, repeat
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
 from ._local_element import (
@@ -13,7 +13,7 @@ from ._local_element import (
 def vertex_based_local_flat(
     vec_field: Float[Tensor, "global_vert coord=3"],
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    edges: Integer[LongTensor, "global_edge local_vert=2"],
+    edges: Integer[Tensor, "global_edge local_vert=2"],
 ) -> Float[Tensor, " global_edge"]:
     """
     Compute the flat of a vector field associated with the mesh vertices by taking
@@ -35,8 +35,8 @@ def vertex_based_tri_local_sharp(
     cochain_1: Float[Tensor, " edge"],
     star_0: Float[DiagDecoupledTensor, "vert vert"],
     n_verts: int,
-    tris: Integer[LongTensor, "tri vert=3"],
-    tri_edge_idx: Integer[LongTensor, "tri edge=3"],
+    tris: Integer[Tensor, "tri vert=3"],
+    tri_edge_idx: Integer[Tensor, "tri edge=3"],
     tri_edge_orientations: Float[Tensor, "tri edge=3"],
     tri_areas: Float[Tensor, " tri"],
     vert_coords: Float[Tensor, "vert coord=3"],
@@ -87,7 +87,7 @@ def vertex_based_tri_local_sharp(
 
     # The barycentric star-0 gives 1/3 of the total area of all triangles sharing
     # each vert as a face.
-    area_weights = star_0.val.unsqueeze(-1) * 3.0
+    area_weights = star_0.values.unsqueeze(-1) * 3.0
 
     # Use the area-weighted average to assign the 1-form to vertices.
     sharp = area_weighted_form_1_on_verts / area_weights
@@ -99,8 +99,8 @@ def vertex_based_tet_local_sharp(
     cochain_1: Float[Tensor, " edge"],
     star_0: Float[DiagDecoupledTensor, "vert vert"],
     n_verts: int,
-    tets: Integer[LongTensor, "tet vert=4"],
-    tet_edge_idx: Integer[LongTensor, "tet local_edge=6"],
+    tets: Integer[Tensor, "tet vert=4"],
+    tet_edge_idx: Integer[Tensor, "tet local_edge=6"],
     tet_edge_orientations: Float[Tensor, "tet local_edge=6"],
     tet_unsigned_vols: Float[Tensor, " tet"],
     bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
@@ -141,7 +141,7 @@ def vertex_based_tet_local_sharp(
 
     # The barycentric star-0 gives 1/4 of the total volume of all tets sharing
     # each vert as a face.
-    vol_weights = star_0.val.unsqueeze(-1) * 4.0
+    vol_weights = star_0.values.unsqueeze(-1) * 4.0
 
     # Use the volume-weighted average to assign the 1-form to vertices.
     sharp = vol_weighted_form_1_on_verts / vol_weights

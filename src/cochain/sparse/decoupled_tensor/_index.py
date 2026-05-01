@@ -1,19 +1,19 @@
 from typing import Literal
 
 import torch
-from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from jaxtyping import Float, Int64, Integer
+from torch import Tensor
 
 from ...utils.search import splx_search
 
 
 def coalesced_coo_to_compressed_idx(
-    coo_idx: Integer[LongTensor, "sp nz"],
+    coo_idx: Integer[Tensor, "sp nz"],
     shape: torch.Size,
     *,
     format: Literal["crow", "ccol"],
     dtype: torch.dtype | None = None,
-) -> Integer[LongTensor, "*b nz_per_b"]:
+) -> Integer[Tensor, "*b nz_per_b"]:
     """
     Convert COO indices to compressed formats.
 
@@ -75,11 +75,11 @@ def coalesced_coo_to_compressed_idx(
 
 
 def coalesced_coo_to_csr_col_idx(
-    coo_idx: Integer[LongTensor, "sp nz"],
+    coo_idx: Integer[Tensor, "sp nz"],
     shape: torch.Size,
     *,
     dtype: torch.dtype | None = None,
-) -> Integer[LongTensor, "*b nz_per_b"]:
+) -> Integer[Tensor, "*b nz_per_b"]:
     """
     Extract the column indices from a COO index tensor.
 
@@ -106,9 +106,9 @@ def coalesced_coo_to_csr_col_idx(
 
 
 def get_csc_sort_perm(
-    coo_idx: Integer[LongTensor, "sp nz"],
+    coo_idx: Integer[Tensor, "sp nz"],
     shape: torch.Size,
-) -> Integer[LongTensor, " nz"]:
+) -> Int64[Tensor, " nz"]:
     """
     Compute the permutation to convert from row-major to column-major order.
 
@@ -146,12 +146,12 @@ def get_csc_sort_perm(
 
 
 def coalesced_coo_to_csc_row_idx(
-    coo_idx: Integer[LongTensor, "sp nz"],
+    coo_idx: Integer[Tensor, "sp nz"],
     shape: torch.Size,
-    perm: Integer[LongTensor, " nz"],
+    perm: Integer[Tensor, " nz"],
     *,
     dtype: torch.dtype | None = None,
-) -> Integer[LongTensor, "*b nz_per_b"]:
+) -> Integer[Tensor, "*b nz_per_b"]:
     """
     Extract the row indices from a COO index tensor.
 
@@ -177,9 +177,9 @@ def coalesced_coo_to_csc_row_idx(
 
 
 def project_and_extract_cnz_vals(
-    src_coo: Integer[LongTensor, "2 src_nz"],
+    src_coo: Integer[Tensor, "2 src_nz"],
     src_val: Float[Tensor, " src_nz"],
-    template_coo: Integer[LongTensor, "2 target_nz"],
+    template_coo: Integer[Tensor, "2 target_nz"],
 ) -> Float[Tensor, " target_nz"]:
     """
     Extract common nonzero elements by comparing two sparse COO tensors.

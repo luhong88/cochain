@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 from jaxtyping import Bool, Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from .sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
 from .topology import boundaries, coboundaries
@@ -40,9 +40,9 @@ class SimplicialMesh:
         Float[SparseDecoupledTensor, "tet tri"],
     ]
     splx: tuple[
-        Integer[LongTensor, "edge 2"],
-        Integer[LongTensor, "tri 3"],
-        Integer[LongTensor, "tet 4"],
+        Integer[Tensor, "edge 2"],
+        Integer[Tensor, "tri 3"],
+        Integer[Tensor, "tet 4"],
     ]
     vert_coords: Float[Tensor, "vert 3"] | None
 
@@ -136,12 +136,13 @@ class SimplicialMesh:
 
         # 2. Define the type-safe casting lambda
         def custom_cast(t: Tensor | BaseDecoupledTensor):
-            # Target the core .val dtype for BaseDecoupledTensors, and standard
+            # Target the core .values dtype for BaseDecoupledTensors, and standard
             # .dtype for native tensors.
-            current_dtype = (
-                t.val.dtype if hasattr(t, "val") else getattr(t, "dtype", None)
-            )
             target_dtype = input_dtype
+            if hasattr(t, "values") and not callable(getattr(t, "values")):
+                current_dtype = t.values.dtype
+            else:
+                current_dtype = getattr(t, "dtype", None)
 
             if (target_dtype is not None) and (current_dtype is not None):
                 is_target_float = target_dtype.is_floating_point
@@ -190,19 +191,19 @@ class SimplicialMesh:
         return self.vert_coords.grad
 
     @property
-    def verts(self) -> Integer[LongTensor, "vert 1"]:
+    def verts(self) -> Integer[Tensor, "vert 1"]:
         return self.splx[0]
 
     @property
-    def edges(self) -> Integer[LongTensor, "edge 2"]:
+    def edges(self) -> Integer[Tensor, "edge 2"]:
         return self.splx[1]
 
     @property
-    def tris(self) -> Integer[LongTensor, "tri 3"]:
+    def tris(self) -> Integer[Tensor, "tri 3"]:
         return self.splx[2]
 
     @property
-    def tets(self) -> Integer[LongTensor, "tet 4"]:
+    def tets(self) -> Integer[Tensor, "tet 4"]:
         return self.splx[3]
 
     @property
@@ -299,7 +300,7 @@ class SimplicialMesh:
     def from_tri_mesh(
         cls,
         vert_coords: Float[Tensor, "vert 3"],
-        tris: Integer[LongTensor, "tri 3"],
+        tris: Integer[Tensor, "tri 3"],
     ):
         """
         Construct a special geometric simplicial 2-complex as a t riangulated 2D
@@ -336,7 +337,7 @@ class SimplicialMesh:
     def from_tet_mesh(
         cls,
         vert_coords: Float[Tensor, "vert 3"],
-        tets: Integer[LongTensor, "tet 4"],
+        tets: Integer[Tensor, "tet 4"],
     ):
         """
         Construct a special geometric simplicial 3-complex as a triangulated 3D
@@ -375,10 +376,10 @@ class MeshBatch(SimplicialMesh):
     # in the batch comes from the k-th simplicial complex.
     n_meshs: int
     ptrs: tuple[
-        Integer[LongTensor, " vert"],
-        Integer[LongTensor, " edge"],
-        Integer[LongTensor, " tri"],
-        Integer[LongTensor, " tet"],
+        Integer[Tensor, " vert"],
+        Integer[Tensor, " edge"],
+        Integer[Tensor, " tri"],
+        Integer[Tensor, " tet"],
     ]
 
 

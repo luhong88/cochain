@@ -76,7 +76,7 @@ def validate_matmul_args(
 class BaseDecoupledTensor(ABC):
     """An ABC for `DiagDecoupledTensor` and `SparseDecoupledTensor`."""
 
-    val: Tensor
+    values: Tensor
 
     @classmethod
     @abstractmethod
@@ -161,13 +161,13 @@ class BaseDecoupledTensor(ABC):
 
     @property
     def dtype(self) -> torch.dtype:
-        """The dtype of the `val` tensor."""
-        return self.val.dtype
+        """The dtype of the `values` tensor."""
+        return self.values.dtype
 
     @property
     def device(self) -> torch.device:
-        """The device of the `val` tensor."""
-        return self.val.device
+        """The device of the `values` tensor."""
+        return self.values.device
 
     @abstractmethod
     def clone(
@@ -179,17 +179,17 @@ class BaseDecoupledTensor(ABC):
 
     @property
     def requires_grad(self) -> bool:
-        """Whether gradients need to be computed for the `val` tensor."""
-        return self.val.requires_grad
+        """Whether gradients need to be computed for the `values` tensor."""
+        return self.values.requires_grad
 
     def requires_grad_(self, requires_grad: bool = True) -> BaseDecoupledTensor:
         """
-        Change if autograd should record operations on the `val` tensor.
+        Change if autograd should record operations on the `values` tensor.
 
-        This function sets the `requires_grad` attribute of `val` in-place, then
+        This function sets the `requires_grad` attribute of `values` in-place, then
         returns the BaseDecoupledTensor itself.
         """
-        self.val.requires_grad_(requires_grad)
+        self.values.requires_grad_(requires_grad)
         return self
 
     @abstractmethod

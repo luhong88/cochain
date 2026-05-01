@@ -2,18 +2,18 @@ from typing import Literal
 
 import torch
 from jaxtyping import Integer
-from torch import LongTensor
+from torch import Tensor
 
 
 def _polynomial_hash_splx_search(
-    key_splx: Integer[LongTensor, "key_splx vert"],
-    query_splx: Integer[LongTensor, "query_splx vert"],
+    key_splx: Integer[Tensor, "key_splx vert"],
+    query_splx: Integer[Tensor, "query_splx vert"],
     *,
     sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
     subset: Literal["assume", "check", "assert"],
-) -> Integer[LongTensor, " query_splx"]:
+) -> Integer[Tensor, " query_splx"]:
     dtype = torch.int64
     device = key_splx.device
 
@@ -103,14 +103,14 @@ def _polynomial_hash_splx_search(
 
 
 def _lex_splx_search(
-    key_splx: Integer[LongTensor, "key_splx vert"],
-    query_splx: Integer[LongTensor, "query_splx vert"],
+    key_splx: Integer[Tensor, "key_splx vert"],
+    query_splx: Integer[Tensor, "query_splx vert"],
     *,
     sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
     subset: Literal["assume", "check", "assert"],
-) -> Integer[LongTensor, " query_splx"]:
+) -> Integer[Tensor, " query_splx"]:
     if key_splx.size(1) != query_splx.size(1):
         raise ValueError(
             "The 'key_splx' and 'query_splx' must have the same dimension."
@@ -172,15 +172,15 @@ def _lex_splx_search(
 
 
 def splx_search(
-    key_splx: Integer[LongTensor, "key_splx vert"],
-    query_splx: Integer[LongTensor, "*b query_splx vert"],
+    key_splx: Integer[Tensor, "key_splx vert"],
+    query_splx: Integer[Tensor, "*b query_splx vert"],
     *,
     sort_key_splx: bool,
     sort_key_vert: bool,
     sort_query_vert: bool,
     method: Literal["lex_sort", "polynomial_hash", "auto"] = "auto",
     subset: Literal["assume", "check", "assert"] = "assume",
-) -> Integer[LongTensor, "*b query_splx"]:
+) -> Integer[Tensor, "*b query_splx"]:
     """
     Find the indices of a set of query simplices on a list of key simplices.
 

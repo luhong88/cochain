@@ -435,9 +435,9 @@ def test_laplacian_backward(laplacian, method, two_tets_mesh: SimplicialMesh, de
         case Tensor():
             output = torch.sum(l)
         case SparseDecoupledTensor():
-            output = l.val.sum()
+            output = l.values.sum()
         case MixedWeakLaplacianBlocks():
-            output = l._mixed_k_laplacian.val.sum()
+            output = l._mixed_k_laplacian.values.sum()
         case _:
             raise TypeError()
 
@@ -488,9 +488,9 @@ def test_laplacian_gradcheck(laplacian, method, two_tets_mesh: SimplicialMesh, d
             case Tensor():
                 output = torch.sum(l)
             case SparseDecoupledTensor():
-                output = l.val.sum()
+                output = l.values.sum()
             case MixedWeakLaplacianBlocks():
-                output = l._mixed_k_laplacian.val.sum()
+                output = l._mixed_k_laplacian.values.sum()
             case _:
                 raise TypeError()
 

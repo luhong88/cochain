@@ -165,7 +165,7 @@ def _cupy_eigsh_no_batch(
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
-        A.val, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
+        A.values, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
     )
 
     return eig_vals, eig_vecs

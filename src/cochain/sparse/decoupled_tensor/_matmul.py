@@ -1,6 +1,6 @@
 import torch
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ._index import project_and_extract_cnz_vals
 from .pattern import SparsityPattern
@@ -146,8 +146,8 @@ class FixedTopoSpSpMM(torch.autograd.Function):
         b_val: Float[Tensor, " b_nnz"],
         b_pattern: Integer[SparsityPattern, "j k"],
     ) -> tuple[
-        Integer[LongTensor, " c_nnz"],
-        Integer[LongTensor, " c_nnz"],
+        Integer[Tensor, " c_nnz"],
+        Integer[Tensor, " c_nnz"],
         Float[Tensor, " c_nnz"],
         torch.Size,
     ]:
@@ -400,8 +400,8 @@ def sp_sp_mm(
     b_val: Float[Tensor, " b_nnz"],
     b_pattern: Integer[SparsityPattern, "j k"],
 ) -> tuple[
-    Integer[LongTensor, " c_nnz"],
-    Integer[LongTensor, " c_nnz"],
+    Integer[Tensor, " c_nnz"],
+    Integer[Tensor, " c_nnz"],
     Float[Tensor, " c_nnz"],
     torch.Size,
 ]:

@@ -90,7 +90,7 @@ def test_splu_backward(A, backend, device):
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    A_sp_grad = A_op.val.grad.detach().clone()
+    A_sp_grad = A_op.values.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -163,11 +163,11 @@ def test_persistent_splu_sequential_backward_pattern_1(A, backend, device):
     loss1 = torch.sum(x1_via_sp * v1)
     loss1.backward()
 
-    A_sp_grad1 = A_op.val.grad.detach().clone()
+    A_sp_grad1 = A_op.values.grad.detach().clone()
     b1_sp_grad = b1.grad.detach().clone()
 
     # Repeat this process with a different b and v.
-    A_op.val.grad = None  # clear the existing gradient on A_op.
+    A_op.values.grad = None  # clear the existing gradient on A_op.
 
     b2 = torch.randn(n_dim).to(device)
     v2 = torch.randn(n_dim).to(device)
@@ -177,7 +177,7 @@ def test_persistent_splu_sequential_backward_pattern_1(A, backend, device):
     loss2 = torch.sum(x2_via_sp * v2)
     loss2.backward()
 
-    A_sp_grad2 = A_op.val.grad.detach().clone()
+    A_sp_grad2 = A_op.values.grad.detach().clone()
     b2_sp_grad = b2.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -247,7 +247,7 @@ def test_persistent_splu_sequential_backward_pattern_2(A, backend, device):
     loss = torch.sum(x1_via_sp * x2_via_sp)
     loss.backward()
 
-    A_sp_grad = A_op.val.grad.detach().clone()
+    A_sp_grad = A_op.values.grad.detach().clone()
     b1_sp_grad = b1.grad.detach().clone()
     b2_sp_grad = b2.grad.detach().clone()
 

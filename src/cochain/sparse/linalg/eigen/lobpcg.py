@@ -143,7 +143,7 @@ def _lobpcg_no_batch(
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val,
+            A.values,
             A.pattern,
             None,
             None,
@@ -155,9 +155,9 @@ def _lobpcg_no_batch(
         )
     else:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val,
+            A.values,
             A.pattern,
-            M.val,
+            M.values,
             M.pattern,
             k,
             eps,

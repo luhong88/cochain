@@ -34,8 +34,8 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
         val = A_val[A_pattern.coo_to_csc_perm].detach().contiguous()
-        idx_ccol = A_pattern.idx_ccol_int32.detach().contiguous()
-        idx_row = A_pattern.idx_row_csc_int32.detach().contiguous()
+        idx_ccol = A_pattern.idx_ccol.detach().contiguous()
+        idx_row = A_pattern.idx_row_csc.detach().contiguous()
 
         # Force CuPy to use the current Pytorch stream.
         stream = torch.cuda.current_stream()
@@ -138,8 +138,8 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
         val = A_val[A_pattern.coo_to_csc_perm].detach().contiguous().cpu().numpy()
-        idx_ccol = A_pattern.idx_ccol_int32.detach().contiguous().cpu().numpy()
-        idx_row = A_pattern.idx_row_csc_int32.detach().contiguous().cpu().numpy()
+        idx_ccol = A_pattern.idx_ccol.detach().contiguous().cpu().numpy()
+        idx_row = A_pattern.idx_row_csc.detach().contiguous().cpu().numpy()
 
         A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
             (val, idx_row, idx_ccol),
@@ -261,6 +261,11 @@ def splu(
     will have to create a reshaped and memory-contiguous copy of `b`. Batching of
     the `A` tensor is not supported by the solver.
     """
+    if not A.pattern._is_int32_safe:
+        raise ValueError(
+            "The sparse indices of the input tensor 'A' cannot be safely cast to int32 dtype."
+        )
+
     match b.ndim:
         case 1:
             b_ready = b
@@ -280,12 +285,12 @@ def splu(
                 raise ImportError("CuPy backend required.")
 
             x, solver = _CuPySuperLUAutogradFunction.apply(
-                A.val, A.pattern, b_ready, splu_kwargs
+                A.values, A.pattern, b_ready, splu_kwargs
             )
 
         case "scipy":
             x, solver = _SciPySuperLUAutogradFunction.apply(
-                A.val, A.pattern, b_ready, splu_kwargs
+                A.values, A.pattern, b_ready, splu_kwargs
             )
 
         case _:
