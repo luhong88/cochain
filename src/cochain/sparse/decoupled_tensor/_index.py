@@ -192,7 +192,7 @@ def csr_to_csc(
     All output tensors are guaranteed to be contiguous.
     """
     # Compute the forward permutation (CSR -> CSC)
-    coo_to_csc_map = torch.argsort(idx_col, dim=0, stable=True)
+    csc_to_coo_map = torch.argsort(idx_col, dim=0, stable=True)
 
     # Compute CSC ccol index
     idx_ccol = torch.zeros(n_cols + 1, dtype=idx_crow.dtype, device=idx_crow.device)
@@ -204,6 +204,6 @@ def csr_to_csc(
     idx_row_csr = row_idx.repeat_interleave(idx_crow[1:] - idx_crow[:-1])
 
     # Permute the uncompressed CSR row index into CSC order
-    idx_row_csc = idx_row_csr[coo_to_csc_map]
+    idx_row_csc = idx_row_csr[csc_to_coo_map]
 
-    return idx_ccol.contiguous(), idx_row_csc.contiguous(), coo_to_csc_map.contiguous()
+    return idx_ccol.contiguous(), idx_row_csc.contiguous(), csc_to_coo_map.contiguous()

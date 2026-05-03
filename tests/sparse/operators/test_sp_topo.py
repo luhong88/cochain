@@ -21,9 +21,9 @@ def sp_with_empty_row():
     idx_ccol = torch.tensor([0, 1, 2, 3, 5], dtype=torch.int32)
     idx_row_csc = torch.tensor([2, 1, 2, 1, 2], dtype=torch.int32)
 
-    coo_to_csc_perm = torch.tensor([2, 0, 3, 1, 4])
+    csc_to_coo_map = torch.tensor([2, 0, 3, 1, 4])
 
-    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, coo_to_csc_perm
+    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, csc_to_coo_map
 
 
 @pytest.fixture
@@ -42,9 +42,9 @@ def sp_with_empty_col():
     idx_ccol = torch.tensor([0, 0, 2, 5], dtype=torch.int32)
     idx_row_csc = torch.tensor([1, 3, 0, 2, 3], dtype=torch.int32)
 
-    coo_to_csc_perm = torch.tensor([1, 3, 0, 2, 4])
+    csc_to_coo_map = torch.tensor([1, 3, 0, 2, 4])
 
-    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, coo_to_csc_perm
+    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, csc_to_coo_map
 
 
 @pytest.fixture
@@ -66,9 +66,9 @@ def sp_with_batch_dim():
     idx_ccol = torch.tensor([[0, 1, 2, 3], [0, 0, 2, 3]], dtype=torch.int32)
     idx_row_csc = torch.tensor([[0, 2, 2], [0, 1, 2]], dtype=torch.int32)
 
-    coo_to_csc_perm = torch.tensor([0, 1, 2, 3, 4, 5])
+    csc_to_coo_map = torch.tensor([0, 1, 2, 3, 4, 5])
 
-    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, coo_to_csc_perm
+    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, csc_to_coo_map
 
 
 @pytest.fixture
@@ -90,9 +90,9 @@ def sp_with_batch_dim_T():
     idx_ccol = torch.tensor([[0, 1, 1, 3], [0, 1, 2, 3]], dtype=torch.int32)
     idx_row_csc = torch.tensor([[0, 1, 2], [1, 1, 2]], dtype=torch.int32)
 
-    coo_to_csc_perm = torch.tensor([0, 1, 2, 3, 4, 5])
+    csc_to_coo_map = torch.tensor([0, 1, 2, 3, 4, 5])
 
-    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, coo_to_csc_perm
+    return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, csc_to_coo_map
 
 
 def test_immutability(device):
@@ -170,7 +170,7 @@ def test_coo_to_csr_conversion(sp_with_empty_row, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_idx_coo_to_csc_perm,
+        true_idx_csc_to_coo_map,
     ) = sp_with_empty_row
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
@@ -187,14 +187,14 @@ def test_coo_to_csc_conversion(sp_with_empty_row, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_coo_to_csc_perm,
+        true_csc_to_coo_map,
     ) = sp_with_empty_row
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
 
     torch.testing.assert_close(pattern.idx_ccol, true_idx_ccol.to(device))
     torch.testing.assert_close(pattern.idx_row_csc, true_idx_row_csc.to(device))
-    torch.testing.assert_close(pattern.csc_to_coo_map, true_coo_to_csc_perm.to(device))
+    torch.testing.assert_close(pattern.csc_to_coo_map, true_csc_to_coo_map.to(device))
 
 
 def test_coo_to_csr_conversion_with_batch_dim(sp_with_batch_dim, device):
@@ -205,7 +205,7 @@ def test_coo_to_csr_conversion_with_batch_dim(sp_with_batch_dim, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_idx_coo_to_csc_perm,
+        true_idx_csc_to_coo_map,
     ) = sp_with_batch_dim
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
@@ -222,14 +222,14 @@ def test_coo_to_csc_conversion_with_batch_dim(sp_with_batch_dim, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_coo_to_csc_perm,
+        true_csc_to_coo_map,
     ) = sp_with_batch_dim
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
 
     torch.testing.assert_close(pattern.idx_ccol, true_idx_ccol.to(device))
     torch.testing.assert_close(pattern.idx_row_csc, true_idx_row_csc.to(device))
-    torch.testing.assert_close(pattern.csc_to_coo_map, true_coo_to_csc_perm.to(device))
+    torch.testing.assert_close(pattern.csc_to_coo_map, true_csc_to_coo_map.to(device))
 
 
 def test_idx_dtype(device):
@@ -254,7 +254,7 @@ def test_sp_dim(sp_with_empty_row, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_coo_to_csc_perm,
+        true_csc_to_coo_map,
     ) = sp_with_empty_row
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
@@ -271,7 +271,7 @@ def test_batch_dim(sp_with_batch_dim, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_coo_to_csc_perm,
+        true_csc_to_coo_map,
     ) = sp_with_batch_dim
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
@@ -288,7 +288,7 @@ def test_transpose(sp_with_empty_row, sp_with_empty_col, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_coo_to_csc_perm,
+        true_csc_to_coo_map,
     ) = sp_with_empty_row
 
     (
@@ -298,7 +298,7 @@ def test_transpose(sp_with_empty_row, sp_with_empty_col, device):
         true_idx_col_T,
         true_idx_ccol_T,
         true_idx_row_csc_T,
-        true_coo_to_csc_perm_T,
+        true_csc_to_coo_map_T,
     ) = sp_with_empty_col
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
@@ -311,7 +311,7 @@ def test_transpose(sp_with_empty_row, sp_with_empty_col, device):
     torch.testing.assert_close(pattern_T.idx_ccol, true_idx_ccol_T.to(device))
     torch.testing.assert_close(pattern_T.idx_row_csc, true_idx_row_csc_T.to(device))
     torch.testing.assert_close(
-        pattern_T.csc_to_coo_map, true_coo_to_csc_perm_T.to(device)
+        pattern_T.csc_to_coo_map, true_csc_to_coo_map_T.to(device)
     )
 
 
@@ -323,7 +323,7 @@ def test_transpose_with_batch_dim(sp_with_batch_dim, sp_with_batch_dim_T, device
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_coo_to_csc_perm,
+        true_csc_to_coo_map,
     ) = sp_with_batch_dim
 
     (
@@ -333,7 +333,7 @@ def test_transpose_with_batch_dim(sp_with_batch_dim, sp_with_batch_dim_T, device
         true_idx_col_T,
         true_idx_ccol_T,
         true_idx_row_csc_T,
-        true_coo_to_csc_perm_T,
+        true_csc_to_coo_map_T,
     ) = sp_with_batch_dim_T
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
@@ -348,7 +348,7 @@ def test_transpose_with_batch_dim(sp_with_batch_dim, sp_with_batch_dim_T, device
     torch.testing.assert_close(pattern_T.idx_ccol, true_idx_ccol_T.to(device))
     torch.testing.assert_close(pattern_T.idx_row_csc, true_idx_row_csc_T.to(device))
     torch.testing.assert_close(
-        pattern_T.csc_to_coo_map, true_coo_to_csc_perm_T.to(device)
+        pattern_T.csc_to_coo_map, true_csc_to_coo_map_T.to(device)
     )
 
 
@@ -368,7 +368,7 @@ def test_nnz(sp_with_empty_row, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_coo_to_csc_perm,
+        true_csc_to_coo_map,
     ) = sp_with_empty_row
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
@@ -384,7 +384,7 @@ def test_nnz_with_batch_dim(sp_with_batch_dim, device):
         true_idx_col,
         true_idx_ccol,
         true_idx_row_csc,
-        true_coo_to_csc_perm,
+        true_csc_to_coo_map,
     ) = sp_with_batch_dim
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
