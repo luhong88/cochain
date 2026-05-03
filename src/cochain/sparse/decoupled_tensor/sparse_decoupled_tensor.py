@@ -351,7 +351,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 "constrain() is only applicable to (batched) sparse square matrices."
             )
 
-        if not torch.allclose(self.values, self.values[self.pattern.coo_to_csc_perm]):
+        if not torch.allclose(self.values, self.values[self.pattern.csc_to_coo_map]):
             raise ValueError("constrain() is only applicable to symmetric matrices.")
 
         r_idx = self.pattern.idx_coo[-2]
@@ -594,7 +594,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         Note that the transpose preserves the batch and dense dimensions and only
         operates on the sparse dimensions.
         """
-        val_trans = self.values[self.pattern.coo_to_csc_perm]
+        val_trans = self.values[self.pattern.csc_to_coo_map]
         pattern_trans = self.pattern.T
         return SparseDecoupledTensor(pattern_trans, val_trans)
 
@@ -665,10 +665,10 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         idx_row_csc = self.pattern.idx_row_csc
 
         if self.n_batch_dim == 0:
-            val = self.values[self.pattern.coo_to_csc_perm].contiguous()
+            val = self.values[self.pattern.csc_to_coo_map].contiguous()
         else:
             val = (
-                self.values[self.pattern.coo_to_csc_perm]
+                self.values[self.pattern.csc_to_coo_map]
                 .view(self.size(0), -1)
                 .contiguous()
             )

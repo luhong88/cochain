@@ -77,7 +77,7 @@ def _sdt_to_scipy_csc(
 ) -> Float[scipy.sparse.csc_array, "r c"]:
     sp_op_scipy = scipy.sparse.csc_array(
         (
-            val[pattern.coo_to_csc_perm].detach().contiguous().cpu().numpy(),
+            val[pattern.csc_to_coo_map].detach().contiguous().cpu().numpy(),
             pattern.idx_row_csc.detach().contiguous().cpu().numpy(),
             pattern.idx_ccol.detach().contiguous().cpu().numpy(),
         ),

@@ -5,7 +5,7 @@ from typing import Callable
 
 import torch
 from einops import repeat
-from jaxtyping import Bool, Float, Int64, Integer
+from jaxtyping import Bool, Float, Int64
 from torch import Tensor
 
 from ._matmul import (

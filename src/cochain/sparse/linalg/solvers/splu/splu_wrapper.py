@@ -33,7 +33,7 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
         b: Float[Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
-        val = A_val[A_pattern.coo_to_csc_perm].detach().contiguous()
+        val = A_val[A_pattern.csc_to_coo_map].detach().contiguous()
         idx_ccol = A_pattern.idx_ccol.detach().contiguous()
         idx_row = A_pattern.idx_row_csc.detach().contiguous()
 
@@ -137,7 +137,7 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
         b: Float[Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
-        val = A_val[A_pattern.coo_to_csc_perm].detach().contiguous().cpu().numpy()
+        val = A_val[A_pattern.csc_to_coo_map].detach().contiguous().cpu().numpy()
         idx_ccol = A_pattern.idx_ccol.detach().contiguous().cpu().numpy()
         idx_row = A_pattern.idx_row_csc.detach().contiguous().cpu().numpy()
 

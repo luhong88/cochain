@@ -194,7 +194,7 @@ def test_coo_to_csc_conversion(sp_with_empty_row, device):
 
     torch.testing.assert_close(pattern.idx_ccol, true_idx_ccol.to(device))
     torch.testing.assert_close(pattern.idx_row_csc, true_idx_row_csc.to(device))
-    torch.testing.assert_close(pattern.coo_to_csc_perm, true_coo_to_csc_perm.to(device))
+    torch.testing.assert_close(pattern.csc_to_coo_map, true_coo_to_csc_perm.to(device))
 
 
 def test_coo_to_csr_conversion_with_batch_dim(sp_with_batch_dim, device):
@@ -229,7 +229,7 @@ def test_coo_to_csc_conversion_with_batch_dim(sp_with_batch_dim, device):
 
     torch.testing.assert_close(pattern.idx_ccol, true_idx_ccol.to(device))
     torch.testing.assert_close(pattern.idx_row_csc, true_idx_row_csc.to(device))
-    torch.testing.assert_close(pattern.coo_to_csc_perm, true_coo_to_csc_perm.to(device))
+    torch.testing.assert_close(pattern.csc_to_coo_map, true_coo_to_csc_perm.to(device))
 
 
 def test_idx_dtype(device):
@@ -239,7 +239,7 @@ def test_idx_dtype(device):
 
     target_dtype = pattern.idx_coo.dtype
 
-    assert pattern.coo_to_csc_perm.dtype == target_dtype
+    assert pattern.csc_to_coo_map.dtype == target_dtype
     assert pattern.idx_crow.dtype == torch.int32
     assert pattern.idx_col.dtype == torch.int32
     assert pattern.idx_ccol.dtype == torch.int32
@@ -311,7 +311,7 @@ def test_transpose(sp_with_empty_row, sp_with_empty_col, device):
     torch.testing.assert_close(pattern_T.idx_ccol, true_idx_ccol_T.to(device))
     torch.testing.assert_close(pattern_T.idx_row_csc, true_idx_row_csc_T.to(device))
     torch.testing.assert_close(
-        pattern_T.coo_to_csc_perm, true_coo_to_csc_perm_T.to(device)
+        pattern_T.csc_to_coo_map, true_coo_to_csc_perm_T.to(device)
     )
 
 
@@ -348,7 +348,7 @@ def test_transpose_with_batch_dim(sp_with_batch_dim, sp_with_batch_dim_T, device
     torch.testing.assert_close(pattern_T.idx_ccol, true_idx_ccol_T.to(device))
     torch.testing.assert_close(pattern_T.idx_row_csc, true_idx_row_csc_T.to(device))
     torch.testing.assert_close(
-        pattern_T.coo_to_csc_perm, true_coo_to_csc_perm_T.to(device)
+        pattern_T.csc_to_coo_map, true_coo_to_csc_perm_T.to(device)
     )
 
 

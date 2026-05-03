@@ -468,9 +468,9 @@ def test_laplacian_backward(laplacian, method, two_tets_mesh: SimplicialMesh, de
     ],
 )
 def test_laplacian_gradcheck(laplacian, method, two_tets_mesh: SimplicialMesh, device):
-    # Scale the vertex coordinates by a factor of 100 to improve numerical
+    # Scale the vertex coordinates by a factor of 1000 to improve numerical
     # precision for gradcheck.
-    vert_coords = 100.0 * two_tets_mesh.vert_coords.clone().to(
+    vert_coords = 1000.0 * two_tets_mesh.vert_coords.clone().to(
         dtype=torch.float64, device=device
     )
     vert_coords.requires_grad_()
@@ -496,7 +496,12 @@ def test_laplacian_gradcheck(laplacian, method, two_tets_mesh: SimplicialMesh, d
 
         return output
 
-    assert torch.autograd.gradcheck(laplacian_fxn, (vert_coords,), fast_mode=True)
+    # Use a nondet_tol since sparse-sparse matmul involves scatter_add_(). Because
+    # scatter add is parallelized, the order in which different terms get added
+    # can introduce non-deterministic noises/precision loss.
+    assert torch.autograd.gradcheck(
+        laplacian_fxn, (vert_coords,), fast_mode=True, nondet_tol=1e-7
+    )
 
 
 # TODO: add rotation/translation/scaling invariance tests

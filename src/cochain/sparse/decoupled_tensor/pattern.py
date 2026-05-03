@@ -15,7 +15,7 @@ from ._index import (
     coalesced_coo_to_compressed_idx,
     coalesced_coo_to_csc_row_idx,
     coalesced_coo_to_csr_col_idx,
-    get_csc_sort_perm,
+    get_csc_to_coo_map,
 )
 
 
@@ -229,8 +229,8 @@ class SparsityPattern:
         The CSR format compressed row index of the tensor (`crow_indices`).
     idx_col : [*b, nz_per_b]
         The CSR format col index of the tensor (`col_indices`).
-    coo_to_csc_perm : [nz,]
-        The permutation that converts row-major to col-major index ordering.
+    csc_to_coo_map : [nz,]
+        The permutation that converts col-major to row-major index ordering.
     idx_ccol : [*b, c+1]
         The CSC format compressed col index of the tensor (`ccol_indices`).
     idx_row_csc : [*b, nz_per_b]
@@ -241,7 +241,7 @@ class SparsityPattern:
     This class follows the following rules for integer tensor dtypes:
 
     * `idx_coo` must be int64 to conform to PyTorch Sparse COO tensor requirement.
-    * `coo_to_csc_perm` must be int64 for tensor indexing.
+    * `csc_to_coo_map` must be int64 for tensor indexing.
     * All other integer/index tensors are cast to int32 if it is safe to do so;
       otherwise they follow the same dtype as `idx_coo`.
     """
@@ -716,7 +716,7 @@ class SparsityPattern:
         Note that this operation preserves the cache of existing sparse index
         tensors via cache injection.
         """
-        idx_coo_sorted = self.idx_coo[:, self.coo_to_csc_perm]
+        idx_coo_sorted = self.idx_coo[:, self.csc_to_coo_map]
 
         idx_coo_trans = idx_coo_sorted.clone()
         idx_coo_trans[-1] = idx_coo_sorted[-2]
@@ -778,7 +778,7 @@ class SparsityPattern:
 
         # Handle the cached index tensors.
         cached_idx_tensors = [
-            "coo_to_csc_perm",
+            "csc_to_coo_map",
             "idx_ccol",
             "idx_crow",
             "idx_col",
@@ -827,14 +827,19 @@ class SparsityPattern:
         )
 
     @cached_property
-    def coo_to_csc_perm(self) -> Int64[Tensor, " nz"]:
+    def csc_to_coo_map(self) -> Int64[Tensor, " nz"]:
         """
         The permutation that converts row-major to col-major index ordering.
+
+        Specifically, this function computes the function `map[i]=j` that maps
+        the index of the `i`th nonzero element in the COO/CSR ordering to its
+        index `j` in the CSC odering; therefore, `values[map]` converts the
+        values tensor from the COO/CSR ordering to the CSC ordering.
 
         This property is cached once computed. Unlike other index tensors,
         this tensor always has an `int64` dtype.
         """
-        return get_csc_sort_perm(self.idx_coo, self.shape)
+        return get_csc_to_coo_map(self.idx_coo, self.shape)
 
     @cached_property
     def idx_ccol(self) -> Integer[Tensor, "*b c+1"]:
@@ -865,6 +870,6 @@ class SparsityPattern:
         return coalesced_coo_to_csc_row_idx(
             self.idx_coo,
             self.shape,
-            self.coo_to_csc_perm,
+            self.csc_to_coo_map,
             dtype=torch.int32 if self._is_int32_safe else self.dtype,
         )
