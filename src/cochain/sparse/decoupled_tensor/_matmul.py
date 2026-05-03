@@ -141,12 +141,12 @@ class FixedTopoDenseSpMM(torch.autograd.Function):
 class FixedTopoSpSpMM(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " a_nnz"],
-        b_val: Float[Tensor, " b_nnz"],
+        a_val: Float[Tensor, " a_nz"],
+        b_val: Float[Tensor, " b_nz"],
         plan: SpSpMMPlan,
     ) -> tuple[
-        Float[Tensor, " c_nnz"],
-        Integer[Tensor, "2 c_nnz"],
+        Float[Tensor, " c_nz"],
+        Integer[Tensor, "2 c_nz"],
         torch.Size,
     ]:
         c_val = torch.zeros(plan.fwd_plan.c_nnz, dtype=a_val.dtype, device=a_val.device)
@@ -173,10 +173,10 @@ class FixedTopoSpSpMM(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx,
-        dLdC_val: Float[Tensor, " c_nnz"],
+        dLdC_val: Float[Tensor, " c_nz"],
         _1,
         _2,
-    ) -> tuple[Float[Tensor, " a_nnz"] | None, Float[Tensor, " b_nnz"] | None, None]:
+    ) -> tuple[Float[Tensor, " a_nz"] | None, Float[Tensor, " b_nz"] | None, None]:
         a_val, b_val = ctx.saved_tensors
         plan: SpSpMMPlan = ctx.plan
 
@@ -363,12 +363,12 @@ def dense_sp_mm(
 
 
 def sp_sp_mm(
-    a_val: Float[Tensor, " a_nnz"],
-    b_val: Float[Tensor, " b_nnz"],
+    a_val: Float[Tensor, " a_nz"],
+    b_val: Float[Tensor, " b_nz"],
     spsp_mm_plan: SpSpMMPlan,
 ) -> tuple[
-    Integer[Tensor, " c_nnz"],
-    Integer[Tensor, "2 c_nnz"],
+    Integer[Tensor, " c_nz"],
+    Integer[Tensor, "2 c_nz"],
 ]:
     """Sparse-Sparse 2D matrix multiplication with fixed sparsity autograd."""
     return FixedTopoSpSpMM.apply(a_val, b_val, spsp_mm_plan)

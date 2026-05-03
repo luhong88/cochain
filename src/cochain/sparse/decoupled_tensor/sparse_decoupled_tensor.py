@@ -534,9 +534,14 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 needs_dLdB = other.requires_grad
 
                 if needs_dLdA or needs_dLdB:
+                    # If gradient tracking is required, check if there is already
+                    # a cached sparse-sparse matmul plan (note that the plan is
+                    # associated with the sparsity pattern objects).
                     plan = self.pattern._spsp_matmul_plans.get(other.pattern, None)
 
                     if plan is None:
+                        # If there is not a cached plan, generate one for the
+                        # sparsity pattern pair.
                         with torch.no_grad():
                             c_sp_csr = torch.sparse.mm(
                                 self.to_sparse_csr(), other.to_sparse_csr()
@@ -583,14 +588,19 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                         plan = SpSpMMPlan(plan_fwd, plan_bwd_A, plan_bwd_B)
                         self.pattern._spsp_matmul_plans[other.pattern] = plan
 
+                    # Perform sparse-sparse matmul with a plan using the custom
+                    # matmul implementation with masked backward pass.
                     c_val, c_idx_coo, c_shape = sp_sp_mm(
                         self.values, other.values, plan
                     )
                     c_pattern = SparsityPattern(c_idx_coo, c_shape)
                     c_sdt = SparseDecoupledTensor(c_pattern, c_val)
+
                     return c_sdt
 
                 else:
+                    # If no grad is required, then use torch.sparse.mm() to handle
+                    # the forward pass.
                     return self.from_tensor(
                         torch.sparse.mm(self.to_sparse_csr(), other.to_sparse_csr())
                     )
