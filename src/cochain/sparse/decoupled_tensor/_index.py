@@ -172,38 +172,3 @@ def coalesced_coo_to_csc_row_idx(
             row_idx_sorted = coo_idx[1][perm].view(n_batch, nnz_per_batch).to(dtype)
 
             return row_idx_sorted.contiguous()
-
-
-def csr_to_csc(
-    idx_crow: Integer[Tensor, " r+1"],
-    idx_col: Integer[Tensor, " nz"],
-    n_cols: int,
-) -> tuple[
-    Integer[Tensor, " c+1"],
-    Integer[Tensor, " nz"],
-    Int64[Tensor, " nz"],
-]:
-    """
-    Convert CSR index tensors to CSC and return the CSR->CSC mapping.
-
-    Note that this function only works on 2D sparse tensors with no batch dimensions.
-    The output inverse permutation tensor is always of dtype `int64`, while the
-    output `idx_ccol` and `idx_row_csc` tensors follow the dtype of `idx_crow`.
-    All output tensors are guaranteed to be contiguous.
-    """
-    # Compute the forward permutation (CSR -> CSC)
-    csc_to_coo_map = torch.argsort(idx_col, dim=0, stable=True)
-
-    # Compute CSC ccol index
-    idx_ccol = torch.zeros(n_cols + 1, dtype=idx_crow.dtype, device=idx_crow.device)
-    idx_ccol[1:] = torch.bincount(idx_col, minlength=n_cols).cumsum(dim=0)
-
-    # Compute CSC row index
-    n_rows = idx_crow.size(0) - 1
-    row_idx = torch.arange(n_rows, dtype=idx_crow.dtype, device=idx_crow.device)
-    idx_row_csr = row_idx.repeat_interleave(idx_crow[1:] - idx_crow[:-1])
-
-    # Permute the uncompressed CSR row index into CSC order
-    idx_row_csc = idx_row_csr[csc_to_coo_map]
-
-    return idx_ccol.contiguous(), idx_row_csc.contiguous(), csc_to_coo_map.contiguous()

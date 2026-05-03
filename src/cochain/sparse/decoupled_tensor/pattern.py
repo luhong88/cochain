@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = ["BlockDiagConfig", "SparsityPattern"]
 
+import weakref
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Sequence
@@ -182,7 +183,8 @@ class BlockDiagConfig:
 
 # TODO: check csc/csr index tensor dtype agreement with idx_coo.
 # TODO: check index tensor contiguous memory.
-@dataclass(frozen=True)
+# Use eq=False so that hashing is ID-based.
+@dataclass(frozen=True, eq=False)
 class SparsityPattern:
     """
     `SparseDecoupledTensor` sparsity pattern/topology.
@@ -284,6 +286,9 @@ class SparsityPattern:
 
         # Coerse shape dtype.
         object.__setattr__(self, "shape", torch.Size(self.shape))
+
+        # Weakref cache for masked sparse-sparse matmul planning.
+        object.__setattr__(self, "_spsp_matmul_plans", weakref.WeakKeyDictionary())
 
     @cached_property
     def _is_int32_safe(self) -> bool:

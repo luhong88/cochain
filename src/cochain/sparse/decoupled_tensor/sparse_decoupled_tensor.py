@@ -8,6 +8,12 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
+from ._spsp_mm_plan import (
+    SpSpMMPlan,
+    get_bwd_plan_A,
+    get_bwd_plan_B,
+    get_fwd_plan,
+)
 from .base_decoupled_tensor import (
     BaseDecoupledTensor,
     is_scalar_like,
@@ -524,11 +530,70 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         match other:
             case SparseDecoupledTensor():
-                idx_crow, idx_col, val, shape = sp_sp_mm(
-                    self.values, self.pattern, other.values, other.pattern
-                )
-                sp_sp = torch.sparse_csr_tensor(idx_crow, idx_col, val, shape)
-                return self.from_tensor(sp_sp)
+                needs_dLdA = self.requires_grad
+                needs_dLdB = other.requires_grad
+
+                if needs_dLdA or needs_dLdB:
+                    plan = self.pattern._spsp_matmul_plans.get(other.pattern, None)
+
+                    if plan is None:
+                        with torch.no_grad():
+                            c_sp_csr = torch.sparse.mm(
+                                self.to_sparse_csr(), other.to_sparse_csr()
+                            )
+
+                            c_idx_crow = c_sp_csr.crow_indices()
+                            c_idx_col = c_sp_csr.col_indices()
+                            c_idx_coo = c_sp_csr.to_sparse_coo().indices()
+                            c_size = c_sp_csr.size()
+
+                        if needs_dLdA:
+                            plan_bwd_A = get_bwd_plan_A(
+                                a_idx_coo=self.pattern.idx_coo,
+                                c_idx_crow=c_idx_crow,
+                                c_idx_col=c_idx_col,
+                                b_idx_crow=other.pattern.idx_crow,
+                                b_idx_col=other.pattern.idx_col,
+                            )
+                        else:
+                            plan_bwd_A = None
+
+                        if needs_dLdB:
+                            plan_bwd_B = get_bwd_plan_B(
+                                b_idx_coo=other.pattern.idx_coo,
+                                c_idx_crow=c_idx_crow,
+                                c_idx_col=c_idx_col,
+                                c_shape=c_size,
+                                a_idx_ccol=self.pattern.idx_ccol,
+                                a_idx_row=self.pattern.idx_row_csc,
+                                a_csc_to_coo_map=self.pattern.csc_to_coo_map,
+                            )
+                        else:
+                            plan_bwd_B = None
+
+                        plan_fwd = get_fwd_plan(
+                            c_idx_coo=c_idx_coo,
+                            a_idx_crow=self.pattern.idx_crow,
+                            a_idx_col=self.pattern.idx_col,
+                            b_idx_ccol=other.pattern.idx_ccol,
+                            b_idx_row=other.pattern.idx_row_csc,
+                            b_csc_to_coo_map=other.pattern.csc_to_coo_map,
+                        )
+
+                        plan = SpSpMMPlan(plan_fwd, plan_bwd_A, plan_bwd_B)
+                        self.pattern._spsp_matmul_plans[other.pattern] = plan
+
+                    c_val, c_idx_coo, c_shape = sp_sp_mm(
+                        self.values, other.values, plan
+                    )
+                    c_pattern = SparsityPattern(c_idx_coo, c_shape)
+                    c_sdt = SparseDecoupledTensor(c_pattern, c_val)
+                    return c_sdt
+
+                else:
+                    return self.from_tensor(
+                        torch.sparse.mm(self.to_sparse_csr(), other.to_sparse_csr())
+                    )
 
             case Tensor():
                 match other.ndim:
