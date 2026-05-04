@@ -1,15 +1,21 @@
+import inspect
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
 import torch
-from jaxtyping import Bool, Float, Integer
+from jaxtyping import Bool, Float, Int64, Integer
 from torch import Tensor
 
-from .sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+from .sparse.decoupled_tensor import (
+    BaseDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
 from .topology import boundaries, coboundaries
 from .utils.faces import GlobalFaces, enumerate_global_faces
+from .utils.search import splx_search
 
 
 def _is_tensor_like(obj: Any) -> bool:
@@ -75,6 +81,10 @@ class SimplicialMesh:
         for tensor in self.splx:
             assert tensor.dtype == int_dtype
 
+        # A cache of sparsity patterns for computing/coalescing sparse operators
+        # whose sparsity pattern is dictated by mesh topology.
+        self.coalesced_patterns: dict[str, SparsityPattern] = {}
+
     def _apply(self, func):
         """Apply a function (recursively) to all tensor-like attributes."""
         for key, value in self.__dict__.items():
@@ -97,6 +107,7 @@ class SimplicialMesh:
         return self
 
     # TODO: also implement .cuda() and .cpu()
+    # TODO: investigate interaction with the coalesced_patterns cache.
     def to(self, *args, **kwargs):
         """
         Move and/or casts the tensor-like attributes in the mesh.
@@ -363,6 +374,78 @@ class SimplicialMesh:
             splx=(unique_canon_edges, unique_canon_tris, tets),
             vert_coords=vert_coords,
         )
+
+    def _to_coalesced_matrix(
+        self,
+        indices: Int64[Tensor, "2 nz"],
+        values: Float[Tensor, " nz"],
+        size: torch.Size,
+    ) -> SparseDecoupledTensor:
+        """
+        Construct coalsced sparse matrices for mesh operators.
+
+        There are some sparse operators in topology and DEC where the specific
+        values of the nonzero elements are metric-dependent, but the sparsity
+        pattern of the operator is strictly dictated by the topology/connectivity
+        of the simplicial mesh. In addition, such operators are often constructed
+        first locally by computing relevant quantities on each top-level simplex,
+        before the local quantities are scattered to generate a global operator.
+        In such cases, it is beneficial to cache the sparsity patterns of these
+        operators and the local-to-global index mapping required to coalesce the
+        local terms.
+
+        This class acts as a wrapper/replacement for `torch.sparse_coo_tensor()`.
+        When called during the final construction of the global operator, this
+        function checks whether the sparsity pattern of the operator is already
+        pre-computed and cached in the self `SimplicialMesh` object. If not, it
+        calls `torch.sparse_coo_tensor()` to construct the coalesced global
+        operator and computes the local-to-global index mapping, which is used
+        to perform a much faster 1D scatter-add for subsequent operator constructions.
+        """
+        # Get the name of the function/operator that's calling this method.
+        op_class: str = inspect.stack()[1].function
+
+        pattern = self.coalesced_patterns.get(op_class, None)
+
+        if pattern is None:
+            # If the sparsity pattern for an operator has not been cached yet,
+            # then rely on torch to generate the coalesced indices, but manually
+            # compute the
+
+            # from_tensor() handles the colesce() call.
+            sdt = SparseDecoupledTensor.from_tensor(
+                torch.sparse_coo_tensor(indices=indices, values=values, size=size)
+            )
+
+            # Co-opt the simplex search function to match the uncoalesced (row, col)
+            # index pairs to the coalsced pairs. Both sort_key_vert and sort_query_vert
+            # must be False so that the search treates (i, j) and (j, i) as
+            # distinct index pairs whenever i != j.
+            coalesce_idx_map = splx_search(
+                key_splx=sdt.idx_coo.T,
+                query_splx=indices.T,
+                sort_key_splx=False,
+                sort_key_vert=False,
+                sort_query_vert=False,
+                method="lex_sort",
+            )
+
+            object.__setattr__(sdt.pattern, "_coalesce_idx_map", coalesce_idx_map)
+            self.coalesced_patterns[op_class] = sdt.pattern
+
+            return sdt
+
+        else:
+            coalesced_values = torch.zeros(
+                pattern._nnz(), dtype=values.dtype, device=values.device
+            )
+            coalesced_values.scatter_add_(
+                dim=0, index=pattern._coalesce_idx_map, src=values
+            )
+
+            sdt = SparseDecoupledTensor(pattern, coalesced_values)
+
+            return sdt
 
 
 @dataclass

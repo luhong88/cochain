@@ -251,6 +251,7 @@ class SparsityPattern:
     _idx_coo: Int64[Tensor, "sp nz"]
     shape: tuple[int, ...] | torch.Size
     block_diag_config: BlockDiagConfig | None = None
+    _coalesce_idx_map: Integer[Tensor, " nz"] | None = None
 
     @property
     def idx_coo(self) -> Int64[Tensor, "sp nz"]:
@@ -713,6 +714,7 @@ class SparsityPattern:
         """
         return 2
 
+    # TODO: investigate interaction with block_diag_config and coalesce_idx_map.
     @property
     def T(self) -> SparsityPattern:
         """
@@ -772,6 +774,9 @@ class SparsityPattern:
         new_idx_coo = self.idx_coo.to(
             device=device, copy=copy_flag, non_blocking=non_blocking
         )
+        new_coalesce_idx_map = self._coalesce_idx_map.to(
+            device=device, copy=copy_flag, non_blocking=non_blocking
+        )
 
         # block_diag_config handles its own to() call.
         if self.block_diag_config is None:
@@ -779,7 +784,9 @@ class SparsityPattern:
         else:
             new_block_diag_config = self.block_diag_config.to(*args, **kwargs)
 
-        new_pattern = SparsityPattern(new_idx_coo, self.shape, new_block_diag_config)
+        new_pattern = SparsityPattern(
+            new_idx_coo, self.shape, new_block_diag_config, new_coalesce_idx_map
+        )
 
         # Handle the cached index tensors.
         cached_idx_tensors = [

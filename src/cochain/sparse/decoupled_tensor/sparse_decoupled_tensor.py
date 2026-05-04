@@ -25,6 +25,8 @@ from .pattern import SparsityPattern, check_pattern_equality
 @dataclass
 class SparseDecoupledTensor(BaseDecoupledTensor):
     """
+    A decoupled representation of sparse matrices.
+
     A custom sparse tensor representation that explicitly decouples non-zero numerical
     values (`values`) from the sparsity pattern (`pattern`). The class supports
     sparse-sparse and sparse-dense linear algebra operations using the native
@@ -522,6 +524,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             else NotImplemented
         )
 
+    # TODO: test sp-sp matmul caching
     def __matmul__(self, other):
         """
         Implement self @ other
