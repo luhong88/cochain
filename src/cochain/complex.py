@@ -15,6 +15,7 @@ from .sparse.decoupled_tensor import (
 )
 from .topology import boundaries, coboundaries
 from .utils.faces import GlobalFaces, enumerate_global_faces
+from .utils.parsing import parse_to
 from .utils.search import splx_search
 
 
@@ -107,7 +108,6 @@ class SimplicialMesh:
         return self
 
     # TODO: also implement .cuda() and .cpu()
-    # TODO: investigate interaction with the coalesced_patterns cache.
     def to(self, *args, **kwargs):
         """
         Move and/or casts the tensor-like attributes in the mesh.
@@ -122,19 +122,10 @@ class SimplicialMesh:
         * Casting to bool dtype has no effect.
         * Casting to complex dtypes is not permitted.
         """
-        # Determine the target device and dtype from args and kwargs.
-        input_device = kwargs.get("device", None)
-        input_dtype = kwargs.get("dtype", None)
-
-        for arg in args:
-            match arg:
-                case torch.dtype():
-                    input_dtype = arg
-                case torch.device() | str():
-                    input_device = arg
-                case torch.Tensor() | SimplicialMesh():
-                    input_device = arg.device
-                    input_dtype = arg.dtype
+        # Parse input arguments.
+        input_device, input_dtype, copy_flag, non_blocking, memory_format = parse_to(
+            *args, **kwargs
+        )
 
         # Reject complex dtypes.
         if (input_dtype is not None) and input_dtype.is_complex:
@@ -142,8 +133,12 @@ class SimplicialMesh:
                 f"Complex dtype {input_dtype} is not permitted for float tensors in SimplicialMesh."
             )
 
-        # Extract remaining kwargs
-        other_kwargs = {k: v for k, v in kwargs.items() if k not in ["device", "dtype"]}
+        # Extract remaining kwargs.
+        other_kwargs = {
+            "copy": copy_flag,
+            "non_blocking": non_blocking,
+            "memory_format": memory_format,
+        }
 
         # 2. Define the type-safe casting lambda
         def custom_cast(t: Tensor | BaseDecoupledTensor):
@@ -179,8 +174,15 @@ class SimplicialMesh:
 
             return t.to(**cast_kwargs)
 
-        # Apply the custom cast recursively
-        return self._apply(custom_cast)
+        # Apply the custom cast recursively.
+        self._apply(custom_cast)
+
+        # Handle the coalesced_patterns cache dict separately, since the
+        # `SparsityPattern`s have their own to() logic.
+        for k, v in self.coalesced_patterns.items():
+            self.coalesced_patterns[k] = v.to(*args, **kwargs)
+
+        return self
 
     @property
     def dtype(self) -> torch.dtype:
@@ -375,6 +377,7 @@ class SimplicialMesh:
             vert_coords=vert_coords,
         )
 
+    # TODO: handle cache to()
     def _to_coalesced_matrix(
         self,
         indices: Int64[Tensor, "2 nz"],

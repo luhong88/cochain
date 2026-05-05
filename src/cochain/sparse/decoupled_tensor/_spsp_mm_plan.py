@@ -17,6 +17,16 @@ class SpSpMMFwdPlan:
     a_idx: Int64[Tensor, " a_idx"]
     b_idx: Int64[Tensor, " b_idx"]
 
+    def to(self, *args, **kwargs) -> "SpSpMMFwdPlan":
+        return SpSpMMFwdPlan(
+            self.c_nnz,
+            self.c_idx_coo.to(*args, **kwargs),
+            self.c_shape,
+            self.c_idx.to(*args, **kwargs),
+            self.a_idx.to(*args, **kwargs),
+            self.b_idx.to(*args, **kwargs),
+        )
+
 
 @dataclass
 class SpSpMMBwdPlanA:
@@ -24,6 +34,14 @@ class SpSpMMBwdPlanA:
     dLdA_idx: Int64[Tensor, " a_idx"]
     dLdC_idx: Int64[Tensor, " c_idx"]
     b_idx: Int64[Tensor, " b_idx"]
+
+    def to(self, *args, **kwargs) -> "SpSpMMBwdPlanA":
+        return SpSpMMBwdPlanA(
+            self.a_nnz,
+            self.dLdA_idx.to(*args, **kwargs),
+            self.dLdA_idx.to(*args, **kwargs),
+            self.b_idx.to(*args, **kwargs),
+        )
 
 
 @dataclass
@@ -33,12 +51,27 @@ class SpSpMMBwdPlanB:
     dLdC_idx: Int64[Tensor, " c_idx"]
     a_idx: Int64[Tensor, " a_idx"]
 
+    def to(self, *args, **kwargs) -> "SpSpMMBwdPlanB":
+        return SpSpMMBwdPlanB(
+            self.b_nnz,
+            self.dLdB_idx.to(*args, **kwargs),
+            self.dLdC_idx.to(*args, **kwargs),
+            self.a_idx.to(*args, **kwargs),
+        )
+
 
 @dataclass
 class SpSpMMPlan:
     fwd_plan: SpSpMMFwdPlan
     bwd_plan_A: SpSpMMBwdPlanA | None
     bwd_plan_B: SpSpMMBwdPlanB | None
+
+    def to(self, *args, **kwargs) -> "SpSpMMPlan":
+        return SpSpMMPlan(
+            self.fwd_plan.to(*args, **kwargs),
+            self.bwd_plan_A.to(*args, **kwargs) if self.bwd_plan_A else None,
+            self.bwd_plan_B.to(*args, **kwargs) if self.bwd_plan_B else None,
+        )
 
 
 def _csr_to_csc(

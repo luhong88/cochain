@@ -807,6 +807,12 @@ class SparsityPattern:
                     device=device, copy=copy_flag, non_blocking=non_blocking
                 )
 
+        # Handle the weakref spsp matmul plan cache.
+        for k, v in self._spsp_matmul_plans.items():
+            new_pattern._spsp_matmul_plans[k] = v.to(
+                device=device, copy=copy_flag, non_blocking=non_blocking
+            )
+
         return new_pattern
 
     @cached_property
