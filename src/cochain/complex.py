@@ -384,8 +384,7 @@ class SimplicialMesh:
             vert_coords=vert_coords,
         )
 
-    # TODO: handle cache to()
-    def _to_coalesced_matrix(
+    def _sparse_coalesced_matrix(
         self,
         indices: Int64[Tensor, "2 nz"],
         values: Float[Tensor, " nz"],
