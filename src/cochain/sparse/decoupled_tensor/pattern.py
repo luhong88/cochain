@@ -774,9 +774,13 @@ class SparsityPattern:
         new_idx_coo = self.idx_coo.to(
             device=device, copy=copy_flag, non_blocking=non_blocking
         )
-        new_coalesce_idx_map = self._coalesce_idx_map.to(
-            device=device, copy=copy_flag, non_blocking=non_blocking
-        )
+
+        if self._coalesce_idx_map is None:
+            new_coalesce_idx_map = None
+        else:
+            new_coalesce_idx_map = self._coalesce_idx_map.to(
+                device=device, copy=copy_flag, non_blocking=non_blocking
+            )
 
         # block_diag_config handles its own to() call.
         if self.block_diag_config is None:
