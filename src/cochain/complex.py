@@ -1,3 +1,4 @@
+import copy
 import inspect
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -108,7 +109,7 @@ class SimplicialMesh:
         return self
 
     # TODO: also implement .cuda() and .cpu()
-    def to(self, *args, **kwargs):
+    def to(self, *args, **kwargs) -> "SimplicialMesh":
         """
         Move and/or casts the tensor-like attributes in the mesh.
 
@@ -130,7 +131,8 @@ class SimplicialMesh:
         # Reject complex dtypes.
         if (input_dtype is not None) and input_dtype.is_complex:
             raise TypeError(
-                f"Complex dtype {input_dtype} is not permitted for float tensors in SimplicialMesh."
+                f"Complex dtype '{input_dtype}' is not permitted for float "
+                "tensors in SimplicialMesh."
             )
 
         # Extract remaining kwargs.
@@ -140,7 +142,7 @@ class SimplicialMesh:
             "memory_format": memory_format,
         }
 
-        # 2. Define the type-safe casting lambda
+        # Define the type-safe casting function.
         def custom_cast(t: Tensor | BaseDecoupledTensor):
             # Target the core .values dtype for BaseDecoupledTensors, and standard
             # .dtype for native tensors.
@@ -174,15 +176,20 @@ class SimplicialMesh:
 
             return t.to(**cast_kwargs)
 
-        # Apply the custom cast recursively.
-        self._apply(custom_cast)
+        # Create a shallow copy to bypass __post_init__() and leave the original
+        # instance intact.
+        new_mesh = copy.copy(self)
 
-        # Handle the coalesced_patterns cache dict separately, since the
-        # `SparsityPattern`s have their own to() logic.
+        # 2. Apply the custom cast recursively.
+        # This will update the references on new_mesh via setattr, leaving `self` intact.
+        new_mesh._apply(custom_cast)
+
+        # 3. Handle the coalesced_patterns cache dict.
+        new_mesh.coalesced_patterns = {}
         for k, v in self.coalesced_patterns.items():
-            self.coalesced_patterns[k] = v.to(*args, **kwargs)
+            new_mesh.coalesced_patterns[k] = v.to(*args, **kwargs)
 
-        return self
+        return new_mesh
 
     @property
     def dtype(self) -> torch.dtype:

@@ -695,13 +695,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
     def to(self, *args, **kwargs) -> SparseDecoupledTensor:
         new_val = self.values.to(*args, **kwargs)
-
-        # The topology object ignores dtype
-        new_pattern = self.pattern.to(
-            device=new_val.device,
-            copy=kwargs.get("copy", False),
-            non_blocking=kwargs.get("non_blocking", False),
-        )
+        new_pattern = self.pattern.to(*args, **kwargs)
 
         return SparseDecoupledTensor(new_pattern, new_val)
 
