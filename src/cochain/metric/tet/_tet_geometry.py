@@ -3,6 +3,9 @@ from einops import einsum, rearrange
 from jaxtyping import Float, Integer
 from torch import Tensor
 
+from ...complex import SimplicialMesh
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
+
 # Naming conventions for 3D mesh edges
 #
 # For a given tetrahedron `ijkl`. We define a "local reference frame" for each edge.
@@ -187,9 +190,8 @@ def compute_bc_grad_dots(
 
 
 def compute_cotan_weights(
-    vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[Tensor, "tet local_vert=4"],
-) -> Float[Tensor, "global_vert global_vert"]:
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "global_vert global_vert"]:
     r"""
     Compute the cotan weights associated with edges on a tet mesh.
 
@@ -204,8 +206,8 @@ def compute_cotan_weights(
     """
     i, j, k, l = 0, 1, 2, 3
 
-    tet_vols = torch.abs(compute_tet_signed_vols(vert_coords, tets))
-    tet_vert_coords = vert_coords[tets]
+    tet_vols = torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))
+    tet_vert_coords = tet_mesh.vert_coords[tet_mesh.tets]
 
     # For each tet ijkl and each edge s, compute the (outward) normal on the two
     # triangles with o as the shared edge (i.e., th x o and hh x o).
@@ -235,17 +237,20 @@ def compute_cotan_weights(
     )
 
     # Scatter the local edge s contributions to form the global weight matrix.
-    idx_coo = rearrange(
-        tets[:, [[i, i, i, j, j, k], [j, k, l, k, l, l]]],
+    idx_coo_asym = rearrange(
+        tet_mesh.tets[:, [[i, i, i, j, j, k], [j, k, l, k, l, l]]],
         "tet vert edge -> vert (tet edge)",
     )
-    vals = rearrange(weight_o, "tet edge -> (tet edge)")
+    vals_asym = rearrange(weight_o, "tet edge -> (tet edge)")
 
-    n_verts = vert_coords.size(0)
+    idx_coo = torch.hstack((idx_coo_asym, torch.flip(idx_coo_asym, dims=(0,))))
+    vals = torch.cat((vals_asym, vals_asym))
 
-    asym_weights = torch.sparse_coo_tensor(
-        indices=idx_coo, values=vals, size=(n_verts, n_verts)
+    weights = tet_mesh._sparse_coalesced_matrix(
+        operator="tet_compute_cotan_weights",
+        indices=idx_coo,
+        values=vals,
+        size=(tet_mesh.n_verts, tet_mesh.n_verts),
     )
-    sym_weights = (asym_weights + asym_weights.T).coalesce()
 
-    return sym_weights
+    return weights
