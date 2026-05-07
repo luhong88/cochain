@@ -73,7 +73,7 @@ def test_stiffness_linear_precision(simple_bcc_mesh: SimplicialMesh, device):
     mesh = simple_bcc_mesh.to(device)
 
     bcc_S = stiffness_matrix(mesh).to_dense()
-    zero_tensor = bcc_S @ simple_bcc_mesh.vert_coords
+    zero_tensor = bcc_S @ mesh.vert_coords
 
     bd_mask = mesh.bd_vert_mask
 
