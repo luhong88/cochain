@@ -13,6 +13,8 @@ from ...sparse.decoupled_tensor import (
 from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from ...utils.faces import enumerate_local_faces
 
+# TODO: investigate sparse coo tensor mesh caching.
+
 
 def vertex_based_tri_mixed_mass_matrix(
     n_verts: int,

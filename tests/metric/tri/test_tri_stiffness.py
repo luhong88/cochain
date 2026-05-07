@@ -54,7 +54,7 @@ def test_stiffness_symmetry(icosphere_mesh: SimplicialMesh, device):
 
 def test_stiffness_PSD(icosphere_mesh: SimplicialMesh, device):
     """Check that the stiffness matrix is positive semi-definite."""
-    mesh = icosphere_mesh.to(device)
+    mesh = icosphere_mesh.to(dtype=torch.float64, device=device)
 
     sphere_S = stiffness_matrix(mesh)
     sphere_S_dense = sphere_S.to_dense()
