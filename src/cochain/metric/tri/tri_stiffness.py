@@ -14,19 +14,32 @@ def stiffness_matrix(
     """Compute the stiffness matrix/cotan Laplacian for a tri mesh."""
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
-    sym_stiffness = compute_cotan_weights(tri_mesh).to_sparse_coo()
+    r_idx, c_idx, vals_off_diag = compute_cotan_weights(tri_mesh)
 
-    # Compute the diagonal elements of the stiffness matrix, which is the negative
-    # of the corresponding row/column sum.
-    stiffness_diag = torch.sparse.sum(sym_stiffness, dim=-1)
-    # laplacian_diag.indices() has shape (1, nnz_diag)
-    diag_idx = torch.concatenate([stiffness_diag.indices(), stiffness_diag.indices()])
+    # Each term W_ij in the (asymmetric) weight matrix contributes four times
+    # to the stiffness matrix S_ij:
+    #
+    # S_ij += W_ij
+    # S_ji += W_ij
+    # S_ii -= W_ij
+    # W_jj -= W_ij
+    #
+    # To understand the last two terms, note that S_ii = Σ_j W_ij and
+    # S_jj = Σ_i W_ji; since the asymmetric weight matrix only contains W_ij
+    # or W_ji, this terms contributes to the diagonal term of both its row and col.
+    idx_coo = torch.stack(
+        (
+            torch.cat((r_idx, c_idx, r_idx, c_idx)),
+            torch.cat((c_idx, r_idx, r_idx, c_idx)),
+        )
+    )
 
-    # Generate the final, complete stiffness matrix.
+    vals = torch.cat((vals_off_diag, vals_off_diag, -vals_off_diag, -vals_off_diag))
+
     stiffness = tri_mesh._sparse_coalesced_matrix(
         operator="tri_stiffness_matrix",
-        indices=torch.hstack((sym_stiffness.indices(), diag_idx)),
-        values=torch.cat((sym_stiffness.values(), -stiffness_diag.values())),
+        indices=idx_coo,
+        values=vals,
         size=(tri_mesh.n_verts, tri_mesh.n_verts),
     )
 

@@ -177,7 +177,7 @@ def compute_bc_grad_dots(
 
 def compute_cotan_weights(
     tri_mesh: SimplicialMesh,
-) -> Float[SparseDecoupledTensor, "global_vert global_vert"]:
+) -> tuple[Integer[Tensor, " nz"], Integer[Tensor, " nz"], Float[Tensor, " nz"]]:
     r"""
     Compute the cotan weights associated with edges on a tri mesh.
 
@@ -204,25 +204,13 @@ def compute_cotan_weights(
     )
     cot_s: Float[Tensor, "tri 3"] = edge_sn_sp_dot / edge_sn_sp_cross
 
-    # For each triangle snp, and each vertex s, scatter cot_s to edge np (and pn)
-    # in the weight matrix and assemble the symmetric sparse weight matrix.
+    # For each triangle snp, and each vertex s, assemble the indices of the edge
+    # np (which forms the row and col indices) and the corresponding cot_s values.
+    # This information is used by downstream functions to assemble the sparse,
+    # asymmetric, weight matrix.
     r_idx_asym = tri_mesh.tris[:, [1, 2, 0]].flatten()
     c_idx_asym = tri_mesh.tris[:, [2, 0, 1]].flatten()
 
-    r_idx = torch.cat((r_idx_asym, c_idx_asym))
-    c_idx = torch.cat((c_idx_asym, r_idx_asym))
-    idx_coo = torch.vstack((r_idx, c_idx))
-
     vals_asym = -0.5 * cot_s.flatten()
-    vals = torch.cat((vals_asym, vals_asym))
 
-    shape = (tri_mesh.n_verts, tri_mesh.n_verts)
-
-    weights = tri_mesh._sparse_coalesced_matrix(
-        operator="tri_compute_cotan_weights",
-        indices=idx_coo,
-        values=vals,
-        size=shape,
-    )
-
-    return weights
+    return r_idx_asym, c_idx_asym, vals_asym
