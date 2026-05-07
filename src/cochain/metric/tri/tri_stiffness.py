@@ -14,7 +14,7 @@ def stiffness_matrix(
     """Compute the stiffness matrix/cotan Laplacian for a tri mesh."""
     # The cotan weight matrix W gives the stiffness matrix except for the diagonal
     # elements.
-    sym_stiffness = compute_cotan_weights(tri_mesh.vert_coords, tri_mesh.tris)
+    sym_stiffness = compute_cotan_weights(tri_mesh).to_sparse_coo()
 
     # Compute the diagonal elements of the stiffness matrix, which is the negative
     # of the corresponding row/column sum.
@@ -23,9 +23,11 @@ def stiffness_matrix(
     diag_idx = torch.concatenate([stiffness_diag.indices(), stiffness_diag.indices()])
 
     # Generate the final, complete stiffness matrix.
-    stiffness = torch.sparse_coo_tensor(
-        torch.hstack((sym_stiffness.indices(), diag_idx)),
-        torch.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
-    ).coalesce()
+    stiffness = tri_mesh._sparse_coalesced_matrix(
+        operator="tri_stiffness_matrix",
+        indices=torch.hstack((sym_stiffness.indices(), diag_idx)),
+        values=torch.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
+        size=(tri_mesh.n_verts, tri_mesh.n_verts),
+    )
 
-    return SparseDecoupledTensor.from_tensor(stiffness)
+    return stiffness

@@ -1,5 +1,4 @@
 import copy
-import inspect
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
@@ -386,9 +385,10 @@ class SimplicialMesh:
 
     def _sparse_coalesced_matrix(
         self,
+        operator: str,
         indices: Int64[Tensor, "2 nz"],
         values: Float[Tensor, " nz"],
-        size: torch.Size,
+        size: tuple[int, int] | torch.Size,
     ) -> SparseDecoupledTensor:
         """
         Construct coalsced sparse matrices for mesh operators.
@@ -411,10 +411,7 @@ class SimplicialMesh:
         operator and computes the local-to-global index mapping, which is used
         to perform a much faster 1D scatter-add for subsequent operator constructions.
         """
-        # Get the name of the function/operator that's calling this method.
-        op_class: str = inspect.stack()[1].function
-
-        pattern = self.coalesced_patterns.get(op_class, None)
+        pattern = self.coalesced_patterns.get(operator, None)
 
         if pattern is None:
             # If the sparsity pattern for an operator has not been cached yet,
@@ -431,7 +428,7 @@ class SimplicialMesh:
             # must be False so that the search treates (i, j) and (j, i) as
             # distinct index pairs whenever i != j.
             coalesce_idx_map = splx_search(
-                key_splx=sdt.idx_coo.T,
+                key_splx=sdt.pattern.idx_coo.T,
                 query_splx=indices.T,
                 sort_key_splx=False,
                 sort_key_vert=False,
@@ -440,7 +437,7 @@ class SimplicialMesh:
             )
 
             object.__setattr__(sdt.pattern, "_coalesce_idx_map", coalesce_idx_map)
-            self.coalesced_patterns[op_class] = sdt.pattern
+            self.coalesced_patterns[operator] = sdt.pattern
 
             return sdt
 

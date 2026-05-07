@@ -3,6 +3,9 @@ from einops import einsum, repeat
 from jaxtyping import Float, Integer
 from torch import Tensor
 
+from ...complex import SimplicialMesh
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
+
 # We adopt the following convention for describing the relation between vertices
 # locally in a triangle. For a given triangle represented by three vertex indices,
 # we refer the first, second, and third vertex with index `i`, `j`, and `k`. This
@@ -173,9 +176,8 @@ def compute_bc_grad_dots(
 
 
 def compute_cotan_weights(
-    vert_coords: Float[Tensor, "global_vert coord=3"],
-    tris: Integer[Tensor, "tri local_vert=3"],
-) -> Float[Tensor, "global_vert global_vert"]:
+    tri_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "global_vert global_vert"]:
     r"""
     Compute the cotan weights associated with edges on a tri mesh.
 
@@ -189,7 +191,7 @@ def compute_cotan_weights(
     # For each triangle snp, and each vertex s, find the edge vectors sn and sp,
     # Compute the dot product and the norm of the cross product between these two
     # vectors, and use their ratio to compute the cotan of the interior angle at s.
-    vert_s_coord: Float[Tensor, "tri 3 3"] = vert_coords[tris]
+    vert_s_coord: Float[Tensor, "tri 3 3"] = tri_mesh.vert_coords[tri_mesh.tris]
 
     edge_sn = vert_s_coord[:, [1, 2, 0], :] - vert_s_coord
     edge_sp = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord
@@ -197,23 +199,30 @@ def compute_cotan_weights(
     edge_sn_sp_dot = torch.sum(edge_sn * edge_sp, dim=-1)
 
     # Note that the norm of sn x sp is simply twice the tri area.
-    edge_sn_sp_cross = 2 * compute_tri_areas(vert_coords, tris).view(-1, 1)
+    edge_sn_sp_cross = 2 * compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris).view(
+        -1, 1
+    )
     cot_s: Float[Tensor, "tri 3"] = edge_sn_sp_dot / edge_sn_sp_cross
 
-    # For each triangle snp, and each vertex s, scatter cot_s to edge np in the
-    # weight matrix (W_np) and assemble the asymmetric sparse weight matrix.
-    r_idx = tris[:, [1, 2, 0]].flatten()
-    c_idx = tris[:, [2, 0, 1]].flatten()
+    # For each triangle snp, and each vertex s, scatter cot_s to edge np (and pn)
+    # in the weight matrix and assemble the symmetric sparse weight matrix.
+    r_idx_asym = tri_mesh.tris[:, [1, 2, 0]].flatten()
+    c_idx_asym = tri_mesh.tris[:, [2, 0, 1]].flatten()
+
+    r_idx = torch.cat((r_idx_asym, c_idx_asym))
+    c_idx = torch.cat((c_idx_asym, r_idx_asym))
     idx_coo = torch.vstack((r_idx, c_idx))
 
-    vals = -0.5 * cot_s.flatten()
+    vals_asym = -0.5 * cot_s.flatten()
+    vals = torch.cat((vals_asym, vals_asym))
 
-    n_verts = vert_coords.size(0)
-    shape = (n_verts, n_verts)
+    shape = (tri_mesh.n_verts, tri_mesh.n_verts)
 
-    asym_weights = torch.sparse_coo_tensor(indices=idx_coo, values=vals, size=shape)
+    weights = tri_mesh._sparse_coalesced_matrix(
+        operator="tri_compute_cotan_weights",
+        indices=idx_coo,
+        values=vals,
+        size=shape,
+    )
 
-    # Symmetrize so that the cotan at i is scattered to both jk and kj.
-    sym_weights = (asym_weights + asym_weights.T).coalesce()
-
-    return sym_weights
+    return weights

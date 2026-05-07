@@ -15,7 +15,7 @@ from ._tri_geometry import (
 from .tri_hodge_stars import star_2
 
 
-def mass_0(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
+def mass_0(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     r"""
     Compute the consistent mass matrix for discrete 0-forms.
 
@@ -64,13 +64,14 @@ def mass_0(tri_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     r_idx = repeat(tri_mesh.tris, "tri vert_1 -> (tri vert_1 vert_2)", vert_2=3)
     c_idx = repeat(tri_mesh.tris, "tri vert_2 -> (tri vert_1 vert_2)", vert_1=3)
 
-    mass = torch.sparse_coo_tensor(
+    mass = tri_mesh._sparse_coalesced_matrix(
+        operator="tri_mass_0",
         indices=torch.vstack((r_idx, c_idx)),
         values=local_mass_0.flatten(),
         size=(tri_mesh.n_verts, tri_mesh.n_verts),
-    ).coalesce()
+    )
 
-    return SparseDecoupledTensor.from_tensor(mass)
+    return mass
 
 
 def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"]:
@@ -184,16 +185,17 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     idx_coo = torch.vstack((r_idx, c_idx))
 
     # Assemble the global mass-1 matrix.
-    mass = torch.sparse_coo_tensor(
+    mass = tri_mesh._sparse_coalesced_matrix(
+        operator="tri_mass_1",
         indices=idx_coo,
         values=whitney_dot_sym.flatten(),
         size=(tri_mesh.n_edges, tri_mesh.n_edges),
-    ).coalesce()
+    )
 
-    return SparseDecoupledTensor.from_tensor(mass)
+    return mass
 
 
-def mass_2(tri_mesh) -> Float[SparseDecoupledTensor, "tri tri"]:
+def mass_2(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     r"""
     Compute the consistent mass matrix for discrete 2-forms.
 

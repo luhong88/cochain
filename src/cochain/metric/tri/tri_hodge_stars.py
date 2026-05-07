@@ -46,20 +46,18 @@ def _star_1_circumcentric(
     # The cotan weights matrix (i.e., off-diagonal elements of the stiffness matrix)
     # already contains the desired values; i.e., S_ij = -0.5*sum_k[cot_k] for all
     # vertices k such that ijk forms a triangle.
-    weights: Float[Tensor, "global_vert global_vert"] = compute_cotan_weights(
-        tri_mesh.vert_coords, tri_mesh.tris
-    )
+    weights = compute_cotan_weights(tri_mesh)
 
     # Identify the location of the canonical edge ij in the sparse W_ij indices,
     # and use the location to extract the cotan values.
     subset_idx = splx_search(
-        key_splx=weights.indices().T,
+        key_splx=weights.pattern.idx_coo.T,
         query_splx=tri_mesh.edges,
         sort_key_splx=False,
         sort_key_vert=False,
         sort_query_vert=False,
     )
-    subset_vals = weights.values()[subset_idx]
+    subset_vals = weights.values[subset_idx]
 
     return DiagDecoupledTensor(
         -subset_vals
