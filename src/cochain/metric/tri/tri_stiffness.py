@@ -26,7 +26,7 @@ def stiffness_matrix(
     stiffness = tri_mesh._sparse_coalesced_matrix(
         operator="tri_stiffness_matrix",
         indices=torch.hstack((sym_stiffness.indices(), diag_idx)),
-        values=torch.concatenate((sym_stiffness.values(), -stiffness_diag.values())),
+        values=torch.cat((sym_stiffness.values(), -stiffness_diag.values())),
         size=(tri_mesh.n_verts, tri_mesh.n_verts),
     )
 

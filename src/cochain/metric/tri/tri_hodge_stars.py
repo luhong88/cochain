@@ -48,20 +48,10 @@ def _star_1_circumcentric(
     # vertices k such that ijk forms a triangle.
     weights = compute_cotan_weights(tri_mesh)
 
-    # Identify the location of the canonical edge ij in the sparse W_ij indices,
-    # and use the location to extract the cotan values.
-    subset_idx = splx_search(
-        key_splx=weights.pattern.idx_coo.T,
-        query_splx=tri_mesh.edges,
-        sort_key_splx=False,
-        sort_key_vert=False,
-        sort_query_vert=False,
-    )
-    subset_vals = weights.values[subset_idx]
-
-    return DiagDecoupledTensor(
-        -subset_vals
-    )  # note the negative sign to get dual edge lengths
+    # The way the nonzero elements S_ij are organized in the sparse COO/CSR
+    # format already corresponds to the ordering of the canonical edges, since
+    # both follow the lex order. Note the negative sign to get dual edge lengths.
+    return DiagDecoupledTensor(-weights.triu().values)
 
 
 def _star_1_barycentric(
