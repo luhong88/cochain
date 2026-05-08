@@ -14,7 +14,7 @@ from ._tet_geometry import (
 )
 
 
-def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
+def mass_0(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     r"""
     Compute the consistent mass matrix for discrete 0-forms.
 
@@ -68,13 +68,14 @@ def mass_0(tet_mesh) -> Float[SparseDecoupledTensor, "vert vert"]:
     r_idx = repeat(tet_mesh.tets, "tet vert_1 -> (tet vert_1 vert_2)", vert_2=4)
     c_idx = repeat(tet_mesh.tets, "tet vert_2 -> (tet vert_1 vert_2)", vert_1=4)
 
-    mass = torch.sparse_coo_tensor(
+    mass = tet_mesh._sparse_coalesced_matrix(
+        operator="tet_mass_0",
         indices=torch.vstack((r_idx.flatten(), c_idx.flatten())),
         values=local_mass_0.flatten(),
         size=(tet_mesh.n_verts, tet_mesh.n_verts),
-    ).coalesce()
+    )
 
-    return SparseDecoupledTensor.from_tensor(mass)
+    return mass
 
 
 def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"]:
@@ -201,13 +202,14 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     idx_coo = torch.vstack((r_idx, c_idx))
 
     # Assemble the global mass-1 matrix.
-    mass = torch.sparse_coo_tensor(
+    mass = tet_mesh._sparse_coalesced_matrix(
+        operator="tet_mass_1",
         indices=idx_coo,
         values=whitney_dot_sym.flatten(),
         size=(tet_mesh.n_edges, tet_mesh.n_edges),
-    ).coalesce()
+    )
 
-    return SparseDecoupledTensor.from_tensor(mass)
+    return mass
 
 
 def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
@@ -351,13 +353,14 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
 
     n_tris = tet_mesh.n_tris
 
-    mass = torch.sparse_coo_tensor(
+    mass = tet_mesh._sparse_coalesced_matrix(
+        operator="tet_mass_2",
         indices=idx_coo,
         values=whitney_inner_prod_signed.flatten(),
         size=(n_tris, n_tris),
-    ).coalesce()
+    )
 
-    return SparseDecoupledTensor.from_tensor(mass)
+    return mass
 
 
 def mass_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tet tet"]:

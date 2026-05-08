@@ -2,7 +2,7 @@ from typing import Literal
 
 import torch
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...utils.perm_parity import compute_lex_rel_orient
@@ -77,7 +77,7 @@ class CupProduct(torch.nn.Module):
             sort_query_vert=False,
         )
 
-        self.f_face_idx: Integer[LongTensor, " m_splx"]
+        self.f_face_idx: Integer[Tensor, " m_splx"]
         self.register_buffer("f_face_idx", f_face_idx)
 
         if k == mesh.dim:
@@ -87,7 +87,7 @@ class CupProduct(torch.nn.Module):
                 self.f_face_idx.size(0)
             )
 
-        self.f_face_parity: Integer[LongTensor, " m_splx"]
+        self.f_face_parity: Integer[Tensor, " m_splx"]
         self.register_buffer("f_face_parity", f_face_parity)
 
         # Identify the k-back faces of (k+l)-simplices and their sign correction
@@ -99,7 +99,7 @@ class CupProduct(torch.nn.Module):
             sort_query_vert=False,
         )
 
-        self.b_face_idx: Integer[LongTensor, " m_splx"]
+        self.b_face_idx: Integer[Tensor, " m_splx"]
         self.register_buffer("b_face_idx", b_face_idx)
 
         if l == mesh.dim:
@@ -109,7 +109,7 @@ class CupProduct(torch.nn.Module):
                 self.b_face_idx.size(0)
             )
 
-        self.b_face_parity: Integer[LongTensor, " m_splx"]
+        self.b_face_parity: Integer[Tensor, " m_splx"]
         self.register_buffer("b_face_parity", b_face_parity)
 
     def forward(
@@ -201,10 +201,10 @@ class AntisymmetricCupProduct(torch.nn.Module):
 
         # Identify permutations of the  k-front faces of (k+l)-simplices and their
         # sign correction.
-        uf_face: Integer[LongTensor, "m_splx uf_face k+1"] = m_splx_sorted[
+        uf_face: Integer[Tensor, "m_splx uf_face k+1"] = m_splx_sorted[
             :, perm.unique_front
         ]
-        uf_face_idx: Integer[LongTensor, "m_splx uf_face"] = splx_search(
+        uf_face_idx: Integer[Tensor, "m_splx uf_face"] = splx_search(
             key_splx=mesh.splx[k],
             query_splx=uf_face,
             sort_key_splx=True if k == mesh.dim else False,
@@ -213,7 +213,7 @@ class AntisymmetricCupProduct(torch.nn.Module):
         )
         f_face_idx = uf_face_idx[:, perm.front_idx]
 
-        self.f_face_idx: Integer[LongTensor, "m_splx face"]
+        self.f_face_idx: Integer[Tensor, "m_splx face"]
         self.register_buffer("f_face_idx", f_face_idx)
 
         if k == mesh.dim:
@@ -232,10 +232,10 @@ class AntisymmetricCupProduct(torch.nn.Module):
 
         # Identify permutations of the k-back faces of (k+l)-simplices and their
         # sign correction.
-        ub_face: Integer[LongTensor, "m_splx ub_face l+1"] = (
+        ub_face: Integer[Tensor, "m_splx ub_face l+1"] = (
             m_splx_sorted[:, perm.unique_back].sort(dim=-1).values
         )
-        ub_face_idx: Integer[LongTensor, "m_splx ub_face"] = splx_search(
+        ub_face_idx: Integer[Tensor, "m_splx ub_face"] = splx_search(
             key_splx=mesh.splx[l],
             query_splx=ub_face,
             sort_key_splx=True if l == mesh.dim else False,
@@ -244,7 +244,7 @@ class AntisymmetricCupProduct(torch.nn.Module):
         )
         b_face_idx = ub_face_idx[:, perm.back_idx]
 
-        self.b_face_idx: Integer[LongTensor, "m_splx face"]
+        self.b_face_idx: Integer[Tensor, "m_splx face"]
         self.register_buffer("b_face_idx", b_face_idx)
 
         if l == mesh.dim:

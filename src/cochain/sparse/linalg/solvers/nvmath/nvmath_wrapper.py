@@ -65,7 +65,7 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
         b: Float[Tensor, " r"] | Float[Tensor, "*b *ch r"],
         config: DirectSolverConfig,
     ) -> tuple[Float[Tensor, "*b c *ch"], AutogradDirectSolver]:
-        A_csr = SparseDecoupledTensor(A_pattern, A_val).to_sparse_csr(int32=True)
+        A_csr = SparseDecoupledTensor(A_pattern, A_val).to_sparse_csr()
 
         if b.ndim > 1:
             b_col_major = b.contiguous().transpose(-1, -2)
@@ -165,7 +165,7 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
             # re-initializing the solver.
             A_T = SparseDecoupledTensor(
                 A_pattern, solver.a.tensor.values().flatten()
-            ).to_sparse_csr_transposed(int32=True)
+            ).to_sparse_csr_transposed()
             solver.reset_operands(a=A_T, b=dLdx_col_major, stream=stream)
             solver.plan(stream=stream)
             solver.factorize(stream=stream)
@@ -270,6 +270,12 @@ def nvmath_direct_solver(
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backend required.")
 
+    if not A.pattern._is_int32_safe:
+        raise ValueError(
+            "The sparse indices of the input tensor 'A' cannot be "
+            "safely cast to int32 dtype."
+        )
+
     if config is None:
         config = DirectSolverConfig()
 
@@ -283,7 +289,7 @@ def nvmath_direct_solver(
         ]
 
     x, solver = _NvmathDirectSolverAutogradFunction.apply(
-        A.val,
+        A.values,
         A.pattern,
         b,
         config,

@@ -3,7 +3,7 @@ from typing import Literal
 import torch
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ..complex import SimplicialMesh
 from ..metric.tet import _tet_geometry
@@ -14,7 +14,7 @@ from ..utils.search import splx_search
 
 def _bary_whitney_tri_cochain_0(
     cochain_0: Float[Tensor, " vert *ch"],
-    tris: Integer[LongTensor, "tri vert=3"],
+    tris: Integer[Tensor, "tri vert=3"],
     bary_coords: Float[Tensor, "tri pt vert=3"],
 ) -> Float[Tensor, "tri pt *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2.
@@ -31,7 +31,7 @@ def _bary_whitney_tri_cochain_0(
 
 def _bary_whitney_tri_cochain_1(
     cochain_1: Float[Tensor, " edge *ch"],
-    tri_edge_idx: Integer[LongTensor, "tri edge=3"],
+    tri_edge_idx: Integer[Tensor, "tri edge=3"],
     tri_edge_orientations: Float[Tensor, "tri edge=3"],
     bary_coords: Float[Tensor, "tri pt vert=3"],
     bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"],
@@ -96,7 +96,7 @@ def _bary_whitney_tri_cochain_2(
 
 def _bary_whitney_tet_cochain_0(
     cochain_0: Float[Tensor, " vert *ch"],
-    tets: Integer[LongTensor, "tet vert=4"],
+    tets: Integer[Tensor, "tet vert=4"],
     bary_coords: Float[Tensor, "tet pt vert=4"],
 ) -> Float[Tensor, "tet pt *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2, 3.
@@ -113,7 +113,7 @@ def _bary_whitney_tet_cochain_0(
 
 def _bary_whitney_tet_cochain_1(
     cochain_1: Float[Tensor, " edge *ch"],
-    tet_edge_idx: Integer[LongTensor, "tet edge=6"],
+    tet_edge_idx: Integer[Tensor, "tet edge=6"],
     tet_edge_orientations: Float[Tensor, "tet edge=6"],
     bary_coords: Float[Tensor, "tet pt vert=4"],
     bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
@@ -153,7 +153,7 @@ def _bary_whitney_tet_cochain_1(
 
 def _bary_whitney_tet_cochain_2(
     cochain_2: Float[Tensor, " tri *ch"],
-    tet_tri_idx: Integer[LongTensor, "tet tri=4"],
+    tet_tri_idx: Integer[Tensor, "tet tri=4"],
     tet_tri_orientations: Float[Tensor, "tet tri=4"],
     bary_coords: Float[Tensor, "tet pt vert=4"],
     bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
@@ -311,10 +311,10 @@ def _bary_whitney_tet(
 
 
 def _bary_embed(
-    m_splx: Integer[LongTensor, "m_splx m_vert"],
+    m_splx: Integer[Tensor, "m_splx m_vert"],
     k_splx_bary_coords: Float[Tensor, "k_splx pt k_vert"],
-    k_faces_local_vert_idx: Integer[LongTensor, "k_face k_vert"],
-    k_faces_global_idx: Integer[LongTensor, "m_splx k_face"],
+    k_faces_local_vert_idx: Integer[Tensor, "k_face k_vert"],
+    k_faces_global_idx: Integer[Tensor, "m_splx k_face"],
     n_k_splx: int,
 ) -> Float[Tensor, "m_splx k_face pt m_vert"]:
     """
@@ -371,7 +371,7 @@ def _bary_embed(
     # the corresponding canonical k-simplex to match the k-face. For example,
     # For a 2-face [30, 2, 40], the permutation [1, 0, 2] is required to permute
     # the canonical 2-simplex [2, 30, 40] to [30, 2, 40].
-    all_k_faces: Integer[LongTensor, "m_splx k_face k_vert"] = m_splx[
+    all_k_faces: Integer[Tensor, "m_splx k_face k_vert"] = m_splx[
         :, k_faces_local_vert_idx
     ]
 
@@ -456,7 +456,7 @@ def _barycentric_whitney_map_boundary(
     n_k_splx = mesh.splx[k].size(0)
     n_pts = bary_coords.size(-2)
 
-    local_face_idx: Integer[LongTensor, "k_face k_vert"] = enumerate_local_faces(
+    local_face_idx: Integer[Tensor, "k_face k_vert"] = enumerate_local_faces(
         splx_dim=m, face_dim=k, device=mesh.device
     )
 
@@ -464,7 +464,7 @@ def _barycentric_whitney_map_boundary(
     # TODO: this is not ideal since we are repeating topo calculations
     all_faces = mesh.splx[m][:, local_face_idx]
 
-    global_face_idx: Integer[LongTensor, "m_splx k_face"] = splx_search(
+    global_face_idx: Integer[Tensor, "m_splx k_face"] = splx_search(
         key_splx=mesh.splx[k],
         query_splx=all_faces,
         sort_key_splx=False,
@@ -511,9 +511,7 @@ def _barycentric_whitney_map_boundary(
                 pt=n_pts,
             )
 
-            global_face_idx_shaped: Integer[
-                LongTensor, "m_splx*k_face pt *ch coord"
-            ] = (
+            global_face_idx_shaped: Integer[Tensor, "m_splx*k_face pt *ch coord"] = (
                 global_face_idx.flatten()
                 .view(-1, *[1] * (k_forms_shaped.ndim - 1))
                 .expand_as(k_forms_shaped)

@@ -25,7 +25,7 @@ def test_sp_dense_mm_backward(A, device):
     loss = torch.sum(C_dense**2)
     loss.backward()
     B_dense_grad = B_dense.grad.detach().clone()
-    A_grad = A_operator.val.grad.detach().clone()
+    A_grad = A_operator.values.grad.detach().clone()
 
     torch.testing.assert_close(B_dense_grad, B_dense_grad_true)
     torch.testing.assert_close(A_grad, A_grad_true)
@@ -53,7 +53,7 @@ def test_dense_sp_mm_backward(A, device):
     loss = torch.sum(C_dense**2)
     loss.backward()
     B_dense_grad = B_dense.grad.detach().clone()
-    A_grad = A_operator.val.grad.detach().clone()
+    A_grad = A_operator.values.grad.detach().clone()
 
     torch.testing.assert_close(B_dense_grad, B_dense_grad_true)
     torch.testing.assert_close(A_grad, A_grad_true)
@@ -80,10 +80,10 @@ def test_sp_sp_mm_backward(A, device):
     B_grad_true = B_dense.grad.detach().clone()[B_operator.pattern.idx_coo.unbind(0)]
 
     C_operator = A_operator @ B_operator
-    loss = torch.sum(C_operator.val**2)
+    loss = torch.sum(C_operator.values**2)
     loss.backward()
-    B_grad = B_operator.val.grad.detach().clone()
-    A_grad = A_operator.val.grad.detach().clone()
+    B_grad = B_operator.values.grad.detach().clone()
+    A_grad = A_operator.values.grad.detach().clone()
 
     torch.testing.assert_close(B_grad, B_grad_true)
     torch.testing.assert_close(A_grad, A_grad_true)
@@ -111,7 +111,7 @@ def test_sp_mv_backward(A, device):
     loss = torch.sum(C_dense**2)
     loss.backward()
     b_dense_grad = b_dense.grad.detach().clone()
-    A_grad = A_operator.val.grad.detach().clone()
+    A_grad = A_operator.values.grad.detach().clone()
 
     torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
     torch.testing.assert_close(A_grad, A_grad_true)
@@ -139,7 +139,7 @@ def test_sp_vm_backward(A, device):
     loss = torch.sum(C_dense**2)
     loss.backward()
     b_dense_grad = b_dense.grad.detach().clone()
-    A_grad = A_operator.val.grad.detach().clone()
+    A_grad = A_operator.values.grad.detach().clone()
 
     torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
     torch.testing.assert_close(A_grad, A_grad_true)

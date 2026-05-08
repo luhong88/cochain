@@ -4,8 +4,12 @@ from jaxtyping import Float
 from torch import Tensor
 
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
-from cochain.sparse.linalg.eigen import LOBPCGConfig, LOBPCGPrecondConfig, lobpcg
-from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
+from cochain.sparse.linalg.eigen import (
+    LOBPCGConfig,
+    LOBPCGPrecondConfig,
+    canonicalize_eig_vec_signs,
+    lobpcg,
+)
 
 # TODO: test handling of degenerate eigenvalues
 # TODO: test handling of batching
@@ -164,7 +168,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     eig_vals_loss.backward()
 
     eig_vals_grad_true = A_dense.grad[torch.unbind(A_op.pattern.idx_coo, dim=0)]
-    eig_vals_grad = A_op.val.grad
+    eig_vals_grad = A_op.values.grad
 
     torch.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
 
@@ -207,7 +211,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     eig_vecs_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
         torch.unbind(A_op.pattern.idx_coo, dim=0)
     ]
-    eig_vecs_grad = A_op.val.grad
+    eig_vecs_grad = A_op.values.grad
 
     torch.testing.assert_close(eig_vecs_grad, eig_vecs_grad_true)
 
@@ -250,7 +254,7 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     combined_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
         torch.unbind(A_op.pattern.idx_coo, dim=0)
     ]
-    combined_grad = A_op.val.grad
+    combined_grad = A_op.values.grad
 
     torch.testing.assert_close(combined_grad, combined_grad_true)
 
@@ -328,12 +332,12 @@ def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[Tensor, "9 9"], device):
     eig_vals_loss.backward()
 
     A_grad_true = A_dense.grad[torch.unbind(A_op.pattern.idx_coo, dim=0)]
-    A_grad = A_op.val.grad
+    A_grad = A_op.values.grad
 
     torch.testing.assert_close(A_grad, A_grad_true)
 
     M_grad_true = M_dense.grad[torch.unbind(M_op.pattern.idx_coo, dim=0)]
-    M_grad = M_op.val.grad
+    M_grad = M_op.values.grad
 
     torch.testing.assert_close(M_grad, M_grad_true)
 
@@ -375,14 +379,14 @@ def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[Tensor, "9 9"], device):
     A_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector.T)[
         torch.unbind(A_op.pattern.idx_coo, dim=0)
     ]
-    A_grad = A_op.val.grad
+    A_grad = A_op.values.grad
 
     torch.testing.assert_close(A_grad, A_grad_true)
 
     M_grad_true = (subspace_projector @ M_dense.grad @ subspace_projector.T)[
         torch.unbind(M_op.pattern.idx_coo, dim=0)
     ]
-    M_grad = M_op.val.grad
+    M_grad = M_op.values.grad
 
     torch.testing.assert_close(M_grad, M_grad_true)
 

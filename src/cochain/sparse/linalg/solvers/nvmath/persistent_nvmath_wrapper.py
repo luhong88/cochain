@@ -150,6 +150,12 @@ class NVMathDirectSolver(InvSparseOperator):
         if not _HAS_NVMATH:
             raise ImportError("nvmath-python backend required.")
 
+        if not A.pattern._is_int32_safe:
+            raise ValueError(
+                "The sparse indices of the input tensor 'A' cannot be "
+                "safely cast to int32 dtype."
+            )
+
         # Adjust solver config.
         if config is None:
             config = DirectSolverConfig()
@@ -179,12 +185,10 @@ class NVMathDirectSolver(InvSparseOperator):
         self.shape = A.shape
 
         # Configure the matrix and vector inputs to the solver.
-        self.A_val = A.val
+        self.A_val = A.values
         self.A_pattern = A.pattern
 
-        A_csr = SparseDecoupledTensor(self.A_pattern, self.A_val).to_sparse_csr(
-            int32=True
-        )
+        A_csr = SparseDecoupledTensor(self.A_pattern, self.A_val).to_sparse_csr()
 
         # Enforce col-major layout for the b vector.
         if b.ndim > 1:

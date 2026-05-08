@@ -3,7 +3,7 @@ from typing import Any
 import torch
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
@@ -13,12 +13,14 @@ from ...sparse.decoupled_tensor import (
 from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from ...utils.faces import enumerate_local_faces
 
+# TODO: investigate sparse coo tensor mesh caching.
+
 
 def vertex_based_tri_mixed_mass_matrix(
     n_verts: int,
     n_edges: int,
-    tris: Integer[LongTensor, "tri local_vert=3"],
-    tri_edge_idx: Integer[LongTensor, "tri local_edge=3"],
+    tris: Integer[Tensor, "tri local_vert=3"],
+    tri_edge_idx: Integer[Tensor, "tri local_edge=3"],
     tri_edge_orientations: Float[Tensor, "tri local_edge=3"],
     tri_areas: Float[Tensor, " tri"],
     bary_coords_grad: Float[Tensor, "tri local_vert=3 coord=3"],
@@ -55,7 +57,7 @@ def vertex_based_tri_mixed_mass_matrix(
     # local_int contains all possible pairing of vertices (v_i) and edges (v_j, v_k),
     # but we only need the 3 unique edge faces and the orientation sign correction
     # in preparation for scatter-add to global canonical edges.
-    local_edge_idx: Integer[LongTensor, "edge=3 vert=2"] = enumerate_local_faces(
+    local_edge_idx: Integer[Tensor, "edge=3 vert=2"] = enumerate_local_faces(
         splx_dim=2, face_dim=1, device=bary_coords_grad.device
     )
 
@@ -105,8 +107,8 @@ def vertex_based_tri_mixed_mass_matrix(
 def vertex_based_tet_mixed_mass_matrix(
     n_verts: int,
     n_edges: int,
-    tets: Integer[LongTensor, "tet local_vert=4"],
-    tet_edge_idx: Integer[LongTensor, "tet local_edge=6"],
+    tets: Integer[Tensor, "tet local_vert=4"],
+    tet_edge_idx: Integer[Tensor, "tet local_edge=6"],
     tet_edge_orientations: Float[Tensor, "tet local_edge=6"],
     tet_unsigned_vols: Float[Tensor, " tet"],
     bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
@@ -136,7 +138,7 @@ def vertex_based_tet_mixed_mass_matrix(
     # local_int contains all possible pairing of vertices (v_i) and edges (v_j, v_k),
     # but we only need the 6 unique edge faces and the orientation sign correction
     # in preparation for scatter-add to global canonical edges.
-    local_edge_idx: Integer[LongTensor, "edge=6 vert=2"] = enumerate_local_faces(
+    local_edge_idx: Integer[Tensor, "edge=6 vert=2"] = enumerate_local_faces(
         splx_dim=3, face_dim=1, device=bary_coords_grad.device
     )
 
@@ -230,7 +232,7 @@ def vertex_based_consistent_vector_mass_matrix(
         coord=n_coords,
     ) + repeat(offset, "coord -> dim (vert coord)", dim=2, vert=mass_0._nnz())
 
-    m_v_val = repeat(mass_0.val, "nnz -> (nnz coord)", coord=n_coords)
+    m_v_val = repeat(mass_0.values, "nnz -> (nnz coord)", coord=n_coords)
 
     m_v = torch.sparse_coo_tensor(
         indices=m_v_idx,
@@ -251,7 +253,7 @@ def vertex_based_diag_vector_mass_matrix(
     consistent mass-0 matrix with the diagonal Hodge start-0 matrix, which results
     in a diagonal vector mass matrix.
     """
-    val = repeat(star_0.val, "vert -> (vert coord)", coord=3)
+    val = repeat(star_0.values, "vert -> (vert coord)", coord=3)
     return DiagDecoupledTensor(val)
 
 

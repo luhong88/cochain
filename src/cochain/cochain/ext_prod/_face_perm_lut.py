@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import torch
 from jaxtyping import Integer
-from torch import LongTensor
+from torch import Tensor
 
 from ...utils.perm_parity import compute_lex_rel_orient
 
@@ -32,11 +32,11 @@ class FacePermLUT:
 
     k: int
     l: int
-    unique_front: Integer[LongTensor, "uf_face vert"]
-    unique_back: Integer[LongTensor, "ub_face vert"]
-    front_idx: Integer[LongTensor, " face"]
-    back_idx: Integer[LongTensor, " face"]
-    sign: Integer[LongTensor, "1 face 1"]
+    unique_front: Integer[Tensor, "uf_face vert"]
+    unique_back: Integer[Tensor, "ub_face vert"]
+    front_idx: Integer[Tensor, " face"]
+    back_idx: Integer[Tensor, " face"]
+    sign: Integer[Tensor, "1 face 1"]
 
 
 def compute_face_perm_lut(k: int, l: int) -> FacePermLUT:

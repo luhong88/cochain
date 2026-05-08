@@ -2,7 +2,7 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ...decoupled_tensor import SparsityPattern
+from ....decoupled_tensor import SparsityPattern
 
 
 def compute_eig_vec_grad_proj(

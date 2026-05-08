@@ -1,22 +1,36 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
 import torch
+from einops import repeat
 from jaxtyping import Bool, Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
-from ._base_decoupled_tensor import BaseDecoupledTensor, is_scalar, validate_matmul_args
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
-from ._pattern import SparsityPattern, check_pattern_equality
+from ._spsp_mm_plan import (
+    SpSpMMPlan,
+    get_bwd_plan_A,
+    get_bwd_plan_B,
+    get_fwd_plan,
+)
+from .base_decoupled_tensor import (
+    BaseDecoupledTensor,
+    is_scalar_like,
+    validate_matmul_args,
+)
+from .pattern import SparsityPattern, check_pattern_equality
 
 
 @dataclass
 class SparseDecoupledTensor(BaseDecoupledTensor):
     """
+    A decoupled representation of sparse matrices.
+
     A custom sparse tensor representation that explicitly decouples non-zero numerical
-    values (`val`) from the sparsity pattern (`pattern`). The class supports
+    values (`values`) from the sparsity pattern (`pattern`). The class supports
     sparse-sparse and sparse-dense linear algebra operations using the native
     CSR and CSC representations in pytorch, caches different index representations
     whenever safe, and offers some basic matrix algebra and manipulation utils.
@@ -36,7 +50,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     * Due to pytorch CSR/CSC requirements, for a tensor with a batch dim, all
       constituent sparse tensors must have the same nnz.
     * If the `SparseDecoupledTensor` is initialized directly via its constructor
-      using the `pattern` and `val` arguments, it is assumed that the sparse COO
+      using the `pattern` and `values` arguments, it is assumed that the sparse COO
       tensor used to generate these arguments was already coalesced. On the other
       hand, if the `SparseDecoupledTensor` is initialized via `from_tensor()`, then
       the input tensor is always first converted to a COO tensor and coalesced.
@@ -51,20 +65,20 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     """
 
     pattern: Integer[SparsityPattern, "*b r c"]
-    val: Float[Tensor, " nnz *d"]
+    values: Float[Tensor, " nz *d"]
 
     def __post_init__(self):
-        if self.val.device != self.pattern.device:
-            raise RuntimeError("'val' and 'pattern' must be on the same device.")
+        if self.values.device != self.pattern.device:
+            raise RuntimeError("'values' and 'pattern' must be on the same device.")
 
-        if self.val.size(0) != self.pattern._nnz():
-            raise ValueError("nnz mismatch between 'val' and 'pattern'.")
+        if self.values.size(0) != self.pattern._nnz():
+            raise ValueError("nnz mismatch between 'values' and 'pattern'.")
 
-        if not torch.isfinite(self.val).all():
+        if not torch.isfinite(self.values).all():
             raise ValueError("SparseDecoupledTensor values contain NaN or Inf.")
 
         # Enforce contiguous memory layout.
-        self.val = self.val.contiguous()
+        self.values = self.values.contiguous()
 
     # TODO: allow additional kwargs, e.g., copy=True
     @classmethod
@@ -82,7 +96,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         return cls(
             pattern=SparsityPattern(coalesced_tensor.indices(), pattern_shape),
-            val=coalesced_tensor.values(),
+            values=coalesced_tensor.values(),
         )
 
     @classmethod
@@ -100,7 +114,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 case Tensor():
                     sp_op_list.append(SparseDecoupledTensor.from_tensor(block))
                 case BaseDecoupledTensor():
-                    sp_op_list.append(block.to_sparse_operator())
+                    sp_op_list.append(block.to_sdt())
                 case _:
                     raise TypeError()
 
@@ -115,7 +129,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         pattern_concat = SparsityPattern.pack_block_diag(pattern_list)
 
         # Construct concatenated values tensor.
-        val_list = [sdt.val.to(device=device, dtype=val_dtype) for sdt in sp_op_list]
+        val_list = [sdt.values.to(device=device, dtype=val_dtype) for sdt in sp_op_list]
 
         batch_perm = pattern_concat.block_diag_config.batch_perm
 
@@ -135,7 +149,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         pattern_list, block_perm_inv = self.pattern.unpack_block_diag()
 
         # Perform similar reconstruction on the values
-        val_concat = self.val[block_perm_inv]
+        val_concat = self.values[block_perm_inv]
         val_list = torch.split(val_concat, self.pattern.block_diag_config.nnzs, dim=0)
 
         sp_op_list = [
@@ -148,8 +162,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     def unpack_by_ptrs(
         self,
         n_blocks: int,
-        row_ptrs: Integer[LongTensor, " r"],
-        col_ptrs: Integer[LongTensor, " c"],
+        row_ptrs: Integer[Tensor, " r"],
+        col_ptrs: Integer[Tensor, " c"],
     ) -> list[SparseDecoupledTensor]:
         """
         Deconstruct a block diagonal `SparseDecoupledTensor` into a list of constituent
@@ -180,7 +194,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         # batch dim (if there is any).
         block_perm_inv = torch.argsort(self.pattern.idx_coo[-2], stable=True)
 
-        val_sorted = self.val[block_perm_inv]
+        val_sorted = self.values[block_perm_inv]
         idx_coo_sorted = self.pattern.idx_coo[:, block_perm_inv]
 
         # Assign block membership to the nonzero values. By slicing the row_ptrs
@@ -249,7 +263,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         empty/zero blocks.
         """
         # Convert all input blocks except for None to SparseDecoupledTensor, and produce
-        # two lists: one flattened list of sdt.val (excluding None), and a nested
+        # two lists: one flattened list of sdt.values (excluding None), and a nested
         # list of sdt.pattern (including None).
         pattern_list = []
         val_list = []
@@ -261,7 +275,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                     case Tensor():
                         sdt = SparseDecoupledTensor.from_tensor(block)
                         pattern_row.append(sdt.pattern)
-                        val_list.append(sdt.val)
+                        val_list.append(sdt.values)
 
                         # Pick a representative SparseDecoupledTensor and use it to
                         # determine device, dtype, and dense dimension information.
@@ -269,9 +283,9 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                             rep_sp_op = sdt
 
                     case BaseDecoupledTensor():
-                        sdt = block.to_sparse_operator()
+                        sdt = block.to_sdt()
                         pattern_row.append(sdt.pattern)
-                        val_list.append(sdt.val)
+                        val_list.append(sdt.values)
 
                         if rep_sp_op is None:
                             rep_sp_op = sdt
@@ -309,7 +323,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """
         Extract a submatrix using row and col masks.
 
-        This method preserves and updates BlockDiagConfig, if there is any.
+        This method preserves and updates `BlockDiagConfig`, if there is any.
 
         This method supports tensors with an explicit batch dimension; however,
         the submatrix extraction will fail if the resulting submatrices in the
@@ -319,13 +333,13 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """
         idx_coo_submat_mask, submat_pattern = self.pattern.submatrix(row_mask, col_mask)
 
-        submat_val = self.val[idx_coo_submat_mask]
+        submat_val = self.values[idx_coo_submat_mask]
 
         return SparseDecoupledTensor(submat_pattern, submat_val)
 
     def constrain(self, mask: Bool[Tensor, " r"]) -> SparseDecoupledTensor:
         """
-        Perform a soft masking on a symmetric semidefinite SparseDecoupledTensor.
+        Perform a soft masking on a symmetric semidefinite `SparseDecoupledTensor`.
 
         For a symmetric sparse tensor $A$, if index $i$ is marked as `False`
         in the input `mask`, then all off-diagonal nonzero elements $A_{ij}$
@@ -347,7 +361,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 "constrain() is only applicable to (batched) sparse square matrices."
             )
 
-        if not torch.allclose(self.val, self.val[self.pattern.coo_to_csc_perm]):
+        if not torch.allclose(self.values, self.values[self.pattern.csc_to_coo_map]):
             raise ValueError("constrain() is only applicable to symmetric matrices.")
 
         r_idx = self.pattern.idx_coo[-2]
@@ -379,7 +393,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         # (2) its row/col index is masked.
         one_mask = diag_mask & r_idx_mask
 
-        val_zeroed = torch.where(zero_mask, 0.0, self.val)
+        val_zeroed = torch.where(zero_mask, 0.0, self.values)
         val_oned = torch.where(one_mask, 1.0, val_zeroed)
 
         return SparseDecoupledTensor(self.pattern, val_oned)
@@ -388,9 +402,9 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """
         Apply a sparsity-preserving function on the values of SparseDecoupledTensor.
         """
-        new_val = fn(self.val, **kwargs)
+        new_val = fn(self.values, **kwargs)
 
-        if new_val.size(0) != self.val.size(0):
+        if new_val.size(0) != self.values.size(0):
             raise RuntimeError(
                 "Function changed the nnz dim of the SparseDecoupledTensor."
             )
@@ -398,52 +412,75 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         return SparseDecoupledTensor(self.pattern, new_val)
 
     def __neg__(self) -> SparseDecoupledTensor:
-        return SparseDecoupledTensor(self.pattern, -self.val)
+        return SparseDecoupledTensor(self.pattern, -self.values)
 
     def abs(self) -> SparseDecoupledTensor:
-        return SparseDecoupledTensor(self.pattern, self.val.abs())
+        return SparseDecoupledTensor(self.pattern, self.values.abs())
 
-    def diagonal(self) -> Float[Tensor, "*b diag"]:
-        if self.n_batch_dim == 0:
-            return self.val[
-                torch.argwhere(
-                    self.pattern.idx_coo[0] == self.pattern.idx_coo[1]
-                ).flatten()
-            ]
+    # TODO: write tests
+    def diagonal(self) -> Float[Tensor, " diag *d"] | Float[Tensor, "b diag *d"]:
+        diag_mask = self.pattern.idx_coo[-1] == self.pattern.idx_coo[-2]
+        diag_val = self.values[diag_mask]
+
+        n_diag = min(self.pattern.size(-1), self.pattern.size(-2))
+        dense_shape = diag_val.shape[1:]
+
+        if self.n_batch_dim > 0:
+            n_batch = self.size(0)
+            out_shape = (n_batch, n_diag, *dense_shape)
+
+            diag = torch.sparse_coo_tensor(
+                indices=self.pattern.idx_coo[:-1, diag_mask],
+                values=diag_val,
+                size=out_shape,
+                is_coalesced=True,
+            )
+
         else:
-            raise NotImplementedError()
+            out_shape = (n_diag, *dense_shape)
 
-    # TODO: implement for batched operators
+            diag = torch.zeros(out_shape, device=self.device, dtype=self.dtype)
+            diag[self.pattern.idx_coo[0, diag_mask]] = diag_val
+
+        return diag
+
     # TODO: write tests
     def off_diagonal(self) -> SparseDecoupledTensor:
-        if self.n_batch_dim == 0:
-            off_diag_mask = self.pattern.idx_coo[0] != self.pattern.idx_coo[1]
-            off_diag_pattern = SparsityPattern(
-                self.pattern.idx_coo[:, off_diag_mask], self.pattern.shape
-            )
-            off_diag_val = self.val[off_diag_mask]
-            return SparseDecoupledTensor(off_diag_pattern, off_diag_val)
+        """
+        Return the off-diagonal part of the sparse matrix.
 
-    # TODO: implement trace for batched operators
+        This function will raise an error if the off-diagonal part does not
+        satisfy the equal nnz per batch element assumption.
+        """
+        off_diag_mask = self.pattern.idx_coo[-1] != self.pattern.idx_coo[-2]
+        off_diag_pattern = SparsityPattern(
+            self.pattern.idx_coo[:, off_diag_mask], self.pattern.shape
+        )
+        off_diag_val = self.values[off_diag_mask]
+        return SparseDecoupledTensor(off_diag_pattern, off_diag_val)
+
     # TODO: write tests fot tr()
-    # TODO: implement the same tr and diagonal() functions for DiagDecoupledTensors
     @property
-    def tr(self) -> Float[Tensor, "*b"]:
-        if self.n_batch_dim == 0:
-            return self.diagonal().sum(dim=0)
+    def tr(self) -> Float[Tensor, "*d"] | Float[Tensor, " b *d"]:
+        if self.n_batch_dim > 0:
+            return torch.sparse.sum(self.diagonal(), dim=1)
         else:
-            raise NotImplementedError()
+            return self.diagonal().sum(dim=0)
 
-    # TODO: implement for batched operators
     # TODO: write tests
     def triu(self, diagonal: int = 0) -> SparseDecoupledTensor:
-        if self.n_batch_dim == 0:
-            triu_mask = self.pattern.idx_coo[0] <= self.pattern.idx_coo[1] - diagonal
-            triu_pattern = SparsityPattern(
-                self.pattern.idx_coo[:, triu_mask], self.pattern.shape
-            )
-            triu_val = self.val[triu_mask]
-            return SparseDecoupledTensor(triu_pattern, triu_val)
+        """
+        Return the upper triangular part of the sparse matrix.
+
+        This function will raise an error if the upper triangular part does not
+        satisfy the equal nnz per batch element assumption.
+        """
+        triu_mask = self.pattern.idx_coo[-2] <= self.pattern.idx_coo[-1] - diagonal
+        triu_pattern = SparsityPattern(
+            self.pattern.idx_coo[:, triu_mask], self.pattern.shape
+        )
+        triu_val = self.values[triu_mask]
+        return SparseDecoupledTensor(triu_pattern, triu_val)
 
     def __add__(self, other) -> SparseDecoupledTensor:
         """
@@ -457,7 +494,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                     other.pattern,
                     msg="SparseDecoupledTensor __add__ only supports operators with identical topologies.",
                 )
-                return SparseDecoupledTensor(self.pattern, self.val + other.val)
+                return SparseDecoupledTensor(self.pattern, self.values + other.values)
             case _:
                 return NotImplemented
 
@@ -469,7 +506,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                     other.pattern,
                     msg="SparseDecoupledTensor __sub__ only supports operators with identical topologies.",
                 )
-                return SparseDecoupledTensor(self.pattern, self.val - other.val)
+                return SparseDecoupledTensor(self.pattern, self.values - other.values)
             case _:
                 return NotImplemented
 
@@ -497,8 +534,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         Scalar multiplication.
         """
         return (
-            SparseDecoupledTensor(self.pattern, self.val * other)
-            if is_scalar(other)
+            SparseDecoupledTensor(self.pattern, self.values * other)
+            if is_scalar_like(other)
             else NotImplemented
         )
 
@@ -507,11 +544,12 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         Scalar division.
         """
         return (
-            SparseDecoupledTensor(self.pattern, self.val / other)
-            if is_scalar(other)
+            SparseDecoupledTensor(self.pattern, self.values / other)
+            if is_scalar_like(other)
             else NotImplemented
         )
 
+    # TODO: test sp-sp matmul caching
     def __matmul__(self, other):
         """
         Implement self @ other
@@ -520,18 +558,87 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         match other:
             case SparseDecoupledTensor():
-                idx_crow, idx_col, val, shape = sp_sp_mm(
-                    self.val, self.pattern, other.val, other.pattern
-                )
-                sp_sp = torch.sparse_csr_tensor(idx_crow, idx_col, val, shape)
-                return self.from_tensor(sp_sp)
+                needs_dLdA = self.requires_grad
+                needs_dLdB = other.requires_grad
+
+                if needs_dLdA or needs_dLdB:
+                    # If gradient tracking is required, check if there is already
+                    # a cached sparse-sparse matmul plan (note that the plan is
+                    # associated with the sparsity pattern objects).
+                    plan = self.pattern._spsp_matmul_plans.get(other.pattern, None)
+
+                    if plan is None:
+                        # If there is not a cached plan, generate one for the
+                        # sparsity pattern pair.
+                        with torch.no_grad():
+                            c_sp_csr = torch.sparse.mm(
+                                self.to_sparse_csr(), other.to_sparse_csr()
+                            )
+
+                            c_idx_crow = c_sp_csr.crow_indices()
+                            c_idx_col = c_sp_csr.col_indices()
+                            c_idx_coo = c_sp_csr.to_sparse_coo().indices()
+                            c_size = c_sp_csr.size()
+
+                        if needs_dLdA:
+                            plan_bwd_A = get_bwd_plan_A(
+                                a_idx_coo=self.pattern.idx_coo,
+                                c_idx_crow=c_idx_crow,
+                                c_idx_col=c_idx_col,
+                                b_idx_crow=other.pattern.idx_crow,
+                                b_idx_col=other.pattern.idx_col,
+                            )
+                        else:
+                            plan_bwd_A = None
+
+                        if needs_dLdB:
+                            plan_bwd_B = get_bwd_plan_B(
+                                b_idx_coo=other.pattern.idx_coo,
+                                c_idx_crow=c_idx_crow,
+                                c_idx_col=c_idx_col,
+                                c_shape=c_size,
+                                a_idx_ccol=self.pattern.idx_ccol,
+                                a_idx_row=self.pattern.idx_row_csc,
+                                a_csc_to_coo_map=self.pattern.csc_to_coo_map,
+                            )
+                        else:
+                            plan_bwd_B = None
+
+                        plan_fwd = get_fwd_plan(
+                            c_idx_coo=c_idx_coo,
+                            a_idx_crow=self.pattern.idx_crow,
+                            a_idx_col=self.pattern.idx_col,
+                            b_idx_ccol=other.pattern.idx_ccol,
+                            b_idx_row=other.pattern.idx_row_csc,
+                            b_csc_to_coo_map=other.pattern.csc_to_coo_map,
+                        )
+
+                        plan = SpSpMMPlan(plan_fwd, plan_bwd_A, plan_bwd_B)
+                        self.pattern._spsp_matmul_plans[other.pattern] = plan
+
+                    # Perform sparse-sparse matmul with a plan using the custom
+                    # matmul implementation with masked backward pass.
+                    c_val, c_idx_coo, c_shape = sp_sp_mm(
+                        self.values, other.values, plan
+                    )
+                    c_pattern = SparsityPattern(c_idx_coo, c_shape)
+                    c_sdt = SparseDecoupledTensor(c_pattern, c_val)
+
+                    return c_sdt
+
+                else:
+                    # If no grad is required, then use torch.sparse.mm() to handle
+                    # the forward pass.
+                    return self.from_tensor(
+                        torch.sparse.mm(self.to_sparse_csr(), other.to_sparse_csr())
+                    )
 
             case Tensor():
                 match other.ndim:
                     case 1:
-                        return sp_mv(self.val, self.pattern, other)
+                        return sp_mv(self.values, self.pattern, other)
                     case 2:
-                        return sp_dense_mm(self.val, self.pattern, other)
+                        return sp_dense_mm(self.values, self.pattern, other)
 
             case _:
                 return NotImplemented
@@ -547,16 +654,16 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             case Tensor():
                 match other.ndim:
                     case 1:
-                        return sp_vm(other, self.val, self.pattern)
+                        return sp_vm(other, self.values, self.pattern)
                     case 2:
-                        return dense_sp_mm(other, self.val, self.pattern)
+                        return dense_sp_mm(other, self.values, self.pattern)
 
             case _:
                 return NotImplemented
 
     @property
     def shape(self) -> torch.Size:
-        return self.pattern.shape + self.val.shape[1:]
+        return self.pattern.shape + self.values.shape[1:]
 
     def _nnz(self) -> int:
         """
@@ -582,7 +689,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
     @property
     def n_dense_dim(self) -> int:
-        return self.val.ndim - 1
+        return self.values.ndim - 1
 
     @property
     def T(self) -> SparseDecoupledTensor:
@@ -590,7 +697,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         Note that the transpose preserves the batch and dense dimensions and only
         operates on the sparse dimensions.
         """
-        val_trans = self.val[self.pattern.coo_to_csc_perm]
+        val_trans = self.values[self.pattern.csc_to_coo_map]
         pattern_trans = self.pattern.T
         return SparseDecoupledTensor(pattern_trans, val_trans)
 
@@ -598,58 +705,48 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         self, memory_format: torch.memory_format = torch.contiguous_format
     ) -> SparseDecoupledTensor:
         """
-        Create a new SparseDecoupledTensor with the same `pattern` but with the `val`
+        Create a new SparseDecoupledTensor with the same `pattern` but with the `values`
         cloned (in the contiguous format by default).
         """
         return SparseDecoupledTensor(
-            self.pattern, self.val.clone(memory_format=memory_format)
+            self.pattern, self.values.clone(memory_format=memory_format)
         )
 
     def detach(self) -> SparseDecoupledTensor:
         """
-        Create a new SparseDecoupledTensor with the same `pattern` but with the `val` detached.
+        Create a new SparseDecoupledTensor with the same `pattern` but with the `values` detached.
         """
-        return SparseDecoupledTensor(self.pattern, self.val.detach())
+        return SparseDecoupledTensor(self.pattern, self.values.detach())
 
     def to(self, *args, **kwargs) -> SparseDecoupledTensor:
-        new_val = self.val.to(*args, **kwargs)
-
-        # The topology object ignores dtype
-        new_pattern = self.pattern.to(
-            device=new_val.device,
-            copy=kwargs.get("copy", False),
-            non_blocking=kwargs.get("non_blocking", False),
-        )
+        new_val = self.values.to(*args, **kwargs)
+        new_pattern = self.pattern.to(*args, **kwargs)
 
         return SparseDecoupledTensor(new_pattern, new_val)
 
     def to_dense(self) -> Float[Tensor, "*b r c *d"]:
         return self.to_sparse_coo().to_dense()
 
-    def to_sparse_operator(self) -> SparseDecoupledTensor:
+    def to_sdt(self) -> SparseDecoupledTensor:
         return self
 
     def to_sparse_coo(self) -> Float[Tensor, "*b r c *d"]:
         return torch.sparse_coo_tensor(
             self.pattern.idx_coo,
-            self.val,
+            self.values,
             self.shape,
             dtype=self.dtype,
             device=self.device,
         ).coalesce()
 
-    def to_sparse_csr(self, int32: bool = False) -> Float[Tensor, "*b r c *d"]:
-        if int32:
-            idx_crow = self.pattern.idx_crow_int32
-            idx_col = self.pattern.idx_col_int32
-        else:
-            idx_crow = self.pattern.idx_crow
-            idx_col = self.pattern.idx_col
+    def to_sparse_csr(self) -> Float[Tensor, "*b r c *d"]:
+        idx_crow = self.pattern.idx_crow
+        idx_col = self.pattern.idx_col
 
         if self.n_batch_dim == 0:
-            val = self.val
+            val = self.values
         else:
-            val = self.val.view(self.size(0), -1).contiguous()
+            val = self.values.view(self.size(0), -1).contiguous()
 
         return torch.sparse_csr_tensor(
             idx_crow,
@@ -660,19 +757,15 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             device=self.device,
         )
 
-    def _prepare_sparse_csr_components(self, int32: bool):
-        if int32:
-            idx_ccol = self.pattern.idx_ccol_int32
-            idx_row_csc = self.pattern.idx_row_csc_int32
-        else:
-            idx_ccol = self.pattern.idx_ccol
-            idx_row_csc = self.pattern.idx_row_csc
+    def _prepare_sparse_csr_components(self):
+        idx_ccol = self.pattern.idx_ccol
+        idx_row_csc = self.pattern.idx_row_csc
 
         if self.n_batch_dim == 0:
-            val = self.val[self.pattern.coo_to_csc_perm].contiguous()
+            val = self.values[self.pattern.csc_to_coo_map].contiguous()
         else:
             val = (
-                self.val[self.pattern.coo_to_csc_perm]
+                self.values[self.pattern.csc_to_coo_map]
                 .view(self.size(0), -1)
                 .contiguous()
             )
@@ -680,10 +773,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         return idx_ccol, idx_row_csc, val
 
     # TODO: add other direct transpose conversion options?
-    def to_sparse_csr_transposed(
-        self, int32: bool = False
-    ) -> Float[Tensor, "*b c r *d"]:
-        idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components(int32)
+    def to_sparse_csr_transposed(self) -> Float[Tensor, "*b c r *d"]:
+        idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components()
 
         # (*b, r, c, *d) -> (*b, c, r, *d)
         shape_trans = (
@@ -701,8 +792,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             device=self.device,
         )
 
-    def to_sparse_csc(self, int32: bool = False) -> Float[Tensor, "*b r c *d"]:
-        idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components(int32)
+    def to_sparse_csc(self) -> Float[Tensor, "*b r c *d"]:
+        idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components()
 
         return torch.sparse_csc_tensor(
             idx_ccol,

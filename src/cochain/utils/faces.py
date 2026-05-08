@@ -3,7 +3,7 @@ from typing import NamedTuple
 
 import torch
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 from torch.utils._pytree import register_pytree_node
 
 from .perm_parity import compute_lex_rel_orient
@@ -11,7 +11,7 @@ from .search import splx_search
 
 
 class GlobalFaces(NamedTuple):
-    idx: Integer[LongTensor, "splx face"]
+    idx: Integer[Tensor, "splx face"]
     parity: Float[Tensor, "splx face"]
 
 
@@ -31,7 +31,7 @@ register_pytree_node(GlobalFaces, _flatten_global_faces, _unflatten_global_faces
 
 def enumerate_local_faces(
     splx_dim: int, face_dim: int, device: torch.device
-) -> Integer[LongTensor, "face vert"]:
+) -> Integer[Tensor, "face vert"]:
     """
     For a simplex of dimension `splx_dim`, enumerate all faces of dimension
     `face_dim` (up to vertex index permutation) in local index lex order.
@@ -46,8 +46,8 @@ def enumerate_local_faces(
 
 
 def enumerate_global_faces(
-    m_splx: Integer[LongTensor, "m_splx m_vert"],
-    k_splx: Integer[LongTensor, "k_splx k_vert"],
+    m_splx: Integer[Tensor, "m_splx m_vert"],
+    k_splx: Integer[Tensor, "k_splx k_vert"],
     float_dtype: torch.dtype = torch.float32,
 ) -> GlobalFaces:
     """
@@ -71,7 +71,7 @@ def enumerate_global_faces(
     # If m is less than the mesh dimension, then the key splx/vert never requires
     # sorting (and the if-else ternary expression is unnecessary and potentially
     # wasteful).
-    k_faces_idx: Integer[LongTensor, "m_splx k_face"] = splx_search(
+    k_faces_idx: Integer[Tensor, "m_splx k_face"] = splx_search(
         key_splx=k_splx,
         query_splx=k_faces,
         sort_key_splx=True if k == m else False,

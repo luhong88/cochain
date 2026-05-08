@@ -6,9 +6,9 @@ from cuda.core.experimental import Device
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ...decoupled_tensor import SparsityPattern
-from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
-from ._inv_operator import BaseNVMathInvSymSpOp
+from ....decoupled_tensor import SparsityPattern
+from ...solvers import DirectSolverConfig
+from ..base._inv_operator import BaseNVMathInvSymSpOp
 
 
 def sp_op_comps_to_cp_csr(
@@ -18,8 +18,8 @@ def sp_op_comps_to_cp_csr(
     return cp_sp.csr_matrix(
         (
             cp.from_dlpack(A_val.detach().contiguous()),
-            cp.from_dlpack(A_pattern.idx_col_int32.detach().contiguous()),
-            cp.from_dlpack(A_pattern.idx_crow_int32.detach().contiguous()),
+            cp.from_dlpack(A_pattern.idx_col.detach().contiguous()),
+            cp.from_dlpack(A_pattern.idx_crow.detach().contiguous()),
         ),
         shape=tuple(A_pattern.shape),
     )
@@ -38,6 +38,12 @@ class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
         sigma: float,
         config: DirectSolverConfig,
     ):
+        if not A_pattern._is_int32_safe:
+            raise ValueError(
+                "The sparse indices of the input tensor 'A' cannot be safely "
+                "cast to int32 dtype."
+            )
+
         t_stream = torch.cuda.current_stream()
 
         # Prepare Cupy arrays.

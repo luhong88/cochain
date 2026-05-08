@@ -4,7 +4,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ...decoupled_tensor import SparseDecoupledTensor
+from ....decoupled_tensor import SparseDecoupledTensor
 
 
 def M_orthonormalize(

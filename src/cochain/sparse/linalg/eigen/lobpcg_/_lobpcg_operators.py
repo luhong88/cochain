@@ -3,9 +3,9 @@ from cuda.core.experimental import Device
 from jaxtyping import Float
 from torch import Tensor
 
-from ...decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
-from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
-from ._inv_operator import BaseNVMathInvSymSpOp
+from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
+from ...solvers import DirectSolverConfig
+from ..base._inv_operator import BaseNVMathInvSymSpOp
 
 
 class IdentityOperator:
@@ -39,6 +39,12 @@ class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
         n: int,
         config: DirectSolverConfig,
     ):
+        if not A_op.pattern._is_int32_safe:
+            raise ValueError(
+                "The sparse indices of the input tensor 'A' cannot be safely "
+                "cast to int32 dtype."
+            )
+
         self.n = n
 
         # Pytorch currently does not support operations like A - I on sparse CSR
@@ -46,9 +52,7 @@ class ShiftInvSymSpOp(BaseNVMathInvSymSpOp):
         eye = DiagDecoupledTensor.eye(
             A_op.size(-1), dtype=A_op.dtype, device=A_op.device
         )
-        A_shift_inv = SparseDecoupledTensor.assemble(A_op, -sigma * eye).to_sparse_csr(
-            int32=True
-        )
+        A_shift_inv = SparseDecoupledTensor.assemble(A_op, -sigma * eye).to_sparse_csr()
 
         # Solve a linear system with at most 3n channel dims
         b_dummy = (
@@ -105,14 +109,26 @@ class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
         n: int,
         config: DirectSolverConfig,
     ):
+        if not A_op.pattern._is_int32_safe:
+            raise ValueError(
+                "The sparse indices of the input tensor 'A' cannot be safely "
+                "cast to int32 dtype."
+            )
+
+        if not M_op.pattern._is_int32_safe:
+            raise ValueError(
+                "The sparse indices of the input tensor 'M' cannot be safely "
+                "cast to int32 dtype."
+            )
+
         self.n = n
 
         # Pytorch currently does not support operations like A - M on sparse CSR
         # tensors.
-        A_shift_inv = SparseDecoupledTensor.assemble(A_op, -sigma * M_op).to_sparse_csr(
-            int32=True
-        )
-        self.M_csr = M_op.to_sparse_csr(int32=True)
+        A_shift_inv = SparseDecoupledTensor.assemble(
+            A_op, -sigma * M_op
+        ).to_sparse_csr()
+        self.M_csr = M_op.to_sparse_csr()
 
         # Solve a linear system with at most 3n channel dims
         b_dummy = (

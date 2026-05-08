@@ -4,8 +4,11 @@ from jaxtyping import Float
 from torch import Tensor
 
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
-from cochain.sparse.linalg.eigen import CuPyEigshConfig, cupy_eigsh
-from cochain.sparse.linalg.eigen.utils import canonicalize_eig_vec_signs
+from cochain.sparse.linalg.eigen import (
+    CuPyEigshConfig,
+    canonicalize_eig_vec_signs,
+    cupy_eigsh,
+)
 
 # TODO: test handling of degenerate eigenvalues
 
@@ -103,7 +106,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     eig_vals_loss.backward()
 
     eig_vals_grad_true = A_dense.grad[torch.unbind(A_op.pattern.idx_coo, dim=0)]
-    eig_vals_grad = A_op.val.grad
+    eig_vals_grad = A_op.values.grad
 
     torch.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
 
@@ -145,7 +148,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     eig_vecs_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
         torch.unbind(A_op.pattern.idx_coo, dim=0)
     ]
-    eig_vecs_grad = A_op.val.grad
+    eig_vecs_grad = A_op.values.grad
 
     torch.testing.assert_close(eig_vecs_grad, eig_vecs_grad_true)
 
@@ -186,7 +189,7 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     combined_grad_true = (subspace_projector @ A_dense.grad @ subspace_projector)[
         torch.unbind(A_op.pattern.idx_coo, dim=0)
     ]
-    combined_grad = A_op.val.grad
+    combined_grad = A_op.values.grad
 
     torch.testing.assert_close(combined_grad, combined_grad_true)
 

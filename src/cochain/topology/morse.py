@@ -184,9 +184,9 @@ def _prepare_inputs(
         _to_np(mesh.cbd[2].pattern.idx_crow, int_dtype),
     )
     codim1_face_signs = (
-        _to_np(mesh.cbd[0].val),
-        _to_np(mesh.cbd[1].val),
-        _to_np(mesh.cbd[2].val),
+        _to_np(mesh.cbd[0].values),
+        _to_np(mesh.cbd[1].values),
+        _to_np(mesh.cbd[2].values),
     )
 
     # Determine the max possible lower star size. To compute this size, we

@@ -327,7 +327,7 @@ def test_laplacian_backward(
     mesh.requires_grad_()
 
     l = laplacian(mesh, dual_complex)
-    output = l.val.sum()
+    output = l.values.sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -365,6 +365,6 @@ def test_laplacian_gradcheck(
         mesh = hollow_tet_mesh.to(device=device, dtype=torch.float64)
         mesh.vert_coords = test_vert_coords
         l = laplacian(mesh, dual_complex)
-        return l.val.sum()
+        return l.values.sum()
 
     assert torch.autograd.gradcheck(laplacian_fxn, (vert_coords,), fast_mode=True)

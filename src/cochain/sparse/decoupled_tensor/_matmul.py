@@ -1,15 +1,15 @@
 import torch
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
-from ._index import project_and_extract_cnz_vals
-from ._pattern import SparsityPattern
+from ._spsp_mm_plan import SpSpMMPlan
+from .pattern import SparsityPattern
 
 
-class _FixedTopoSpDenseMM(torch.autograd.Function):
+class FixedTopoSpDenseMM(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " nnz"],
+        a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "i j"],
         b_dense: Float[Tensor, "j k"],
     ) -> Float[Tensor, "i k"]:
@@ -38,7 +38,7 @@ class _FixedTopoSpDenseMM(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdC: Float[Tensor, "i k"]
-    ) -> tuple[Float[Tensor, " nnz"] | None, None, Float[Tensor, "j k"] | None]:
+    ) -> tuple[Float[Tensor, " nz"] | None, None, Float[Tensor, "j k"] | None]:
         a_val, b_dense = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
 
@@ -62,7 +62,7 @@ class _FixedTopoSpDenseMM(torch.autograd.Function):
             a_sp_T = torch.sparse_csr_tensor(
                 a_pattern.idx_ccol,
                 a_pattern.idx_row_csc,
-                a_val[a_pattern.coo_to_csc_perm],
+                a_val[a_pattern.csc_to_coo_map],
                 size=a_pattern.shape[::-1],
                 device=a_val.device,
             )
@@ -71,10 +71,10 @@ class _FixedTopoSpDenseMM(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdB)
 
 
-class _FixedTopoDenseSpMM(torch.autograd.Function):
+class FixedTopoDenseSpMM(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " nnz"],
+        a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "j k"],
         b_dense: Float[Tensor, "i j"],
     ) -> Float[Tensor, "i k"]:
@@ -82,7 +82,7 @@ class _FixedTopoDenseSpMM(torch.autograd.Function):
         a_sp_T = torch.sparse_csr_tensor(
             a_pattern.idx_ccol,
             a_pattern.idx_row_csc,
-            a_val[a_pattern.coo_to_csc_perm],
+            a_val[a_pattern.csc_to_coo_map],
             size=a_pattern.shape[::-1],
             device=a_val.device,
         )
@@ -103,7 +103,7 @@ class _FixedTopoDenseSpMM(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdC: Float[Tensor, "i k"]
-    ) -> tuple[Float[Tensor, " nnz"] | None, None, Float[Tensor, "i j"] | None]:
+    ) -> tuple[Float[Tensor, " nz"] | None, None, Float[Tensor, "i j"] | None]:
         a_val, b_dense = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
 
@@ -138,130 +138,96 @@ class _FixedTopoDenseSpMM(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdB)
 
 
-class _FixedTopoSpSpMM(torch.autograd.Function):
+class FixedTopoSpSpMM(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " a_nnz"],
-        a_pattern: Integer[SparsityPattern, "i j"],
-        b_val: Float[Tensor, " b_nnz"],
-        b_pattern: Integer[SparsityPattern, "j k"],
+        a_val: Float[Tensor, " a_nz"],
+        b_val: Float[Tensor, " b_nz"],
+        plan: SpSpMMPlan,
     ) -> tuple[
-        Integer[LongTensor, " c_nnz"],
-        Integer[LongTensor, " c_nnz"],
-        Float[Tensor, " c_nnz"],
+        Float[Tensor, " c_nz"],
+        Integer[Tensor, "2 c_nz"],
         torch.Size,
     ]:
-        # Forwad pass with sparse csr tensor.
-        a_sp = torch.sparse_csr_tensor(
-            a_pattern.idx_crow,
-            a_pattern.idx_col,
-            a_val,
-            size=a_pattern.shape,
-            device=a_val.device,
+        c_val = torch.zeros(plan.fwd_plan.c_nnz, dtype=a_val.dtype, device=a_val.device)
+        c_val.scatter_add_(
+            dim=0,
+            index=plan.fwd_plan.c_idx,
+            src=a_val[plan.fwd_plan.a_idx] * b_val[plan.fwd_plan.b_idx],
         )
-        b_sp = torch.sparse_csr_tensor(
-            b_pattern.idx_crow,
-            b_pattern.idx_col,
-            b_val,
-            size=b_pattern.shape,
-            device=a_val.device,
-        )
-        c_sp = torch.sparse.mm(a_sp, b_sp)
 
-        return c_sp.crow_indices(), c_sp.col_indices(), c_sp.values(), c_sp.shape
+        return c_val, plan.fwd_plan.c_idx_coo, plan.fwd_plan.c_shape
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        a_val, a_pattern, b_val, b_pattern = inputs
-        c_crow_idx, c_col_idx, c_val, c_shape = output
+        a_val, b_val, plan = inputs
+        c_val, c_idx_coo, c_shape = output
 
-        ctx.mark_non_differentiable(c_crow_idx, c_col_idx)
-        ctx.save_for_backward(a_val, b_val, c_crow_idx, c_col_idx)
+        ctx.mark_non_differentiable(c_idx_coo)
+        ctx.save_for_backward(a_val, b_val)
 
-        # It is okay to attach SparsityPattern to ctx since none of its index tensors
+        # It is okay to attach SpSpMMPlan to ctx since none of its index tensors
         # require gradient.
-        ctx.a_pattern = a_pattern
-        ctx.b_pattern = b_pattern
-        ctx.c_shape = c_shape
+        ctx.plan = plan
 
     @staticmethod
     def backward(
         ctx,
+        dLdC_val: Float[Tensor, " c_nz"],
         _1,
         _2,
-        dLdC_val: Float[Tensor, " c_nnz"],
-        _3,
-    ) -> tuple[
-        Float[Tensor, " a_nnz"] | None, None, Float[Tensor, " b_nnz"] | None, None
-    ]:
-        a_val, b_val, c_crow_idx, c_col_idx = ctx.saved_tensors
-
-        a_pattern: SparsityPattern = ctx.a_pattern
-        b_pattern: SparsityPattern = ctx.b_pattern
-        c_shape = ctx.c_shape
+    ) -> tuple[Float[Tensor, " a_nz"] | None, Float[Tensor, " b_nz"] | None, None]:
+        a_val, b_val = ctx.saved_tensors
+        plan: SpSpMMPlan = ctx.plan
 
         dLdA_val = None
-        dLdA_pattern = None
         dLdB_val = None
-        dLdB_pattern = None
+        d_plan = None
 
         needs_dLdA = ctx.needs_input_grad[0]
-        needs_dLdB = ctx.needs_input_grad[2]
+        needs_dLdB = ctx.needs_input_grad[1]
 
         # For a matrix multiplication C = A@B,
+        #
         #   dLdA_ij = sum_k[dLdC_ik * B_jk]
         #   dLdB_ij = sum_k[dLdC_kj * A_ki]
-
-        dLdC_sp = torch.sparse_csr_tensor(
-            c_crow_idx,
-            c_col_idx,
-            dLdC_val,
-            size=c_shape,
-            device=dLdC_val.device,
-        )
+        #
+        # A naive approach to computing these gradients might be to construct
+        # the sparse tensors dLdC, B, and A, and perform the sparse matrix
+        # multiplications. The problem with this approach is that, e.g., the
+        # product of dLdC and B will tend to be much denser than dLdA (a phenomenon
+        # called "fill in"); thus, materializing the full product is wasteful
+        # (since the "extra" elements in the product that doesn't correspond to
+        # a nonzero element in dLdA, which shares the same sparsity pattern as
+        # A, will need to be discarded).
 
         if needs_dLdA:
-            b_sp_T = torch.sparse_csr_tensor(
-                b_pattern.idx_ccol,
-                b_pattern.idx_row_csc,
-                b_val[b_pattern.coo_to_csc_perm],
-                size=b_pattern.shape[::-1],
-                device=b_val.device,
+            dLdA_val = torch.zeros(
+                plan.bwd_plan_A.a_nnz, dtype=a_val.dtype, device=a_val.device
             )
-
-            # csr -> coo conversion produces coalesced tensor.
-            dLdA = torch.sparse.mm(dLdC_sp, b_sp_T).to_sparse_coo()
-            dLdA_val = project_and_extract_cnz_vals(
-                src_coo=dLdA.indices(),
-                src_val=dLdA.values(),
-                target_coo=a_pattern.idx_coo,
-                target_shape=a_pattern.shape,
+            dLdA_val.scatter_add_(
+                dim=0,
+                index=plan.bwd_plan_A.dLdA_idx,
+                src=dLdC_val[plan.bwd_plan_A.dLdC_idx] * b_val[plan.bwd_plan_A.b_idx],
             )
 
         if needs_dLdB:
-            a_sp_T = torch.sparse_csr_tensor(
-                a_pattern.idx_ccol,
-                a_pattern.idx_row_csc,
-                a_val[a_pattern.coo_to_csc_perm],
-                size=a_pattern.shape[::-1],
-                device=a_val.device,
+            dLdB_val = torch.zeros(
+                plan.bwd_plan_B.b_nnz, dtype=b_val.dtype, device=b_val.device
+            )
+            dLdB_val.scatter_add_(
+                dim=0,
+                index=plan.bwd_plan_B.dLdB_idx,
+                src=dLdC_val[plan.bwd_plan_B.dLdC_idx] * a_val[plan.bwd_plan_B.a_idx],
             )
 
-            dLdB = torch.sparse.mm(a_sp_T, dLdC_sp).to_sparse_coo()
-            dLdB_val = project_and_extract_cnz_vals(
-                src_coo=dLdB.indices(),
-                src_val=dLdB.values(),
-                target_coo=b_pattern.idx_coo,
-                target_shape=b_pattern.shape,
-            )
-
-        return (dLdA_val, dLdA_pattern, dLdB_val, dLdB_pattern)
+        return dLdA_val, dLdB_val, d_plan
 
 
-class _FixedTopoSpMV(torch.autograd.Function):
+class FixedTopoSpMV(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " nnz"],
+        a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "i j"],
         b_dense: Float[Tensor, " j"],
     ) -> Float[Tensor, " i"]:
@@ -290,7 +256,7 @@ class _FixedTopoSpMV(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdc: Float[Tensor, " i"]
-    ) -> tuple[Float[Tensor, " nnz"] | None, None, Float[Tensor, " j"] | None]:
+    ) -> tuple[Float[Tensor, " nz"] | None, None, Float[Tensor, " j"] | None]:
         a_val, b_dense = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
 
@@ -318,10 +284,10 @@ class _FixedTopoSpMV(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdb)
 
 
-class _FixedTopoSpVM(torch.autograd.Function):
+class FixedTopoSpVM(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " nnz"],
+        a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "i j"],
         b_dense: Float[Tensor, " i"],
     ) -> Float[Tensor, " j"]:
@@ -329,7 +295,7 @@ class _FixedTopoSpVM(torch.autograd.Function):
         a_sp_T = torch.sparse_csr_tensor(
             a_pattern.idx_ccol,
             a_pattern.idx_row_csc,
-            a_val[a_pattern.coo_to_csc_perm],
+            a_val[a_pattern.csc_to_coo_map],
             size=a_pattern.shape[::-1],
             device=a_val.device,
         )
@@ -350,7 +316,7 @@ class _FixedTopoSpVM(torch.autograd.Function):
     @staticmethod
     def backward(
         ctx, dLdc: Float[Tensor, " j"]
-    ) -> tuple[Float[Tensor, " nnz"] | None, None, Float[Tensor, " i"] | None]:
+    ) -> tuple[Float[Tensor, " nz"] | None, None, Float[Tensor, " i"] | None]:
         a_val, b_dense = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
 
@@ -379,49 +345,56 @@ class _FixedTopoSpVM(torch.autograd.Function):
 
 
 def sp_dense_mm(
-    a_val: Float[Tensor, " nnz"],
+    a_val: Float[Tensor, " nz"],
     a_pattern: Integer[SparsityPattern, "i j"],
     b_dense: Float[Tensor, "j k"],
 ) -> Float[Tensor, "i k"]:
-    return _FixedTopoSpDenseMM.apply(a_val, a_pattern, b_dense)
+    """Sparse-dense 2D matrix multiplication with fixed sparsity autograd."""
+    return FixedTopoSpDenseMM.apply(a_val, a_pattern, b_dense)
 
 
 def dense_sp_mm(
     b_dense: Float[Tensor, "i j"],
-    a_val: Float[Tensor, " nnz"],
+    a_val: Float[Tensor, " nz"],
     a_pattern: Integer[SparsityPattern, "j k"],
 ) -> Float[Tensor, "i k"]:
-    return _FixedTopoDenseSpMM.apply(a_val, a_pattern, b_dense)
+    """Dense-sparse 2D matrix multiplication with fixed sparsity autograd."""
+    return FixedTopoDenseSpMM.apply(a_val, a_pattern, b_dense)
 
 
 def sp_sp_mm(
-    a_val: Float[Tensor, " a_nnz"],
-    a_pattern: Integer[SparsityPattern, "i j"],
-    b_val: Float[Tensor, " b_nnz"],
-    b_pattern: Integer[SparsityPattern, "j k"],
+    a_val: Float[Tensor, " a_nz"],
+    b_val: Float[Tensor, " b_nz"],
+    spsp_mm_plan: SpSpMMPlan,
 ) -> tuple[
-    Integer[LongTensor, " c_nnz"],
-    Integer[LongTensor, " c_nnz"],
-    Float[Tensor, " c_nnz"],
-    torch.Size,
+    Integer[Tensor, " c_nz"],
+    Integer[Tensor, "2 c_nz"],
 ]:
-    return _FixedTopoSpSpMM.apply(a_val, a_pattern, b_val, b_pattern)
+    """Sparse-Sparse 2D matrix multiplication with fixed sparsity autograd."""
+    return FixedTopoSpSpMM.apply(a_val, b_val, spsp_mm_plan)
 
 
 def sp_mv(
-    a_val: Float[Tensor, " nnz"],
+    a_val: Float[Tensor, " nz"],
     a_pattern: Integer[SparsityPattern, "i j"],
     b_dense: Float[Tensor, " j"],
 ) -> Float[Tensor, " i"]:
-    return _FixedTopoSpMV.apply(a_val, a_pattern, b_dense)
+    """Sparse 2D matrix-vector multiplication with fixed sparsity autograd."""
+    return FixedTopoSpMV.apply(a_val, a_pattern, b_dense)
 
 
 def sp_vm(
     b_dense: Float[Tensor, " i"],
-    a_val: Float[Tensor, " nnz"],
+    a_val: Float[Tensor, " nz"],
     a_pattern: Integer[SparsityPattern, "i j"],
 ) -> Float[Tensor, " j"]:
-    return _FixedTopoSpVM.apply(a_val, a_pattern, b_dense)
+    """
+    Sparse 2D vector-matrix multiplication with fixed sparsity autograd.
+
+    The vector argument (b_dense) is interpreted as a row vector multiplying
+    the matrix from the left.
+    """
+    return FixedTopoSpVM.apply(a_val, a_pattern, b_dense)
 
 
 # Specialized functions for diagonal operators that do not require custom backward()
@@ -429,10 +402,12 @@ def sp_vm(
 
 def diag_sp_mm(
     diag_val: Float[Tensor, " r"],
-    sp_val: Float[Tensor, " nnz"],
+    sp_val: Float[Tensor, " nz"],
     pattern: Integer[SparsityPattern, "r c"],
-) -> tuple[Float[Tensor, " nnz"], Integer[SparsityPattern, "r c"]]:
+) -> tuple[Float[Tensor, " nz"], Integer[SparsityPattern, "r c"]]:
     """
+    Diagonal-sparse matrix multiplication.
+
     `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
     """
     rows = pattern.idx_coo[0]
@@ -445,17 +420,21 @@ def diag_dense_mm(
     dense: Float[Tensor, "r c"],
 ) -> Float[Tensor, "r c"]:
     """
+    Diagonal-dense matrix multiplication.
+
     `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
     """
     return diag_val.view(-1, 1) * dense
 
 
 def sp_diag_mm(
-    sp_val: Float[Tensor, " nnz"],
+    sp_val: Float[Tensor, " nz"],
     pattern: Integer[SparsityPattern, "r c"],
     diag_val: Float[Tensor, " c"],
-) -> tuple[Float[Tensor, " nnz"], Integer[SparsityPattern, "r c"]]:
+) -> tuple[Float[Tensor, " nz"], Integer[SparsityPattern, "r c"]]:
     """
+    Sparse-diagonal matrix multiplication.
+
     `A@D` scales the `i`th col of `A` by the `i`th element of `D`.
     """
     cols = pattern.idx_coo[1]
@@ -469,6 +448,8 @@ def dense_diag_mm(
     diag_val: Float[Tensor, " c"],
 ) -> Float[Tensor, "r c"]:
     """
+    Dense-diagonal matrix multiplication.
+
     `A@D` scales the `i`th col of `A` by the `i`th element of `D`.
     """
     return dense * diag_val.view(1, -1)

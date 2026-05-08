@@ -1,22 +1,22 @@
 import torch
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 
 def _vertex_perm_parity(
-    verts: Integer[LongTensor, "vert 1"], dtype: torch.dtype
+    verts: Integer[Tensor, "vert 1"], dtype: torch.dtype
 ) -> Float[Tensor, " vert"]:
     return torch.ones(verts.size(0), dtype=dtype, device=verts.device)
 
 
 def _edge_perm_parity(
-    edges: Integer[LongTensor, "edge 2"], dtype: torch.dtype
+    edges: Integer[Tensor, "edge 2"], dtype: torch.dtype
 ) -> Float[Tensor, " edge"]:
     return (edges[:, 1] - edges[:, 0]).sign().to(dtype=dtype)
 
 
 def _tri_perm_parity(
-    tris: Integer[LongTensor, "tri 3"], dtype: torch.dtype
+    tris: Integer[Tensor, "tri 3"], dtype: torch.dtype
 ) -> Float[Tensor, " tri"]:
     i, j, k = tris.unbind(-1)
 
@@ -27,7 +27,7 @@ def _tri_perm_parity(
 
 
 def _tet_perm_parity(
-    tets: Integer[LongTensor, "tet 4"], dtype: torch.dtype
+    tets: Integer[Tensor, "tet 4"], dtype: torch.dtype
 ) -> Float[Tensor, " tet"]:
     i, j, k, l = tets.unbind(-1)
 
@@ -39,7 +39,7 @@ def _tet_perm_parity(
 
 
 def compute_lex_rel_orient(
-    splx: Integer[LongTensor, "*b splx vert"], dtype: torch.dtype = torch.float32
+    splx: Integer[Tensor, "*b splx vert"], dtype: torch.dtype = torch.float32
 ) -> Float[Tensor, "*b splx"]:
     if splx.size(-2) == 0:
         return splx[..., 0]
