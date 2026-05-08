@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
 import torch
+from einops import repeat
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
@@ -63,7 +65,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     """
 
     pattern: Integer[SparsityPattern, "*b r c"]
-    values: Float[Tensor, " nnz *d"]
+    values: Float[Tensor, " nz *d"]
 
     def __post_init__(self):
         if self.values.device != self.pattern.device:
@@ -415,47 +417,70 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     def abs(self) -> SparseDecoupledTensor:
         return SparseDecoupledTensor(self.pattern, self.values.abs())
 
-    def diagonal(self) -> Float[Tensor, "*b diag"]:
-        if self.n_batch_dim == 0:
-            return self.values[
-                torch.argwhere(
-                    self.pattern.idx_coo[0] == self.pattern.idx_coo[1]
-                ).flatten()
-            ]
-        else:
-            raise NotImplementedError()
+    # TODO: write tests
+    def diagonal(self) -> Float[Tensor, " diag *d"] | Float[Tensor, "b diag *d"]:
+        diag_mask = self.pattern.idx_coo[-1] == self.pattern.idx_coo[-2]
+        diag_val = self.values[diag_mask]
 
-    # TODO: implement for batched operators
+        n_diag = min(self.pattern.size(-1), self.pattern.size(-2))
+        dense_shape = diag_val.shape[1:]
+
+        if self.n_batch_dim > 0:
+            n_batch = self.size(0)
+            out_shape = (n_batch, n_diag, *dense_shape)
+
+            diag = torch.sparse_coo_tensor(
+                indices=self.pattern.idx_coo[:-1, diag_mask],
+                values=diag_val,
+                size=out_shape,
+                is_coalesced=True,
+            )
+
+        else:
+            out_shape = (n_diag, *dense_shape)
+
+            diag = torch.zeros(out_shape, device=self.device, dtype=self.dtype)
+            diag[self.pattern.idx_coo[0, diag_mask]] = diag_val
+
+        return diag
+
     # TODO: write tests
     def off_diagonal(self) -> SparseDecoupledTensor:
-        if self.n_batch_dim == 0:
-            off_diag_mask = self.pattern.idx_coo[0] != self.pattern.idx_coo[1]
-            off_diag_pattern = SparsityPattern(
-                self.pattern.idx_coo[:, off_diag_mask], self.pattern.shape
-            )
-            off_diag_val = self.values[off_diag_mask]
-            return SparseDecoupledTensor(off_diag_pattern, off_diag_val)
+        """
+        Return the off-diagonal part of the sparse matrix.
 
-    # TODO: implement trace for batched operators
+        This function will raise an error if the off-diagonal part does not
+        satisfy the equal nnz per batch element assumption.
+        """
+        off_diag_mask = self.pattern.idx_coo[-1] != self.pattern.idx_coo[-2]
+        off_diag_pattern = SparsityPattern(
+            self.pattern.idx_coo[:, off_diag_mask], self.pattern.shape
+        )
+        off_diag_val = self.values[off_diag_mask]
+        return SparseDecoupledTensor(off_diag_pattern, off_diag_val)
+
     # TODO: write tests fot tr()
-    # TODO: implement the same tr and diagonal() functions for DiagDecoupledTensors
     @property
-    def tr(self) -> Float[Tensor, "*b"]:
-        if self.n_batch_dim == 0:
-            return self.diagonal().sum(dim=0)
+    def tr(self) -> Float[Tensor, "*d"] | Float[Tensor, " b *d"]:
+        if self.n_batch_dim > 0:
+            return torch.sparse.sum(self.diagonal(), dim=1)
         else:
-            raise NotImplementedError()
+            return self.diagonal().sum(dim=0)
 
-    # TODO: implement for batched operators
     # TODO: write tests
     def triu(self, diagonal: int = 0) -> SparseDecoupledTensor:
-        if self.n_batch_dim == 0:
-            triu_mask = self.pattern.idx_coo[0] <= self.pattern.idx_coo[1] - diagonal
-            triu_pattern = SparsityPattern(
-                self.pattern.idx_coo[:, triu_mask], self.pattern.shape
-            )
-            triu_val = self.values[triu_mask]
-            return SparseDecoupledTensor(triu_pattern, triu_val)
+        """
+        Return the upper triangular part of the sparse matrix.
+
+        This function will raise an error if the upper triangular part does not
+        satisfy the equal nnz per batch element assumption.
+        """
+        triu_mask = self.pattern.idx_coo[-2] <= self.pattern.idx_coo[-1] - diagonal
+        triu_pattern = SparsityPattern(
+            self.pattern.idx_coo[:, triu_mask], self.pattern.shape
+        )
+        triu_val = self.values[triu_mask]
+        return SparseDecoupledTensor(triu_pattern, triu_val)
 
     def __add__(self, other) -> SparseDecoupledTensor:
         """
