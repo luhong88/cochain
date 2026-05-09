@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
 import torch
-from einops import repeat
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
-from ._spsp_mm_plan import (
+from ._spgemm_plan import (
     SpSpMMPlan,
     get_bwd_plan_A,
     get_bwd_plan_B,
@@ -31,37 +29,75 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
     A custom sparse tensor representation that explicitly decouples non-zero numerical
     values (`values`) from the sparsity pattern (`pattern`). The class supports
-    sparse-sparse and sparse-dense linear algebra operations using the native
-    CSR and CSC representations in pytorch, caches different index representations
-    whenever safe, and offers some basic matrix algebra and manipulation utils.
+    block matrix (de)construction, sparse matrix multiplications, and other basic
+    sparse matrix manipulation utils; see `sparse.linalg` for sparse linear solvers
+    and eigensolvers for `SparseDecoupledTensor`s.
+
+    This class is primarily designed for sparse, 2D matrices (with block diagonal
+    batching). However, this class does allow for (at most) one leading batch
+    dimension and arbitrary trailing dense dimensions. Therefore, the shape of a
+    supported tensor is (*b, r, c, *d), where *b matches to at most one dimension.
+    Due to pytorch CSR/CSC requirements, if the sparse tensor has a batch dimension,
+    then all sparse matrices in the batch must have the same number of nonzero
+    elements.
+
+    This class caches CSR/CSC sparse index representations whenever they are
+    calculated through its `SparsityPattern`. In addition, this class caches the
+    `scatter_add()` indices required to perform (masked) general sparse matrix-matrix
+    multiplications using a weakref cache system attached to its `SparsityPattern`.
+
+
+    Parameters
+    ----------
+    pattern : [*b, r, c]
+        a `SparsityPattern` object representing the sparse topology of the tensor.
+    values : [nz, *d]
+        A dense tensor representing the nonzero elements of the matrix. If the
+        input tensor is not contiguous, this class will create and store a
+        contiguous copy of the input. The nonzero elements are assumed to be
+        coalesced and in sparse COO/CSR ordering.
+
+    Attributes
+    ----------
+    tr : [*b, *d]
+        The trace of the sparse matrix.
+    shape
+        The shape of the sparse matrix.
+    n_batch_dim
+        The number of batch dimensions (either one or zero).
+    n_sp_dim
+        The number of sparse dimensions (which is always two).
+    n_dense_dim
+        The number of dense dimensions.
+    T
+        The matrix transpose along the two sparse dimensions.
 
     Notes
     -----
-    * This class is primarily designed for sparse, 2D matrices; batching, if there
-      is any, is assumed to be in the form of block diagonal batching; however,
-      this class does allow for (at most) one leading batch dimension and arbitrary
-      trailing dense dimensions. Therefore, the shape of a supported tensor is
-      (*b, r, c, *d), where *b matches to at most one dimension. The number of these
-      dimensions can be queried as follows: `n_batch_dim` gives the number of batch
-      dimensions (0 or 1), `n_sp_dim` gives the number of sparse dimensions (r and c;
-      must be 2), and `n_dense_dim` gives the number of dimensions matching *d.
-      The `_nnz()` method gives the total number of nonzero elements (nnz), rather
-      than nnz per batch element.
-    * Due to pytorch CSR/CSC requirements, for a tensor with a batch dim, all
-      constituent sparse tensors must have the same nnz.
-    * If the `SparseDecoupledTensor` is initialized directly via its constructor
-      using the `pattern` and `values` arguments, it is assumed that the sparse COO
-      tensor used to generate these arguments was already coalesced. On the other
-      hand, if the `SparseDecoupledTensor` is initialized via `from_tensor()`, then
-      the input tensor is always first converted to a COO tensor and coalesced.
-    * The `pattern` attribute and the `SparsityPattern` class enforces strict
-      onwership of tensor indices via cloning during init and should be treated
-      as immutable.
-    * The `SparsityPattern` class caches CSR/CSC indices whenever they are calculated.
-      These indices are preserved by the following operations: element-wise and
-      unary operators, memory management/casting (`clone()`, `detach()`, `to()`),
-      and matrix transpose (`.T`). Operations such as matrix assembly/disassembly,
-      subsetting, and matrix multiplication will drop the index caches.
+    Operations that preserve SparsityPattern.
+    Operations that preserve BlockDiagConfig.
+
+    Let `a` be a scalar-like object (float, int, or a 1D/0D tensor with one element),
+    and let `A and `B` be two `SparseDecoupledTensor`s with the same sparsity pattern.
+    This class supports the following tensor arithmetic operations:
+
+    * Unary: negation (`-A`),
+    * Binary: addition (`A + B`), subtraction (`A - B`), sclar multiplication
+      (`a*D1`), and scalar division (`D1/a`).
+
+    In addition, this class supports the following types of matrix multiplications:
+
+    * Matmul between two `SparseDecoupledTensor`s,
+    * Matmul between a `DiagDecoupledTensor` and a `SparseDecoupledTensor`,
+    * Matmul between a `SparseDecoupledTensor` and a dense 2D tensor,
+    * Matrix-vector multiplication with a dense 1D tensor.
+
+    Note that batch dimensions are not allowed in all four cases.
+
+    These indices are preserved by the following operations: element-wise and
+    unary operators, memory management/casting (`clone()`, `detach()`, `to()`),
+    and matrix transpose (`.T`). Operations such as matrix assembly/disassembly,
+    subsetting, and matrix multiplication will drop the index caches.
     """
 
     pattern: Integer[SparsityPattern, "*b r c"]
@@ -83,6 +119,19 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     # TODO: allow additional kwargs, e.g., copy=True
     @classmethod
     def from_tensor(cls, tensor: Tensor) -> SparseDecoupledTensor:
+        """
+        Construct a `SparseDecoupledTensor` from a PyTorch tensor.
+
+        Parameters
+        ----------
+        tensor
+            A PyTorch tensor. This tensor will be converted to a sparse COO
+            tensor and coalesced.
+
+        Returns
+        -------
+            A `SparseDecoupledTensor` representation of the input tensor.
+        """
         coalesced_tensor = tensor.to_sparse_coo().coalesce()
 
         # If the input coo tensor has more than two dimensions (r, c), need to
@@ -104,8 +153,17 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         cls, blocks: Sequence[Tensor | BaseDecoupledTensor]
     ) -> SparseDecoupledTensor:
         """
-        Construct a block diagonal matrix as a `SparseDecoupledTensor` from a list of tensor,
-        `SparseDecoupledTensor`, and `DiagDecoupledTensor` objects.
+        Construct a block-diagonal sparse tensor.
+
+        Parameters
+        ----------
+        blocks
+            A sequence of tensors, `SparseDecoupledTensor`s, and/or
+            `DiagDecoupledTensor`s from which to construct the block-diagonal tensor.
+
+        Returns
+        -------
+            A block-diagonal `SparseDecoupledTensor`.
         """
         # Convert all input elements to SparseDecoupledTensor.
         sp_op_list: list[SparseDecoupledTensor] = []
@@ -142,8 +200,27 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
     def unpack_block_diag(self) -> list[SparseDecoupledTensor]:
         """
-        Deconstruct a block diagonal `SparseDecoupledTensor` into a list of constituent
-        `SparseDecoupledTensor`s.
+        Deconstruct a block-diagonal `SparseDecoupledTensor`.
+
+        If self is constructed via `pack_block_diag()`, this method undo the
+        block-diagonal structure and returns the constituent tensors.
+
+        Returns
+        -------
+           A list of constituent `SparseDecoupledTensor`s. Note that this function
+           always unpacks the block-diagonal structure into `SparseDecoupledTensor`,
+           regardless of the representation of the original tensors used to
+           construct the block-diagonal matrix.
+
+        Notes
+        -----
+        If a block-diagonal tensor is constructed via `pack_block_diag()`, the
+        block-diagonal structure is encoded in the `BlockDiagConfig` attribute of
+        its `SparsityPattern`, which is used by this method to undo the
+        block-diagonal construction. If the block-diagonal structure arises
+        instead from block-diagonal batching of meshes, then the `BlockDiagConfig`
+        attribute will not be available, and `unpack_by_ptrs()` should be used
+        instead for unpacking the block-diagonal structure.
         """
         # Reconstruct the constituent SparsityPattern.
         pattern_list, block_perm_inv = self.pattern.unpack_block_diag()
@@ -166,17 +243,30 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         col_ptrs: Integer[Tensor, " c"],
     ) -> list[SparseDecoupledTensor]:
         """
-        Deconstruct a block diagonal `SparseDecoupledTensor` into a list of constituent
-        `SparseDecoupledTensor`s using row and col "pointers" that indicate the
-        "onwership structures" of constituent blocks. Useful for unpacking a block-
-        diagonal structures derived from a MeshBatch object.
+        Deconstruct a block-diagonal `SparseDecoupledTensor` via pointers.
 
-        Note that the block indices in `row_ptrs` and `col_ptrs` are assumed to
-        be 0-indexed.
+        Parameters
+        ----------
+        n_blocks
+            The number of blocks in the block-diagonal tensor.
+        row_ptrs : [r,]
+            A 0-indexed tensor that specifies the block membership of the rows.
+        col_ptrs : [c,]
+            A 0-indexed tensor that specifies the block membership of the columns.
 
-        If there is a batch dimension, the requirement that the tensor has equal
-        nnz along the batch dimension also needs to be satisfied by the constituent
-        blocks for the unpacking to be successful.
+        Returns
+        -------
+           A list of constituent `SparseDecoupledTensor`s.
+
+        Notes
+        -----
+        If a block-diagonal tensor is constructed via `pack_block_diag()`, then
+        `unpack_block_diag()` is the preferred method for undoing the block-diagonal
+        construction.
+
+        If there is a batch dimension, the requirement that the constituent
+        matrices have equal nnz needs to be satisfied within each block for the
+        unpacking to be successful.
         """
         idx_dtype = self.pattern.dtype
         device = self.device
@@ -256,11 +346,28 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         return blocks
 
     @classmethod
-    def bmat(cls, blocks: Sequence[Sequence[Tensor | BaseDecoupledTensor | None]]):
+    def bmat(
+        cls, blocks: Sequence[Sequence[Tensor | BaseDecoupledTensor | None]]
+    ) -> SparseDecoupledTensor:
         """
-        Construct a block matrix as a `SparseDecoupledTensor` from a 2D grid of existing
-        tensor, `SparseDecoupledTensor`, or `DiagDecoupledTensor`. `None` is allowed to represent
-        empty/zero blocks.
+        Construct a `SparseDecoupledTensor` from a 2D grid of tensors.
+
+        Parameters
+        ----------
+        blocks:
+            A list of list of tensors, `DiagDecoupledTensor`s, and/or
+            `SparseDecoupledTensors`. None is allowed to represent empty/zero
+            blocks. Rows/columns with all `None` or degenerate blocks are also
+            allowed.
+
+        Returns
+        -------
+            A block `SparseDecoupledTensor`.
+
+        Notes
+        -----
+        Note that block matrix construction will not preserve the `BlockDiagConfig`
+        of the input `SparsityPattern`s, if there is any.
         """
         # Convert all input blocks except for None to SparseDecoupledTensor, and produce
         # two lists: one flattened list of sdt.values (excluding None), and a nested
@@ -323,13 +430,27 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """
         Extract a submatrix using row and col masks.
 
-        This method preserves and updates `BlockDiagConfig`, if there is any.
+        Parameters
+        ----------
+        row_mask : [r,]
+            A boolean mask marking the rows to be preserved for the submatrix.
+        col_mask : [c,]
+            A boolean mask marking the columns to be preserved for the submatrix.
+            If `None`, then the column mask is assumed to be the same as the
+            row mask.
 
-        This method supports tensors with an explicit batch dimension; however,
-        the submatrix extraction will fail if the resulting submatrices in the
-        batch violate the equal nnz per batch element assumption. As such, when
-        batch dimensions are involved, this method is most suitable if the
-        2D tensors in the batch all share exactly the same sparsity pattern.
+        Returns
+        -------
+            A `SparseDecoupledTensor` submatrix.
+
+        Notes
+        -----
+        This method preserves and updates the `BlockDiagConfig` attribute of the
+        `SparsityPattern` of the original tensor, if there is any.
+
+        If self has a batch dimension, the submatrix extraction will fail if the
+        resulting submatrices in the batch violate the equal nnz per batch element
+        assumption.
         """
         idx_coo_submat_mask, submat_pattern = self.pattern.submatrix(row_mask, col_mask)
 
@@ -339,22 +460,31 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
     def constrain(self, mask: Bool[Tensor, " r"]) -> SparseDecoupledTensor:
         """
-        Perform a soft masking on a symmetric semidefinite `SparseDecoupledTensor`.
+        Perform a soft masking on a symmetric semidefinite sparse tensor.
 
         For a symmetric sparse tensor $A$, if index $i$ is marked as `False`
         in the input `mask`, then all off-diagonal nonzero elements $A_{ij}$
-        get set to zero, and the diagonal element $A_{ii}$ get set to one. A key
-        assumption of this method is that the diagonal elements are not zero.
+        get set to zero, and the diagonal element $A_{ii}$ get set to one. This
+        function assumes that the diagonal elements are not structurally zero
+        at the masked rows/columns.
 
-        This approach is called "soft" in the sense that the off-diagonal masking
-        does not alter the underlying SparsityPattern; here, it is worth making
-        a distinction between a "structurally" vs a "numerically" zero element:
-        it is possible for an element in a sparse tensor to be numerically zero
-        but still explicitly represented in the list of (structurally) nonzero
-        elements. This soft masking approach is to be contrasted with the `submatrix()`
-        method, which performs a functionally similar submatrix extraction using
-        boolean masks that eliminates the masked rows/columns and results in a
-        subsetted SparsityPattern.
+        Parameters
+        ----------
+        mask : [r,]
+            A boolean mask marking the rows and columns to be preserved for the
+            constrained matrix.
+
+        Returns
+        -------
+            A constrained sparse tensor.
+
+        Notes
+        -----
+        This method performs a similar function as the `submatrix()`, in that
+        solving the linear system $A x = b$ with a "soft" masked $A$ and a
+        "hard" subsetted $A$ should give the same $x$ (at the corresponding
+        unmasked positions). The advantage of the soft masking approach implemented
+        here is that the underlying `SparsityPattern` is preserved.
         """
         if self.size(-1) != self.size(-2):
             raise ValueError(
@@ -400,7 +530,21 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
     def apply(self, fn: Callable, **kwargs) -> SparseDecoupledTensor:
         """
-        Apply a sparsity-preserving function on the values of SparseDecoupledTensor.
+        Apply a function to the nonzero elements of self.
+
+        Parameters
+        ----------
+        fn
+            A callable to be applied to the `values` attribute of self. If the
+            values attribute has the shape (nz, *d), the callable is allowed to
+            modify the *d dimensions, but not the size of the nz dimension.
+        kwargs
+            Additional keyword arguments to be passed to the callable.
+
+        Returns
+        -------
+            A new `SparseDecoupedTensor` with transformed values but the same
+            sparsity pattern.
         """
         new_val = fn(self.values, **kwargs)
 
@@ -412,13 +556,25 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         return SparseDecoupledTensor(self.pattern, new_val)
 
     def __neg__(self) -> SparseDecoupledTensor:
+        """Unary elementwise negation."""
         return SparseDecoupledTensor(self.pattern, -self.values)
 
     def abs(self) -> SparseDecoupledTensor:
+        """Take the absolute value of the sparse tensor."""
         return SparseDecoupledTensor(self.pattern, self.values.abs())
 
     # TODO: write tests
     def diagonal(self) -> Float[Tensor, " diag *d"] | Float[Tensor, "b diag *d"]:
+        """
+        Return the diagonal values.
+
+        Returns
+        -------
+            If self has the shape (r, c, *d), then this function returns a dense
+            diagonal values tensor of shape (min(r, c), *d); if self has the shape
+            (b, r, c, *d), then this function returns a sparse COO diagonal
+            values tensor of shape (b, min(r, c), *d).
+        """
         diag_mask = self.pattern.idx_coo[-1] == self.pattern.idx_coo[-2]
         diag_val = self.values[diag_mask]
 
@@ -433,6 +589,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 indices=self.pattern.idx_coo[:-1, diag_mask],
                 values=diag_val,
                 size=out_shape,
+                dtype=self.dtype,
+                device=self.device,
                 is_coalesced=True,
             )
 
@@ -449,8 +607,11 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """
         Return the off-diagonal part of the sparse matrix.
 
-        This function will raise an error if the off-diagonal part does not
-        satisfy the equal nnz per batch element assumption.
+        If self has a batch dimension, this function will raise an error if the
+        off-diagonal part does not satisfy the equal nnz per batch element assumption.
+
+        Note that this method will generate a new `SparsityPattern` without any
+        of the previously cached properties or the `BlockDiagConfig`.
         """
         off_diag_mask = self.pattern.idx_coo[-1] != self.pattern.idx_coo[-2]
         off_diag_pattern = SparsityPattern(
@@ -462,6 +623,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     # TODO: write tests fot tr()
     @property
     def tr(self) -> Float[Tensor, "*d"] | Float[Tensor, " b *d"]:
+        """The trace of the sparse matrix."""
         if self.n_batch_dim > 0:
             return torch.sparse.sum(self.diagonal(), dim=1)
         else:
@@ -472,8 +634,26 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """
         Return the upper triangular part of the sparse matrix.
 
-        This function will raise an error if the upper triangular part does not
-        satisfy the equal nnz per batch element assumption.
+        If self has a batch dimension, this function will raise an error if the
+        upper triangular part does not satisfy the equal nnz per batch element
+        assumption.
+
+        Parameters
+        ----------
+        diagonal
+            The diagonal to consider. If zero, then all elements on and above
+            the main diagonal are preserved; a positive value excludes just as
+            many diagonals above the main diagonal, and a negative value includes
+            just as many diagonals below the main diagonal.
+
+        Returns
+        -------
+            The upper triangular part of the sparse matrix.
+
+        Notes
+        -----
+        Note that this method will generate a new `SparsityPattern` without any
+        of the previously cached properties or the `BlockDiagConfig`.
         """
         triu_mask = self.pattern.idx_coo[-2] <= self.pattern.idx_coo[-1] - diagonal
         triu_pattern = SparsityPattern(
@@ -483,10 +663,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         return SparseDecoupledTensor(triu_pattern, triu_val)
 
     def __add__(self, other) -> SparseDecoupledTensor:
-        """
-        Elementwise-addition of two SparseDecoupledTensors that share the same topology/
-        sparsity pattern.
-        """
+        """Elementwise addition of two `SparseDecoupledTensor`s with shared topology."""
         match other:
             case SparseDecoupledTensor():
                 check_pattern_equality(
@@ -499,6 +676,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 return NotImplemented
 
     def __sub__(self, other) -> SparseDecoupledTensor:
+        """Elementwise subtraction of two `SparseDecoupledTensor`s with identical topology."""
         match other:
             case SparseDecoupledTensor():
                 check_pattern_equality(
@@ -511,15 +689,32 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 return NotImplemented
 
     @classmethod
-    def assemble(cls, *operators: BaseDecoupledTensor) -> SparseDecoupledTensor:
+    def assemble(cls, *tensors: BaseDecoupledTensor) -> SparseDecoupledTensor:
         """
-        Efficiently sum multiple SparseDecoupledTensors and/or DiagDecoupledTensors with different
-        topologies.
+        Sum multiple sparse tensors with potentially different sparsity patterns.
+
+        Parameters
+        ----------
+        tensors
+            A set of `SparseDecoupledTensor`s and/or `DiagDecoupledTensors` to
+            be summed.
+
+        Returns
+        -------
+            A summed `SparseDecoupledTensor`.
+
+        Notes
+        -----
+        If the input sparse tensors share the same topology/sparsity pattern,
+        then direct elementwise sum (`+`) is preferred over `assemble()`.
+
+        Note that this method will generate a new `SparsityPattern` without any
+        of the previously cached properties or the `BlockDiagConfig`.
         """
-        if not operators:
+        if not tensors:
             raise ValueError("No operators to assemble.")
 
-        coo_tensors = [op.to_sparse_coo() for op in operators]
+        coo_tensors = [op.to_sparse_coo() for op in tensors]
 
         all_idx = torch.hstack([coo.indices() for coo in coo_tensors])
         all_val = torch.hstack([coo.values() for coo in coo_tensors])
@@ -530,9 +725,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         )
 
     def __mul__(self, other) -> SparseDecoupledTensor:
-        """
-        Scalar multiplication.
-        """
+        """Scalar multiplication."""
         return (
             SparseDecoupledTensor(self.pattern, self.values * other)
             if is_scalar_like(other)
@@ -540,9 +733,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         )
 
     def __truediv__(self, other) -> SparseDecoupledTensor:
-        """
-        Scalar division.
-        """
+        """Scalar division."""
         return (
             SparseDecoupledTensor(self.pattern, self.values / other)
             if is_scalar_like(other)
@@ -552,86 +743,77 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     # TODO: test sp-sp matmul caching
     def __matmul__(self, other):
         """
-        Implement self @ other
+        Implement self @ other matmul.
+
+        If both operands are `SparseDecoupledTensor`s, this function caches the
+        indices required to perform the general sparse matrix multiplication
+        (SpGEMM) via scatter_add(). In addition, if either of the operands
+        requires gradient, this function also caches the indices required to
+        perform masked SpGEMM for the backward pass.
         """
         validate_matmul_args(self, other)
 
         match other:
             case SparseDecoupledTensor():
-                needs_dLdA = self.requires_grad
-                needs_dLdB = other.requires_grad
+                # Check if there is already a cached sparse-sparse matmul plan
+                # (note that the plan is associated with the sparsity pattern objects).
+                plan = self.pattern._spsp_matmul_plans.get(other.pattern, None)
 
-                if needs_dLdA or needs_dLdB:
-                    # If gradient tracking is required, check if there is already
-                    # a cached sparse-sparse matmul plan (note that the plan is
-                    # associated with the sparsity pattern objects).
-                    plan = self.pattern._spsp_matmul_plans.get(other.pattern, None)
-
-                    if plan is None:
-                        # If there is not a cached plan, generate one for the
-                        # sparsity pattern pair.
-                        with torch.no_grad():
-                            c_sp_csr = torch.sparse.mm(
-                                self.to_sparse_csr(), other.to_sparse_csr()
-                            )
-
-                            c_idx_crow = c_sp_csr.crow_indices()
-                            c_idx_col = c_sp_csr.col_indices()
-                            c_idx_coo = c_sp_csr.to_sparse_coo().indices()
-                            c_size = c_sp_csr.size()
-
-                        if needs_dLdA:
-                            plan_bwd_A = get_bwd_plan_A(
-                                a_idx_coo=self.pattern.idx_coo,
-                                c_idx_crow=c_idx_crow,
-                                c_idx_col=c_idx_col,
-                                b_idx_crow=other.pattern.idx_crow,
-                                b_idx_col=other.pattern.idx_col,
-                            )
-                        else:
-                            plan_bwd_A = None
-
-                        if needs_dLdB:
-                            plan_bwd_B = get_bwd_plan_B(
-                                b_idx_coo=other.pattern.idx_coo,
-                                c_idx_crow=c_idx_crow,
-                                c_idx_col=c_idx_col,
-                                c_shape=c_size,
-                                a_idx_ccol=self.pattern.idx_ccol,
-                                a_idx_row=self.pattern.idx_row_csc,
-                                a_csc_to_coo_map=self.pattern.csc_to_coo_map,
-                            )
-                        else:
-                            plan_bwd_B = None
-
-                        plan_fwd = get_fwd_plan(
-                            c_idx_coo=c_idx_coo,
-                            a_idx_crow=self.pattern.idx_crow,
-                            a_idx_col=self.pattern.idx_col,
-                            b_idx_ccol=other.pattern.idx_ccol,
-                            b_idx_row=other.pattern.idx_row_csc,
-                            b_csc_to_coo_map=other.pattern.csc_to_coo_map,
+                if plan is None:
+                    # If there is not a cached plan, generate one for the sparsity
+                    # pattern pair.
+                    with torch.no_grad():
+                        c_sp_csr = torch.sparse.mm(
+                            self.to_sparse_csr(), other.to_sparse_csr()
                         )
 
-                        plan = SpSpMMPlan(plan_fwd, plan_bwd_A, plan_bwd_B)
-                        self.pattern._spsp_matmul_plans[other.pattern] = plan
+                        c_idx_crow = c_sp_csr.crow_indices()
+                        c_idx_col = c_sp_csr.col_indices()
+                        c_idx_coo = c_sp_csr.to_sparse_coo().indices()
 
-                    # Perform sparse-sparse matmul with a plan using the custom
-                    # matmul implementation with masked backward pass.
-                    c_val, c_idx_coo, c_shape = sp_sp_mm(
-                        self.values, other.values, plan
+                    plan_fwd = get_fwd_plan(
+                        c_idx_coo=c_idx_coo,
+                        c_idx_crow=c_idx_crow,
+                        c_idx_col=c_idx_col,
+                        a_idx_crow=self.pattern.idx_crow,
+                        a_idx_col=self.pattern.idx_col,
+                        b_idx_ccol=other.pattern.idx_ccol,
+                        b_idx_row=other.pattern.idx_row_csc,
+                        b_csc_to_coo_map=other.pattern.csc_to_coo_map,
                     )
-                    c_pattern = SparsityPattern(c_idx_coo, c_shape)
-                    c_sdt = SparseDecoupledTensor(c_pattern, c_val)
 
-                    return c_sdt
+                    # Populate the forward plan only.
+                    plan = SpSpMMPlan(plan_fwd, bwd_plan_A=None, bwd_plan_B=None)
+                    self.pattern._spsp_matmul_plans[other.pattern] = plan
 
-                else:
-                    # If no grad is required, then use torch.sparse.mm() to handle
-                    # the forward pass.
-                    return self.from_tensor(
-                        torch.sparse.mm(self.to_sparse_csr(), other.to_sparse_csr())
+                # Populate the backward plans depending on autograd requirements.
+                if (plan.bwd_plan_A is None) and self.requires_grad:
+                    plan.bwd_plan_A = get_bwd_plan_A(
+                        a_idx_coo=self.pattern.idx_coo,
+                        c_idx_crow=plan.fwd_plan.c_idx_crow,
+                        c_idx_col=plan.fwd_plan.c_idx_col,
+                        b_idx_crow=other.pattern.idx_crow,
+                        b_idx_col=other.pattern.idx_col,
                     )
+
+                if (plan.bwd_plan_B is None) and other.requires_grad:
+                    plan.bwd_plan_B = get_bwd_plan_B(
+                        b_idx_coo=other.pattern.idx_coo,
+                        c_idx_crow=plan.fwd_plan.c_idx_crow,
+                        c_idx_col=plan.fwd_plan.c_idx_col,
+                        c_shape=plan.fwd_plan.c_shape,
+                        a_idx_ccol=self.pattern.idx_ccol,
+                        a_idx_row=self.pattern.idx_row_csc,
+                        a_csc_to_coo_map=self.pattern.csc_to_coo_map,
+                    )
+
+                # Perform sparse-sparse matmul with a plan using the custom
+                # matmul implementation with masked backward pass.
+                c_val, c_idx_coo, c_shape = sp_sp_mm(self.values, other.values, plan)
+                c_pattern = SparsityPattern(c_idx_coo, c_shape)
+                c_sdt = SparseDecoupledTensor(c_pattern, c_val)
+
+                return c_sdt
 
             case Tensor():
                 match other.ndim:
@@ -644,9 +826,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 return NotImplemented
 
     def __rmatmul__(self, other):
-        """
-        Implement other @ self
-        """
+        """Implement other @ self."""
         validate_matmul_args(self, other)
 
         match other:
@@ -663,74 +843,90 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
     @property
     def shape(self) -> torch.Size:
+        """The shape of the sparse matrix."""
         return self.pattern.shape + self.values.shape[1:]
 
     def _nnz(self) -> int:
         """
-        For batched sparse csr/csc tensors, the _nnz() method returns the number
-        of nonzero elements per batch item; for sparse coo tensors, the _nnz()
-        method returns the total number of nonzero elements, regardless of batch
-        dimensions. Here we follow the sparse coo convention.
+        Return the total number of nonzero/specified elements in the sparse tensor.
+
+        In PyTorch, for batched sparse CSC/CSR tensors, the _nnz() method returns
+        the number of nonzero elements per batch item; for sparse COO tensors,
+        the _nnz() method returns the total number of nonzero elements, regardless
+        of batch dimensions. Here we follow the sparse COO convention.
         """
         return self.pattern._nnz()
 
     @property
     def n_batch_dim(self) -> int:
+        """The number of batch dimensions (either one or zero)."""
         return self.pattern.n_batch_dim
 
     @property
     def n_sp_dim(self) -> int:
         """
-        For sparse csr/csc tensors, the leading batch dimension(s) do not count
-        towards sparse_dim(); for sparse coo tensors, no such distinction is
-        made. Here we follow the sparse csr/csc convention.
+        The number of sparse dimensions (which is always two).
+
+        In PyTorch, for sparse CSC/CSR tensors, the leading batch dimension(s) do
+        not count towards `sparse_dim()`; for sparse COO tensors, no such distinction
+        is made. Here we follow the sparse CSC/CSR convention.
         """
         return self.pattern.n_sp_dim
 
     @property
     def n_dense_dim(self) -> int:
+        """The number of dense dimensions."""
         return self.values.ndim - 1
 
     @property
     def T(self) -> SparseDecoupledTensor:
         """
+        The matrix transpose along the two sparse dimensions.
+
         Note that the transpose preserves the batch and dense dimensions and only
-        operates on the sparse dimensions.
+        operates on the sparse dimensions. In addition, any cached sparse index
+        tensors in the original `SparsityPattern` of self are preserved (but not
+        the `BlockDiagConfig`, if there is any).
         """
         val_trans = self.values[self.pattern.csc_to_coo_map]
         pattern_trans = self.pattern.T
+
         return SparseDecoupledTensor(pattern_trans, val_trans)
 
     def clone(
         self, memory_format: torch.memory_format = torch.contiguous_format
     ) -> SparseDecoupledTensor:
-        """
-        Create a new SparseDecoupledTensor with the same `pattern` but with the `values`
-        cloned (in the contiguous format by default).
-        """
+        """Return a copy of self with the same `pattern` but cloned `values`."""
         return SparseDecoupledTensor(
             self.pattern, self.values.clone(memory_format=memory_format)
         )
 
     def detach(self) -> SparseDecoupledTensor:
-        """
-        Create a new SparseDecoupledTensor with the same `pattern` but with the `values` detached.
-        """
+        """Return a new `SparseDecoupledTensor` with the `values` detached."""
         return SparseDecoupledTensor(self.pattern, self.values.detach())
 
     def to(self, *args, **kwargs) -> SparseDecoupledTensor:
+        """
+        Perform dtype and/or device conversion.
+
+        See `SparsityPattern.to()` for information on how the index tensors
+        behave under dtype/device conversion.
+        """
         new_val = self.values.to(*args, **kwargs)
         new_pattern = self.pattern.to(*args, **kwargs)
 
         return SparseDecoupledTensor(new_pattern, new_val)
 
-    def to_dense(self) -> Float[Tensor, "*b r c *d"]:
+    def to_dense(self) -> Float[Tensor, "r c *d"] | Float[Tensor, "b r c *d"]:
+        """Create a dense copy of self."""
         return self.to_sparse_coo().to_dense()
 
     def to_sdt(self) -> SparseDecoupledTensor:
+        """Return self."""
         return self
 
-    def to_sparse_coo(self) -> Float[Tensor, "*b r c *d"]:
+    def to_sparse_coo(self) -> Float[Tensor, "r c *d"] | Float[Tensor, "b r c *d"]:
+        """Convert self to a sparse COO tensor."""
         return torch.sparse_coo_tensor(
             self.pattern.idx_coo,
             self.values,
@@ -739,7 +935,13 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             device=self.device,
         ).coalesce()
 
-    def to_sparse_csr(self) -> Float[Tensor, "*b r c *d"]:
+    def to_sparse_csr(self) -> Float[Tensor, "r c *d"] | Float[Tensor, "b r c *d"]:
+        """
+        Convert self to a sparse CSR tensor.
+
+        This function will use int32 dtype for the crow and col indices, whenever
+        it is safe to do so.
+        """
         idx_crow = self.pattern.idx_crow
         idx_col = self.pattern.idx_col
 
@@ -757,7 +959,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             device=self.device,
         )
 
-    def _prepare_sparse_csr_components(self):
+    def _prepare_sparse_csc_components(self):
         idx_ccol = self.pattern.idx_ccol
         idx_row_csc = self.pattern.idx_row_csc
 
@@ -772,9 +974,17 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         return idx_ccol, idx_row_csc, val
 
-    # TODO: add other direct transpose conversion options?
-    def to_sparse_csr_transposed(self) -> Float[Tensor, "*b c r *d"]:
-        idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components()
+    # TODO: add other direct transpose conversion option.
+    def to_sparse_csr_transposed(
+        self,
+    ) -> Float[Tensor, "c r *d"] | Float[Tensor, "b c r *d"]:
+        """
+        Convert self to a sparse CSR tensor with the sparse dimensions transposed.
+
+        This function will use int32 dtype for the crow and col indices, whenever
+        it is safe to do so.
+        """
+        idx_ccol, idx_row_csc, val = self._prepare_sparse_csc_components()
 
         # (*b, r, c, *d) -> (*b, c, r, *d)
         shape_trans = (
@@ -792,8 +1002,14 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             device=self.device,
         )
 
-    def to_sparse_csc(self) -> Float[Tensor, "*b r c *d"]:
-        idx_ccol, idx_row_csc, val = self._prepare_sparse_csr_components()
+    def to_sparse_csc(self) -> Float[Tensor, "r c *d"] | Float[Tensor, "b r c *d"]:
+        """
+        Convert self to a sparse CSC tensor.
+
+        This function will use int32 dtype for the ccol and row indices, whenever
+        it is safe to do so.
+        """
+        idx_ccol, idx_row_csc, val = self._prepare_sparse_csc_components()
 
         return torch.sparse_csc_tensor(
             idx_ccol,

@@ -196,6 +196,8 @@ class SparsityPattern:
     submatrices.
 
     This class supports sparse tensors with at most one leading batch dimension.
+    If the tensor has a batch dimension, then each matrix in the batch must have
+    the same number of nonzero elements.
 
     Parameters
     ----------
@@ -210,7 +212,7 @@ class SparsityPattern:
         Note that the SparseDecoupledTensor supports trailing dense dimensions,
         but such dimensions are not reflected in the shape of the `SparsityPattern`.
     block_diag_config
-        A BlockDiagConfig object that describes the block-diagonal structure of
+        A `BlockDiagConfig` object that describes the block-diagonal structure of
         the tensor; relevant for `pack_block_diag()` and `unpack_block_diag()`.
 
     Attributes
@@ -251,6 +253,9 @@ class SparsityPattern:
     _idx_coo: Int64[Tensor, "sp nz"]
     shape: tuple[int, ...] | torch.Size
     block_diag_config: BlockDiagConfig | None = None
+    # See SimplicialMesh._sparse_coalesced_matrix() for an explanation of the
+    # _coalesce_idx_map attribute. Among all methods of `SparsityPattern` that
+    # returns a `SparsityPattern`, only to() will preserve this attribute.
     _coalesce_idx_map: Integer[Tensor, " nz"] | None = None
 
     @property
@@ -431,8 +436,11 @@ class SparsityPattern:
         Determine the `SparsityPattern` of a block matrix.
 
         Determine how to combine a 2D grid of `SparsityPattern`s to construct a
-        block matrix operator. `None` is allowed to represent empty/zero blocks. Note
-        that rows/columns with all `None` or degenerate blocks are allowed.
+        block matrix operator. `None` is allowed to represent empty/zero blocks.
+        Note that rows/columns with all `None` or degenerate blocks are allowed.
+
+        Note that block matrix construction will not preserve the `BlockDiagConfig`
+        of the input `SparsityPattern`s, if there is any.
         """
         # Pick a representative SparsityPattern and use it to determine device,
         # dtype, and batch/dense dimension information.
@@ -714,14 +722,14 @@ class SparsityPattern:
         """
         return 2
 
-    # TODO: investigate interaction with block_diag_config and coalesce_idx_map.
     @property
     def T(self) -> SparsityPattern:
         """
         The matrix transpose along the two sparse dimensions.
 
         Note that this operation preserves the cache of existing sparse index
-        tensors via cache injection.
+        tensors via cache injection. However, this operation will not preserve
+        the `BlockDiagConfig`, if there is any.
         """
         idx_coo_sorted = self.idx_coo[:, self.csc_to_coo_map]
 
@@ -731,6 +739,7 @@ class SparsityPattern:
 
         shape_trans = self.shape[:-2] + (self.shape[-1], self.shape[-2])
 
+        # Note that the _coalesce_idx_map attribute is not preserved.
         pattern_trans = SparsityPattern(idx_coo_trans, shape_trans)
 
         attr_map = {

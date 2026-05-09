@@ -2,7 +2,7 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ._spsp_mm_plan import SpSpMMPlan
+from ._spgemm_plan import SpSpMMPlan
 from .pattern import SparsityPattern
 
 
@@ -406,7 +406,7 @@ def diag_sp_mm(
     pattern: Integer[SparsityPattern, "r c"],
 ) -> tuple[Float[Tensor, " nz"], Integer[SparsityPattern, "r c"]]:
     """
-    Diagonal-sparse matrix multiplication.
+    Diagonal-sparse 2D matrix multiplication.
 
     `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
     """
@@ -420,7 +420,7 @@ def diag_dense_mm(
     dense: Float[Tensor, "r c"],
 ) -> Float[Tensor, "r c"]:
     """
-    Diagonal-dense matrix multiplication.
+    Diagonal-dense 2D matrix multiplication.
 
     `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
     """
@@ -433,7 +433,7 @@ def sp_diag_mm(
     diag_val: Float[Tensor, " c"],
 ) -> tuple[Float[Tensor, " nz"], Integer[SparsityPattern, "r c"]]:
     """
-    Sparse-diagonal matrix multiplication.
+    Sparse-diagonal 2D matrix multiplication.
 
     `A@D` scales the `i`th col of `A` by the `i`th element of `D`.
     """
@@ -448,7 +448,7 @@ def dense_diag_mm(
     diag_val: Float[Tensor, " c"],
 ) -> Float[Tensor, "r c"]:
     """
-    Dense-diagonal matrix multiplication.
+    Dense-diagonal 2D matrix multiplication.
 
     `A@D` scales the `i`th col of `A` by the `i`th element of `D`.
     """

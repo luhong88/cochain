@@ -12,6 +12,8 @@ from torch import Tensor
 class SpSpMMFwdPlan:
     c_nnz: int
     c_idx_coo: Int64[Tensor, " 2 c_nz"]
+    c_idx_crow: Integer[Tensor, " c_r+1"]
+    c_idx_col: Integer[Tensor, " c_nz"]
     c_shape: torch.Size
     c_idx: Int64[Tensor, " c_idx"]
     a_idx: Int64[Tensor, " a_idx"]
@@ -21,6 +23,8 @@ class SpSpMMFwdPlan:
         return SpSpMMFwdPlan(
             self.c_nnz,
             self.c_idx_coo.to(*args, **kwargs),
+            self.c_idx_crow.to(*args, **kwargs),
+            self.c_idx_col.to(*args, **kwargs),
             self.c_shape,
             self.c_idx.to(*args, **kwargs),
             self.a_idx.to(*args, **kwargs),
@@ -404,6 +408,7 @@ def get_bwd_plan_A(
     dtype: torch.dtype = torch.int64,
     device: torch.device | None = None,
 ) -> SpSpMMBwdPlanA:
+    """Wrap for _collect_dLdA_idx()."""
     a_idx_coo_np = a_idx_coo.detach().cpu().numpy()
     c_idx_crow_np = c_idx_crow.detach().cpu().numpy()
     c_idx_col_np = c_idx_col.detach().cpu().numpy()
@@ -439,6 +444,7 @@ def get_bwd_plan_B(
     dtype: torch.dtype = torch.int64,
     device: torch.device | None = None,
 ) -> SpSpMMBwdPlanB:
+    """Wrap for _collect_dLdB_idx()."""
     c_idx_ccol, c_idx_row_csc, c_csc_to_coo_map = _csr_to_csc(
         idx_crow=c_idx_crow, idx_col=c_idx_col, n_cols=c_shape[-1]
     )
@@ -473,6 +479,8 @@ def get_bwd_plan_B(
 
 def get_fwd_plan(
     c_idx_coo: Int64[Tensor, "2 c_nz"],
+    c_idx_crow: Integer[Tensor, " c_r+1"],
+    c_idx_col: Integer[Tensor, " c_nz"],
     a_idx_crow: Integer[Tensor, " a_r+1"],
     a_idx_col: Integer[Tensor, " a_nz"],
     b_idx_ccol: Integer[Tensor, " b_c+1"],
@@ -481,6 +489,7 @@ def get_fwd_plan(
     dtype: torch.dtype = torch.int64,
     device: torch.device | None = None,
 ) -> SpSpMMFwdPlan:
+    """Wrap for _collect_C_idx()."""
     c_idx_coo_np = c_idx_coo.detach().cpu().numpy()
     a_idx_crow_np = a_idx_crow.detach().cpu().numpy()
     a_idx_col_np = a_idx_col.detach().cpu().numpy()
@@ -506,4 +515,6 @@ def get_fwd_plan(
 
     c_shape = torch.Size([c_n_row, c_n_col])
 
-    return SpSpMMFwdPlan(c_nnz, c_idx_coo, c_shape, c_idx, a_idx, b_idx)
+    return SpSpMMFwdPlan(
+        c_nnz, c_idx_coo, c_idx_crow, c_idx_col, c_shape, c_idx, a_idx, b_idx
+    )

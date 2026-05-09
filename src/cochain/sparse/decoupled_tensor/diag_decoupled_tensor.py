@@ -266,7 +266,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
     def __mul__(self, other) -> DiagDecoupledTensor:
         if isinstance(other, DiagDecoupledTensor):
-            return self.__matmul(other)
+            return self.__matmul__(other)
         elif is_scalar_like(other):
             return DiagDecoupledTensor(self.values * other)
         else:
@@ -502,11 +502,6 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
         This function will use int32 dtype for the crow and col indices, whenever
         it is safe to do so.
-
-        Returns
-        -------
-        [*b, diag, diag]
-            A sparse CSR tensor.
         """
         return self._to_compressed_sparse_tensor(torch.sparse_csr_tensor)
 
@@ -514,12 +509,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         """
         Convert self to a sparse CSC tensor.
 
-        This function will use int32 dtype for the crow and col indices, whenever
+        This function will use int32 dtype for the ccol and row indices, whenever
         it is safe to do so.
-
-        Returns
-        -------
-        [*b, diag, diag]
-            A sparse CSC tensor.
         """
         return self._to_compressed_sparse_tensor(torch.sparse_csc_tensor)
