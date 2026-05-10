@@ -142,14 +142,33 @@ def _collect_dLdA_idx(
     """
     idx_dtype = a_idx_coo.dtype
 
+    # Determine the nnz of dLdA and exit early if dLdA is empty.
+    dLdA_nnz = a_idx_coo.shape[-1]
+
+    if dLdA_nnz == 0:
+        return (
+            0,
+            np.empty(0, dtype=idx_dtype),
+            np.empty(0, dtype=idx_dtype),
+            np.empty(0, dtype=idx_dtype),
+        )
+
     # Determine the max buffer size. In the worst-case scenario, all elements
     # on a row of dLdC and a row of B contributes to a nonzero element in dLdA.
     # Therefore, the max buffer size should be the nnz of dLdA multiplied by
     # the row length of dLdC or B, whichever is longer.
-    dLdA_nnz = a_idx_coo.shape[-1]
 
-    max_c_row = np.max(c_idx_crow[1:] - c_idx_crow[:-1])
-    max_b_row = np.max(b_idx_crow[1:] - b_idx_crow[:-1])
+    # Note that the np.max() call needs to be guarded; if a tensor has no rows,
+    # then a_idx_crow = [0] and a_idx_crow[1:] - a_idx_crow[:-1] gives an empty
+    # array.
+    max_c_row = 0
+    if c_idx_crow.shape[0] > 1:
+        max_c_row = np.max(c_idx_crow[1:] - c_idx_crow[:-1])
+
+    max_b_row = 0
+    if b_idx_crow.shape[0] > 1:
+        max_b_row = np.max(b_idx_crow[1:] - b_idx_crow[:-1])
+
     max_row_size = max(max_c_row, max_b_row)
 
     max_n_idx = dLdA_nnz * max_row_size
@@ -237,14 +256,32 @@ def _collect_dLdB_idx(
     """
     idx_dtype = b_idx_coo.dtype
 
+    # Determine the nnz of dLdB and exit early if dLdB is empty.
+    dLdB_nnz = b_idx_coo.shape[-1]
+    if dLdB_nnz == 0:
+        return (
+            0,
+            np.empty(0, dtype=idx_dtype),
+            np.empty(0, dtype=idx_dtype),
+            np.empty(0, dtype=idx_dtype),
+        )
+
     # Determine the max buffer size. In the worst-case scenario, all elements
     # on a row of dLdC and a col of A contributes to a nonzero element in dLdB.
     # Therefore, the max buffer size should be the nnz of dLdB multiplied by
     # the col length of dLdC or A, whichever is longer.
-    dLdB_nnz = b_idx_coo.shape[-1]
 
-    max_c_col = np.max(c_idx_ccol[1:] - c_idx_ccol[:-1])
-    max_a_col = np.max(a_idx_ccol[1:] - a_idx_ccol[:-1])
+    # Note that the np.max() call needs to be guarded; if a tensor has no cols,
+    # then c_idx_ccol = [0] and c_idx_ccol[1:] - c_idx_ccol[:-1] gives an empty
+    # array.
+    max_c_col = 0
+    if c_idx_ccol.shape[0] > 1:
+        max_c_col = np.max(c_idx_ccol[1:] - c_idx_ccol[:-1])
+
+    max_a_col = 0
+    if a_idx_ccol.shape[0] > 1:
+        max_a_col = np.max(a_idx_ccol[1:] - a_idx_ccol[:-1])
+
     max_dim_size = max(max_c_col, max_a_col)
 
     max_n_idx = dLdB_nnz * max_dim_size
@@ -330,13 +367,38 @@ def _collect_C_idx(
     """
     idx_dtype = c_idx_coo.dtype
 
+    # Determine the nnz of C and exit early if C is empty.
+    c_nnz = c_idx_coo.shape[-1]
+
+    c_n_row = a_idx_crow.shape[0] - 1
+    c_n_col = b_idx_ccol.shape[0] - 1
+
+    if c_nnz == 0:
+        return (
+            0,
+            c_n_row,
+            c_n_col,
+            np.empty(0, dtype=idx_dtype),
+            np.empty(0, dtype=idx_dtype),
+            np.empty(0, dtype=idx_dtype),
+        )
+
     # Determine the max buffer size. In the worst-case scenario, all elements
     # on a row of A and a col of B contributes to a nonzero element in C.
     # Therefore, the max buffer size should be the nnz of C multiplied by
     # the row length of A or col length of B, whichever is longer.
-    c_nnz = c_idx_coo.shape[-1]
-    max_a_row = np.max(a_idx_crow[1:] - a_idx_crow[:-1])
-    max_b_col = np.max(b_idx_ccol[1:] - b_idx_ccol[:-1])
+
+    # Note that the np.max() call needs to be guarded; if a tensor has no rows,
+    # then a_idx_crow = [0] and a_idx_crow[1:] - a_idx_crow[:-1] gives an empty
+    # array.
+    max_a_row = 0
+    if c_n_row > 0:
+        max_a_row = np.max(a_idx_crow[1:] - a_idx_crow[:-1])
+
+    max_b_col = 0
+    if c_n_col > 0:
+        max_b_col = np.max(b_idx_ccol[1:] - b_idx_ccol[:-1])
+
     max_row_size = max(max_a_row, max_b_col)
 
     max_n_idx = c_nnz * max_row_size
@@ -384,10 +446,6 @@ def _collect_C_idx(
 
             elif k_A_row_i > k_B_col_j:
                 b_col_j_k_ptr += 1
-
-    # Also determine the shape of C.
-    c_n_row = a_idx_crow.shape[0] - 1
-    c_n_col = b_idx_ccol.shape[0] - 1
 
     return (
         c_nnz,
