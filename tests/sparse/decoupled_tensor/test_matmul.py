@@ -1,145 +1,233 @@
+import pytest
 import torch
 
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 
 
-def test_sp_dense_mm_backward(a, device):
-    A_tensor = a.to(device)
-    A_dense = A_tensor.to_dense()
-    A_dense.requires_grad_()
+@pytest.mark.parametrize("req_a", [True, False])
+@pytest.mark.parametrize("req_b", [True, False])
+def test_sp_dense_mm_backward(a, device, req_a, req_b):
+    if not req_a and not req_b:
+        return
 
-    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
-    A_operator.requires_grad_()
+    a_coo = a.to(device)
 
-    B_dense = torch.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
-    B_dense.requires_grad_()
+    a_dense = a_coo.to_dense()
+    a_dense.requires_grad_(req_a)
 
-    C_dense_true = A_dense @ B_dense
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo).detach().clone()
+    a_sdt.requires_grad_(req_a)
+
+    b_dense = torch.randn(a_coo.shape[::-1], dtype=a_coo.dtype, device=device)
+    b_dense.requires_grad_(req_b)
+
+    c_dense_true = a_dense @ b_dense
+
+    loss_true = torch.sum(c_dense_true**2)
+    loss_true.backward()
+
+    if req_b:
+        b_dense_grad_true = b_dense.grad.detach().clone()
+        b_dense.grad = None
+
+    if req_a:
+        a_grad_true = a_dense.grad.detach().clone()[a_sdt.pattern.idx_coo.unbind(0)]
+
+    c_dense = a_sdt @ b_dense
+    loss = torch.sum(c_dense**2)
+    loss.backward()
+
+    if req_b:
+        B_dense_grad = b_dense.grad.detach().clone()
+        torch.testing.assert_close(B_dense_grad, b_dense_grad_true)
+    else:
+        assert b_dense.grad is None
+
+    if req_a:
+        a_grad = a_sdt.values.grad.detach().clone()
+        torch.testing.assert_close(a_grad, a_grad_true)
+    else:
+        assert a_sdt.values.grad is None
+
+
+@pytest.mark.parametrize("req_a", [True, False])
+@pytest.mark.parametrize("req_b", [True, False])
+def test_dense_sp_mm_backward(a, device, req_a, req_b):
+    if not req_a and not req_b:
+        return
+
+    a_coo = a.to(device)
+
+    a_dense = a_coo.to_dense()
+    a_dense.requires_grad_(req_a)
+
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo).detach().clone()
+    a_sdt.requires_grad_(req_a)
+
+    b_dense = torch.randn(a_coo.shape[::-1], dtype=a_coo.dtype, device=device)
+    b_dense.requires_grad_(req_b)
+
+    c_dense_true = b_dense @ a_dense
+    loss_true = torch.sum(c_dense_true**2)
+    loss_true.backward()
+
+    if req_b:
+        b_dense_grad_true = b_dense.grad.detach().clone()
+        b_dense.grad = None
+
+    if req_a:
+        a_grad_true = a_dense.grad.detach().clone()[a_sdt.pattern.idx_coo.unbind(0)]
+
+    c_dense = b_dense @ a_sdt
+    loss = torch.sum(c_dense**2)
+    loss.backward()
+
+    if req_b:
+        b_dense_grad = b_dense.grad.detach().clone()
+        torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
+    else:
+        assert b_dense.grad is None
+
+    if req_a:
+        a_grad = a_sdt.values.grad.detach().clone()
+        torch.testing.assert_close(a_grad, a_grad_true)
+    else:
+        assert a_sdt.values.grad is None
+
+
+@pytest.mark.parametrize("req_a", [True, False])
+@pytest.mark.parametrize("req_b", [True, False])
+def test_sp_sp_mm_backward(a, b, device, req_a, req_b):
+    if not req_a and not req_b:
+        return
+
+    a_coo = a.to(device)
+    a_dense = a_coo.to_dense()
+    a_dense.requires_grad_(req_a)
+
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo).detach().clone()
+    a_sdt.requires_grad_(req_a)
+
+    b_coo = b.to(device)
+    b_dense = b_coo.to_dense()
+    b_dense.requires_grad_(req_b)
+
+    b_sdt = SparseDecoupledTensor.from_tensor(b_dense).detach().clone()
+    b_sdt.requires_grad_(req_b)
+
+    c_dense_true = a_dense @ b_dense
+    loss_true = torch.sum(c_dense_true**2)
+    loss_true.backward()
+
+    if req_b:
+        b_grad_true = b_dense.grad.detach().clone()[b_sdt.pattern.idx_coo.unbind(0)]
+
+    if req_a:
+        a_grad_true = a_dense.grad.detach().clone()[a_sdt.pattern.idx_coo.unbind(0)]
+
+    c_sdt = a_sdt @ b_sdt
+    loss = torch.sum(c_sdt.values**2)
+    loss.backward()
+
+    # Since the SpGEMM forward pass is custom, also test the forward pass correctness.
+    torch.testing.assert_close(c_sdt.to_dense(), c_dense_true)
+
+    if req_b:
+        b_grad = b_sdt.values.grad.detach().clone()
+        torch.testing.assert_close(b_grad, b_grad_true)
+    else:
+        assert b_sdt.values.grad is None
+
+    if req_a:
+        a_grad = a_sdt.values.grad.detach().clone()
+        torch.testing.assert_close(a_grad, a_grad_true)
+    else:
+        assert a_sdt.values.grad is None
+
+
+@pytest.mark.parametrize("req_a", [True, False])
+@pytest.mark.parametrize("req_b", [True, False])
+def test_sp_mv_backward(a, device, req_a, req_b):
+    if not req_a and not req_b:
+        return
+
+    a_coo = a.to(device)
+    a_dense = a_coo.to_dense()
+    a_dense.requires_grad_(req_a)
+
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo).detach().clone()
+    a_sdt.requires_grad_(req_a)
+
+    b_dense = torch.randn(a_coo.shape[-1], dtype=a_coo.dtype, device=device)
+    b_dense.requires_grad_(req_b)
+
+    C_dense_true = a_dense @ b_dense
     loss_true = torch.sum(C_dense_true**2)
     loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
-    B_dense_grad_true = B_dense.grad.detach().clone()
 
-    B_dense.grad = None
-    C_dense = A_operator @ B_dense
-    loss = torch.sum(C_dense**2)
+    if req_b:
+        b_dense_grad_true = b_dense.grad.detach().clone()
+        b_dense.grad = None
+
+    if req_a:
+        a_grad_true = a_dense.grad.detach().clone()[a_sdt.pattern.idx_coo.unbind(0)]
+
+    c_dense = a_sdt @ b_dense
+    loss = torch.sum(c_dense**2)
     loss.backward()
-    B_dense_grad = B_dense.grad.detach().clone()
-    A_grad = A_operator.values.grad.detach().clone()
 
-    torch.testing.assert_close(B_dense_grad, B_dense_grad_true)
-    torch.testing.assert_close(A_grad, A_grad_true)
+    if req_b:
+        b_dense_grad = b_dense.grad.detach().clone()
+        torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
+    else:
+        assert b_dense.grad is None
+
+    if req_a:
+        a_grad = a_sdt.values.grad.detach().clone()
+        torch.testing.assert_close(a_grad, a_grad_true)
+    else:
+        assert a_sdt.values.grad is None
 
 
-def test_dense_sp_mm_backward(a, device):
-    A_tensor = a.to(device)
-    A_dense = A_tensor.to_dense()
-    A_dense.requires_grad_()
+@pytest.mark.parametrize("req_a", [True, False])
+@pytest.mark.parametrize("req_b", [True, False])
+def test_sp_vm_backward(a, device, req_a, req_b):
+    if not req_a and not req_b:
+        return
 
-    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
-    A_operator.requires_grad_()
+    a_coo = a.to(device)
+    a_dense = a_coo.to_dense()
+    a_dense.requires_grad_(req_a)
 
-    B_dense = torch.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
-    B_dense.requires_grad_()
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo).detach().clone()
+    a_sdt.requires_grad_(req_a)
 
-    C_dense_true = B_dense @ A_dense
-    loss_true = torch.sum(C_dense_true**2)
+    b_dense = torch.randn(a_coo.shape[0], dtype=a_coo.dtype, device=device)
+    b_dense.requires_grad_(req_b)
+
+    c_dense_true = b_dense @ a_dense
+    loss_true = torch.sum(c_dense_true**2)
     loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
-    B_dense_grad_true = B_dense.grad.detach().clone()
 
-    B_dense.grad = None
-    C_dense = B_dense @ A_operator
-    loss = torch.sum(C_dense**2)
+    if req_b:
+        b_dense_grad_true = b_dense.grad.detach().clone()
+        b_dense.grad = None
+
+    if req_a:
+        a_grad_true = a_dense.grad.detach().clone()[a_sdt.pattern.idx_coo.unbind(0)]
+
+    c_dense = b_dense @ a_sdt
+    loss = torch.sum(c_dense**2)
     loss.backward()
-    B_dense_grad = B_dense.grad.detach().clone()
-    A_grad = A_operator.values.grad.detach().clone()
 
-    torch.testing.assert_close(B_dense_grad, B_dense_grad_true)
-    torch.testing.assert_close(A_grad, A_grad_true)
+    if req_b:
+        b_dense_grad = b_dense.grad.detach().clone()
+        torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
+    else:
+        assert b_dense.grad is None
 
-
-def test_sp_sp_mm_backward(a, device):
-    A_tensor = a.to(device)
-    A_dense = A_tensor.to_dense()
-    A_dense.requires_grad_()
-
-    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
-    A_operator.requires_grad_()
-
-    B_dense = torch.randn(A_tensor.shape[::-1], dtype=A_tensor.dtype, device=device)
-    B_dense.requires_grad_()
-
-    B_operator = SparseDecoupledTensor.from_tensor(B_dense).detach().clone()
-    B_operator.requires_grad_()
-
-    C_dense_true = A_dense @ B_dense
-    loss_true = torch.sum(C_dense_true**2)
-    loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
-    B_grad_true = B_dense.grad.detach().clone()[B_operator.pattern.idx_coo.unbind(0)]
-
-    C_operator = A_operator @ B_operator
-    loss = torch.sum(C_operator.values**2)
-    loss.backward()
-    B_grad = B_operator.values.grad.detach().clone()
-    A_grad = A_operator.values.grad.detach().clone()
-
-    torch.testing.assert_close(B_grad, B_grad_true)
-    torch.testing.assert_close(A_grad, A_grad_true)
-
-
-def test_sp_mv_backward(a, device):
-    A_tensor = a.to(device)
-    A_dense = A_tensor.to_dense()
-    A_dense.requires_grad_()
-
-    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
-    A_operator.requires_grad_()
-
-    b_dense = torch.randn(A_tensor.shape[-1], dtype=A_tensor.dtype, device=device)
-    b_dense.requires_grad_()
-
-    C_dense_true = A_dense @ b_dense
-    loss_true = torch.sum(C_dense_true**2)
-    loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
-    b_dense_grad_true = b_dense.grad.detach().clone()
-
-    b_dense.grad = None
-    C_dense = A_operator @ b_dense
-    loss = torch.sum(C_dense**2)
-    loss.backward()
-    b_dense_grad = b_dense.grad.detach().clone()
-    A_grad = A_operator.values.grad.detach().clone()
-
-    torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
-    torch.testing.assert_close(A_grad, A_grad_true)
-
-
-def test_sp_vm_backward(a, device):
-    A_tensor = a.to(device)
-    A_dense = A_tensor.to_dense()
-    A_dense.requires_grad_()
-
-    A_operator = SparseDecoupledTensor.from_tensor(A_tensor).detach().clone()
-    A_operator.requires_grad_()
-
-    b_dense = torch.randn(A_tensor.shape[0], dtype=A_tensor.dtype, device=device)
-    b_dense.requires_grad_()
-
-    C_dense_true = b_dense @ A_dense
-    loss_true = torch.sum(C_dense_true**2)
-    loss_true.backward()
-    A_grad_true = A_dense.grad.detach().clone()[A_operator.pattern.idx_coo.unbind(0)]
-    b_dense_grad_true = b_dense.grad.detach().clone()
-
-    b_dense.grad = None
-    C_dense = b_dense @ A_operator
-    loss = torch.sum(C_dense**2)
-    loss.backward()
-    b_dense_grad = b_dense.grad.detach().clone()
-    A_grad = A_operator.values.grad.detach().clone()
-
-    torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
-    torch.testing.assert_close(A_grad, A_grad_true)
+    if req_a:
+        a_grad = a_sdt.values.grad.detach().clone()
+        torch.testing.assert_close(a_grad, a_grad_true)
+    else:
+        assert a_sdt.values.grad is None
