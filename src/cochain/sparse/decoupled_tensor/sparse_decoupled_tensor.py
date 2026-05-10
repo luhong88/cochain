@@ -714,7 +714,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         coo_tensors = [op.to_sparse_coo() for op in tensors]
 
         all_idx = torch.hstack([coo.indices() for coo in coo_tensors])
-        all_val = torch.hstack([coo.values() for coo in coo_tensors])
+        all_val = torch.cat([coo.values() for coo in coo_tensors], dim=0)
 
         # from_tensor() handles coalesce.
         return SparseDecoupledTensor.from_tensor(

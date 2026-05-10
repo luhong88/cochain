@@ -357,6 +357,14 @@ def test_apply(any_a, device):
     torch.testing.assert_close(a_sdt_applied, a_coo_applied)
 
 
+def test_apply_shape_exception(any_a, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(any_a.to(device))
+
+    # Passing a function that removes the last nonzero element
+    with pytest.raises(RuntimeError, match="changed the nnz dim"):
+        a_sdt.apply(lambda x: x[:-1])
+
+
 def test_neg(any_a, device):
     a_coo = any_a.to(device)
     neg_a_coo = -a_coo
@@ -384,7 +392,7 @@ def test_diagonal(any_a, device):
     diag_sdt = a_sdt.diagonal().to_dense()
 
     a_dense = a_coo.to_dense()
-    n_diag = min(a_sdt.pattern.shape[:2])
+    n_diag = min(a_sdt.pattern.shape[-2:])
 
     idx = torch.arange(n_diag)
     if a_sdt.n_batch_dim > 0:
@@ -402,7 +410,7 @@ def test_off_diagonal(any_a, device):
     off_diag_sdt = a_sdt.off_diagonal()
 
     a_dense = a_coo.to_dense()
-    n_diag = min(a_sdt.pattern.shape[:2])
+    n_diag = min(a_sdt.pattern.shape[-2:])
     idx = torch.arange(n_diag)
 
     off_diag_true = a_dense.clone()
@@ -431,7 +439,7 @@ def test_tr(any_a, device):
     tr_sdt = a_sdt.tr
 
     a_dense = a_coo.to_dense()
-    n_diag = min(a_sdt.pattern.shape[:2])
+    n_diag = min(a_sdt.pattern.shape[-2:])
     idx = torch.arange(n_diag)
 
     if a_sdt.n_batch_dim > 0:
@@ -450,7 +458,13 @@ def test_triu(unbatched_a, device):
         triu_sdt = a_sdt.triu(diagonal=diag)
 
         a_dense = a_coo.to_dense()
-        triu_true = torch.triu(a_dense, diagonal=diag)
+        r, c = a_dense.shape[:2]
+        row_idx = torch.arange(r, device=device).view(-1, 1)
+        col_idx = torch.arange(c, device=device).view(1, -1)
+        mask = row_idx <= col_idx - diag
+
+        triu_true = torch.zeros_like(a_dense)
+        triu_true[mask] = a_dense[mask]
 
         torch.testing.assert_close(triu_sdt.to_dense(), triu_true)
 
@@ -496,10 +510,9 @@ def test_topology_mismatch_exceptions(a, b, device):
         a_sdt - b_sdt
 
 
-# TODO: fix issue with batch/dense dims
-def test_assemble(any_a, device):
-    a_coo = any_a.to(device)
-    a_sdt = SparseDecoupledTensor.from_tensor(any_a).to(device)
+def test_assemble(unbatched_a, device):
+    a_coo = unbatched_a.to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo).to(device)
 
     sp_dim_1 = a_sdt.n_batch_dim
     sp_dim_2 = a_sdt.n_batch_dim + 1
@@ -672,6 +685,13 @@ def test_pack_block_diag_with_dense_dim(device):
     torch.testing.assert_close(block_diag.to_dense(), block_diag_true)
 
 
+def test_pack_block_diag_invalid_input_exception(a, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(a.to(device))
+
+    with pytest.raises(TypeError):
+        SparseDecoupledTensor.pack_block_diag((a_sdt, "invalid_block"))
+
+
 def test_bmat(device):
     a = torch.randn(2, 3).to(device)
     b = torch.randn(2, 4).to(device)
@@ -812,6 +832,17 @@ def test_submatrix_with_block_diag_config(a, device):
     torch.testing.assert_close(sub_block_1.to_dense(), sub_block_1_true.to_dense())
     torch.testing.assert_close(sub_block_2.to_dense(), sub_block_2_true.to_dense())
     assert sub_block_2.shape == sub_block_2_true.shape
+
+
+def test_batched_submatrix_equal_nnz_exception(device):
+    idx_coo = torch.tensor([[0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 1, 0]], device=device)
+    val = torch.randn(4, device=device)
+    pattern = SparsityPattern(idx_coo, (2, 2, 2))
+    a_sdt = SparseDecoupledTensor(pattern, val)
+
+    r_mask = torch.tensor([True, False], device=device)
+    with pytest.raises(ValueError):
+        a_sdt.submatrix(r_mask)
 
 
 def test_constrain(device):
