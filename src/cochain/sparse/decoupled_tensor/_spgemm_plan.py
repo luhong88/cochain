@@ -1,11 +1,28 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numba
 import numpy as np
 import numpy.typing as npt
+import scipy.sparse
 import torch
 from jaxtyping import Int64, Integer
 from torch import Tensor
+
+try:
+    import cupy as cp
+    import cupyx.scipy.sparse as cp_sp
+
+    _HAS_CUPY = True
+
+except ImportError:
+    _HAS_CUPY = False
+
+if TYPE_CHECKING:
+    import cupy as cp
+    import cupyx.scipy.sparse as cp_sp
 
 
 @dataclass
@@ -43,7 +60,7 @@ class SpSpMMBwdPlanA:
         return SpSpMMBwdPlanA(
             self.a_nnz,
             self.dLdA_idx.to(*args, **kwargs),
-            self.dLdA_idx.to(*args, **kwargs),
+            self.dLdC_idx.to(*args, **kwargs),
             self.b_idx.to(*args, **kwargs),
         )
 
@@ -576,3 +593,140 @@ def get_fwd_plan(
     return SpSpMMFwdPlan(
         c_nnz, c_idx_coo, c_idx_crow, c_idx_col, c_shape, c_idx, a_idx, b_idx
     )
+
+
+def discover_matmul_pattern(
+    a_shape: torch.Size,
+    a_idx_crow: Integer[Tensor, " a_r+1"],
+    a_idx_col: Integer[Tensor, " a_nz"],
+    b_shape: torch.Size,
+    b_idx_crow: Integer[Tensor, " b_r+1"],
+    b_idx_col: Integer[Tensor, " b_nz"],
+) -> tuple[
+    Int64[Tensor, "2 c_nz"],
+    Integer[Tensor, " c_r+1"],
+    Integer[Tensor, " c_nz"],
+]:
+    """
+    Discover the sparsity pattern of a 2D matrix multiplication.
+
+    To determine the plan for the forward pass with `get_fwd_plan()` requires
+    knowing the sparse COO and CSR index tensors matmul result before the
+    actual matmul is carried out. While it is possible to determine these
+    indices with `torch.sparse.mm()`, an issue with PyTorch is that the sparse
+    CSR `col_indices` of the matmul output are not always guaranteed to be sorted,
+    depending on which sparse linalg backend is invoked. This function attempts
+    to bypass this issue by determining the sparse index tensors with SciPy
+    (if the tensors are on CPU) or CuPy (if the tensors are on GPU) before
+    falling back to PyTorch; the advantage of SciPy and CuPy is that they
+    expose the flag `has_sorted_indices` and method `sort_indices()` that
+    specifically address the sorting issue.
+    """
+    # Use a_idx_crow as a representative to determine the target device and
+    # dtype; note that the COO index will always use int64 dtype.
+    device = a_idx_crow.device
+    dtype = a_idx_crow.dtype
+
+    if device.type == "cpu":
+        a_idx_crow_np = a_idx_crow.detach().contiguous().cpu().numpy()
+        a_idx_col_np = a_idx_col.detach().contiguous().cpu().numpy()
+        b_idx_crow_np = b_idx_crow.detach().contiguous().cpu().numpy()
+        b_idx_col_np = b_idx_col.detach().contiguous().cpu().numpy()
+
+        a_val_dummy = np.ones_like(a_idx_col, dtype=np.float32)
+        b_val_dummy = np.ones_like(b_idx_col, dtype=np.float32)
+
+        a_csr_scipy = scipy.sparse.csr_array(
+            (a_val_dummy, a_idx_col_np, a_idx_crow_np),
+            dtype=np.bool,
+            shape=tuple(a_shape),
+        )
+        b_csr_scipy = scipy.sparse.csr_array(
+            (b_val_dummy, b_idx_col_np, b_idx_crow_np),
+            dtype=np.bool,
+            shape=tuple(b_shape),
+        )
+
+        c_csr_scipy = a_csr_scipy @ b_csr_scipy
+
+        # Call sort_indices() to guarnatee that the col indices are sorted.
+        if not c_csr_scipy.has_sorted_indices:
+            c_csr_scipy.sort_indices()
+
+        c_idx_crow_np = c_csr_scipy.indptr
+        c_idx_col_np = c_csr_scipy.indices
+
+        c_coo_scipy = c_csr_scipy.tocoo()
+        c_idx_coo_np = np.stack((c_coo_scipy.row, c_coo_scipy.col))
+
+        c_idx_coo = torch.from_numpy(c_idx_coo_np).to(dtype=torch.int64, device=device)
+        c_idx_crow = torch.from_numpy(c_idx_crow_np).to(dtype=dtype, device=device)
+        c_idx_col = torch.from_numpy(c_idx_col_np).to(dtype=dtype, device=device)
+
+    elif device.type == "cuda" and _HAS_CUPY:
+        a_val_dummy = torch.ones_like(a_idx_col, dtype=torch.float32)
+        b_val_dummy = torch.ones_like(b_idx_col, dtype=torch.float32)
+
+        stream = torch.cuda.current_stream()
+        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+            a_csr_cp = cp_sp.csr_matrix(
+                (
+                    cp.from_dlpack(a_val_dummy),
+                    cp.from_dlpack(a_idx_col),
+                    cp.from_dlpack(a_idx_crow),
+                ),
+                shape=tuple(a_shape),
+            )
+            b_csr_cp = cp_sp.csr_matrix(
+                (
+                    cp.from_dlpack(b_val_dummy),
+                    cp.from_dlpack(b_idx_col),
+                    cp.from_dlpack(b_idx_crow),
+                ),
+                shape=tuple(b_shape),
+            )
+
+            c_csr_cp = a_csr_cp @ b_csr_cp
+
+            if not c_csr_cp.has_sorted_indices:
+                c_csr_cp.sort_indices()
+
+            c_idx_crow_cp = c_csr_cp.indptr
+            c_idx_col_cp = c_csr_cp.indices
+
+            c_coo_cp = c_csr_cp.tocoo()
+            c_idx_coo_cp = cp.stack((c_coo_cp.row, c_coo_cp.col))
+
+            c_idx_coo = torch.from_dlpack(c_idx_coo_cp, device=device).to(
+                dtype=torch.int64
+            )
+            c_idx_crow = torch.from_dlpack(c_idx_crow_cp, device=device).to(dtype=dtype)
+            c_idx_col = torch.from_dlpack(c_idx_col_cp, device=device).to(dtype=dtype)
+
+    else:
+        with torch.no_grad():
+            a_val_dummy = torch.ones_like(a_idx_col, dtype=torch.float32)
+            b_val_dummy = torch.ones_like(b_idx_col, dtype=torch.float32)
+
+            a_csr = torch.sparse_csr_tensor(a_idx_crow, a_idx_col, a_val_dummy, a_shape)
+            b_csr = torch.sparse_csr_tensor(b_idx_crow, b_idx_col, b_val_dummy, b_shape)
+
+            # _coalesced_(False) forces the is_coalesced flag to False so that
+            # calling coalesce() actually triggers an index sorting.
+            c_sp_coo = (
+                torch.sparse.mm(
+                    a_csr,
+                    b_csr,
+                )
+                .to_sparse_coo()
+                ._coalesced_(False)
+                .coalesce()
+            )
+
+            c_idx_coo = c_sp_coo.indices().to(dtype=torch.int64)
+
+            c_sp_csr = c_sp_coo.to_sparse_csr()
+            c_idx_crow = c_sp_csr.crow_indices().to(dtype=dtype)
+            c_idx_col = c_sp_csr.col_indices().to(dtype=dtype)
+
+    return c_idx_coo, c_idx_crow, c_idx_col

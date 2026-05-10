@@ -428,6 +428,7 @@ class SparsityPattern:
         return pattern_list, block_perm_inv
 
     # TODO: optimize to avoid multiple index tensor copies
+    # TODO: check correctness of idx_coo_concat construction.
     @classmethod
     def bmat(
         cls, patterns: Sequence[Sequence[SparsityPattern | None]]

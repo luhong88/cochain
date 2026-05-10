@@ -10,6 +10,7 @@ from torch import Tensor
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._spgemm_plan import (
     SpSpMMPlan,
+    discover_matmul_pattern,
     get_bwd_plan_A,
     get_bwd_plan_B,
     get_fwd_plan,
@@ -760,16 +761,16 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 plan = self.pattern._spsp_matmul_plans.get(other.pattern, None)
 
                 if plan is None:
-                    # If there is not a cached plan, generate one for the sparsity
+                    # If there is no cached plan, generate one for the sparsity
                     # pattern pair.
-                    with torch.no_grad():
-                        c_sp_csr = torch.sparse.mm(
-                            self.to_sparse_csr(), other.to_sparse_csr()
-                        )
-
-                        c_idx_crow = c_sp_csr.crow_indices()
-                        c_idx_col = c_sp_csr.col_indices()
-                        c_idx_coo = c_sp_csr.to_sparse_coo().indices()
+                    c_idx_coo, c_idx_crow, c_idx_col = discover_matmul_pattern(
+                        self.shape,
+                        self.pattern.idx_crow,
+                        self.pattern.idx_col,
+                        other.shape,
+                        other.pattern.idx_crow,
+                        other.pattern.idx_col,
+                    )
 
                     plan_fwd = get_fwd_plan(
                         c_idx_coo=c_idx_coo,

@@ -68,13 +68,12 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
     In addition, this class supports the following types of matrix multiplications:
 
-    * Matmul between two `DiagDecoupledTensor`s; batch dimensions are allowed,
-    * Matmul between a `DiagDecoupledTensor` and a `SparseDecoupledTensor`; batch
-      dimensions are not allowed on either operands,
-    * Matmul between a `DiagDecoupledTensor` and a dense 2D tensor; batch dimensions
-      are not allowed on either operands,
-    * Matrix-vector multiplication with a dense 1D tensor; batch dimension on
-      the `DiagDecoupledTensor` is allowed.
+    * Matmul between two `DiagDecoupledTensor`s,
+    * Matmul between a `DiagDecoupledTensor` and a `SparseDecoupledTensor`,
+    * Matmul between a `DiagDecoupledTensor` and a dense 2D tensor,
+    * Matrix-vector multiplication with a dense 1D tensor.
+
+    Note that batch dimensions are not allowed in all four cases.
     """
 
     values: Float[Tensor, "*b diag"]
