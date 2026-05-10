@@ -201,8 +201,8 @@ def test_dense_diag_mm(diag, device):
     torch.testing.assert_close(C_dense, C_dense_true)
 
 
-def test_diag_sp_mm(A, diag, device):
-    sp_tensor = A.to(device)
+def test_diag_sp_mm(a, diag, device):
+    sp_tensor = a.to(device)
     sdt = SparseDecoupledTensor.from_tensor(sp_tensor)
 
     diag_tensor = torch.diagflat(diag).to(device)
@@ -214,8 +214,8 @@ def test_diag_sp_mm(A, diag, device):
     torch.testing.assert_close(diag_sp.to_dense(), diag_sp_true.to_dense())
 
 
-def test_sp_diag_mm(A, diag, device):
-    sp_tensor = A.to(device)
+def test_sp_diag_mm(a, diag, device):
+    sp_tensor = a.to(device)
     sdt = SparseDecoupledTensor.from_tensor(sp_tensor)
 
     diag_tensor = torch.diagflat(diag).to(device)
@@ -261,11 +261,11 @@ def test_sp_vm(diag, device):
     torch.testing.assert_close(vm, vm_true)
 
 
-def test_matmul_with_batch_dim(diag, diag_batched, A_batched, device):
+def test_matmul_with_batch_dim(diag, diag_batched, a_with_batch, device):
     ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
     diag_batched_operator = DiagDecoupledTensor.from_tensor(diag_batched).to(device)
 
-    sp_batched_operator = SparseDecoupledTensor.from_tensor(A_batched).to(device)
+    sp_batched_operator = SparseDecoupledTensor.from_tensor(a_with_batch).to(device)
 
     b_dense = torch.randn(
         diag_batched_operator.shape[-1],

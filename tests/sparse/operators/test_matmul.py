@@ -3,8 +3,8 @@ import torch
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 
 
-def test_sp_dense_mm_backward(A, device):
-    A_tensor = A.to(device)
+def test_sp_dense_mm_backward(a, device):
+    A_tensor = a.to(device)
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
@@ -31,8 +31,8 @@ def test_sp_dense_mm_backward(A, device):
     torch.testing.assert_close(A_grad, A_grad_true)
 
 
-def test_dense_sp_mm_backward(A, device):
-    A_tensor = A.to(device)
+def test_dense_sp_mm_backward(a, device):
+    A_tensor = a.to(device)
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
@@ -59,8 +59,8 @@ def test_dense_sp_mm_backward(A, device):
     torch.testing.assert_close(A_grad, A_grad_true)
 
 
-def test_sp_sp_mm_backward(A, device):
-    A_tensor = A.to(device)
+def test_sp_sp_mm_backward(a, device):
+    A_tensor = a.to(device)
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
@@ -89,8 +89,8 @@ def test_sp_sp_mm_backward(A, device):
     torch.testing.assert_close(A_grad, A_grad_true)
 
 
-def test_sp_mv_backward(A, device):
-    A_tensor = A.to(device)
+def test_sp_mv_backward(a, device):
+    A_tensor = a.to(device)
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
@@ -117,8 +117,8 @@ def test_sp_mv_backward(A, device):
     torch.testing.assert_close(A_grad, A_grad_true)
 
 
-def test_sp_vm_backward(A, device):
-    A_tensor = A.to(device)
+def test_sp_vm_backward(a, device):
+    A_tensor = a.to(device)
     A_dense = A_tensor.to_dense()
     A_dense.requires_grad_()
 
