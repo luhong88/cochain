@@ -415,18 +415,6 @@ def diag_sp_mm(
     return scaled_vals, pattern
 
 
-def diag_dense_mm(
-    diag_val: Float[Tensor, " r"],
-    dense: Float[Tensor, "r c"],
-) -> Float[Tensor, "r c"]:
-    """
-    Diagonal-dense 2D matrix multiplication.
-
-    `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
-    """
-    return diag_val.view(-1, 1) * dense
-
-
 def sp_diag_mm(
     sp_val: Float[Tensor, " nz"],
     pattern: Integer[SparsityPattern, "r c"],
@@ -441,6 +429,18 @@ def sp_diag_mm(
     scaled_vals = sp_val * diag_val[cols]
 
     return scaled_vals, pattern
+
+
+def diag_dense_mm(
+    diag_val: Float[Tensor, " r"],
+    dense: Float[Tensor, "r c"],
+) -> Float[Tensor, "r c"]:
+    """
+    Diagonal-dense 2D matrix multiplication.
+
+    `D@A` scales the `i`th row of `A` by the `i`th element of `D`.
+    """
+    return diag_val.view(-1, 1) * dense
 
 
 def dense_diag_mm(
