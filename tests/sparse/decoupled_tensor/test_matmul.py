@@ -42,6 +42,8 @@ def test_sp_dense_mm_backward(a, device, req_a, req_b):
     loss = torch.sum(c_dense**2)
     loss.backward()
 
+    torch.testing.assert_close(c_dense, c_dense_true)
+
     if req_b:
         B_dense_grad = b_dense.grad.detach().clone()
         torch.testing.assert_close(B_dense_grad, b_dense_grad_true)
@@ -86,6 +88,8 @@ def test_dense_sp_mm_backward(a, device, req_a, req_b):
     c_dense = b_dense @ a_sdt
     loss = torch.sum(c_dense**2)
     loss.backward()
+
+    torch.testing.assert_close(c_dense, c_dense_true)
 
     if req_b:
         b_dense_grad = b_dense.grad.detach().clone()
@@ -134,7 +138,6 @@ def test_sp_sp_mm_backward(a, b, device, req_a, req_b):
     loss = torch.sum(c_sdt.values**2)
     loss.backward()
 
-    # Since the SpGEMM forward pass is custom, also test the forward pass correctness.
     torch.testing.assert_close(c_sdt.to_dense(), c_dense_true)
 
     if req_b:
@@ -166,8 +169,8 @@ def test_sp_mv_backward(a, device, req_a, req_b):
     b_dense = torch.randn(a_coo.shape[-1], dtype=a_coo.dtype, device=device)
     b_dense.requires_grad_(req_b)
 
-    C_dense_true = a_dense @ b_dense
-    loss_true = torch.sum(C_dense_true**2)
+    c_dense_true = a_dense @ b_dense
+    loss_true = torch.sum(c_dense_true**2)
     loss_true.backward()
 
     if req_b:
@@ -180,6 +183,8 @@ def test_sp_mv_backward(a, device, req_a, req_b):
     c_dense = a_sdt @ b_dense
     loss = torch.sum(c_dense**2)
     loss.backward()
+
+    torch.testing.assert_close(c_dense, c_dense_true)
 
     if req_b:
         b_dense_grad = b_dense.grad.detach().clone()
@@ -224,6 +229,8 @@ def test_sp_vm_backward(a, device, req_a, req_b):
     c_dense = b_dense @ a_sdt
     loss = torch.sum(c_dense**2)
     loss.backward()
+
+    torch.testing.assert_close(c_dense, c_dense_true)
 
     if req_b:
         b_dense_grad = b_dense.grad.detach().clone()
@@ -273,6 +280,8 @@ def test_diag_sp_mm_backward(a, diag, device, req_a, req_b):
     loss = torch.sum(c_sdt.values**2)
     loss.backward()
 
+    torch.testing.assert_close(c_sdt.to_dense(), c_dense_true)
+
     if req_b:
         b_grad = b_sdt.values.grad.detach().clone()
         torch.testing.assert_close(b_grad, b_grad_true)
@@ -321,6 +330,8 @@ def test_sp_diag_mm_backward(a, diag, device, req_a, req_b):
     loss = torch.sum(c_sdt.values**2)
     loss.backward()
 
+    torch.testing.assert_close(c_sdt.to_dense(), c_dense_true)
+
     if req_b:
         b_grad = b_ddt.values.grad.detach().clone()
         torch.testing.assert_close(b_grad, b_grad_true)
@@ -365,6 +376,8 @@ def test_diag_dense_mm_backward(diag, device, req_a, req_b):
     loss = torch.sum(c_dense**2)
     loss.backward()
 
+    torch.testing.assert_close(c_dense, c_dense_true)
+
     if req_b:
         b_dense_grad = b_dense.grad.detach().clone()
         torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
@@ -408,6 +421,8 @@ def test_dense_diag_mm_backward(diag, device, req_a, req_b):
     c_dense = b_dense @ a_ddt
     loss = torch.sum(c_dense**2)
     loss.backward()
+
+    torch.testing.assert_close(c_dense, c_dense_true)
 
     if req_b:
         b_dense_grad = b_dense.grad.detach().clone()
@@ -457,6 +472,8 @@ def test_diag_diag_mm_backward(diag, device, req_a, req_b):
     loss = torch.sum(c_ddt.values**2)
     loss.backward()
 
+    torch.testing.assert_close(c_ddt.to_dense(), c_dense_true)
+
     if req_b:
         b_grad = b_ddt.values.grad.detach().clone()
         torch.testing.assert_close(b_grad, b_grad_true)
@@ -501,6 +518,8 @@ def test_diag_mv_backward(diag, device, req_a, req_b):
     loss = torch.sum(c_dense**2)
     loss.backward()
 
+    torch.testing.assert_close(c_dense, c_dense_true)
+
     if req_b:
         b_dense_grad = b_dense.grad.detach().clone()
         torch.testing.assert_close(b_dense_grad, b_dense_grad_true)
@@ -544,6 +563,8 @@ def test_diag_vm_backward(diag, device, req_a, req_b):
     c_dense = b_dense @ a_ddt
     loss = torch.sum(c_dense**2)
     loss.backward()
+
+    torch.testing.assert_close(c_dense, c_dense_true)
 
     if req_b:
         b_dense_grad = b_dense.grad.detach().clone()
