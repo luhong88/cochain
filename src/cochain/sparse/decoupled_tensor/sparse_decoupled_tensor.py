@@ -949,7 +949,10 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         if self.n_batch_dim == 0:
             val = self.values
         else:
-            val = self.values.view(self.size(0), -1).contiguous()
+            # Reshape to (b, nz, *d).
+            val = self.values.view(
+                self.size(0), -1, *self.values.shape[1:]
+            ).contiguous()
 
         return torch.sparse_csr_tensor(
             idx_crow,
@@ -967,9 +970,10 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         if self.n_batch_dim == 0:
             val = self.values[self.pattern.csc_to_coo_map].contiguous()
         else:
+            # Reshape to (b, nz, *d).
             val = (
                 self.values[self.pattern.csc_to_coo_map]
-                .view(self.size(0), -1)
+                .view(self.size(0), -1, *self.values.shape[1:])
                 .contiguous()
             )
 
