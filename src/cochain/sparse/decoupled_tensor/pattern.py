@@ -211,8 +211,6 @@ class BlockDiagConfig:
         return inv
 
 
-# TODO: check csc/csr index tensor dtype agreement with idx_coo.
-# TODO: check index tensor contiguous memory.
 # Use eq=False so that hashing is ID-based.
 @dataclass(frozen=True, eq=False)
 class SparsityPattern:
@@ -458,7 +456,6 @@ class SparsityPattern:
         return pattern_list, block_perm_inv
 
     # TODO: optimize to avoid multiple index tensor copies
-    # TODO: check correctness of idx_coo_concat construction.
     @classmethod
     def bmat(
         cls, patterns: Sequence[Sequence[SparsityPattern | None]]

@@ -4,6 +4,10 @@ import pytest
 import torch
 
 from cochain.sparse.decoupled_tensor import SparsityPattern
+from cochain.sparse.decoupled_tensor.pattern import (
+    BlockDiagConfig,
+    check_pattern_equality,
+)
 
 
 @pytest.fixture
@@ -95,6 +99,31 @@ def sp_with_batch_dim_T():
     return idx_coo, shape, idx_crow, idx_col, idx_ccol, idx_row_csc, csc_to_coo_map
 
 
+def test_check_pattern_equality(device):
+    idx_coo = torch.tensor([[0, 1], [1, 0]]).to(device)
+    shape = (2, 2)
+
+    p1 = SparsityPattern(idx_coo, shape)
+    p2 = SparsityPattern(idx_coo.clone(), shape)
+
+    # Same shape and indices.
+    check_pattern_equality(p1, p2, "Patterns should be equal")
+
+    # Same object.
+    check_pattern_equality(p1, p1, "Patterns should be equal")
+
+    # Different shape.
+    p3 = SparsityPattern(idx_coo, (3, 3))
+    with pytest.raises(ValueError, match="Patterns not equal"):
+        check_pattern_equality(p1, p3, "Patterns not equal")
+
+    # Different indices.
+    idx_coo_diff = torch.tensor([[0, 1], [1, 1]]).to(device)
+    p4 = SparsityPattern(idx_coo_diff, shape)
+    with pytest.raises(ValueError, match="Patterns not equal"):
+        check_pattern_equality(p1, p4, "Patterns not equal")
+
+
 def test_immutability(device):
     idx_coo = torch.tensor([[0, 0, 1, 2], [0, 1, 0, 3]]).to(device)
     shape = (4, 4)
@@ -160,6 +189,16 @@ def test_oob_validation(device):
         idx_coo = torch.tensor([[-1, 0, 1, 2], [0, 1, 0, 3]]).to(device)
         shape = (4, 4)
         SparsityPattern(idx_coo, shape)
+
+
+def test_idx_coo_contiguous(device):
+    idx_coo_T = torch.tensor([[0, 0, 1, 2], [0, 1, 0, 3]]).T.contiguous().to(device)
+    shape = (4, 4)
+
+    pattern = SparsityPattern(idx_coo_T.T, shape)
+
+    assert not idx_coo_T.T.is_contiguous()
+    assert pattern.idx_coo.is_contiguous()
 
 
 def test_coo_to_csr_conversion(sp_with_empty_row, device):
@@ -237,13 +276,55 @@ def test_idx_dtype(device):
     shape = (4, 4)
     pattern = SparsityPattern(idx_coo, shape)
 
-    target_dtype = pattern.idx_coo.dtype
-
-    assert pattern.csc_to_coo_map.dtype == target_dtype
+    assert pattern.idx_coo.dtype == torch.int64
+    assert pattern.csc_to_coo_map.dtype == torch.int64
     assert pattern.idx_crow.dtype == torch.int32
     assert pattern.idx_col.dtype == torch.int32
     assert pattern.idx_ccol.dtype == torch.int32
     assert pattern.idx_row_csc.dtype == torch.int32
+
+
+def test_size(device):
+    idx_coo = torch.tensor([[0, 0, 1, 2], [0, 1, 0, 3]]).to(device)
+    shape = (4, 4)
+    pattern = SparsityPattern(idx_coo, shape)
+
+    assert pattern.size() == pattern.shape
+
+    for idx, val in enumerate(shape):
+        assert pattern.size(idx) == val
+
+
+def test_nnz(sp_with_empty_row, device):
+    (
+        idx_coo,
+        shape,
+        true_idx_crow,
+        true_idx_col,
+        true_idx_ccol,
+        true_idx_row_csc,
+        true_csc_to_coo_map,
+    ) = sp_with_empty_row
+
+    pattern = SparsityPattern(idx_coo, shape).to(device)
+
+    assert pattern._nnz() == 5
+
+
+def test_nnz_with_batch_dim(sp_with_batch_dim, device):
+    (
+        idx_coo,
+        shape,
+        true_idx_crow,
+        true_idx_col,
+        true_idx_ccol,
+        true_idx_row_csc,
+        true_csc_to_coo_map,
+    ) = sp_with_batch_dim
+
+    pattern = SparsityPattern(idx_coo, shape).to(device)
+
+    assert pattern._nnz() == 6
 
 
 def test_sp_dim(sp_with_empty_row, device):
@@ -360,47 +441,49 @@ def test_to_device(device):
     assert pattern.idx_coo.device.type == device.type
 
 
-def test_nnz(sp_with_empty_row, device):
-    (
-        idx_coo,
-        shape,
-        true_idx_crow,
-        true_idx_col,
-        true_idx_ccol,
-        true_idx_row_csc,
-        true_csc_to_coo_map,
-    ) = sp_with_empty_row
+def test_to_with_cached_properties(sp_with_empty_row, device):
+    (idx_coo, shape, _, _, _, _, _) = sp_with_empty_row
 
     pattern = SparsityPattern(idx_coo, shape).to(device)
 
-    assert pattern._nnz() == 5
+    # Access properties to cache them.
+    _ = pattern.idx_crow
+    _ = pattern.idx_col
+    _ = pattern.idx_ccol
+    _ = pattern.idx_row_csc
+    _ = pattern.csc_to_coo_map
+
+    # Call `to` to test if cached attributes are properly handled.
+    new_pattern = pattern.to(torch.int64)
+    assert new_pattern.idx_crow.dtype == torch.int32
+    assert new_pattern.idx_col.dtype == torch.int32
+    assert new_pattern.idx_ccol.dtype == torch.int32
+    assert new_pattern.idx_row_csc.dtype == torch.int32
+    assert new_pattern.csc_to_coo_map.dtype == torch.int64
 
 
-def test_nnz_with_batch_dim(sp_with_batch_dim, device):
-    (
-        idx_coo,
-        shape,
-        true_idx_crow,
-        true_idx_col,
-        true_idx_ccol,
-        true_idx_row_csc,
-        true_csc_to_coo_map,
-    ) = sp_with_batch_dim
+def test_block_diag_config_inv(device):
+    batch_perm = torch.tensor([2, 0, 1]).to(device)
+    nnzs = [1, 2]
+    pattern_shapes = [torch.Size([2, 2]), torch.Size([3, 3])]
 
-    pattern = SparsityPattern(idx_coo, shape).to(device)
+    config = BlockDiagConfig(batch_perm, nnzs, pattern_shapes)
 
-    assert pattern._nnz() == 6
+    inv = config.batch_perm_inv
+    expected_inv = torch.tensor([1, 2, 0]).to(device)
+    torch.testing.assert_close(inv, expected_inv)
 
 
-def test_size(device):
-    idx_coo = torch.tensor([[0, 0, 1, 2], [0, 1, 0, 3]]).to(device)
-    shape = (4, 4)
-    pattern = SparsityPattern(idx_coo, shape)
+def test_block_diag_config_to(device):
+    batch_perm = torch.tensor([2, 0, 1]).to(device)
+    nnzs = [1, 2]
+    pattern_shapes = [torch.Size([2, 2]), torch.Size([3, 3])]
 
-    assert pattern.size() == pattern.shape
+    config = BlockDiagConfig(batch_perm, nnzs, pattern_shapes)
 
-    for idx, val in enumerate(shape):
-        assert pattern.size(idx) == val
+    config_cast = config.to(torch.int32)
+    # BlockDiagConfig.to ignores dtype conversions, so it should still be the original dtype
+    assert config_cast.batch_perm.dtype == batch_perm.dtype
 
 
 # TODO: test empty edge case?
