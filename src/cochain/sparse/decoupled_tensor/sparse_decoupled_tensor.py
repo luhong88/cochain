@@ -564,7 +564,6 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         """Take the absolute value of the sparse tensor."""
         return SparseDecoupledTensor(self.pattern, self.values.abs())
 
-    # TODO: write tests
     def diagonal(self) -> Float[Tensor, " diag *d"] | Float[Tensor, "b diag *d"]:
         """
         Return the diagonal values.
@@ -603,7 +602,6 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         return diag
 
-    # TODO: write tests
     def off_diagonal(self) -> SparseDecoupledTensor:
         """
         Return the off-diagonal part of the sparse matrix.
@@ -621,16 +619,14 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         off_diag_val = self.values[off_diag_mask]
         return SparseDecoupledTensor(off_diag_pattern, off_diag_val)
 
-    # TODO: write tests fot tr()
     @property
     def tr(self) -> Float[Tensor, "*d"] | Float[Tensor, " b *d"]:
         """The trace of the sparse matrix."""
         if self.n_batch_dim > 0:
-            return torch.sparse.sum(self.diagonal(), dim=1)
+            return torch.sparse.sum(self.diagonal(), dim=1).to_dense()
         else:
             return self.diagonal().sum(dim=0)
 
-    # TODO: write tests
     def triu(self, diagonal: int = 0) -> SparseDecoupledTensor:
         """
         Return the upper triangular part of the sparse matrix.

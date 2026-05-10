@@ -25,6 +25,11 @@ def a_or_batched_a(request):
     return request.getfixturevalue(request.param)
 
 
+@pytest.fixture(params=["a", "a_with_dense"])
+def unbatched_a(request):
+    return request.getfixturevalue(request.param)
+
+
 @pytest.mark.gpu_only
 def test_device_mismatch(a, device):
     val = a.values()
@@ -315,6 +320,33 @@ def test_to_device(any_a, device):
     assert a_sdt.pattern.device.type == device.type
 
 
+def test_clone(any_a, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(any_a.to(device))
+    a_sdt_clone = a_sdt.clone()
+
+    assert a_sdt is not a_sdt_clone
+    assert a_sdt.values is not a_sdt_clone.values
+    assert a_sdt.pattern is a_sdt_clone.pattern
+    torch.testing.assert_close(a_sdt_clone.to_dense(), a_sdt.to_dense())
+
+
+def test_detach(any_a, device):
+    a_req_grad = any_a.clone().to(device).requires_grad_()
+    a_sdt = SparseDecoupledTensor.from_tensor(a_req_grad)
+    a_sdt_detached = a_sdt.detach()
+
+    assert a_sdt.requires_grad
+    assert not a_sdt_detached.requires_grad
+    torch.testing.assert_close(a_sdt_detached.to_dense(), a_sdt.to_dense())
+
+
+def test_to_sdt(any_a, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(any_a.to(device))
+    a_sdt_returned = a_sdt.to_sdt()
+
+    assert a_sdt_returned is a_sdt
+
+
 def test_apply(any_a, device):
     a_coo = any_a.to(device)
     a_sdt = SparseDecoupledTensor.from_tensor(any_a).clone().to(device)
@@ -333,6 +365,104 @@ def test_neg(any_a, device):
     neg_a_sdt = -a_sdt
 
     torch.testing.assert_close(neg_a_sdt.to_dense(), neg_a_coo.to_dense())
+
+
+def test_abs(any_a, device):
+    a_coo = any_a.to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
+
+    sdt_abs = a_sdt.abs()
+    coo_dense_abs = a_coo.to_dense().abs()
+
+    torch.testing.assert_close(sdt_abs.to_dense(), coo_dense_abs)
+
+
+def test_diagonal(any_a, device):
+    a_coo = any_a.to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
+
+    diag_sdt = a_sdt.diagonal().to_dense()
+
+    a_dense = a_coo.to_dense()
+    n_diag = min(a_sdt.pattern.shape[:2])
+
+    idx = torch.arange(n_diag)
+    if a_sdt.n_batch_dim > 0:
+        diag_true = a_dense[:, idx, idx]
+    else:
+        diag_true = a_dense[idx, idx]
+
+    torch.testing.assert_close(diag_sdt, diag_true)
+
+
+def test_off_diagonal(any_a, device):
+    a_coo = any_a.to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
+
+    off_diag_sdt = a_sdt.off_diagonal()
+
+    a_dense = a_coo.to_dense()
+    n_diag = min(a_sdt.pattern.shape[:2])
+    idx = torch.arange(n_diag)
+
+    off_diag_true = a_dense.clone()
+    if a_sdt.n_batch_dim > 0:
+        off_diag_true[:, idx, idx] = 0.0
+    else:
+        off_diag_true[idx, idx] = 0.0
+
+    torch.testing.assert_close(off_diag_sdt.to_dense(), off_diag_true)
+
+
+def test_batched_off_diagonal_equal_nnz_exception(device):
+    idx_coo = torch.tensor([[0, 0, 1, 1], [0, 0, 0, 1], [0, 1, 0, 1]], device=device)
+    val = torch.randn(4, device=device)
+    pattern = SparsityPattern(idx_coo, (2, 2, 2))
+    a_sdt = SparseDecoupledTensor(pattern, val)
+
+    with pytest.raises(ValueError):
+        a_sdt.off_diagonal()
+
+
+def test_tr(any_a, device):
+    a_coo = any_a.to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
+
+    tr_sdt = a_sdt.tr
+
+    a_dense = a_coo.to_dense()
+    n_diag = min(a_sdt.pattern.shape[:2])
+    idx = torch.arange(n_diag)
+
+    if a_sdt.n_batch_dim > 0:
+        tr_true = a_dense[:, idx, idx].sum(dim=1)
+    else:
+        tr_true = a_dense[idx, idx].sum(dim=0)
+
+    torch.testing.assert_close(tr_sdt, tr_true)
+
+
+def test_triu(unbatched_a, device):
+    a_coo = unbatched_a.to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
+
+    for diag in [0, 1, -1]:
+        triu_sdt = a_sdt.triu(diagonal=diag)
+
+        a_dense = a_coo.to_dense()
+        triu_true = torch.triu(a_dense, diagonal=diag)
+
+        torch.testing.assert_close(triu_sdt.to_dense(), triu_true)
+
+
+def test_batched_triu_equal_nnz_exception(device):
+    idx_coo_2 = torch.tensor([[0, 0, 1, 1], [0, 1, 0, 0], [1, 0, 1, 2]], device=device)
+    val_2 = torch.randn(4, device=device)
+    pattern_2 = SparsityPattern(idx_coo_2, (2, 3, 3))
+    a_sdt_2 = SparseDecoupledTensor(pattern_2, val_2)
+
+    with pytest.raises(ValueError):
+        a_sdt_2.triu()
 
 
 def test_add(any_a, device):
