@@ -1,3 +1,5 @@
+import gc
+
 import pytest
 import torch
 
@@ -182,6 +184,84 @@ def test_matmul_with_dense_dim(a, device):
 
     with pytest.raises(NotImplementedError):
         a_sdt @ hybrid_sdt
+
+
+def test_spsp_matmul_caching_fwd_plan(a, b, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    assert len(a_sdt.pattern._spsp_matmul_plans) == 0
+
+    c_sdt = a_sdt @ b_sdt
+
+    assert len(a_sdt.pattern._spsp_matmul_plans) == 1
+    assert b_sdt.pattern in a_sdt.pattern._spsp_matmul_plans
+
+    plan = a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern]
+    assert plan.fwd_plan is not None
+    assert plan.bwd_plan_A is None
+    assert plan.bwd_plan_B is None
+
+
+def test_spsp_matmul_caching_reuse_plan(a, b, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    c_sdt_1 = a_sdt @ b_sdt
+    plan_1 = a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern]
+
+    c_sdt_2 = a_sdt @ b_sdt
+    assert len(a_sdt.pattern._spsp_matmul_plans) == 1
+    assert a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern] is plan_1
+
+
+def test_spsp_matmul_caching_bwd_plan(a, b, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    c_sdt_1 = a_sdt @ b_sdt
+    plan = a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern]
+
+    a_sdt.requires_grad_(True)
+    c_sdt_2 = a_sdt @ b_sdt
+
+    assert plan.bwd_plan_A is not None
+    assert plan.bwd_plan_B is None
+
+    b_sdt.requires_grad_(True)
+    c_sdt_3 = a_sdt @ b_sdt
+
+    assert plan.bwd_plan_B is not None
+
+
+def test_spsp_matmul_caching_different_values(a, b, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    c_dst_1 = a_sdt @ b_sdt
+    plan = a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern]
+
+    a_sdt_new_vals = 2.0 * a_sdt
+    b_sdt_new_vals = 2.0 * b_sdt
+
+    c_sdt_2 = a_sdt_new_vals @ b_sdt_new_vals
+
+    assert len(a_sdt_new_vals.pattern._spsp_matmul_plans) == 1
+    assert a_sdt_new_vals.pattern._spsp_matmul_plans[b_sdt_new_vals.pattern] is plan
+
+
+def test_spsp_matmul_caching_eviction(a, b, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    c_sdt = a_sdt @ b_sdt
+
+    del c_sdt
+    del b_sdt
+
+    gc.collect()
+
+    assert len(a_sdt.pattern._spsp_matmul_plans) == 0
 
 
 def test_matmul_with_wrong_tensor_ndim(a, device):
