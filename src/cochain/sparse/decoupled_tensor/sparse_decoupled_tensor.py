@@ -413,15 +413,15 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         val_dtype = rep_sp_op.dtype
 
         # Construct concatenated SparsityPattern.
-        pattern_concat, batch_perm = SparsityPattern.bmat(pattern_list)
+        pattern_concat, coalesce_perm = SparsityPattern.bmat(pattern_list)
 
         # Construct concatenated values tensor.
         val_list_uniform = [val.to(device=device, dtype=val_dtype) for val in val_list]
 
         if rep_sp_op.n_dense_dim == 0:
-            val_concat = torch.hstack(val_list_uniform)[batch_perm]
+            val_concat = torch.hstack(val_list_uniform)[coalesce_perm]
         else:
-            val_concat = torch.vstack(val_list_uniform)[batch_perm]
+            val_concat = torch.vstack(val_list_uniform)[coalesce_perm]
 
         return SparseDecoupledTensor(pattern_concat, val_concat)
 

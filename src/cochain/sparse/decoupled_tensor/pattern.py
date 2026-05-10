@@ -20,6 +20,36 @@ from ._index import (
 )
 
 
+def _lexsort(keys: Sequence[Tensor]) -> Tensor:
+    """
+    Perform a lex sort on a sequence of 1D tensors.
+
+    The last key in the sequence is the primary sort key.
+    """
+    if len(keys) == 0:
+        raise ValueError("Must have at least 1 key.")
+
+    # Start sorting with the least significant key.
+    idx = keys[0].argsort(dim=-1, stable=True)
+
+    # Sequentially sort the remaining keys, preserving previous order on ties.
+    for k in keys[1:]:
+        idx = torch.gather(
+            input=idx,
+            dim=-1,
+            index=torch.gather(
+                input=k,
+                dim=-1,
+                index=idx,
+            ).argsort(
+                dim=-1,
+                stable=True,
+            ),
+        )
+
+    return idx
+
+
 def _validate_coo_idx_shape(coo_idx: Int64[Tensor, "sp nz"], shape: torch.Size):
     """
     Validate the shape of a COO index.
@@ -520,9 +550,20 @@ class SparsityPattern:
 
         idx_coo_concat = torch.hstack(idx_coo_list)
 
-        # If there is a batch dimension, the coo index needs to be sorted first
-        # by batch item order; find the permutation for this sort.
-        batch_perm = torch.sort(idx_coo_concat[0], stable=True).indices
+        # There are two reasons why idx_coo_concat may not be coalesced: (1) when
+        # there are multiple blocks per row, the nonzero elements from the earlier
+        # blocks are enumerated first, regardless of which row they are located on,
+        # which breaks the row-major ordering; (2) when there is a batch dimension,
+        # the sparse COO index need to be sorted along the batch dim first. Here,
+        # we use lexsort to coalesce the COO indices. The desired sort key
+        # priorities are: batch -> row -> col (note that lexsort treats the last
+        # key as the primary sort key).
+        if rep_pattern.n_batch_dim > 0:
+            keys = (idx_coo_concat[2], idx_coo_concat[1], idx_coo_concat[0])
+        else:
+            keys = (idx_coo_concat[1], idx_coo_concat[0])
+
+        coalesce_perm = _lexsort(keys)
 
         # Determine the concatenated SparsityPattern shape.
         n_row = r_sizes_clamped.sum().item()
@@ -534,10 +575,10 @@ class SparsityPattern:
 
         # Construct concatenated coo index.
         pattern_concat = SparsityPattern(
-            idx_coo_concat[:, batch_perm], shape=pattern_shape_concat
+            idx_coo_concat[:, coalesce_perm], shape=pattern_shape_concat
         )
 
-        return pattern_concat, batch_perm
+        return pattern_concat, coalesce_perm
 
     def submatrix(
         self, row_mask: Bool[Tensor, " r"], col_mask: Bool[Tensor, " c"] | None = None
