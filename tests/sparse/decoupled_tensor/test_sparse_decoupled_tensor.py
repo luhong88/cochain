@@ -925,26 +925,29 @@ def test_batched_submatrix_equal_nnz_exception(device):
         a_sdt.submatrix(r_mask)
 
 
-def test_constrain(device):
-    a_dense = torch.randn(5, 5, device=device)
-    a_sym = a_dense + a_dense.T
-    a_diag_dom = a_sym + 2.0 * torch.eye(5, device=device)
+def test_constrain(unbatched_a, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(unbatched_a).to(device)
+    a_sym_sdt = SparseDecoupledTensor.assemble(a_sdt, a_sdt.T)
 
-    a_sdt = SparseDecoupledTensor.from_tensor(a_diag_dom)
+    mask_len = a_sym_sdt.pattern.size(-1)
+    mask = torch.randint(0, 2, (mask_len,), dtype=torch.bool, device=device)
+    # Ensure at least one True and one False to test properly
+    mask[0] = True
+    mask[-1] = False
 
-    mask = torch.tensor([True, True, False, True, False], device=device)
+    a_sdt_constrained = a_sym_sdt.constrain(mask).to_dense()
 
-    a_sdt_constrained = a_sdt.constrain(mask).to_dense()
+    a_sdt_to_dense = a_sym_sdt.to_dense()
 
-    a_sdt_to_dense = a_sdt.to_dense()
     a_sdt_to_dense[~mask] = 0.0
     a_sdt_to_dense[:, ~mask] = 0.0
-    a_sdt_to_dense[~mask, ~mask] = 1.0
+    a_sdt_to_dense[(~mask, ~mask)] = 1.0
 
     torch.testing.assert_close(a_sdt_constrained, a_sdt_to_dense)
 
 
 def test_constrain_exceptions(device):
+    # Asymmetric matrix.
     with pytest.raises(ValueError) as excinfo:
         a_dense = torch.randn(5, 5, device=device)
         a_sdt = SparseDecoupledTensor.from_tensor(a_dense)
@@ -953,6 +956,7 @@ def test_constrain_exceptions(device):
 
     assert "symmetric" in str(excinfo.value)
 
+    # Nonsquare matrix.
     with pytest.raises(ValueError) as excinfo:
         a_dense = torch.randn(6, 5, device=device)
         a_sdt = SparseDecoupledTensor.from_tensor(a_dense)
@@ -961,6 +965,7 @@ def test_constrain_exceptions(device):
 
     assert "square" in str(excinfo.value)
 
+    # Zero on masked diagonals.
     with pytest.raises(ValueError) as excinfo:
         a_dense = torch.sparse_coo_tensor(
             indices=torch.tensor([[0, 1, 2, 3], [0, 1, 2, 2]], device=device),

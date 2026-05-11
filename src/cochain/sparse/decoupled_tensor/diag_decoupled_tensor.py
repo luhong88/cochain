@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["DiagDecoupledTensor"]
+
 from dataclasses import dataclass
 from typing import Callable
 

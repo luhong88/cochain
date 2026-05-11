@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["BaseDecoupledTensor"]
+
 from abc import ABC, abstractmethod
 from typing import Callable
 

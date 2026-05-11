@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["SparseDecoupledTensor"]
+
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
@@ -175,7 +177,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 case BaseDecoupledTensor():
                     sp_op_list.append(block.to_sdt())
                 case _:
-                    raise TypeError()
+                    raise TypeError(f"Unsupported block type: {type(block).__name__}.")
 
         # Pick a representative SparseDecoupledTensor and use it to determine device and
         # dtype information.
@@ -402,7 +404,9 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                         pattern_row.append(None)
 
                     case _:
-                        raise TypeError()
+                        raise TypeError(
+                            f"Unsupported block type: {type(block).__name__}."
+                        )
 
             pattern_list.append(pattern_row)
 
@@ -487,7 +491,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         unmasked positions). The advantage of the soft masking approach implemented
         here is that the underlying `SparsityPattern` is preserved.
         """
-        if self.size(-1) != self.size(-2):
+        if self.pattern.size(-1) != self.pattern.size(-2):
             raise ValueError(
                 "constrain() is only applicable to (batched) sparse square matrices."
             )
@@ -524,8 +528,17 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         # (2) its row/col index is masked.
         one_mask = diag_mask & r_idx_mask
 
-        val_zeroed = torch.where(zero_mask, 0.0, self.values)
-        val_oned = torch.where(one_mask, 1.0, val_zeroed)
+        # Reshape masks to correctly broadcast with trailing dense dims (nz, *d),
+        # if there are any.
+        target_shape = [-1] + [1] * self.n_dense_dim
+        zero_mask_shaped = zero_mask.view(*target_shape)
+        one_mask_shaped = one_mask.view(*target_shape)
+
+        zero = torch.tensor(0.0, dtype=self.dtype, device=self.device)
+        one = torch.tensor(1.0, dtype=self.dtype, device=self.device)
+
+        val_zeroed = torch.where(zero_mask_shaped, zero, self.values)
+        val_oned = torch.where(one_mask_shaped, one, val_zeroed)
 
         return SparseDecoupledTensor(self.pattern, val_oned)
 
@@ -737,7 +750,6 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             else NotImplemented
         )
 
-    # TODO: test sp-sp matmul caching
     def __matmul__(self, other):
         """
         Implement self @ other matmul.
@@ -960,6 +972,12 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         )
 
     def _prepare_sparse_csc_components(self):
+        """
+        Extract and process the components needed for CSC/CSR transposed formats.
+
+        Returns the compressed column indices, row indices, and properly reshaped
+        values tensor mapped from the internal COO/CSR layout.
+        """
         idx_ccol = self.pattern.idx_ccol
         idx_row_csc = self.pattern.idx_row_csc
 
