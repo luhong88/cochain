@@ -7,8 +7,8 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ._backward import dLdA_backward, dLdA_dLdM_backward
+from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 from ._lobpcg_routines import lobpcg_forward
 
 try:
@@ -20,7 +20,7 @@ except ImportError:
     _HAS_NVMATH = False
 
 if TYPE_CHECKING:
-    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+    from ...solvers import DirectSolverConfig
     from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
 
@@ -143,7 +143,7 @@ def _lobpcg_no_batch(
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val,
+            A.values,
             A.pattern,
             None,
             None,
@@ -155,9 +155,9 @@ def _lobpcg_no_batch(
         )
     else:
         eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
-            A.val,
+            A.values,
             A.pattern,
-            M.val,
+            M.values,
             M.pattern,
             k,
             eps,
@@ -217,7 +217,7 @@ def lobpcg(
     precond_config: LOBPCGPrecondConfig | None = None,
 ) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "m k"]]:
     """
-    A custom implementation of LOBPCG.
+    Sparse eigensolver for SPD matrices using LOBPCG.
 
     Note that this function requires `nvmath-python` for the shift-invert mode.
     In addition, some preconditioners have `nvmath-python` or `cupy` dependencies.
@@ -260,11 +260,21 @@ def lobpcg(
       In this limit, the algorithm effectively performs an exact diagonalization
       similar to `torch.linalg.eigh()`, but less efficiently due to the subspace
       construction and projection steps.
+
+    Notes on sparse index tensor dtype requirements:
+    * If using the `ilu` and `cholesky` preconditioners, the sparse CSC/CSR index
+      tensors of `A` will be downcast to `int32`.
+    * For the shift-invert mode, the sparse CSC/CSR index tensors of `A` will be
+      downcast to `int32`.
+    * For the shift-invert GEP mode, the sparse CSC/CSR index tensors of both `A`
+      and `M` will be downcast to `int32`.
+    * In all other cases, both `int32` and `int64` are supported, but `int32` is
+      still preferred whenever possible.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backends required.")
 
-    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+    from ...solvers import DirectSolverConfig
     from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
     if lobpcg_config is None:

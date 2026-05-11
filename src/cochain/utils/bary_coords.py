@@ -1,6 +1,6 @@
 import torch
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 
 def get_k_splx_barycenters(
@@ -11,7 +11,7 @@ def get_k_splx_barycenters(
 
 # TODO: consider backward numerical safety
 def get_tri_circumcenters(
-    tris: Integer[LongTensor, "tri vert=3"],
+    tris: Integer[Tensor, "tri vert=3"],
     vert_coords: Float[Tensor, "vert coord=3"],
 ) -> Float[Tensor, "tri pt=1 vert=3"]:
     tri_coords = vert_coords[tris]

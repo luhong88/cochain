@@ -4,8 +4,9 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ...decoupled_tensor import SparseDecoupledTensor
-from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+from ....decoupled_tensor import SparseDecoupledTensor
+from ...solvers import DirectSolverConfig
+from ..base.utils import M_orthonormalize
 from ._lobpcg_operators import (
     IdentityOperator,
     ShiftInvSymGEPSpOp,
@@ -18,7 +19,6 @@ from ._lobpcg_preconditioners import (
     JacobiPrecond,
     LOBPCGPrecondConfig,
 )
-from .utils import M_orthonormalize
 
 type SparseDecoupledTensorLike = (
     IdentityOperator
@@ -199,14 +199,17 @@ def _dispatch_operators(
             case "identity":
                 precond = IdentityPrecond()
             case "jacobi":
+                # A_op is not required to be int32-safe.
                 precond = JacobiPrecond(A_op=A_op)
             case "ilu":
+                # A_op is required to be int32-safe.
                 precond = ILUPrecond(
                     A_op=A_op,
                     diag_damp=precond_config.diag_damp,
                     spilu_kwargs=precond_config.spilu_kwargs,
                 )
             case "cholesky":
+                # A_op is required to be int32-safe.
                 precond = ChoPrecond(
                     A_op=A_op,
                     n=n,
@@ -230,12 +233,14 @@ def _dispatch_operators(
             S_op = IdentityOperator()
 
         case (None, sigma):
+            # A_op needs to be int32-safe.
             T_op = ShiftInvSymSpOp(A_op=A_op, sigma=sigma, n=n, config=nvmath_config)
             B_op = IdentityOperator()
             M_op = IdentityOperator()
             S_op = IdentityOperator()
 
         case (M_op, sigma):
+            # A_op and M_op need to be int32-safe.
             T_op = ShiftInvSymGEPSpOp(
                 A_op=A_op, M_op=M_op, sigma=sigma, n=n, config=nvmath_config
             )

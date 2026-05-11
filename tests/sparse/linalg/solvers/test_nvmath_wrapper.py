@@ -6,8 +6,8 @@ from cochain.sparse.linalg.solvers import NVMathDirectSolver, nvmath_direct_solv
 
 
 @pytest.mark.gpu_only
-def test_direct_solver_forward(A, device):
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+def test_direct_solver_forward(a, device):
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -21,8 +21,8 @@ def test_direct_solver_forward(A, device):
 
 
 @pytest.mark.gpu_only
-def test_direct_solver_with_channel_dim(A, device):
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+def test_direct_solver_with_channel_dim(a, device):
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -37,8 +37,8 @@ def test_direct_solver_with_channel_dim(A, device):
 
 
 @pytest.mark.gpu_only
-def test_direct_solver_with_batch_dim(A_batched, device):
-    A_op = SparseDecoupledTensor.from_tensor(A_batched).to(device)
+def test_direct_solver_with_batch_dim(a_with_batch, device):
+    A_op = SparseDecoupledTensor.from_tensor(a_with_batch).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(-1)
@@ -54,8 +54,8 @@ def test_direct_solver_with_batch_dim(A_batched, device):
 
 
 @pytest.mark.gpu_only
-def test_direct_solver_with_batch_channel_dim(A_batched, device):
-    A_op = SparseDecoupledTensor.from_tensor(A_batched).to(device)
+def test_direct_solver_with_batch_channel_dim(a_with_batch, device):
+    A_op = SparseDecoupledTensor.from_tensor(a_with_batch).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(-1)
@@ -72,13 +72,13 @@ def test_direct_solver_with_batch_channel_dim(A_batched, device):
 
 # TODO: backward test should also test batch and channel dims
 @pytest.mark.gpu_only
-def test_direct_solver_backward(A, device):
+def test_direct_solver_backward(a, device):
     """
     Let A@x=b and define the loss function as L = <x, v>. Check that the gradients
     dLdA and dLdb computed through the adjoint method matches the autograd gradients
     from torch.linalg.solve() (using dense A).
     """
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     A_dense = A_op.to_dense()
     n_dim = A_op.size(0)
 
@@ -93,7 +93,7 @@ def test_direct_solver_backward(A, device):
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    A_sp_grad = A_op.val.grad.detach().clone()
+    A_sp_grad = A_op.values.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -115,8 +115,8 @@ def test_direct_solver_backward(A, device):
 
 
 @pytest.mark.gpu_only
-def test_persistent_direct_solver_forward(A, device):
-    A_sym = A + A.T
+def test_persistent_direct_solver_forward(a, device):
+    A_sym = a + a.T
     A_op = SparseDecoupledTensor.from_tensor(A_sym).to(device)
     A_dense = A_op.to_dense()
 
@@ -139,7 +139,7 @@ def test_persistent_direct_solver_forward(A, device):
 
 
 @pytest.mark.gpu_only
-def test_persistent_direct_solver_sequential_backward_pattern_1(A, device):
+def test_persistent_direct_solver_sequential_backward_pattern_1(a, device):
     """
     Test persistent solver sequential backward passes.
 
@@ -147,7 +147,7 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(A, device):
     applied sequentially to two RHS vectors, and the gradient is cleared in between
     the two applications.
     """
-    A_sym = A + A.T
+    A_sym = a + a.T
     A_op = SparseDecoupledTensor.from_tensor(A_sym).to(device)
     n_dim = A_op.size(0)
 
@@ -168,11 +168,11 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(A, device):
     loss1 = torch.sum(x1_via_sp * v1)
     loss1.backward()
 
-    A_sp_grad1 = A_op.val.grad.detach().clone()
+    A_sp_grad1 = A_op.values.grad.detach().clone()
     b1_sp_grad = b1.grad.detach().clone()
 
     # Repeat this process with a different b and v.
-    A_op.val.grad = None  # clear the existing gradient on A_op.
+    A_op.values.grad = None  # clear the existing gradient on A_op.
 
     b2 = torch.randn(n_dim).to(device)
     v2 = torch.randn(n_dim).to(device)
@@ -182,7 +182,7 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(A, device):
     loss2 = torch.sum(x2_via_sp * v2)
     loss2.backward()
 
-    A_sp_grad2 = A_op.val.grad.detach().clone()
+    A_sp_grad2 = A_op.values.grad.detach().clone()
     b2_sp_grad = b2.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -219,7 +219,7 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(A, device):
 
 
 @pytest.mark.gpu_only
-def test_persistent_direct_solver_sequential_backward_pattern_2(A, device):
+def test_persistent_direct_solver_sequential_backward_pattern_2(a, device):
     """
     Test persistent solver sequential backward passes.
 
@@ -227,7 +227,7 @@ def test_persistent_direct_solver_sequential_backward_pattern_2(A, device):
     applied sequentially to two RHS vectors, and a single loss is computed using
     the results from both operations.
     """
-    A_sym = A + A.T
+    A_sym = a + a.T
     A_op = SparseDecoupledTensor.from_tensor(A_sym).to(device)
     n_dim = A_op.size(0)
 
@@ -252,7 +252,7 @@ def test_persistent_direct_solver_sequential_backward_pattern_2(A, device):
     loss = torch.sum(x1_via_sp * x2_via_sp)
     loss.backward()
 
-    A_sp_grad = A_op.val.grad.detach().clone()
+    A_sp_grad = A_op.values.grad.detach().clone()
     b1_sp_grad = b1.grad.detach().clone()
     b2_sp_grad = b2.grad.detach().clone()
 

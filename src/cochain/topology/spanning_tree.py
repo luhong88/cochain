@@ -5,7 +5,7 @@ import torch
 from jaxtyping import Bool, Float, Integer
 from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from cochain.sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
 from cochain.utils.search import splx_search
@@ -17,7 +17,7 @@ def _minimum_spanning_tree(
     exclusion_mask: Bool[Tensor, " edge"] | None = None,
     weights: Float[Tensor, " edge"] | None = None,
     keep_super_node: bool = False,
-) -> Integer[LongTensor, "2 mst_node"]:
+) -> Integer[Tensor, "2 mst_node"]:
     r"""
     Compute the minimum spanning forest over a graph.
 
@@ -65,7 +65,7 @@ def _minimum_spanning_tree(
 
     # If provided, the weights overwrite the adjacency matrix data.
     coo_data_full = (
-        adjacency.val.detach().cpu().numpy()
+        adjacency.values.detach().cpu().numpy()
         if weights is None
         else weights.detach().cpu().numpy()
     )
@@ -142,7 +142,7 @@ def _minimum_spanning_tree(
 # TODO: update to accommodate tet meshes
 def compute_tree_mask(
     topo_laplacian_0: Float[SparseDecoupledTensor, "global_vert global_vert"],
-    canon_edges: Integer[LongTensor, "global_edge local_vert=2"],
+    canon_edges: Integer[Tensor, "global_edge local_vert=2"],
     mass_1: Float[BaseDecoupledTensor, "global_edge global_edge"] | None = None,
     vert_rel_bc_mask: Bool[Tensor, " global_vert"] | None = None,
     cotree_mask: Bool[Tensor, " global_edge"] | None = None,
@@ -234,7 +234,7 @@ def compute_tree_mask(
 
 def _cbd_to_coface(
     cbd: Float[Tensor, "kp1_splx k_splx"], degree: int
-) -> tuple[Integer[LongTensor, " face"], Integer[LongTensor, "face degree"]]:
+) -> tuple[Integer[Tensor, " face"], Integer[Tensor, "face degree"]]:
     """
     Find the cofaces of all k-simplices of a given degree.
 

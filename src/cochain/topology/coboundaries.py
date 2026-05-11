@@ -3,7 +3,7 @@ __all__ = ["cbd_from_tri_mesh", "cbd_from_tet_mesh"]
 import torch
 from einops import rearrange, repeat
 from jaxtyping import Float, Integer
-from torch import LongTensor
+from torch import Tensor
 
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
 from ..utils.faces import enumerate_local_faces
@@ -11,10 +11,10 @@ from ..utils.perm_parity import compute_lex_rel_orient
 
 
 def cbd_from_tri_mesh(
-    tris: Integer[LongTensor, "tri tri_vert=3"],
+    tris: Integer[Tensor, "tri tri_vert=3"],
     dtype: torch.dtype = torch.float32,
 ) -> tuple[
-    Integer[LongTensor, "edge edge_vert=2"],
+    Integer[Tensor, "edge edge_vert=2"],
     Float[SparseDecoupledTensor, "edge vert"],
     Float[SparseDecoupledTensor, "tri edge"],
 ]:
@@ -129,11 +129,11 @@ def cbd_from_tri_mesh(
 
 
 def cbd_from_tet_mesh(
-    tets: Integer[LongTensor, "tet tet_vert=4"],
+    tets: Integer[Tensor, "tet tet_vert=4"],
     dtype: torch.dtype = torch.float32,
 ) -> tuple[
-    Integer[LongTensor, "edge edge_vert=2"],
-    Integer[LongTensor, "tri tri_vert=3"],
+    Integer[Tensor, "edge edge_vert=2"],
+    Integer[Tensor, "tri tri_vert=3"],
     Float[SparseDecoupledTensor, "edge vert"],
     Float[SparseDecoupledTensor, "tri edge"],
     Float[SparseDecoupledTensor, "tet tri"],

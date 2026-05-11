@@ -3,7 +3,7 @@ import math
 
 import torch
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...metric.tet import _tet_geometry
@@ -92,7 +92,7 @@ def dispatch_bc_grad_dot(
 def find_top_splx_faces(
     face_dim: int,
     mesh: SimplicialMesh,
-) -> tuple[Integer[LongTensor, "top_splx k_face"], Float[Tensor, "top_splx k_face"]]:
+) -> tuple[Integer[Tensor, "top_splx k_face"], Float[Tensor, "top_splx k_face"]]:
     """
     Given a simplicial n-complex, for each top level n-simplex, find all of its
     k-faces, their indices in the list of k-simplices in the mesh, and their

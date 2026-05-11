@@ -11,8 +11,8 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ._backward import dLdA_backward, dLdA_dLdM_backward
+from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 
 
 @dataclass
@@ -55,30 +55,31 @@ class SciPyEigshConfig:
         return config_list
 
 
-def _sp_op_comps_to_scipy_csr(
+# TODO: check whether int64 is allowed.
+def _sdt_to_scipy_csr(
     val: Float[Tensor, " nnz"],
     pattern: Integer[SparsityPattern, "r c"],
 ) -> Float[scipy.sparse.csr_array, "r c"]:
     sp_op_scipy = scipy.sparse.csr_array(
         (
             val.detach().contiguous().cpu().numpy(),
-            pattern.idx_col_int32.detach().contiguous().cpu().numpy(),
-            pattern.idx_crow_int32.detach().contiguous().cpu().numpy(),
+            pattern.idx_col.detach().contiguous().cpu().numpy(),
+            pattern.idx_crow.detach().contiguous().cpu().numpy(),
         ),
         shape=pattern.shape,
     )
     return sp_op_scipy
 
 
-def _sp_op_comps_to_scipy_csc(
+def _sdt_to_scipy_csc(
     val: Float[Tensor, " nnz"],
     pattern: Integer[SparsityPattern, "r c"],
 ) -> Float[scipy.sparse.csc_array, "r c"]:
     sp_op_scipy = scipy.sparse.csc_array(
         (
-            val[pattern.coo_to_csc_perm].detach().contiguous().cpu().numpy(),
-            pattern.idx_row_csc_int32.detach().contiguous().cpu().numpy(),
-            pattern.idx_ccol_int32.detach().contiguous().cpu().numpy(),
+            val[pattern.csc_to_coo_map].detach().contiguous().cpu().numpy(),
+            pattern.idx_row_csc.detach().contiguous().cpu().numpy(),
+            pattern.idx_ccol.detach().contiguous().cpu().numpy(),
         ),
         shape=pattern.shape,
     )
@@ -98,13 +99,14 @@ class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = _sp_op_comps_to_scipy_csr(A_val, A_pattern)
+            A_scipy = _sdt_to_scipy_csr(A_val, A_pattern)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = _sp_op_comps_to_scipy_csc(A_val, A_pattern)
+            A_scipy = _sdt_to_scipy_csc(A_val, A_pattern)
 
+        # In both cases, scipy supports CSC/CSR arrays with int64 index tensors.
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
             k=k,
@@ -172,16 +174,17 @@ class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = _sp_op_comps_to_scipy_csr(A_val, A_pattern)
+            A_scipy = _sdt_to_scipy_csr(A_val, A_pattern)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = _sp_op_comps_to_scipy_csc(A_val, A_pattern)
+            A_scipy = _sdt_to_scipy_csc(A_val, A_pattern)
 
         # M should always be in CSC format for LU factorization.
-        M_scipy = _sp_op_comps_to_scipy_csc(M_val, M_pattern)
+        M_scipy = _sdt_to_scipy_csc(M_val, M_pattern)
 
+        # In both cases, scipy supports CSC/CSR arrays with int64 index tensors.
         results = scipy.sparse.linalg.eigsh(
             A=A_scipy,
             k=k,
@@ -251,11 +254,11 @@ def _scipy_eigsh_no_batch(
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     if M is None:
         eig_vals, eig_vecs = _SciPyEigshStandardAutogradFunction.apply(
-            A.val, A.pattern, k, eps, compute_eig_vecs, config
+            A.values, A.pattern, k, eps, compute_eig_vecs, config
         )
     else:
         eig_vals, eig_vecs = _SciPyEigshGEPAutogradFunction.apply(
-            A.val, A.pattern, M.val, M.pattern, k, eps, compute_eig_vecs, config
+            A.values, A.pattern, M.values, M.pattern, k, eps, compute_eig_vecs, config
         )
 
     return eig_vals, eig_vecs
@@ -305,6 +308,8 @@ def scipy_eigsh(
     config: SciPyEigshConfig | None = None,
 ) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "c k"] | None]:
     """
+    Sparse eigensolver for symmetric square matrices using SciPy.
+
     This function provides a differentiable wrapper for the CPU-based
     `scipy.sparse.linalg.eigsh()` method.
 
@@ -331,6 +336,8 @@ def scipy_eigsh(
       eigenvectors are not returned.
     * The autograd through eigenvectors do not account for contributions from the
       unresolved eigenvectors.
+    * The sparse CSR/CSC index tensors of `A` and `M` can be either in int32 or
+      int64 dtype, but will be automatically downcast to int32 if possible.
     * The `eigsh()` function does not natively support batching. if
       `block_diag_batch` is True, the `A` `SparseDecoupledTensor` (and `M` if not `None`)
       will be split into individual sparse matrices and solved sequentially. The

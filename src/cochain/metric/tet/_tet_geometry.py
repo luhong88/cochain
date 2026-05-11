@@ -1,7 +1,7 @@
 import torch
-from einops import einsum, rearrange
+from einops import einsum
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 # Naming conventions for 3D mesh edges
 #
@@ -60,7 +60,7 @@ from torch import LongTensor, Tensor
 
 def compute_tet_signed_vols(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> Float[Tensor, " tet"]:
     """
     Compute the signed volume of each tetrahedron in a 3D mesh.
@@ -95,7 +95,7 @@ def compute_tet_signed_vols(
 
 def compute_d_tet_signed_vols_d_vert_coords(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> Float[Tensor, "tet local_vert=4 coord=3"]:
     """Compute the gradient of the signed volume with respect to vertex coordinates."""
     i, j, k, l = 0, 1, 2, 3
@@ -128,7 +128,7 @@ def compute_d_tet_signed_vols_d_vert_coords(
 
 def compute_bc_grads(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> tuple[Float[Tensor, " tet"], Float[Tensor, "tet local_vert=4 coord=3"]]:
     r"""
     Compute the gradients of the barycentric coordinates.
@@ -161,7 +161,7 @@ def compute_bc_grads(
 
 def compute_bc_grad_dots(
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
+    tets: Integer[Tensor, "tet local_vert=4"],
 ) -> tuple[Float[Tensor, " tet"], Float[Tensor, "tet local_vert=4 local_vert=3"]]:
     r"""
     Compute the inner products between barycentric coordinate gradients.
@@ -184,68 +184,3 @@ def compute_bc_grad_dots(
     )
 
     return tet_signed_vols, bc_grad_dots
-
-
-def compute_cotan_weights(
-    vert_coords: Float[Tensor, "global_vert coord=3"],
-    tets: Integer[LongTensor, "tet local_vert=4"],
-) -> Float[Tensor, "global_vert global_vert"]:
-    r"""
-    Compute the cotan weights associated with edges on a tet mesh.
-
-    For edge $e_{ij}$, the cotan weight is given by
-
-    $$W_{ij} = \frac 1 6 \sum_{kl} \|e_{kl}\| \cot\theta^{ij}_{kl}$$
-
-    where $kl$ sums over all vertices $k$ and $l$ such that $ijkl$ forms a tet,
-    $\|e_{kl}\|$ is the length of the edge $kl$, and $\theta^{ij}_{kl}$ is the
-    interior dihedral angle formed by the two triangles $ikl$ and $jkl$ that
-    shares $kl$ as an edge face.
-    """
-    i, j, k, l = 0, 1, 2, 3
-
-    tet_vols = torch.abs(compute_tet_signed_vols(vert_coords, tets))
-    tet_vert_coords = vert_coords[tets]
-
-    # For each tet ijkl and each edge s, compute the (outward) normal on the two
-    # triangles with o as the shared edge (i.e., th x o and hh x o).
-    th_cross_o: Float[Tensor, "tet 6 3"] = torch.cross(
-        tet_vert_coords[:, [k, i, l, i, j, i]] - tet_vert_coords[:, [l, l, k, l, k, j]],
-        tet_vert_coords[:, [i, j, j, j, i, k]] - tet_vert_coords[:, [l, l, k, l, k, j]],
-        dim=-1,
-    )
-    hh_cross_o: Float[Tensor, "tet 6 3"] = torch.cross(
-        tet_vert_coords[:, [j, j, j, k, i, l]] - tet_vert_coords[:, [l, l, k, l, k, j]],
-        tet_vert_coords[:, [k, k, i, i, l, i]] - tet_vert_coords[:, [l, l, k, l, k, j]],
-        dim=-1,
-    )
-
-    # For each tet ijkl and each edge s, compute the cotan weight associated
-    # with edge s, |o| * cot(θ_o) / 6, where theta_o is the interior dihedral
-    # angle formed by the two triangles with o as the shared edge. This contribution
-    # can also be written as <th x o, hh x o> / 36V, where V is the unsigned
-    # volume of the tet. To see this, use the fact that cot(θ_o) = <th x o, hh x o>/
-    # |(th x o) x (hh x o)| and the quadruple cross product term simplifies to
-    # |<th, o x hh>| |o| because of the identity (axb)x(cxd) = (a⋅(bxd))c-(a⋅(bxc)d).
-    weight_o: Float[Tensor, "tet 6"] = einsum(
-        th_cross_o,
-        hh_cross_o,
-        1.0 / (36.0 * tet_vols),
-        "tet edge coord, tet edge coord, tet -> tet edge",
-    )
-
-    # Scatter the local edge s contributions to form the global weight matrix.
-    idx_coo = rearrange(
-        tets[:, [[i, i, i, j, j, k], [j, k, l, k, l, l]]],
-        "tet vert edge -> vert (tet edge)",
-    )
-    vals = rearrange(weight_o, "tet edge -> (tet edge)")
-
-    n_verts = vert_coords.size(0)
-
-    asym_weights = torch.sparse_coo_tensor(
-        indices=idx_coo, values=vals, size=(n_verts, n_verts)
-    )
-    sym_weights = (asym_weights + asym_weights.T).coalesce()
-
-    return sym_weights

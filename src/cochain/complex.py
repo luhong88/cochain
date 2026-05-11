@@ -1,15 +1,22 @@
+import copy
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
 import torch
-from jaxtyping import Bool, Float, Integer
-from torch import LongTensor, Tensor
+from jaxtyping import Bool, Float, Int64, Integer
+from torch import Tensor
 
-from .sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+from .sparse.decoupled_tensor import (
+    BaseDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
 from .topology import boundaries, coboundaries
 from .utils.faces import GlobalFaces, enumerate_global_faces
+from .utils.parsing import parse_to
+from .utils.search import splx_search
 
 
 def _is_tensor_like(obj: Any) -> bool:
@@ -40,9 +47,9 @@ class SimplicialMesh:
         Float[SparseDecoupledTensor, "tet tri"],
     ]
     splx: tuple[
-        Integer[LongTensor, "edge 2"],
-        Integer[LongTensor, "tri 3"],
-        Integer[LongTensor, "tet 4"],
+        Integer[Tensor, "edge 2"],
+        Integer[Tensor, "tri 3"],
+        Integer[Tensor, "tet 4"],
     ]
     vert_coords: Float[Tensor, "vert 3"] | None
 
@@ -75,6 +82,10 @@ class SimplicialMesh:
         for tensor in self.splx:
             assert tensor.dtype == int_dtype
 
+        # A cache of sparsity patterns for computing/coalescing sparse operators
+        # whose sparsity pattern is dictated by mesh topology.
+        self.coalesced_patterns: dict[str, SparsityPattern] = {}
+
     def _apply(self, func):
         """Apply a function (recursively) to all tensor-like attributes."""
         for key, value in self.__dict__.items():
@@ -97,7 +108,7 @@ class SimplicialMesh:
         return self
 
     # TODO: also implement .cuda() and .cpu()
-    def to(self, *args, **kwargs):
+    def to(self, *args, **kwargs) -> "SimplicialMesh":
         """
         Move and/or casts the tensor-like attributes in the mesh.
 
@@ -111,37 +122,34 @@ class SimplicialMesh:
         * Casting to bool dtype has no effect.
         * Casting to complex dtypes is not permitted.
         """
-        # Determine the target device and dtype from args and kwargs.
-        input_device = kwargs.get("device", None)
-        input_dtype = kwargs.get("dtype", None)
-
-        for arg in args:
-            match arg:
-                case torch.dtype():
-                    input_dtype = arg
-                case torch.device() | str():
-                    input_device = arg
-                case torch.Tensor() | SimplicialMesh():
-                    input_device = arg.device
-                    input_dtype = arg.dtype
+        # Parse input arguments.
+        input_device, input_dtype, copy_flag, non_blocking, memory_format = parse_to(
+            *args, **kwargs
+        )
 
         # Reject complex dtypes.
         if (input_dtype is not None) and input_dtype.is_complex:
             raise TypeError(
-                f"Complex dtype {input_dtype} is not permitted for float tensors in SimplicialMesh."
+                f"Complex dtype '{input_dtype}' is not permitted for float "
+                "tensors in SimplicialMesh."
             )
 
-        # Extract remaining kwargs
-        other_kwargs = {k: v for k, v in kwargs.items() if k not in ["device", "dtype"]}
+        # Extract remaining kwargs.
+        other_kwargs = {
+            "copy": copy_flag,
+            "non_blocking": non_blocking,
+            "memory_format": memory_format,
+        }
 
-        # 2. Define the type-safe casting lambda
+        # Define the type-safe casting function.
         def custom_cast(t: Tensor | BaseDecoupledTensor):
-            # Target the core .val dtype for BaseDecoupledTensors, and standard
+            # Target the core .values dtype for BaseDecoupledTensors, and standard
             # .dtype for native tensors.
-            current_dtype = (
-                t.val.dtype if hasattr(t, "val") else getattr(t, "dtype", None)
-            )
             target_dtype = input_dtype
+            if hasattr(t, "values") and not callable(getattr(t, "values")):
+                current_dtype = t.values.dtype
+            else:
+                current_dtype = getattr(t, "dtype", None)
 
             if (target_dtype is not None) and (current_dtype is not None):
                 is_target_float = target_dtype.is_floating_point
@@ -167,8 +175,20 @@ class SimplicialMesh:
 
             return t.to(**cast_kwargs)
 
-        # Apply the custom cast recursively
-        return self._apply(custom_cast)
+        # Create a shallow copy to bypass __post_init__() and leave the original
+        # instance intact.
+        new_mesh = copy.copy(self)
+
+        # 2. Apply the custom cast recursively.
+        # This will update the references on new_mesh via setattr, leaving `self` intact.
+        new_mesh._apply(custom_cast)
+
+        # 3. Handle the coalesced_patterns cache dict.
+        new_mesh.coalesced_patterns = {}
+        for k, v in self.coalesced_patterns.items():
+            new_mesh.coalesced_patterns[k] = v.to(*args, **kwargs)
+
+        return new_mesh
 
     @property
     def dtype(self) -> torch.dtype:
@@ -190,19 +210,19 @@ class SimplicialMesh:
         return self.vert_coords.grad
 
     @property
-    def verts(self) -> Integer[LongTensor, "vert 1"]:
+    def verts(self) -> Integer[Tensor, "vert 1"]:
         return self.splx[0]
 
     @property
-    def edges(self) -> Integer[LongTensor, "edge 2"]:
+    def edges(self) -> Integer[Tensor, "edge 2"]:
         return self.splx[1]
 
     @property
-    def tris(self) -> Integer[LongTensor, "tri 3"]:
+    def tris(self) -> Integer[Tensor, "tri 3"]:
         return self.splx[2]
 
     @property
-    def tets(self) -> Integer[LongTensor, "tet 4"]:
+    def tets(self) -> Integer[Tensor, "tet 4"]:
         return self.splx[3]
 
     @property
@@ -299,7 +319,7 @@ class SimplicialMesh:
     def from_tri_mesh(
         cls,
         vert_coords: Float[Tensor, "vert 3"],
-        tris: Integer[LongTensor, "tri 3"],
+        tris: Integer[Tensor, "tri 3"],
     ):
         """
         Construct a special geometric simplicial 2-complex as a t riangulated 2D
@@ -336,7 +356,7 @@ class SimplicialMesh:
     def from_tet_mesh(
         cls,
         vert_coords: Float[Tensor, "vert 3"],
-        tets: Integer[LongTensor, "tet 4"],
+        tets: Integer[Tensor, "tet 4"],
     ):
         """
         Construct a special geometric simplicial 3-complex as a triangulated 3D
@@ -363,6 +383,76 @@ class SimplicialMesh:
             vert_coords=vert_coords,
         )
 
+    def _sparse_coalesced_matrix(
+        self,
+        operator: str,
+        indices: Int64[Tensor, "2 nz"],
+        values: Float[Tensor, " nz"],
+        size: tuple[int, int] | torch.Size,
+    ) -> SparseDecoupledTensor:
+        """
+        Construct coalsced sparse matrices for mesh operators.
+
+        There are some sparse operators in topology and DEC where the specific
+        values of the nonzero elements are metric-dependent, but the sparsity
+        pattern of the operator is strictly dictated by the topology/connectivity
+        of the simplicial mesh. In addition, such operators are often constructed
+        first locally by computing relevant quantities on each top-level simplex,
+        before the local quantities are scattered to generate a global operator.
+        In such cases, it is beneficial to cache the sparsity patterns of these
+        operators and the local-to-global index mapping required to coalesce the
+        local terms.
+
+        This class acts as a wrapper/replacement for `torch.sparse_coo_tensor()`.
+        When called during the final construction of the global operator, this
+        function checks whether the sparsity pattern of the operator is already
+        pre-computed and cached in the self `SimplicialMesh` object. If not, it
+        calls `torch.sparse_coo_tensor()` to construct the coalesced global
+        operator and computes the local-to-global index mapping, which is used
+        to perform a much faster 1D scatter-add for subsequent operator constructions.
+        """
+        pattern = self.coalesced_patterns.get(operator, None)
+
+        if pattern is None:
+            # If the sparsity pattern for an operator has not been cached yet,
+            # then rely on torch to generate the coalesced indices, but manually
+            # compute the
+
+            # from_tensor() handles the colesce() call.
+            sdt = SparseDecoupledTensor.from_tensor(
+                torch.sparse_coo_tensor(indices=indices, values=values, size=size)
+            )
+
+            # Co-opt the simplex search function to match the uncoalesced (row, col)
+            # index pairs to the coalsced pairs. Both sort_key_vert and sort_query_vert
+            # must be False so that the search treates (i, j) and (j, i) as
+            # distinct index pairs whenever i != j.
+            coalesce_idx_map = splx_search(
+                key_splx=sdt.pattern.idx_coo.T,
+                query_splx=indices.T,
+                sort_key_splx=False,
+                sort_key_vert=False,
+                sort_query_vert=False,
+                method="lex_sort",
+            )
+
+            object.__setattr__(sdt.pattern, "_coalesce_idx_map", coalesce_idx_map)
+            self.coalesced_patterns[operator] = sdt.pattern
+
+            return sdt
+
+        else:
+            coalesced_values = torch.zeros(
+                pattern._nnz(), dtype=values.dtype, device=values.device
+            )
+            coalesced_values.scatter_add_(
+                dim=0, index=pattern._coalesce_idx_map, src=values
+            )
+
+            sdt = SparseDecoupledTensor(pattern, coalesced_values)
+
+            return sdt
+
 
 @dataclass
 class MeshBatch(SimplicialMesh):
@@ -375,10 +465,10 @@ class MeshBatch(SimplicialMesh):
     # in the batch comes from the k-th simplicial complex.
     n_meshs: int
     ptrs: tuple[
-        Integer[LongTensor, " vert"],
-        Integer[LongTensor, " edge"],
-        Integer[LongTensor, " tri"],
-        Integer[LongTensor, " tet"],
+        Integer[Tensor, " vert"],
+        Integer[Tensor, " edge"],
+        Integer[Tensor, " tri"],
+        Integer[Tensor, " tet"],
     ]
 
 

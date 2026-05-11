@@ -192,7 +192,7 @@ def test_mass_matrix_backward(mass_matrix, two_tris_mesh: SimplicialMesh, device
     mesh.requires_grad_()
 
     mass = mass_matrix(mesh)
-    output = mass.val.sum()
+    output = mass.values.sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -210,6 +210,6 @@ def test_mass_matrix_gradcheck(mass_matrix, hollow_tet_mesh: SimplicialMesh, dev
         mesh = hollow_tet_mesh.to(device=device, dtype=torch.float64)
         mesh.vert_coords = test_vert_coords
         m = mass_matrix(mesh)
-        return m.val.sum()
+        return m.values.sum()
 
     assert torch.autograd.gradcheck(mass_fxn, (vert_coords,), fast_mode=True)

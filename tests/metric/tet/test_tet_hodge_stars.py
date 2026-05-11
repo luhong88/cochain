@@ -10,7 +10,7 @@ from cochain.metric.tet import tet_hodge_stars
 def test_star_3_on_two_tets(two_tets_mesh: SimplicialMesh, device):
     mesh = two_tets_mesh.to(device)
 
-    s3 = tet_hodge_stars.star_3(mesh).val.cpu().detach().numpy()
+    s3 = tet_hodge_stars.star_3(mesh).values.cpu().detach().numpy()
 
     true_s3 = 1 / igl.volume(
         mesh.vert_coords.cpu().detach().numpy(),
@@ -23,7 +23,7 @@ def test_star_3_on_two_tets(two_tets_mesh: SimplicialMesh, device):
 def test_star_2_on_reg_tet(reg_tet_mesh: SimplicialMesh, device):
     mesh = reg_tet_mesh.to(device)
 
-    s2 = tet_hodge_stars.star_2(mesh).val
+    s2 = tet_hodge_stars.star_2(mesh).values
 
     true_s2 = torch.ones_like(s2) * (1.0 / 6.0)
 
@@ -33,7 +33,7 @@ def test_star_2_on_reg_tet(reg_tet_mesh: SimplicialMesh, device):
 def test_star_1_on_reg_tet(reg_tet_mesh: SimplicialMesh, device):
     mesh = reg_tet_mesh.to(device)
 
-    s1 = tet_hodge_stars.star_1(mesh).val
+    s1 = tet_hodge_stars.star_1(mesh).values
 
     true_s1 = torch.ones_like(s1) * (1.0 / 6.0)
 
@@ -43,7 +43,7 @@ def test_star_1_on_reg_tet(reg_tet_mesh: SimplicialMesh, device):
 def test_star_0_on_two_tets(two_tets_mesh: SimplicialMesh, device):
     mesh = two_tets_mesh.to(device)
 
-    s0 = tet_hodge_stars.star_0(mesh).val.cpu().detach().numpy()
+    s0 = tet_hodge_stars.star_0(mesh).values.cpu().detach().numpy()
 
     true_s0 = igl.massmatrix(
         mesh.vert_coords.cpu().detach().numpy(),
@@ -68,7 +68,7 @@ def test_star_backward(star_op, two_tets_mesh: SimplicialMesh, device):
     mesh.requires_grad_()
 
     star = star_op(mesh)
-    output = star.val.sum()
+    output = star.values.sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -94,6 +94,6 @@ def test_star_gradcheck(star_op, two_tets_mesh: SimplicialMesh, device):
         mesh = two_tets_mesh.to(device=device, dtype=torch.float64)
         mesh.vert_coords = test_vert_coords
         s = star_op(mesh)
-        return s.val.sum()
+        return s.values.sum()
 
     assert torch.autograd.gradcheck(star_fxn, (vert_coords,), fast_mode=True)

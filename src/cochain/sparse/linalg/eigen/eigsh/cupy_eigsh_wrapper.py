@@ -8,8 +8,8 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ._backward import dLdA_backward
+from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ..base._backward import dLdA_backward
 
 try:
     import cupy as cp
@@ -31,7 +31,7 @@ except ImportError:
 if TYPE_CHECKING:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
-    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+    from ...solvers import DirectSolverConfig
 
 
 if _HAS_CUPY:
@@ -94,8 +94,11 @@ class _CuPyEigshAutogradFunction(torch.autograd.Function):
         stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             if cp_config.sigma is None:
+                # cupy supports CSR matrices with int64 indices.
                 A_cp = sp_op_comps_to_cp_csr(A_val, A_pattern)
             else:
+                # CuPyShiftInvSymOp only supports int32 index tensors due to
+                # sparse solver limitations.
                 A_cp = CuPyShiftInvSymOp(
                     A_val, A_pattern, cp_config.sigma, nvmath_config
                 )
@@ -165,7 +168,7 @@ def _cupy_eigsh_no_batch(
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
-        A.val, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
+        A.values, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
     )
 
     return eig_vals, eig_vecs
@@ -213,6 +216,8 @@ def cupy_eigsh(
     nvmath_config: DirectSolverConfig | None = None,
 ) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "c k"] | None]:
     """
+    Sparse eigensolver for symmetric square matrices using CuPy.
+
     This function provides a differentiable wrapper for the GPU-based
     `cupyx.scipy.sparse.linalg.eigsh()` method.
 
@@ -226,6 +231,10 @@ def cupy_eigsh(
       CuPy CSR matrix. The `v0` argument can be a torch tensor, but will be converted
       to a cupy array and copied. The use of CuPy `LinearOperator` objects for `A`
       is not supported.
+    * The shift-invert mode requires that the sparse CSR index tensors of `A` be
+      downcast to int32 due to underlying sparse solver requirement. The standard
+      mode can support both int32 and int64 index dtypes, but will automatically
+      downcast to int32 if possible.
     * The `eps` argument is used for Lorentzian broadening/regularization in the
       gradient calculation to prevent gradient explosion when the eigenvalues are
       (near) degenerate.
@@ -261,7 +270,7 @@ def cupy_eigsh(
     if not (_HAS_CUPY and _HAS_NVMATH):
         raise ImportError("cupy and nvmath-python backends required.")
 
-    from ..solvers.nvmath.nvmath_wrapper import DirectSolverConfig
+    from ...solvers import DirectSolverConfig
 
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors

@@ -3,7 +3,7 @@ from typing import Any
 import torch
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
@@ -13,10 +13,12 @@ from ...sparse.decoupled_tensor import (
 from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from ...utils.faces import enumerate_local_faces
 
+# TODO: investigate sparse coo tensor mesh caching.
+
 
 def element_based_tri_mixed_mass_matrix(
     n_edges: int,
-    tri_edge_idx: Integer[LongTensor, "tri local_edge=3"],
+    tri_edge_idx: Integer[Tensor, "tri local_edge=3"],
     tri_edge_orientations: Float[Tensor, "tri local_edge=3"],
     tri_areas: Float[Tensor, " tri"],
     bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"],
@@ -89,7 +91,7 @@ def element_based_tri_mixed_mass_matrix(
 
 def element_based_tet_mixed_mass_matrix(
     n_edges: int,
-    tet_edge_idx: Integer[LongTensor, "tet local_edge=6"],
+    tet_edge_idx: Integer[Tensor, "tet local_edge=6"],
     tet_edge_orientations: Float[Tensor, "tet local_edge=6"],
     tet_unsigned_vols: Float[Tensor, " tet"],
     bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],

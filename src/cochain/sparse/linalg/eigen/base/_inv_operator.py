@@ -4,7 +4,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ..solvers.nvmath.nvmath_wrapper import (
+from ...solvers.nvmath.nvmath_wrapper import (
     DirectSolverConfig,
     sp_literal_to_matrix_type,
 )

@@ -14,8 +14,8 @@ itemize_backend = pytest.mark.parametrize(
 
 
 @itemize_backend
-def test_splu_forward(A, backend, device):
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+def test_splu_forward(a, backend, device):
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -29,8 +29,8 @@ def test_splu_forward(A, backend, device):
 
 
 @itemize_backend
-def test_splu_forward_with_channel_dim(A, backend, device):
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+def test_splu_forward_with_channel_dim(a, backend, device):
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -51,8 +51,8 @@ def test_splu_forward_with_channel_dim(A, backend, device):
     "n_ch1, n_ch2",
     [(2, 3), (2, 1), (1, 2)],
 )
-def test_splu_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device):
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+def test_splu_forward_with_complex_channel_dim(a, n_ch1, n_ch2, backend, device):
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -69,13 +69,13 @@ def test_splu_forward_with_complex_channel_dim(A, n_ch1, n_ch2, backend, device)
 
 # TODO: backward test should also test channel dims
 @itemize_backend
-def test_splu_backward(A, backend, device):
+def test_splu_backward(a, backend, device):
     """
     Let A@x=b and define the loss function as L = <x, v>. Check that the gradients
     dLdA and dLdb computed through the adjoint method matches the autograd gradients
     from torch.linalg.solve() (using dense A).
     """
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     A_dense = A_op.to_dense()
     n_dim = A_op.size(0)
 
@@ -90,7 +90,7 @@ def test_splu_backward(A, backend, device):
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    A_sp_grad = A_op.val.grad.detach().clone()
+    A_sp_grad = A_op.values.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -112,8 +112,8 @@ def test_splu_backward(A, backend, device):
 
 
 @itemize_backend
-def test_persistent_splu_forward(A, backend, device):
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+def test_persistent_splu_forward(a, backend, device):
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     A_dense = A_op.to_dense()
 
     n_dim = A_op.size(0)
@@ -135,7 +135,7 @@ def test_persistent_splu_forward(A, backend, device):
 
 
 @itemize_backend
-def test_persistent_splu_sequential_backward_pattern_1(A, backend, device):
+def test_persistent_splu_sequential_backward_pattern_1(a, backend, device):
     """
     Test persistent solver sequential backward passes.
 
@@ -143,7 +143,7 @@ def test_persistent_splu_sequential_backward_pattern_1(A, backend, device):
     applied sequentially to two RHS vectors, and the gradient is cleared in between
     the two applications.
     """
-    A_op = SparseDecoupledTensor.from_tensor(A).to(device)
+    A_op = SparseDecoupledTensor.from_tensor(a).to(device)
     n_dim = A_op.size(0)
 
     A_dense = A_op.to_dense()
@@ -163,11 +163,11 @@ def test_persistent_splu_sequential_backward_pattern_1(A, backend, device):
     loss1 = torch.sum(x1_via_sp * v1)
     loss1.backward()
 
-    A_sp_grad1 = A_op.val.grad.detach().clone()
+    A_sp_grad1 = A_op.values.grad.detach().clone()
     b1_sp_grad = b1.grad.detach().clone()
 
     # Repeat this process with a different b and v.
-    A_op.val.grad = None  # clear the existing gradient on A_op.
+    A_op.values.grad = None  # clear the existing gradient on A_op.
 
     b2 = torch.randn(n_dim).to(device)
     v2 = torch.randn(n_dim).to(device)
@@ -177,7 +177,7 @@ def test_persistent_splu_sequential_backward_pattern_1(A, backend, device):
     loss2 = torch.sum(x2_via_sp * v2)
     loss2.backward()
 
-    A_sp_grad2 = A_op.val.grad.detach().clone()
+    A_sp_grad2 = A_op.values.grad.detach().clone()
     b2_sp_grad = b2.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -214,7 +214,7 @@ def test_persistent_splu_sequential_backward_pattern_1(A, backend, device):
 
 
 @itemize_backend
-def test_persistent_splu_sequential_backward_pattern_2(A, backend, device):
+def test_persistent_splu_sequential_backward_pattern_2(a, backend, device):
     """
     Test persistent solver sequential backward passes.
 
@@ -222,7 +222,7 @@ def test_persistent_splu_sequential_backward_pattern_2(A, backend, device):
     applied sequentially to two RHS vectors, and a single loss is computed using
     the results from both operations.
     """
-    A_sym = A + A.T
+    A_sym = a + a.T
     A_op = SparseDecoupledTensor.from_tensor(A_sym).to(device)
     n_dim = A_op.size(0)
 
@@ -247,7 +247,7 @@ def test_persistent_splu_sequential_backward_pattern_2(A, backend, device):
     loss = torch.sum(x1_via_sp * x2_via_sp)
     loss.backward()
 
-    A_sp_grad = A_op.val.grad.detach().clone()
+    A_sp_grad = A_op.values.grad.detach().clone()
     b1_sp_grad = b1.grad.detach().clone()
     b2_sp_grad = b2.grad.detach().clone()
 

@@ -3,7 +3,7 @@ from typing import Literal
 import torch
 from einops import einsum, repeat
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ...utils.bary_coords import get_k_splx_barycenters, get_tri_circumcenters
 from ..interpolate import _bary_whitney_tet_cochain_1, _bary_whitney_tri_cochain_1
@@ -12,8 +12,8 @@ from ..interpolate import _bary_whitney_tet_cochain_1, _bary_whitney_tri_cochain
 def element_based_tri_local_flat(
     vec_field: Float[Tensor, "tri coord=3"],
     vert_coords: Float[Tensor, "global_vert coord=3"],
-    tri_edge_idx: Integer[LongTensor, "tri local_edge=3"],
-    edges: Integer[LongTensor, "global_edge local_vert=2"],
+    tri_edge_idx: Integer[Tensor, "tri local_edge=3"],
+    edges: Integer[Tensor, "global_edge local_vert=2"],
 ) -> Float[Tensor, " global_edge"]:
     """
     Compute the flat of a piecewise constant vector field associated with the tris
@@ -56,8 +56,8 @@ def element_based_tri_local_flat(
 def element_based_tet_local_flat(
     vec_field: Float[Tensor, "tet coord=4"],
     vert_coords: Float[Tensor, "global_vert coord=4"],
-    tet_edge_idx: Integer[LongTensor, "tet local_edge=6"],
-    edges: Integer[LongTensor, "global_edge local_vert=2"],
+    tet_edge_idx: Integer[Tensor, "tet local_edge=6"],
+    edges: Integer[Tensor, "global_edge local_vert=2"],
 ) -> Float[Tensor, " global_edge"]:
     """
     Compute the flat of a piecewise constant vector field associated with the tets
@@ -99,8 +99,8 @@ def element_based_tet_local_flat(
 
 def element_based_tri_local_sharp(
     cochain_1: Float[Tensor, " edge"],
-    tris: Integer[LongTensor, "tri vert=3"],
-    tri_edge_idx: Integer[LongTensor, "tri edge=3"],
+    tris: Integer[Tensor, "tri vert=3"],
+    tri_edge_idx: Integer[Tensor, "tri edge=3"],
     tri_edge_orientations: Float[Tensor, "tri edge=3"],
     vert_coords: Float[Tensor, "vert coord=3"],
     bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"],
@@ -139,7 +139,7 @@ def element_based_tri_local_sharp(
 
 def element_based_tet_local_sharp(
     cochain_1: Float[Tensor, " edge"],
-    tet_edge_idx: Integer[LongTensor, "tet edge=6"],
+    tet_edge_idx: Integer[Tensor, "tet edge=6"],
     tet_edge_orientations: Float[Tensor, "tet edge=6"],
     bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
 ) -> Float[Tensor, "tet coord=3"]:

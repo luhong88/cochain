@@ -4,7 +4,7 @@ from typing import Any
 import nvmath.sparse.advanced as nvmath_sp
 import torch
 from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from torch import Tensor
 
 from ....decoupled_tensor import SparsityPattern
 
@@ -57,10 +57,10 @@ def nvmath_adjoint_method(
         # Extract the nonzero dLdA element row and col indices, accounting for
         # batch dimensions, and use them to extract the corresponding elements
         # from lambda_ and x to construct the nonzero outer product elements.
-        r_idx: Integer[LongTensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
+        r_idx: Integer[Tensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
             list(range(n_batch)) + [n_batch]
         ]
-        c_idx: Integer[LongTensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
+        c_idx: Integer[Tensor, "n_batch+1 nnz"] = A_pattern.idx_coo[
             list(range(n_batch)) + [n_batch + 1]
         ]
         # Note that r_idx.unbind(0) is equivalent to *r_idx for indexing.

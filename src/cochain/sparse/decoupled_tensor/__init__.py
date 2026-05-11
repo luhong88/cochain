@@ -1,4 +1,11 @@
-from ._base_decoupled_tensor import BaseDecoupledTensor
-from ._diag_decoupled_tensor import DiagDecoupledTensor
-from ._pattern import SparsityPattern
-from ._sparse_decoupled_tensor import SparseDecoupledTensor
+__all__ = [
+    "BaseDecoupledTensor",
+    "DiagDecoupledTensor",
+    "SparseDecoupledTensor",
+    "SparsityPattern",
+]
+
+from .base_decoupled_tensor import BaseDecoupledTensor
+from .diag_decoupled_tensor import DiagDecoupledTensor
+from .pattern import SparsityPattern
+from .sparse_decoupled_tensor import SparseDecoupledTensor

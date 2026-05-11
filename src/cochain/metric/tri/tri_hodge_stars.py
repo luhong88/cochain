@@ -43,27 +43,26 @@ def star_2(tri_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
 def _star_1_circumcentric(
     tri_mesh: SimplicialMesh,
 ) -> Float[DiagDecoupledTensor, "edge edge"]:
-    # The cotan weights matrix (i.e., off-diagonal elements of the stiffness matrix)
+    # The cotan weight matrix (i.e., off-diagonal elements of the stiffness matrix)
     # already contains the desired values; i.e., S_ij = -0.5*sum_k[cot_k] for all
     # vertices k such that ijk forms a triangle.
-    weights: Float[Tensor, "global_vert global_vert"] = compute_cotan_weights(
-        tri_mesh.vert_coords, tri_mesh.tris
+    r_idx_asym, c_idx_asym, vals = compute_cotan_weights(tri_mesh)
+
+    # Sort the indices of the asymmetric cotan weight matrix so that the local
+    # values coalesce to an upper triangular global weight matrix.
+    idx_coo_triu = torch.sort(torch.stack((r_idx_asym, c_idx_asym)), dim=0).values
+
+    weights_triu = tri_mesh._sparse_coalesced_matrix(
+        operator="tri_star_1_circumcentric",
+        indices=idx_coo_triu,
+        values=-vals,
+        size=(tri_mesh.n_verts, tri_mesh.n_verts),
     )
 
-    # Identify the location of the canonical edge ij in the sparse W_ij indices,
-    # and use the location to extract the cotan values.
-    subset_idx = splx_search(
-        key_splx=weights.indices().T,
-        query_splx=tri_mesh.edges,
-        sort_key_splx=False,
-        sort_key_vert=False,
-        sort_query_vert=False,
-    )
-    subset_vals = weights.values()[subset_idx]
-
-    return DiagDecoupledTensor(
-        -subset_vals
-    )  # note the negative sign to get dual edge lengths
+    # The way the nonzero elements W_ij are organized in the upper triangular sparse
+    # COO/CSR format already corresponds to the ordering of the canonical edges, since
+    # both follow the lex order. Note the negative sign to get dual edge lengths.
+    return DiagDecoupledTensor(weights_triu.values)
 
 
 def _star_1_barycentric(

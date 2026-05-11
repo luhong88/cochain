@@ -1,20 +1,23 @@
 from typing import Literal
 
 import torch
-from jaxtyping import Float, Integer
-from torch import LongTensor, Tensor
+from jaxtyping import Int64, Integer
+from torch import Tensor
 
 
 def coalesced_coo_to_compressed_idx(
-    coo_idx: Integer[LongTensor, "sp nnz"],
+    coo_idx: Integer[Tensor, "sp nz"],
     shape: torch.Size,
     *,
     format: Literal["crow", "ccol"],
     dtype: torch.dtype | None = None,
-) -> Integer[LongTensor, "*b nnz/b"]:
+) -> Integer[Tensor, "*b nz_per_b"]:
     """
-    Convert a coalesced, sparse coo index tensor to a compressed row idx (crow)
-    tensor or a compressed col idx (ccol) tensor, depending on the 'format' argument.
+    Convert COO indices to compressed formats.
+
+    The input `coo_idx` is assumed to be coalesced and allowed to have either
+    one or zero batch dim. The output compressed index tensor is guaranteed to
+    be contiguous.
     """
     if dtype is None:
         dtype = coo_idx.dtype
@@ -25,16 +28,16 @@ def coalesced_coo_to_compressed_idx(
     # but the same logic applies for ccol by switching the target_idx.
     match format:
         case "crow":
-            target_idx = -2
+            target_dim = -2
         case "ccol":
-            target_idx = -1
+            target_dim = -1
         case _:
             raise ValueError(f"Unknown format argument '{format}'.")
 
     match len(shape):
         case 2:
-            n_row = shape[target_idx]
-            row_idx = coo_idx[target_idx].to(dtype)
+            n_row = shape[target_dim]
+            row_idx = coo_idx[target_dim].to(dtype)
             # Compress row idx using bincount; minlength=rows accounts for empty rows.
             # Note that this works even if row_idx is not sorted.
             counts = torch.bincount(row_idx, minlength=n_row)
@@ -44,13 +47,13 @@ def coalesced_coo_to_compressed_idx(
             return crow_idx.contiguous()
 
         case 3:
-            n_row = shape[target_idx]
+            n_row = shape[target_dim]
             n_batch = shape[0]
             nnz = coo_idx.size(1)
             nnz_per_batch = nnz // n_batch
 
             row_idx_batched = (
-                coo_idx[target_idx].view(n_batch, nnz_per_batch).to(dtype=dtype)
+                coo_idx[target_dim].view(n_batch, nnz_per_batch).to(dtype=dtype)
             )
 
             # Compute histogram of row counts per batch. The scatter_add_() function
@@ -62,18 +65,26 @@ def coalesced_coo_to_compressed_idx(
             ones = torch.tensor(1, dtype=dtype, device=device).expand_as(
                 row_idx_batched
             )
-            counts.scatter_add_(1, row_idx_batched + 1, ones)
+            # counts[b][row_idx_batched[b][r]] = ones[b][r]
+            counts.scatter_add_(dim=1, index=row_idx_batched + 1, src=ones)
             crow_idx = counts.cumsum(dim=1, dtype=dtype)
 
             return crow_idx.contiguous()
 
 
-def coalesced_coo_to_col_idx(
-    coo_idx: Integer[LongTensor, "sp nnz"],
+def coalesced_coo_to_csr_col_idx(
+    coo_idx: Integer[Tensor, "sp nz"],
     shape: torch.Size,
     *,
     dtype: torch.dtype | None = None,
-) -> Integer[LongTensor, "*b nnz/b"]:
+) -> Integer[Tensor, "*b nz_per_b"]:
+    """
+    Extract the column indices from a COO index tensor.
+
+    The input `coo_idx` is assumed to be coalesced and allowed to have either
+    one or zero batch dim. The output column index tensor is guaranteed to
+    be contiguous.
+    """
     if dtype is None:
         dtype = coo_idx.dtype
 
@@ -92,13 +103,16 @@ def coalesced_coo_to_col_idx(
             return col_idx_batched.contiguous()
 
 
-def get_csc_sort_perm(
-    coo_idx: Integer[LongTensor, "sp nnz"],
+def get_csc_to_coo_map(
+    coo_idx: Integer[Tensor, "sp nz"],
     shape: torch.Size,
-) -> Integer[LongTensor, " nnz"]:
+) -> Int64[Tensor, " nz"]:
     """
-    Returns a permutation that reorders a row-sorted coo tensor into a col-sorted,
-    csc-ready order.
+    Compute the permutation to convert from col-major to row-major order.
+
+    The input `coo_idx` is assumed to be coalesced and allowed to have either
+    one or zero batch dim. The output permutation tensor is guaranteed to
+    be contiguous and always in int64 dtype.
     """
     match len(shape):
         case 2:
@@ -111,7 +125,7 @@ def get_csc_sort_perm(
         case 3:
             n_batch = shape[0]
             nnz = coo_idx.size(1)
-            nnz_per_batch = nnz_per_batch = nnz // n_batch
+            nnz_per_batch = nnz // n_batch
 
             # View cols as (batch, nnz_per_batch) to sort per-batch independently
             col_idx_batched = coo_idx[2].view(n_batch, nnz_per_batch)
@@ -129,13 +143,20 @@ def get_csc_sort_perm(
             return perm.contiguous()
 
 
-def coalesced_coo_to_row_idx(
-    coo_idx: Integer[LongTensor, "sp nnz"],
+def coalesced_coo_to_csc_row_idx(
+    coo_idx: Integer[Tensor, "sp nz"],
     shape: torch.Size,
-    perm: Integer[LongTensor, " nnz"],
+    perm: Integer[Tensor, " nz"],
     *,
     dtype: torch.dtype | None = None,
-) -> Integer[LongTensor, "*b nnz/b"]:
+) -> Integer[Tensor, "*b nz_per_b"]:
+    """
+    Extract the row indices from a COO index tensor.
+
+    The input `coo_idx` is assumed to be coalesced and allowed to have either
+    one or zero batch dim. The output row index tensor is guaranteed to be
+    contiguous and sorted for the CSC format.
+    """
     if dtype is None:
         dtype = coo_idx.dtype
 
@@ -151,52 +172,3 @@ def coalesced_coo_to_row_idx(
             row_idx_sorted = coo_idx[1][perm].view(n_batch, nnz_per_batch).to(dtype)
 
             return row_idx_sorted.contiguous()
-
-
-# TODO: force int64 for radix packing safety
-def project_and_extract_cnz_vals(
-    src_coo: Integer[LongTensor, "2 src_nnz"],
-    src_val: Float[Tensor, " source_nnz"],
-    target_coo: Integer[LongTensor, "2 target_nnz"],
-    target_shape: torch.Size,
-) -> Integer[LongTensor, " target_nnz"]:
-    """
-    For two coalesced sparse coo tensors "source" and "target", find the indices
-    of the nonzero (r, c) index pairs of the source that is also present in the
-    target, and then return a target-shaped value tensor filled with source values
-    at these index pair locations.
-
-    This function is most performant if the source has more nnz than the target.
-    """
-    target_nnz = target_coo.size(1)
-    src_nnz = src_coo.size(1)
-
-    if target_nnz == 0 or src_nnz == 0:
-        return torch.empty(0, dtype=src_val.dtype, device=src_coo.device)
-
-    # Perform a radix packing to index the nonzero index pairs in the source
-    # and target coo index tensors.
-    target_idx_packed = target_coo[0] * target_shape[1] + target_coo[1]
-    src_idx_packed = src_coo[0] * target_shape[1] + src_coo[1]
-
-    # Use searchsorted() to find the insertion location of target index pairs
-    # into the list of source index pairs.
-    target_idx_insert_loc = torch.searchsorted(src_idx_packed, target_idx_packed)
-    target_idx_insert_loc_clipped = torch.clip(target_idx_insert_loc, 0, src_nnz - 1)
-
-    # If a target index pair has a matching source index pair, then its packed
-    # index matches the packed index of the source index pair at its insertion
-    # location. Checking this gives a "common nonzero" mask for the target index pairs.
-    cnz_target_idx_mask = (
-        src_idx_packed[target_idx_insert_loc_clipped] == target_idx_packed
-    )
-
-    # For each nonzero index pair in the target, if it has a matching index pair
-    # in the source, find the source value at this index pair, otherwise returns 0.
-    cnz_src_val = torch.where(
-        cnz_target_idx_mask,
-        src_val[target_idx_insert_loc_clipped],
-        torch.tensor(0.0, dtype=src_val.dtype, device=src_val.device),
-    )
-
-    return cnz_src_val.contiguous()
