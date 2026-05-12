@@ -1,3 +1,5 @@
+__all__ = ["WhitneyWedgeL2Projector"]
+
 from typing import Literal
 
 import torch

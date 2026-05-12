@@ -1,3 +1,5 @@
+__all__ = ["DeRhamMap"]
+
 from dataclasses import dataclass
 
 import torch

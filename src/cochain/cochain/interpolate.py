@@ -1,3 +1,5 @@
+__all__ = ["barycentric_whitney_map"]
+
 from typing import Literal
 
 import torch
