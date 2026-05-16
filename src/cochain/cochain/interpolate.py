@@ -320,12 +320,61 @@ def _bary_embed(
     n_k_splx: int,
 ) -> Float[Tensor, "m_splx k_face pt m_vert"]:
     """
-    Embed barycentric coordinates for a k-simplex onto the barycentric coordinates
-    of the k-dimensional faces of a higher m-simplex. Note that the `k_splx`
-    dimension of `k_splx_bary_coords` is allowed to be trivial.
+    Embed the barycentric coordinates onto the faces of higher-order simplices.
 
-    Example:
+    Parameters
+    ----------
+    m_splx : [m_splx, m_vert]
+        A list of m-simplices whose k-faces are the embedding targets.
+    k_splx_bary_coords : [k_splx, pt, k_vert]
+        A list of barycentric coordinates defined on the canonical k-simplices.
+        If the `k_splx` dimension is trivial, then it is assumed that the same
+        barycentric coordinates are defined on all canonical k-simplices.
+    k_faces_local_vert_idx : [k_face, k_vert]
+        The k-face definitions of the m-simplices in terms of local vertex indices.
+        This defines the set of k-faces per m-simplex onto which the barycentric
+        coordinates are embedded. The local vertex indices for each k-face should
+        be sorted in ascending order.
+    k_faces_global_idx : [m_splx, k_face]
+        The indices of the k-faces on the list of canonical k-simplices.
+    n_k_splx
+        The number of canonical k-simplices.
 
+    Returns
+    -------
+    [m_splx, k_face, pt, m_vert]
+        The embedded barycentric coordinates.
+
+    Notes
+    -----
+    There are some subtleties with regard to how this function handles the
+    vertex ordering along the `m_vert` dimension in the returned tensor.
+
+    Consider a simple example where a canonical 1-simplex `[28, 29]` is the face
+    of two 2-simplices `[27, 28, 29]` and `[30, 29, 28]` in a tri mesh. If one were
+    to embed the barycentric coordinate `[0.2, 0.8]` to the local 1-face/edge `12`,
+    then the embedded barycentric coordinate would be `[0.0, 0.2, 0.8]` for both
+    2-simplices; however, the embedded coordinates (in the real space) are actually
+    `0.2*x28 + 0.8*x29` for the first 2-simplex but `0.8*x28 + 0.2*x29` for the
+    second 2-simplex. While this is the correct embedding locally within each
+    2-simplex, it becomes a problem later in `_barycentric_whitney_map_boundary()`
+    when the 1-forms interpolated on the 1-faces are used to produce an averaged
+    1-form per canonical 1-simplex, where this mismatch causes the 1-form evaluated
+    at the wrong points to be averaged together.
+
+    To prevent this problem, this function reorders the k-face vertices to conform
+    to the vertex ordering in the corresponding canonical k-simplex prior to
+    performing the barycentric coordinate embedding. Continuing with the example
+    above, this would mean that the embdeed barycentric coordinates for edge `12`
+    is `[0.0, 0.2, 0.8]` for the first 2-simplex, but `[0.0, 0.8, 0.2]` for the second
+    2-simplex.
+
+    Note that this permutation correction is necessary (1) on top of the k-form
+    sign corrections, (2) even if the set of points is invariant to vertex permutation,
+    and (3) even if the Whitney bases used are of the lowest order.
+
+    Examples
+    --------
     Given a two-point quadrature rule on a 1-simplex
     ```
     k_splx_bary_coords = [
@@ -349,12 +398,10 @@ def _bary_embed(
      [[0.0, 0.2, 0.8],
       [0.0, 0.8, 0.2]]]
     ```
-    Note that this function also handles orientation/permutation mismatch between
-    the k-faces and the canonical k-simplices (not shown in this example).
     """
     # Collect shape/size information.
     n_m_splx, n_m_verts = m_splx.shape
-    n_pts = k_splx_bary_coords.size(1)
+    _, n_pts, n_k_verts = k_splx_bary_coords.shape
     n_k_faces_per_m_splx = k_faces_local_vert_idx.size(0)
 
     # In case the first dimension of k_splx_bary_coords is trivial, inflate to the
@@ -369,41 +416,42 @@ def _bary_embed(
         k_splx_bary_coords_shaped[k_faces_global_idx]
     )
 
-    # For each k-face of an m-simplex, identify the permutation required to reorder
-    # the corresponding canonical k-simplex to match the k-face. For example,
-    # For a 2-face [30, 2, 40], the permutation [1, 0, 2] is required to permute
-    # the canonical 2-simplex [2, 30, 40] to [30, 2, 40].
+    # Compute the permutation required to reorder the k-faces to match the
+    # canonical k-simplices.
     all_k_faces: Integer[Tensor, "m_splx k_face k_vert"] = m_splx[
         :, k_faces_local_vert_idx
     ]
+    face_to_splx_map = torch.argsort(all_k_faces, dim=-1, descending=False)
 
-    # TODO: simplify the logic and remove one argsort with scattering.
-    # Note that the two argsort() here is required; the first argsort() computes
-    # the permutation required to reorder the k-face to match the canonical
-    # k-simplex, and the second argsort() computes the inverse of this mapping.
-    k_face_perm_map = repeat(
-        torch.argsort(
-            torch.argsort(all_k_faces, dim=-1, descending=False),
-            dim=-1,
-            descending=False,
+    # Compute the inverse of this permutation using scatter(); this is equivalent
+    # to splx_to_face_map = torch.argsort(face_to_splx_map, dim=-1).
+    splx_to_face_map = torch.empty_like(face_to_splx_map)
+    k_verts = repeat(
+        torch.arange(
+            n_k_verts,
+            dtype=face_to_splx_map.dtype,
+            device=face_to_splx_map.device,
         ),
+        "k_vert -> m_splx k_face k_vert",
+        m_splx=n_m_splx,
+        k_face=n_k_faces_per_m_splx,
+    )
+    # k_splx_to_face_map[m][k][k_face_to_splx_map[m][k][v]]=k_verts[m][k][v]
+    splx_to_face_map.scatter_(
+        dim=-1,
+        index=face_to_splx_map,
+        src=k_verts,
+    )
+    # Expand in preparation for gather().
+    k_face_perm_map = repeat(
+        splx_to_face_map,
         "m_splx k_face k_vert -> m_splx k_face pt k_vert",
         pt=n_pts,
     )
 
-    # Use the permutation map to reorder the last dimension of k_splx_bary_coords_scattered.
-    # This is required because the local k-face definition in k_faces_local_vert_idx
-    # ignores the orientation/permutation difference between a k-face and the
-    # canonical k-simplex. For example, if a canonical 1-simplex [28, 29] is the
-    # face of two 2-simplices [27, 28, 29] and [30, 29, 28], then the barycentric
-    # coordinates evaluated at edge 12 in the two 2-simplices are flipped. This
-    # becomes a problem later on in _barycentric_whitney_map_boundary() when the
-    # k-forms interpolated on the k-faces are used to produce an averaged k-form
-    # per canonical k-simplex, where the k-form evaluated at the wrong points may
-    # be averaged together. Note that this permutation correction is necessary
-    # (1) on top of the k-form sign corrections, (2) even if the set of points
-    # is invariant to vertex permutation, and (3) even if the Whitney bases used
-    # are of the lowest order.
+    # Use k_face_perm_map to reorder the last dimension of k_splx_bary_coords_scattered
+    # so that the vertex ordering in the k-faces match that of the corresponding
+    # canonical k-simplices.
     k_splx_bary_coords_permuted = torch.gather(
         input=k_splx_bary_coords_scattered, dim=-1, index=k_face_perm_map
     )
@@ -425,6 +473,8 @@ def _bary_embed(
         device=k_splx_bary_coords.device,
     )
 
+    # bary_coords_embedded[m][k][p][k_faces_local_vert_idx_shaped[m][k][p][v]] =
+    # k_splx_bary_coords_permuted[m][k][p][v]
     bary_coords_embedded.scatter_(
         dim=-1, index=k_faces_local_vert_idx_shaped, src=k_splx_bary_coords_permuted
     )
