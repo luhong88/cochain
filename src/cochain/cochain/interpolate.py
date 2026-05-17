@@ -11,7 +11,6 @@ from ..complex import SimplicialMesh
 from ..metric.tet import _tet_geometry
 from ..metric.tri import _tri_geometry
 from ..utils.faces import enumerate_local_faces
-from ..utils.search import splx_search
 
 
 def _bary_whitney_tri_cochain_0(
@@ -263,7 +262,10 @@ def _bary_whitney_tri(
                 bary_coords_grad=bary_coords_grad,
             )
         case _:
-            raise ValueError()
+            raise ValueError(
+                "'k' must be a nonnegative integer less than or equal to the "
+                "dimension of the mesh."
+            )
 
 
 def _bary_whitney_tet(
@@ -309,7 +311,10 @@ def _bary_whitney_tet(
                 bary_coords=bary_coords,
             )
         case _:
-            raise ValueError()
+            raise ValueError(
+                "'k' must be a nonnegative integer less than or equal to the "
+                "dimension of the mesh."
+            )
 
 
 def _bary_embed(
@@ -494,7 +499,7 @@ def _barycentric_whitney_map_interior(
         case 3:
             return _bary_whitney_tet(k, k_cochain, bary_coords, mesh)
         case _:
-            raise ValueError()
+            raise ValueError("Only tri and tet meshes are supported.")
 
 
 def _barycentric_whitney_map_boundary(
@@ -505,25 +510,13 @@ def _barycentric_whitney_map_boundary(
     reduction: Literal["mean", "none"] = "none",
 ) -> Float[Tensor, "m_splx k_face pt *ch coord"] | Float[Tensor, "k_splx pt *ch coord"]:
     m = mesh.dim
-    n_k_splx = mesh.splx[k].size(0)
+    n_k_splx = mesh.n_splx[k]
     n_pts = bary_coords.size(-2)
 
     local_face_idx: Integer[Tensor, "k_face k_vert"] = enumerate_local_faces(
         splx_dim=m, face_dim=k, device=mesh.device
     )
-
-    # Find the global indices of all k-faces.
-    # TODO: this is not ideal since we are repeating topo calculations
-    all_faces = mesh.splx[m][:, local_face_idx]
-
-    global_face_idx: Integer[Tensor, "m_splx k_face"] = splx_search(
-        key_splx=mesh.splx[k],
-        query_splx=all_faces,
-        sort_key_splx=False,
-        sort_key_vert=False,
-        sort_query_vert=True,
-        method="lex_sort",
-    )
+    global_face_idx = mesh.faces[k].idx
 
     # Perform barycentric coordinate embedding and then compute the whitney
     # interpolation at the top simplex level.
@@ -536,13 +529,13 @@ def _barycentric_whitney_map_boundary(
     )
 
     k_forms = _barycentric_whitney_map_interior(
-        k,
-        k_cochain,
-        rearrange(
+        k=k,
+        k_cochain=k_cochain,
+        bary_coords=rearrange(
             bary_coords_embedded,
             "m_splx k_face pt m_vert -> m_splx (k_face pt) m_vert",
         ),
-        mesh,
+        mesh=mesh,
     )
 
     match reduction:
@@ -594,50 +587,75 @@ def barycentric_whitney_map(
     boundary_reduction: Literal["mean", "none"] = "none",
 ) -> Tensor:
     """
-    This function implements an "element-local" version of the Whitney map for
-    interpolating discrete k-cochains using Whitney basis functions of the lowest
-    order.
+    Interpolate discrete k-cochains using Whitney basis functions of the lowest order.
 
-    In the `interior` mode, the function maps the k-cochains to k-forms interpolated
-    at local barycentric coordinates across all m-simplices, where m is the dimension
-    of the mesh, and the returned tensor is of shape (`m_splx`, `pt`, `*ch`, `coord`);
-    in the `boundary` mode, the function maps the k-cochains to k-forms interpolated
-    at local barycentric coordinates across the k-simplices. If k = m, the `interior`
-    mode is used regardless of the `mode` argument. Currently, interpolation of
-    k-cochains on l-simplices in an m-dimensional mesh, where k < l < m, is not
-    supported.
+    Parameters
+    ----------
+    k
+        The order of the input `k_cochain`.
+    k_cochain : [k_splx, *ch]
+        The k-cochain to interpolate. The input is allowed to have an arbitrary
+        number of trailing channel/batch dimensions.
+    bary_coords : [splx, pt, vert]
+        The barycentric coordinates at which to interpolate the k-cochain. The
+        meaning of the first `splx` dimension depends on the `mode` argument. In
+        the `interior` mode, the barycentric coordinates should be defined over
+        the top-level simplices; in the `boundary` mode, the barycentric coordinates
+        should be defined over the canonical k-simplices. The `splx` dimension
+        can be trivial, in which case the k-cochain is interpolated at the same
+        fixed local barycentric coordinates over all target simplices.
+    mesh
+        A simplicial mesh.
+    mode
+        The interpolation mode. In the `interior` mode, the function maps the
+        k-cochains to k-forms interpolated at the local barycentric coordinates
+        defined over the top-level simplices; in the `boundary` mode, the function
+        maps the k-cochains to k-forms interpolated at the local barycentric
+        coordinates defined over the the canonical k-simplices. Currently,
+        interpolation of k-cochains on l-simplices in an m-dimensional mesh, where
+        k < l < m, is not supported. If k is equal to the dimension of the mesh,
+        then the `interior` mode is used regardless of the `mode` argument.
+    boundary_reduction
+        Whether to average the interpolated k-forms over all k-faces of the
+        top-level simplices corresponding to the same canonical k-simplices.
+        Only relevant in the `boundary` mode.
 
-    The `boundary_reduction` argument modifies the output of the `boundary` mode,
-    if set to `'none'`, then the returned tensor is of shape (`m_splx`, `k_face`,
-    `pt`, `*ch`, `coord`); if set to `'mean'`, then the returned tensor is of shape
-    (`k_splx`, `pt`, `*ch`, `coord`), where the interpolated k-forms are averaged
-    over all k-faces of m-simplices corresponding to the same canonical k-simplex.
-    Note that k-forms interpolated using Whitney bases have discontinuous, multi-
-    valued, unconstrained components (e.g., for 1-forms, the tangential components
-    are continuous but the normal components jump; for 2-forms, the normal components
-    are continuous but the tangential components jump between higher-order simplices);
-    as such, the `'mean'` reduction creates distortions and should only be used
-    for downstream applications when the unconstrained components are irrelevant
-    (e.g., for de Rham map).
+    Returns
+    -------
+    The interpolated k-form. The shape of this tensor depends on the `mode`
+    and `boundary_reduction` arguments. If `m` is the dimension of the mesh, then
+
+    * In the `interior` mode, the function returns a tensor of shape
+      `[m_splx, pt, *ch, coord]`.
+    * In the `boundary` mode, if `boundary_reduction` is set to `'none'`, then
+      the function returns a tensor of shape `[m_splx, k_face, pt, *ch, coord]`;
+      if `boundary_reduction` is set to `'mean'`, then the function returns a
+      tensor of shape `[k_splx, pt, *ch, coord]`.
+
+    Notes
+    -----
+    The Whitney map inplemented in this function can be described as "element-local",
+    which is to be contrasted with global spatial interpolation (i.e., evaluation
+    of the k-form at arbitrary cartesian coordinates on the mesh.)
 
     For the `boundary` mode, the `pt` dimension is always ordered relative to the
-    canonical simplices. For example, consider a two point quadrature on 1-simplices
-    consisting of barycentric coordinates (0.2, 0.8) and (0.8, 0.2); if a canonical
-    1-simplex [28, 29] is the face of two 2-simplices [27, 28, 29] and [30, 29, 28],
+    canonical simplices. For example, consider a two-point quadrature on 1-simplices
+    consisting of barycentric coordinates `(0.2, 0.8)` and `(0.8, 0.2)`; if a canonical
+    1-simplex `[28, 29]` is the face of two 2-simplices `[27, 28, 29]` and `[30, 29, 28]`,
     then the `pt` dimension for both faces will refer to the point closer to vertex
-    29 first, and the point closer to vertex 28 second, regardless of the local
+    `29` first, and the point closer to vertex `28` second, regardless of the local
     vertex ordering of the 1-face in the 2-simplices. Note that, for the `interior`
     mode, the values across the `pt` dimension will be constant since the interpolated
     m-forms (i.e., volume forms) on the m-simplices are always piecewise constant.
 
-    Note that this function does not perform global spatial interpolation (i.e.,
-    it cannot directly evaluate the k-form at arbitrary cartesian coordinates on
-    the mesh.)
-
-    The input `k_cochain` is allowed to have an arbitrary number of trailing
-    channel/batch dimensions. The `bary_coords` argument is allowed to have a trivial
-    first `splx` dimension, in which case the k-cochain is interpolated at the
-    same fixed local barycentric coordinates over all target simplices.
+    The `boundary_reduction` argument should be used with care in the `boundary`
+    mode. Note that k-forms interpolated using Whitney bases have discontinuous,
+    multi-valued, unconstrained components (e.g., for 1-forms, the tangential
+    components are continuous but the normal components jump; for 2-forms, the
+    normal components are continuous but the tangential components jump between
+    higher-order simplices); as such, the `'mean'` reduction creates distortions
+    and should only be used for downstream applications when the unconstrained
+    components are irrelevant (e.g., for de Rham map).
     """
     if k == mesh.dim:
         mode = "interior"
@@ -650,4 +668,4 @@ def barycentric_whitney_map(
                 k, k_cochain, bary_coords, mesh, boundary_reduction
             )
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown mode argument: {mode}.")

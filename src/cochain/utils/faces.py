@@ -33,6 +33,8 @@ def enumerate_local_faces(
     splx_dim: int, face_dim: int, device: torch.device
 ) -> Integer[Tensor, "face vert"]:
     """
+    Enumerate all faces using local vertex indices.
+
     For a simplex of dimension `splx_dim`, enumerate all faces of dimension
     `face_dim` (up to vertex index permutation) in local index lex order.
     """
@@ -51,6 +53,8 @@ def enumerate_global_faces(
     float_dtype: torch.dtype = torch.float32,
 ) -> GlobalFaces:
     """
+    Find the global indices of all faces of a given dimension.
+
     Given a simplicial m-complex, for each top level m-simplex, find all of its
     k-faces; then, find the indices of the k-faces on the list of canonical
     k-simplices in the mesh, and compute their permutation sign/parity relative
@@ -62,6 +66,12 @@ def enumerate_global_faces(
 
     if k > m:
         raise ValueError()
+
+    if k == 0:
+        return GlobalFaces(
+            idx=m_splx,
+            parity=torch.ones_like(m_splx, dtype=float_dtype, device=device),
+        )
 
     k_faces: Float[Tensor, "m_splx k_face k+1"] = m_splx[
         :, enumerate_local_faces(splx_dim=m, face_dim=k, device=device)

@@ -252,12 +252,20 @@ class SimplicialMesh:
         )
 
     @cached_property
+    def vert_faces(self) -> GlobalFaces:
+        return enumerate_global_faces(self.splx[self.dim], self.verts)
+
+    @cached_property
     def edge_faces(self) -> GlobalFaces:
         return enumerate_global_faces(self.splx[self.dim], self.edges)
 
     @cached_property
     def tri_faces(self) -> GlobalFaces:
         return enumerate_global_faces(self.splx[self.dim], self.tris)
+
+    @property
+    def faces(self) -> tuple[GlobalFaces, GlobalFaces, GlobalFaces]:
+        return (self.vert_faces, self.edge_faces, self.tri_faces)
 
     @property
     def dual_cbd(
