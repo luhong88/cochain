@@ -22,22 +22,85 @@ from . import _galerkin_element, _galerkin_vertex
 def mixed_mass(
     mesh: SimplicialMesh, mode: Literal["element", "vertex"]
 ) -> Float[SparseDecoupledTensor, "splx*coord edge"]:
-    """
-    Compute the cross/mixed mass matrix consisting of the inner products between
-    the basis functions of the vector space and the Whitney 1-form basis functions
-    of the lowest forms.
+    r"""
+    Compute the mixed/cross mass matrix.
 
-    If `mode` is "element", then the vector space basis functions are defined to
-    be piecewise-constant per top-level simplex; i.e., the basis vectors are
-    (ϕ_σ*e_1, ϕ_σ*e_2, ϕ_σ*e_3), where ϕ_σ is the indicator function for the top
-    level simplex σ, and the e's are the standard Cartesian basis vectors. If
-    `mode` is "vertex", then the vector space basis functions are anchored at
-    the vertices and defined as ϕ_vi(p) = λ_v(p)e_i, where λ_v(p) is the barycentric
-    coordinate of point p associated with vertex v and e_i is one of the standard
-    Cartesian basis functions.
-
+    The mixed mass matrix consists of inner products between the basis functions
+    of the vector space and the Whitney 1-form basis functions of the lowest forms.
     This matrix is also sometimes known as the Galerkin projection matrix or the
     coupling matrix.
+
+    Parameters
+    ----------
+    mesh
+        A simplicial mesh.
+    mode
+        If `mode` is "element", then the vector space basis functions are defined
+        to be piecewise-constant per top-level simplex; if `mode` is "vertex",
+        then the vector space basis functions are anchored at the vertices.
+
+    Returns
+    -------
+    [splx*coord, edge]
+        The mixed/cross mass matrix. If `mode` is "element", then `splx` refers
+        to the number of top-level simplices; if `mode` is "vertex", then `splx`
+        refers to the number of vertices. In either case, `coord` is 3.
+
+    Notes
+    -----
+    Let $W_{ij}(r)$ be the (sharp of the) Whitney 1-form basis function of the
+    lowest order associated with the edge $ij$, which is defined as
+
+    $$
+    W_{ij}(r) = \lambda_i(r)\nabla\lambda_j(r) - \lambda_j(r)\nabla\lambda_i(r)
+    $$
+
+    where $\lambda_i(r)$ is the barycentric coordinate function of point $r$
+    associated with the vertex $i$. Note that the gradients of the barycentric
+    coordiante functions are constant vectors independent of $r$.
+
+    If `mode` is "element", the vector space basis functions are attached to
+    the top-level simplices and defined as the set $\{1_\sigma e_c\}$, where
+    $1_\sigma$ is the indicator function for the top-level simplex $\sigma$,
+    and $e_c$ is one of the three standard Cartesian basis vectors
+    $\{e_x, e_y, e_z\}$. Then, the mixed mass matrix $P$ can be defined
+    elementwise for each combination of top-level simplex $\sigma$, Cartesian
+    basis vector $e_c$, and edge $ij$ as
+
+    $$
+    P_{\sigma c, ij} =
+    \int_\sigma \left<e_c, W_{ij}(r)\right> dV =
+    \left<e_c, \int_\sigma W_{ij}(r)\,dV\right>
+    $$
+
+    Using the magic formula, one can show that the integral of $W_{ij}(r)$ over a
+    top-level simplex $\sigma$ is given by
+
+    $$
+    \int_\sigma W_{ij}(r) \,dV =
+    \frac{\left|\sigma\right|}{d+1} (\nabla\lambda_j - \nabla\lambda_i)
+    $$
+
+    where $|\sigma|$ is the area/volume of $\sigma$ and $d$ is the mesh dimension.
+
+    If `mode` is "vertex", then the vector space basis functions are attached to the
+    vertices and defined as the set $\{\lambda_v(r)e_c\}$. Then, the mixed mass
+    matrix $P$ can be defined elementwise for each combination of vertex $v$,
+    Cartesian basis vector $e_c$, and edge $ij$ as
+
+    $$
+    P_{vc, ij} = \int_\Omega \left<\lambda_v(r) e_c, W_{ij}(r) \right> dV =
+    \left<e_c, \int_\Omega \lambda_v(r) W_{ij}(r)\,dV\right>
+    $$
+
+    In particular,
+
+    $$
+    \int_\Omega \lambda_v(r) W_{ij}(r)\,dV =
+    M_{0,vi}\nabla\lambda_j - M_{0,vj}\nabla\lambda_i
+    $$
+
+    where $M_0$ is the consistent mass matrix for discrete 0-forms.
     """
     match mesh.dim:
         case 2:
@@ -97,17 +160,91 @@ def mixed_mass(
 
 
 def vector_mass(
-    mesh: SimplicialMesh, mode: Literal["element", "vertex"], diagonal: bool = False
+    mesh: SimplicialMesh,
+    mode: Literal["element", "vertex"],
+    diagonal: bool = False,
 ) -> Float[BaseDecoupledTensor, "splx*coord splx*coord"]:
-    """
-    Compute the vector mass matrix consisting of the inner products between the
-    basis functions of the vector space. The `mode` argument controls the definition
-    of the basis functions (see `mixed_mass()` for more details).
+    r"""
+    Compute the vector mass matrix.
 
-    If `mode` is "element", then the returned matrix is always diagonal. If `mode`
-    is "vertex", `diagonal=False` computes the exact vector mass matrix from the
-    consistent mass-0 matrix, which is in general not diagonal, and `diagonal=True`
-    computes an approximate, diagonal mass matrix from the Hodge star-0 matrix.
+    Parameters
+    ----------
+    mesh
+        A simplicial mesh.
+    mode
+        If `mode` is "element", then the vector space basis functions are defined
+        to be piecewise-constant per top-level simplex; if `mode` is "vertex",
+        then the vector space basis functions are anchored at the vertices.
+    diagonal
+        If `mode` is "vertex", `diagonal=False` computes the exact vector mass
+        matrix from the consistent 0-mass matrix, which is in general not diagonal,
+        while `diagonal=True` computes an approximate, diagonal vector mass matrix
+        from the Hodge 0-star matrix.
+
+    Returns
+    -------
+    [splx*coord, splx*coord]
+        The vector mass matrix. If `mode` is "element", then `splx` refers to
+        the number of top-level simplices; if `mode` is "vertex", then `splx`
+        refers to the number of vertices. In either case, `coord` is 3.
+
+    Notes
+    -----
+    If `mode` is "element", the vector space basis functions are attached to
+    the top-level simplices and defined as the set $\{1_\sigma e_i\}$, where
+    $1_\sigma$ is the indicator function for the top-level simplex $\sigma$,
+    and $e_i$ is one of the three standard Cartesian basis vectors
+    $\{e_x, e_y, e_z\}$. Then, the vector mass matrix $M_V$ can be defined
+    elementwise for each simplex-basis pair as
+
+    $$
+    M_{\sigma i, \tau j} =
+    \int_{\sigma\cap\tau} \left<e_i, e_j\right> dV =
+    \left|\sigma\cap\tau\right| \delta_{ij}
+    $$
+
+    where $\left|\sigma\cap\tau\right|$ is the volume of the intersection between the
+    top-level simplex $\sigma$ and $\tau$. We assume that the mesh is an immersion
+    in $\mathbb R^3$, in which case $\left|\sigma\cap\tau\right|$ is nonzero iff
+    $\sigma=\tau$. Therefore, the element-based $M_V$ is a diagonal matrix scaled
+    by the top-level simplex areas/volumes.
+
+    If `mode` is "vertex", then the vector space basis functions are attached to the
+    vertices and defined as the set $\{\lambda_v(r)e_c\}$, where $\lambda_i(r)$ is
+    the barycentric coordinate function of point $r$ associated with the vertex
+    $i$. The vector mass matrix $M_V$ can be defined elementwise for each
+    vertex-basis pair as
+
+    $$
+    M_{u i, v j} = \int_\Omega \left<\lambda_u(r) e_i, \lambda_v(r) e_j \right> dV =
+    \delta_{ij}M_{0,uv}
+    $$
+
+    where $M_0$ is the consistent mass matrix for discrete 0-forms. This vertex-based
+    $M_V$ has a block structure where each $(u, v)$ block is a 3x3 diagonal matrix.
+    For example, For a ref triangle consisting of three vertices with $M_0$ is given by
+
+    ```
+    a b b
+    b a b
+    b b a
+    ```
+
+    The $M_V$ is then given by
+
+    ```
+    a 0 0 | b 0 0 | b 0 0
+    0 a 0 | 0 b 0 | 0 b 0
+    0 0 a | 0 0 b | 0 0 b
+    ---------------------
+    b 0 0 | a 0 0 | b 0 0
+    0 b 0 | 0 a 0 | 0 b 0
+    0 0 b | 0 0 a | 0 0 b
+    ---------------------
+    b 0 0 | b 0 0 | a 0 0
+    0 b 0 | 0 b 0 | 0 a 0
+    0 0 b | 0 0 b | 0 0 a
+    ```
     """
     match (mode, mesh.dim):
         case ("element", 2):
