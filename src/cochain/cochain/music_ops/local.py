@@ -120,7 +120,7 @@ def local_sharp(
             return _local_vertex.vertex_based_tri_local_sharp(
                 cochain_1=cochain_1,
                 star_0=star_0,
-                n_verts=mesh.n_verts,
+                n_global_verts=mesh.n_verts,
                 tris=mesh.tris,
                 tri_edge_idx=mesh.edge_faces.idx,
                 tri_edge_orientations=mesh.edge_faces.parity,
@@ -136,7 +136,7 @@ def local_sharp(
             return _local_vertex.vertex_based_tet_local_sharp(
                 cochain_1=cochain_1,
                 star_0=star_0,
-                n_verts=mesh.n_verts,
+                n_global_verts=mesh.n_verts,
                 tets=mesh.tets,
                 tet_edge_idx=mesh.edge_faces.idx,
                 tet_edge_orientations=mesh.edge_faces.parity,

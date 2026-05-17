@@ -16,6 +16,8 @@ def vertex_based_local_flat(
     edges: Integer[Tensor, "global_edge local_vert=2"],
 ) -> Float[Tensor, " global_edge"]:
     """
+    Compute the flat of a vector field associated with the vertices.
+
     Compute the flat of a vector field associated with the mesh vertices by taking
     the dot product between the mean of the field at the two vertices of each
     edge with the edge vector. Note that this function works identically for both
@@ -32,17 +34,19 @@ def vertex_based_local_flat(
 
 
 def vertex_based_tri_local_sharp(
-    cochain_1: Float[Tensor, " edge"],
-    star_0: Float[DiagDecoupledTensor, "vert vert"],
-    n_verts: int,
-    tris: Integer[Tensor, "tri vert=3"],
-    tri_edge_idx: Integer[Tensor, "tri edge=3"],
-    tri_edge_orientations: Float[Tensor, "tri edge=3"],
+    cochain_1: Float[Tensor, " global_edge"],
+    star_0: Float[DiagDecoupledTensor, "global_vert global_vert"],
+    n_global_verts: int,
+    tris: Integer[Tensor, "tri local_vert=3"],
+    tri_edge_idx: Integer[Tensor, "tri local_edge=3"],
+    tri_edge_orientations: Float[Tensor, "tri local_edge=3"],
     tri_areas: Float[Tensor, " tri"],
-    vert_coords: Float[Tensor, "vert coord=3"],
-    bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"],
-) -> Float[Tensor, "vert coord=3"]:
+    vert_coords: Float[Tensor, "global_vert coord=3"],
+    bary_coords_grad: Float[Tensor, "tri local_vert=3 coord=3"],
+) -> Float[Tensor, "global_vert coord=3"]:
     """
+    Compute the sharp of a 1-cochain at the tri mesh vertices.
+
     Compute the vertex-based sharp of a 1-cochain by first using the element-based
     approach and then taking an area-weighted average of the 1-form over all triangles
     sharing a given vertex.
@@ -71,11 +75,11 @@ def vertex_based_tri_local_sharp(
     # Reshape tris and area_weighted_form_1 in preparation for scatter add.
     tris_shaped = repeat(tris, "tri vert -> (tri vert) coord", coord=n_coords)
     area_weighted_form_1_shaped = repeat(
-        area_weighted_form_1, "tri coord -> (tri vert) coord", vert=n_verts
+        area_weighted_form_1, "tri coord -> (tri vert) coord", vert=3
     )
 
     area_weighted_form_1_on_verts = torch.zeros(
-        (n_verts, n_coords), dtype=cochain_1.dtype, device=cochain_1.device
+        (n_global_verts, n_coords), dtype=cochain_1.dtype, device=cochain_1.device
     )
 
     # self[idx[tri_by_vert][coord]][coord] += src[tri_by_vert][coord]
@@ -96,19 +100,22 @@ def vertex_based_tri_local_sharp(
 
 
 def vertex_based_tet_local_sharp(
-    cochain_1: Float[Tensor, " edge"],
-    star_0: Float[DiagDecoupledTensor, "vert vert"],
-    n_verts: int,
-    tets: Integer[Tensor, "tet vert=4"],
+    cochain_1: Float[Tensor, " global_edge"],
+    star_0: Float[DiagDecoupledTensor, "local_vert local_vert"],
+    n_global_verts: int,
+    tets: Integer[Tensor, "tet local_vert=4"],
     tet_edge_idx: Integer[Tensor, "tet local_edge=6"],
     tet_edge_orientations: Float[Tensor, "tet local_edge=6"],
     tet_unsigned_vols: Float[Tensor, " tet"],
-    bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
-) -> Float[Tensor, "vert coord=3"]:
+    bary_coords_grad: Float[Tensor, "tet local_vert=4 coord=3"],
+) -> Float[Tensor, "global_vert coord=3"]:
     """
+    Compute the sharp of a 1-cochain at the tet mesh vertices.
+
     Compute the vertex-based sharp of a 1-cochain by first using the element-based
     approach and then taking an area-weighted average of the 1-form over all tets
-    sharing a given vertex.
+    sharing a given vertex. Note that this function shares the same pathology
+    as vertex_based_tri_local_sharp().
     """
     n_coords = 3
 
@@ -125,11 +132,11 @@ def vertex_based_tet_local_sharp(
     # Reshape tets and vol_weighted_form_1 in preparation for scatter add.
     tets_shaped = repeat(tets, "tet vert -> (tet vert) coord", coord=n_coords)
     vol_weighted_form_1_shaped = repeat(
-        vol_weighted_form_1, "tet coord -> (tet vert) coord", vert=n_verts
+        vol_weighted_form_1, "tet coord -> (tet vert) coord", vert=4
     )
 
     vol_weighted_form_1_on_verts = torch.zeros(
-        (n_verts, n_coords), dtype=cochain_1.dtype, device=cochain_1.device
+        (n_global_verts, n_coords), dtype=cochain_1.dtype, device=cochain_1.device
     )
 
     # self[idx[tet_by_vert][coord]][coord] += src[tet_by_vert][coord]

@@ -61,7 +61,7 @@ def test_local_vertex_based_const_vec_field_reconstruction(mesh, request, device
         * torch.linalg.norm(vec_field_reconstructed, dim=-1)
     )
 
-    assert (vec_field_cos_dist > 0.7).all()
+    assert (vec_field_cos_dist > 0.95).all()
 
 
 @pytest.mark.parametrize(
