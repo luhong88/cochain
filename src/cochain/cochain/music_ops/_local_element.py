@@ -6,7 +6,8 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ...utils.bary_coords import get_k_splx_barycenters, get_tri_circumcenters
-from ..interpolate import _bary_whitney_tet_cochain_1, _bary_whitney_tri_cochain_1
+from ..interpolate._bary_whitney_tet import _bary_whitney_tet_cochain_1
+from ..interpolate._bary_whitney_tri import _bary_whitney_tri_cochain_1
 
 
 def element_based_tri_local_flat(
