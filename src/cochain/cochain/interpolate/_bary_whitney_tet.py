@@ -1,7 +1,3 @@
-__all__ = ["barycentric_whitney_map"]
-
-from typing import Literal
-
 import torch
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
@@ -9,14 +5,13 @@ from torch import Tensor
 
 from ...complex import SimplicialMesh
 from ...metric.tet import _tet_geometry
-from ...metric.tri import _tri_geometry
 from ...utils.faces import enumerate_local_faces
 
 
 def _bary_whitney_tet_cochain_0(
-    cochain_0: Float[Tensor, " vert *ch"],
-    tets: Integer[Tensor, "tet vert=4"],
-    bary_coords: Float[Tensor, "tet pt vert=4"],
+    cochain_0: Float[Tensor, " global_vert *ch"],
+    tets: Integer[Tensor, "tet local_vert=4"],
+    bary_coords: Float[Tensor, "tet pt local_vert=4"],
 ) -> Float[Tensor, "tet pt *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2, 3.
     basis = bary_coords
@@ -31,11 +26,11 @@ def _bary_whitney_tet_cochain_0(
 
 
 def _bary_whitney_tet_cochain_1(
-    cochain_1: Float[Tensor, " edge *ch"],
-    tet_edge_idx: Integer[Tensor, "tet edge=6"],
-    tet_edge_orientations: Float[Tensor, "tet edge=6"],
-    bary_coords: Float[Tensor, "tet pt vert=4"],
-    bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
+    cochain_1: Float[Tensor, " global_edge *ch"],
+    tet_edge_idx: Integer[Tensor, "tet local_edge=6"],
+    tet_edge_orientations: Float[Tensor, "tet local_edge=6"],
+    bary_coords: Float[Tensor, "tet pt local_vert=4"],
+    bary_coords_grad: Float[Tensor, "tet local_vert=4 coord=3"],
 ) -> Float[Tensor, "tet pt *ch coord=3"]:
     bary_coords_shaped = rearrange(bary_coords, "tet pt vert -> tet pt vert 1")
     bary_coords_grad_shaped = rearrange(
@@ -71,11 +66,11 @@ def _bary_whitney_tet_cochain_1(
 
 
 def _bary_whitney_tet_cochain_2(
-    cochain_2: Float[Tensor, " tri *ch"],
-    tet_tri_idx: Integer[Tensor, "tet tri=4"],
-    tet_tri_orientations: Float[Tensor, "tet tri=4"],
-    bary_coords: Float[Tensor, "tet pt vert=4"],
-    bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
+    cochain_2: Float[Tensor, " global_tri *ch"],
+    tet_tri_idx: Integer[Tensor, "tet local_tri=4"],
+    tet_tri_orientations: Float[Tensor, "tet local_tri=4"],
+    bary_coords: Float[Tensor, "tet pt local_vert=4"],
+    bary_coords_grad: Float[Tensor, "tet local_vert=4 coord=3"],
 ) -> Float[Tensor, "tet pt *ch coord=3"]:
     bary_coords_shaped = rearrange(bary_coords, "tet pt vert -> tet pt vert 1")
     bary_coords_grad_shaped = rearrange(

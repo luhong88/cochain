@@ -1,22 +1,17 @@
-__all__ = ["barycentric_whitney_map"]
-
-from typing import Literal
-
 import torch
 from einops import einsum, rearrange, repeat
 from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ...complex import SimplicialMesh
-from ...metric.tet import _tet_geometry
 from ...metric.tri import _tri_geometry
 from ...utils.faces import enumerate_local_faces
 
 
 def _bary_whitney_tri_cochain_0(
-    cochain_0: Float[Tensor, " vert *ch"],
-    tris: Integer[Tensor, "tri vert=3"],
-    bary_coords: Float[Tensor, "tri pt vert=3"],
+    cochain_0: Float[Tensor, " global_vert *ch"],
+    tris: Integer[Tensor, "tri local_vert=3"],
+    bary_coords: Float[Tensor, "tri pt local_vert=3"],
 ) -> Float[Tensor, "tri pt *ch coord=1"]:
     # W_i = λ_i for i = 0, 1, 2.
     basis = bary_coords
@@ -31,11 +26,11 @@ def _bary_whitney_tri_cochain_0(
 
 
 def _bary_whitney_tri_cochain_1(
-    cochain_1: Float[Tensor, " edge *ch"],
-    tri_edge_idx: Integer[Tensor, "tri edge=3"],
-    tri_edge_orientations: Float[Tensor, "tri edge=3"],
-    bary_coords: Float[Tensor, "tri pt vert=3"],
-    bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"],
+    cochain_1: Float[Tensor, " global_edge *ch"],
+    tri_edge_idx: Integer[Tensor, "tri local_edge=3"],
+    tri_edge_orientations: Float[Tensor, "tri local_edge=3"],
+    bary_coords: Float[Tensor, "tri pt local_vert=3"],
+    bary_coords_grad: Float[Tensor, "tri local_vert=3 coord=3"],
 ) -> Float[Tensor, "tri pt *ch coord=3"]:
     bary_coords_shaped = rearrange(bary_coords, "tri pt vert -> tri pt vert 1")
     bary_coords_grad_shaped = rearrange(
