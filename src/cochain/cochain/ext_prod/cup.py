@@ -37,6 +37,8 @@ class CupProduct(torch.nn.Module):
     However, this operator does not satisfy the graded commutativity property;
     i.e., in general, it is not true that $\xi \wedge \eta = (-1)^{kl} \eta \wedge \xi$,
     unless $k = l = 0$.
+
+    The cup product is purely topological and is independent of the mesh geometry.
     """
 
     def __init__(
@@ -223,6 +225,9 @@ class AntisymmetricCupProduct(torch.nn.Module):
     graded commutativity property; i.e., $\xi \wedge \eta = (-1)^{kl} \eta \wedge \xi$.
     However, unlike the regular cup product, it does not in general satisfies the
     associativity rule or the Leibniz rule.
+
+    The antisymmetrized cup product is purely topological and is independent of
+    the mesh geometry.
     """
 
     def __init__(
@@ -237,6 +242,10 @@ class AntisymmetricCupProduct(torch.nn.Module):
 
         perm = compute_face_perm_lut(k, l)
 
+        # Compared to the regular cup product, the antisymmetrized cup product
+        # requires an additional sign correction handled by the FacePermLUT class
+        # that accounts for the permutation required to rearrange a canonical
+        # m-simplex into a given k-front/back face split.
         self.perm_sign: Float[Tensor, "1 face 1"]
         self.register_buffer("perm_sign", perm.sign.to(mesh.dtype))
 

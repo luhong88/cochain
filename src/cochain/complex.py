@@ -253,19 +253,52 @@ class SimplicialMesh:
 
     @cached_property
     def vert_faces(self) -> GlobalFaces:
-        return enumerate_global_faces(self.splx[self.dim], self.verts)
+        return enumerate_global_faces(
+            self.splx[self.dim],
+            self.verts,
+            is_k_lex_sorted=(0 < self.dim),
+            float_dtype=self.dtype,
+        )
 
     @cached_property
     def edge_faces(self) -> GlobalFaces:
-        return enumerate_global_faces(self.splx[self.dim], self.edges)
+        return enumerate_global_faces(
+            self.splx[self.dim],
+            self.edges,
+            is_k_lex_sorted=(1 < self.dim),
+            float_dtype=self.dtype,
+        )
 
     @cached_property
     def tri_faces(self) -> GlobalFaces:
-        return enumerate_global_faces(self.splx[self.dim], self.tris)
+        return enumerate_global_faces(
+            self.splx[self.dim],
+            self.tris,
+            is_k_lex_sorted=(2 < self.dim),
+            float_dtype=self.dtype,
+        )
 
-    @property
-    def faces(self) -> tuple[GlobalFaces, GlobalFaces, GlobalFaces]:
-        return (self.vert_faces, self.edge_faces, self.tri_faces)
+    @cached_property
+    def tet_faces(self) -> GlobalFaces:
+        return enumerate_global_faces(
+            self.splx[self.dim],
+            self.tets,
+            is_k_lex_sorted=(3 < self.dim),
+            float_dtype=self.dtype,
+        )
+
+    def faces(self, face_dim: int) -> GlobalFaces:
+        match face_dim:
+            case 0:
+                return self.vert_faces
+            case 1:
+                return self.edge_faces
+            case 2:
+                return self.tri_faces
+            case 3:
+                return self.tet_faces
+            case _:
+                raise ValueError(f"Invalid fac_dim {face_dim}.")
 
     @property
     def dual_cbd(

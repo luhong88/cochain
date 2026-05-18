@@ -2,7 +2,7 @@ import itertools
 import math
 
 import torch
-from jaxtyping import Float, Integer
+from jaxtyping import Float
 from torch import Tensor
 
 from ...complex import SimplicialMesh
@@ -10,7 +10,6 @@ from ...metric.tet import _tet_geometry
 from ...metric.tri import _tri_geometry
 from ...utils.faces import enumerate_local_faces
 from ...utils.perm_parity import compute_lex_rel_orient
-from ...utils.search import splx_search
 
 
 def compute_whitney_router(
@@ -87,52 +86,3 @@ def dispatch_bc_grad_dot(
             raise NotImplementedError()
 
     return bc_grad_dot, splx_size
-
-
-def find_top_splx_faces(
-    face_dim: int,
-    mesh: SimplicialMesh,
-) -> tuple[Integer[Tensor, "top_splx k_face"], Float[Tensor, "top_splx k_face"]]:
-    """
-    Given a simplicial n-complex, for each top level n-simplex, find all of its
-    k-faces, their indices in the list of k-simplices in the mesh, and their
-    orientation sign corrections.
-    """
-    k = face_dim
-    # Identify the k-faces of the top level simplices and their sign corrections.
-    k_faces: Float[Tensor, "top_splx k_face k+1"] = mesh.splx[mesh.dim][
-        :, enumerate_local_faces(mesh.dim, k, device=mesh.device)
-    ]
-    k_faces_flat = k_faces.view(-1, k + 1)
-    k_faces_idx_flat = splx_search(
-        key_splx=mesh.splx[k],
-        query_splx=k_faces_flat,
-        sort_key_splx=True if k == mesh.dim else False,
-        sort_key_vert=True if k == mesh.dim else False,
-        sort_query_vert=True,
-    )
-    k_faces_idx = k_faces_idx_flat.view(*k_faces.shape[:-1])
-
-    # Note that, in the implementation of the cup product, the parental simplices
-    # are sorted before extracting their faces; as such, the faces automatically
-    # possesse the canonical orientation, and we only need to correct for the
-    # permutation parity required to sort the parental simplices. Here, since the
-    # parental simplices are not sorted first, we need two parity corrections, one
-    # for the permutation parity of the unsorted faces (induced parity), and one
-    # for the permutation parity of the unsorted parental (global parity).
-    if k == mesh.dim:
-        k_face_parity_global = compute_lex_rel_orient(mesh.splx[k][k_faces_idx_flat])
-    else:
-        k_face_parity_global = torch.ones(
-            1, dtype=mesh.dtype, device=mesh.device
-        ).expand_as(k_faces_idx_flat)
-
-    k_face_parity_induced = compute_lex_rel_orient(k_faces_flat)
-
-    k_face_parity = (
-        (k_face_parity_induced * k_face_parity_global)
-        .to(dtype=mesh.dtype, device=mesh.device)
-        .view(*k_faces.shape[:-1])
-    )
-
-    return k_faces_idx, k_face_parity

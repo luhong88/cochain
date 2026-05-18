@@ -50,48 +50,100 @@ def enumerate_local_faces(
 def enumerate_global_faces(
     m_splx: Integer[Tensor, "m_splx m_vert"],
     k_splx: Integer[Tensor, "k_splx k_vert"],
+    is_k_lex_sorted: bool,
     float_dtype: torch.dtype = torch.float32,
 ) -> GlobalFaces:
     """
-    Find the global indices of all faces of a given dimension.
+    Find the global indices and parity of all faces of a given dimension.
 
-    Given a simplicial m-complex, for each top level m-simplex, find all of its
-    k-faces; then, find the indices of the k-faces on the list of canonical
-    k-simplices in the mesh, and compute their permutation sign/parity relative
-    to the canonical k-simplices.
+    Parameters
+    ----------
+    m_splx : [m_splx, m_vert]
+        The list of m-simplices whose k-faces will be enumerated.
+    k_splx : [k_splx, k_vert]
+        The list of canonical k-simplices.
+    is_k_lex_sorted
+        Whether the canonical k-simplices are lex sorted.
+    float_dtype
+        The dtype for the permutation sign/parity of the k-faces.
+
+    Returns
+    -------
+    A `GlobalFaces` named tuple with the following attributes
+
+    idx : [m_splx, k_face]
+        The indices of the k-faces of each m-simplex on the list of canonical
+        k-simplices; note that identity between a k-face and canonical
+        k-simplex is determined up to vertex permutation.
+    parity : [m_splx, k_face]
+        The permutation sign/parity of the k-faces relative to the lex-sorted
+        canonical k-simplices.
+
+    Notes
+    -----
+    In general, we assume that the canonical k-simplices attached to the
+    SimplicialMesh are lex-sorted, except for the top-level simplices, which
+    can carry geometric orientation information and may not be lex-sorted.
+    Therefore, `is_k_lex_sorted` is typically True whenever `k < mesh.dim`.
     """
     k = k_splx.size(-1) - 1
     m = m_splx.size(-1) - 1
+    n_m_splx = m_splx.size(0)
+
+    int_dtype = m_splx.dtype
     device = m_splx.device
 
-    if k > m:
-        raise ValueError()
+    match k:
+        case 0:
+            return GlobalFaces(
+                idx=m_splx,
+                parity=torch.ones_like(m_splx, dtype=float_dtype, device=device),
+            )
 
-    if k == 0:
-        return GlobalFaces(
-            idx=m_splx,
-            parity=torch.ones_like(m_splx, dtype=float_dtype, device=device),
-        )
+        case _ if k == m and m_splx is k_splx:
+            # When m_splx and k_splx are identical, the GlobalFaces is trivial.
+            m_face_idx = torch.arange(
+                n_m_splx,
+                dtype=int_dtype,
+                device=device,
+            ).view(-1, 1)
+            m_face_parity = torch.ones_like(
+                m_face_idx, dtype=float_dtype, device=device
+            )
+            return GlobalFaces(idx=m_face_idx, parity=m_face_parity)
 
-    k_faces: Float[Tensor, "m_splx k_face k+1"] = m_splx[
-        :, enumerate_local_faces(splx_dim=m, face_dim=k, device=device)
-    ]
-    # If m is the mesh dimension, then the key splx/vert requires sorting only
-    # if k == m, because all but the top-level simplices are already lex-sorted.
-    # If m is less than the mesh dimension, then the key splx/vert never requires
-    # sorting (and the if-else ternary expression is unnecessary and potentially
-    # wasteful).
-    k_faces_idx: Integer[Tensor, "m_splx k_face"] = splx_search(
-        key_splx=k_splx,
-        query_splx=k_faces,
-        sort_key_splx=True if k == m else False,
-        sort_key_vert=True if k == m else False,
-        sort_query_vert=True,
-    )
+        case _ if k <= m:
+            k_faces: Integer[Tensor, "m_splx k_face k+1"] = m_splx[
+                :, enumerate_local_faces(splx_dim=m, face_dim=k, device=device)
+            ]
+            k_face_idx: Integer[Tensor, "m_splx k_face"] = splx_search(
+                key_splx=k_splx,
+                query_splx=k_faces,
+                sort_key_splx=not is_k_lex_sorted,
+                sort_key_vert=not is_k_lex_sorted,
+                sort_query_vert=True,
+            )
 
-    if k < m:
-        k_face_parity = compute_lex_rel_orient(k_faces, dtype=float_dtype)
-    else:
-        k_face_parity = torch.ones_like(k_faces_idx, dtype=float_dtype, device=device)
+            # Compute orientation of k_faces relative to the lex-sorted canonical
+            # k_splx basis.
+            k_face_parity = compute_lex_rel_orient(k_faces, dtype=float_dtype)
 
-    return GlobalFaces(idx=k_faces_idx, parity=k_face_parity)
+            # If the input k_splx is not lex-sorted (e.g. they possess a geometric
+            # orientation), then two parity calculations are required to find the
+            # relative orientation: one for the permutation parity of the queried
+            # faces (induced parity), and one for the permutation parity of the
+            # target canonical k-simplices (global parity).
+            if not is_k_lex_sorted:
+                k_splx_parity = compute_lex_rel_orient(
+                    k_splx[k_face_idx], dtype=float_dtype
+                )
+                k_face_parity = k_face_parity * k_splx_parity
+
+            return GlobalFaces(idx=k_face_idx, parity=k_face_parity)
+
+        case _:
+            # If k > m, then return an empty GlobalFaces object.
+            return GlobalFaces(
+                idx=torch.empty((n_m_splx, 0), dtype=int_dtype, device=device),
+                parity=torch.empty((n_m_splx, 0), dtype=float_dtype, device=device),
+            )

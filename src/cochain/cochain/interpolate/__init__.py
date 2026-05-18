@@ -212,7 +212,7 @@ def _barycentric_whitney_map_boundary(
     local_face_idx: Integer[Tensor, "k_face k_vert"] = enumerate_local_faces(
         splx_dim=m, face_dim=k, device=mesh.device
     )
-    global_face_idx = mesh.faces[k].idx
+    global_face_idx = mesh.faces(k).idx
 
     # Perform barycentric coordinate embedding and then compute the whitney
     # interpolation at the top simplex level.
