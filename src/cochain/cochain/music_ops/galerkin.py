@@ -113,49 +113,40 @@ def mixed_mass(
             )
             tet_unsigned_vols = torch.abs(tet_signed_vols)
 
+        case _:
+            raise ValueError(f"Unsupported mesh dimension {mesh.dim}.")
+
     match (mode, mesh.dim):
         case ("element", 2):
             return _galerkin_element.element_based_tri_mixed_mass_matrix(
-                n_edges=mesh.n_edges,
-                tri_edge_idx=mesh.edge_faces.idx,
-                tri_edge_orientations=mesh.edge_faces.parity,
+                mesh=mesh,
                 tri_areas=tri_areas,
                 bary_coords_grad=bary_coords_grad,
             )
 
         case ("element", 3):
             return _galerkin_element.element_based_tet_mixed_mass_matrix(
-                n_edges=mesh.n_edges,
-                tet_edge_idx=mesh.edge_faces.idx,
-                tet_edge_orientations=mesh.edge_faces.parity,
+                mesh=mesh,
                 tet_unsigned_vols=tet_unsigned_vols,
                 bary_coords_grad=bary_coords_grad,
             )
 
         case ("vertex", 2):
             return _galerkin_vertex.vertex_based_tri_mixed_mass_matrix(
-                n_verts=mesh.n_verts,
-                n_edges=mesh.n_edges,
-                tris=mesh.tris,
-                tri_edge_idx=mesh.edge_faces.idx,
-                tri_edge_orientations=mesh.edge_faces.parity,
+                mesh=mesh,
                 tri_areas=tri_areas,
                 bary_coords_grad=bary_coords_grad,
             )
 
         case ("vertex", 3):
             return _galerkin_vertex.vertex_based_tet_mixed_mass_matrix(
-                n_verts=mesh.n_verts,
-                n_edges=mesh.n_edges,
-                tets=mesh.tets,
-                tet_edge_idx=mesh.edge_faces.idx,
-                tet_edge_orientations=mesh.edge_faces.parity,
+                mesh=mesh,
                 tet_unsigned_vols=tet_unsigned_vols,
                 bary_coords_grad=bary_coords_grad,
             )
 
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown mode argument '{mode}'.")
 
 
 def vector_mass(
@@ -267,7 +258,7 @@ def vector_mass(
             else:
                 mass_0 = tri_masses.mass_0(mesh)
                 return _galerkin_vertex.vertex_based_consistent_vector_mass_matrix(
-                    mass_0
+                    mesh=mesh, mass_0=mass_0
                 )
 
         case ("vertex", 3):
@@ -277,11 +268,13 @@ def vector_mass(
             else:
                 mass_0 = tet_masses.mass_0(mesh)
                 return _galerkin_vertex.vertex_based_consistent_vector_mass_matrix(
-                    mass_0
+                    mesh=mesh, mass_0=mass_0
                 )
 
         case _:
-            raise ValueError()
+            raise ValueError(
+                f"Unsupported mesh dimension ({mesh.dim}) and/or mode '{mode}' argument."
+            )
 
 
 def galerkin_flat(
@@ -384,7 +377,7 @@ def galerkin_flat(
             )
 
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown mode argument '{mode}'.")
 
 
 def galerkin_sharp(
@@ -488,4 +481,4 @@ def galerkin_sharp(
             )
 
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown mode argument '{mode}'.")
