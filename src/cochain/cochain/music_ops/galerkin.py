@@ -16,8 +16,6 @@ from ...sparse.decoupled_tensor import (
 from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from . import _galerkin_element, _galerkin_vertex
 
-# TODO: update docstrings to remove reference to 'method' args.
-
 
 def mixed_mass(
     mesh: SimplicialMesh, mode: Literal["element", "vertex"]
@@ -179,7 +177,8 @@ def vector_mass(
         If `mode` is "vertex", `diagonal=False` computes the exact vector mass
         matrix from the consistent 0-mass matrix, which is in general not diagonal,
         while `diagonal=True` computes an approximate, diagonal vector mass matrix
-        from the Hodge 0-star matrix.
+        from the Hodge 0-star matrix. If `mode` is "element", the vector mass
+        matrix is always diagonal and this argument is ignored.
 
     Returns
     -------
@@ -284,28 +283,89 @@ def vector_mass(
 
 
 def galerkin_flat(
-    vec_field: Float[Tensor, "splx coord"],
+    vec_field: Float[Tensor, "splx coord=3"],
     mass_1: Float[BaseDecoupledTensor, "edge edge"]
     | Float[InvSparseOperator, "edge edge"],
     mass_mixed: Float[SparseDecoupledTensor, "splx*coord edge"],
     mode: Literal["element", "vertex"],
     solver_kwargs: dict[str, Any] | None = None,
 ) -> Float[Tensor, " edge"]:
-    """
+    r"""
     Compute the flat of a vector field using the Galerkin projection method.
 
-    If `mode` is "element", the input vector field should be piecewise-constant
-    and defined over the top-level-simplices of the mesh; if `mode` is "vertex",
-    the input vector field should be defined over the vertices of the mesh. The
-    input `mass_mixed` matrix should be computed using the same `mode` argument.
+    For a vector field $V$, this function finds a 1-cochain $\eta$ that best
+    approximates the $V^\flat$ by solving a linear system of the form
 
-    This function requires solving a linear system of the form M_1@η = P.T@v, where
-    M_1 is the edge mass matrix, η is the 1-cochain, P is the mixed mass matrix,
-    and v is the vector field. If `method` is "dense", the `mass_1` matrix is
-    converted to a dense tensor first before invoking `torch.linalg.solve()`;
-    if `method` is "solver", the linear system is passed to a sparse system solver;
-    if `method` is "inv_star", the `mass_1` matrix is assumed to be diagonal (e.g.,
-    a Hodge star-1 matrix) and directly inverted to solve the linear system.
+    $$M_1 \eta = P^T V$$
+
+    where $M_1$ is the 1-mass matrix and $P$ is the mixed mass matrix.
+
+    Parameters
+    ----------
+    vec_field : [splx, coord]
+        The input vector field. The interpretation of the first `splx` dimension
+        depends on the `mode` argument. If `mode` is "element", the input vector
+        field is assumed to be discrete/piecewise constant and associated with
+        the top-level simplices of the mesh. If `mode` is "vertex", the input vector
+        field is assumed to be associated with the vertices of the mesh.
+    mass_1 : [edge, edge]
+        The 1-mass matrix. If this is a callable `InvSparseOperator`, the RHS
+        ($P^T V$) will be passed to the operator to solve for $\eta$; if the mass
+        matrix is approximated with a `DiagDecoupledTensor` Hodge 0-star matrix,
+        the matrix is directly inverted to solve for $\eta$; if the mass matrix
+        is a `SparseDecoupledTensor`, it will be converted to a dense tensor and
+        `torch.linalg.solve()` will be used to solve for $\eta$.
+    mass_mixed : [splx*coord, edge]
+        The mixed mass matrix computed via `mixed_mass()` using the same `mode`
+        argument to this function.
+    mode
+        If `mode` is "element", the input vector field should be piecewise-constant
+        and defined over the top-level-simplices of the mesh; if `mode` is "vertex",
+        the input vector field should be defined over the vertices of the mesh.
+        The input `mass_mixed` matrix should be computed using the same `mode`
+        argument.
+    solver_kwargs
+        If `mass_1` is a callable `InvSparseOperator`, additional keyword arguments
+        can be passed to the sparse solver here.
+
+    Returns
+    -------
+    [edge,]
+        A 1-cochain representing the flat of the input vector field.
+
+    Notes
+    -----
+    Given a vector field $V$, we want to find a discrete 1-form $\eta$ that best
+    approximates $V^\flat$. Using the Galerkin projection approach, this is equivalent
+    to asserting that the error $\epsilon = V^\flat - \eta$ is orthogonal to the space of
+    test functions, which is spanned by the Whitney 1-form bases; i.e.,
+
+    $$
+    \int_\Omega \left<V^\flat, W^i\right> dV = \int_\Omega \left<\eta, W^i\right> dV
+    $$
+
+    for all basis functions $W^i$. To further simplify this equation, we expand
+    $\eta$ using the bases of the trial space, which are the same Whitney 1-form bases.
+    With the Einstein notation, this expansion can be written as $\eta = \eta_j W^j$.
+    In addition, we expand $V$ using the vector space basis functions (see
+    `vector_mass()` for more details), $V = V^k\phi_k$. Taken together, the orthogonality
+    condition can be written as
+
+    $$
+    \int_\Omega \left<\left(V^k\phi_k\right)^\flat, W^i\right> dV =
+    \int_\Omega \left<\eta_j W^j, W^i\right> dV
+    $$
+
+    Recall that the integral of $\left<W^j, W^i\right>$ defines the elements of the
+    consistent 1-mass matrix $M_1$ and the integral of $\left<\phi_k^\flat, W^i\right>$,
+    which is equivalent to $\left<\phi_k, (W^i)^\sharp\right>$, defines the elements
+    of the mixed mass matrix $P$ (see `mixed_mass()` for more details). Therefore,
+    this equation can more concisely written as the linear system
+
+    $$M_1 \eta = P^T V$$
+
+    where $\eta$ denotes the unknown 1-cochain (i.e., a vector containing the $\eta_j$
+    coefficients).
     """
     if solver_kwargs is None:
         solver_kwargs = {}
@@ -333,25 +393,83 @@ def galerkin_sharp(
     mode: Literal["element", "vertex"],
     solver_kwargs: dict[str, Any] | None = None,
 ) -> Float[Tensor, "splx coord=3"]:
-    """
+    r"""
     Compute the sharp of a 1-cochain using the Galerkin projection method.
 
-    If `mode` is "element", the output vector field will be piecewise-constant
-    and defined over the top-level-simplices of the mesh; if `mode` is "vertex",
-    the output vector field will be defined over the vertices of the mesh. The
-    input `mass_vec` and `mass_mixed` matrix should be computed using the same
-    `mode` argument.
+    For a 1-cochain $\eta$, this function finds a vector field $V$ that best
+    approximates the $\eta^\sharp$ by solving a linear system of the form
 
-    This function requires solving a linear system of the form M_V@v = P@η, where
-    M_V is the vector mass matrix, v is the vector field, P is the mixed mass matrix,
-    and η is the 1-cochain. If `mode` is "element", the input `mass_vec` is assumed
-    to be diagonal and directly inverted to solve the system. If `mode` is "vertex",
-    the solution method is controlled by the `method` argument. If `method` is "dense",
-    the `mass_vec` matrix is converted to a dense tensor first before invoking
-    `torch.linalg.solve()`; if `method` is "solver", the linear system is passed
-    to a sparse system solver; if `method` is "inv_star", the `mass_vec` matrix is
-    assumed to be diagonal (e.g., derived from a Hodge star-0 matrix) and directly
-    inverted to solve the linear system.
+    $$M_V V = P \eta$$
+
+    where $M_V$ is the vector mass matrix and $P$ is the mixed mass matrix.
+
+    Parameters
+    ----------
+    cochain_1 : [edge,]
+        The input 1-cochain.
+    mass_vec : [splx*coord, splx*coord]
+        The vector mass matrix computed via `vector_mass()` using the same `mode`
+        argument to this function. If this is a callable `InvSparseOperator`, the
+        RHS ($P@η$) will be passed to the operator to solve for $V$; if it is a
+        `DiagDecoupledTensor`, the vector mass matrix is directly inverted to
+        solve for $V$; if it is a `SparseDecoupledTensor`, it will be converted
+        to a dense tensor and `torch.linalg.solve()` will be used to solve for $V$.
+        If `mode` is "element", the vector mass matrix should always be a
+        `DiagDecoupledTensor`.
+    mass_mixed : [splx*coord, edge]
+        The mixed mass matrix computed via `mixed_mass()` using the same `mode`
+        argument to this function.
+    mode
+        If `mode` is "element", the output vector field will be piecewise-constant
+        and defined over the top-level-simplices of the mesh; if `mode` is "vertex",
+        the output vector field will be defined over the vertices of the mesh. The
+        input `mass_vec` and `mass_mixed` matrix should be computed using the same
+        `mode` argument.
+    solver_kwargs
+        If `mass_vec` is a callable `InvSparseOperator`, additional keyword
+        arguments can be passed to the sparse solver here.
+
+    Returns
+    -------
+    [splx, coord]
+        A vector field representing the sharp of the input 1-cochain. If `mode`
+        is "element", then `splx` refers to the number of top-level simplices;
+        if `mode` is "vertex", then `splx` refers to the number of vertices.
+        In either case, `coord` is 3.
+
+    Notes
+    -----
+    Given a discrete 1 form $\eta$, we want to find a vector field $V$ that best
+    approximates $\eta^\sharp$. Using the Galerkin projection approach, this is
+    equivalent to asserting that the error $\epsilon = \eta^\sharp - V$ is orthogonal
+    to the space of test functions, $\{\phi_i\}$ (see `vector_mass()` for more
+    details); i.e.,
+
+    $$
+    \int_\Omega \left<\eta^\sharp, \phi_i\right> dV = \int_\Omega \left<V, \phi_i\right> dV
+    $$
+
+    for all basis functions $\phi_i$. To further simplify this equation, we expand
+    $\eta$ using the bases of the trial space, which are the Whitney 1-form bases.
+    With the Einstein notation, this expansion can be written as $\eta = \eta_j W^j$.
+    In addition, we expand $V$ using the same vector space basis functions,
+    $V = V^k\phi_k$. Taken together, the orthogonality condition can be written as
+
+    $$
+    \int_\Omega \left<\left(\eta_j W^j\right)^\sharp, \phi_i\right> dV =
+    \int_\Omega \left<V^k\phi_k, \phi_j\right> dV
+    $$
+
+    Recall that the integral of $\left<\phi_i, (W^j)^\sharp\right>$ defines the elements
+    of the mixed mass matrix $P$ (see `mixed_mass()` for more details) and the integral
+    of $\left<\phi_k, \phi_j\right>$ defines the elements of the vector mass matrix
+    $M_V$ (see `vector_mass()` for more details). Therefore, this equation can more
+    concisely written as the linear system
+
+    $$M_V V = P \eta$$
+
+    where $\eta$ denotes a 1-cochain (i.e., a vector containing the $\eta_j$
+    coefficients).
     """
     match mode:
         case "element":
