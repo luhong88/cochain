@@ -13,25 +13,38 @@ from ._face_perm_lut import compute_face_perm_lut
 
 
 class CupProduct(torch.nn.Module):
+    r"""
+    Compute the cup product between a k-cochain and an l-cochain.
+
+    Parameters
+    ----------
+    k
+        The order of the k-cochain.
+    l
+        The order of the l-cochain.
+    mesh
+        A simplicial mesh over which the cochains are defined.
+
+    Notes
+    -----
+    Let $\xi$, $\eta$, and $\mu$ be cochains defined on a simplicial complex. The
+    cup product satisfies the following properties:
+
+    * Associativity: $(\xi \wedge \eta) \wedge mu = \xi \wedge (\eta \wedge \mu)$.
+    * Leibniz rule: $d(\xi \wedge \eta) = d\xi \wedge \eta + (-1)^k \xi \wedge d\eta$,
+      where $d$ is the coboundary operator.
+
+    However, this operator does not satisfy the graded commutativity property;
+    i.e., in general, it is not true that $\xi \wedge \eta = (-1)^{kl} \eta \wedge \xi$,
+    unless $k = l = 0$.
+    """
+
     def __init__(
         self,
         k: int,
         l: int,
         mesh: SimplicialMesh,
     ):
-        """
-        Compute the cup product between a `k`-cochain `ξ` and an `l`-cochain `η`,
-        which produces a (k+l)-cochain.
-
-        This operator satisfies the following properties:
-        * Associativity: `(ξ ⋀ η) ⋀ μ = ξ ⋀ (η ⋀ μ)`.
-        * Leibniz rule: `d(ξ ⋀ η) = dξ ⋀ η + (-1)^k ξ ⋀ dη`, where `d` is the
-        coboundary operator.
-
-        Note that this operator does not satisfy the graded commutativity property;
-        i.e., in general, it is not true that `ξ ⋀ η = (-1)^(k*l)*(η ⋀ ξ)`, unless
-        k = l = 0.
-        """
         super().__init__()
 
         m = k + l
@@ -51,13 +64,11 @@ class CupProduct(torch.nn.Module):
         # order). For the cup product between a k- and l-cochain, this results in
         # three potential sign corrections:
         #
-        # 1. Convert the (k+l)-simplices to the canonical (k+l)-simplices, which
-        #    incurs a sign correction at the (k+l)-simplex level.
-        # 2. Identify the k-front and k-back faces of the canonical (k+l)-simplices,
-        #    and then convert them to the geometric (k+l)-simplices, which incurs
-        #    two sign corrections on the front/back face level.
-        # 3. Look up the k- and l-cochain values at the geometric front/back faces,
-        #    and find their product.
+        # * Convert the (k+l)-simplices to the canonical (k+l)-simplices, which
+        #   incurs a sign correction at the (k+l)-simplex level.
+        # * Identify the k-front and k-back faces of the canonical (k+l)-simplices,
+        #   and then convert them to the geometric (k+l)-simplices, which incurs
+        #   two sign corrections on the front/back face level.
 
         # Compute (k+l)-simplex sign correction
         if m == mesh.dim:
@@ -120,6 +131,34 @@ class CupProduct(torch.nn.Module):
         l_cochain: Float[Tensor, " l_splx *ch_in"],
         pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
     ) -> Float[Tensor, " m_splx *ch_out"]:
+        """
+        Execute on the cup product between a k-cochain and an l-cochain.
+
+        Parameters
+        ----------
+        k_cochain : [k_splx, *ch_in]
+            The k-cochain. The trailing channel/batch dimensions should match
+            those of the `l_cochain`.
+        l_cochain : [l_splx, *ch_in]
+            The l-cochain. The trailing channel/batch dimensions should match
+            those of the `k_cochain`.
+        pairing
+            How to pair the channel dimensions of the input cochains. If
+            `pairing=scalar`, then the cup product is performed elementwise.
+            If `pairing` is "dot", "cross", or "outer", then `*ch_in` must match
+            to one dimension, and the cup product performs a dot, cross, or outer
+            product, respectively, along the channel dimension between the k-cochain
+            at the k-front faces and the l-cochain at the k-back faces.
+
+        Returns
+        -------
+        [m_splx, *ch_out]
+            The cup product between the k-cochain and the l-cochain. If `pairing`
+            is "scalar", then `*ch_out` matches the input `*ch_in`; if `pairing`
+            is "dot", then `*ch_out` is trivial; if `pairing` is "cross", then
+            `*ch_out` matches the single `ch_in` dimension; if `pairing` is
+            "outer", then `*ch_out` matches to `(ch_in, ch_in)`.
+        """
         k_cochain_at_f_face = torch.einsum(
             "n,n...->n...", self.f_face_parity, k_cochain[self.f_face_idx]
         )
@@ -127,8 +166,6 @@ class CupProduct(torch.nn.Module):
             "n,n...->n...", self.b_face_parity, l_cochain[self.b_face_idx]
         )
 
-        # If pairing='scalar', *ch_in can match to an arbitrary number of channel
-        # dimensions; for other pairing method, *ch_in need to match to one dimension.
         match pairing:
             case "scalar":
                 prod = torch.einsum(
@@ -158,29 +195,42 @@ class CupProduct(torch.nn.Module):
                 )
 
             case _:
-                raise ValueError()
+                raise ValueError(f"Unknown pairing method '{pairing}'.")
 
         return prod
 
 
 class AntisymmetricCupProduct(torch.nn.Module):
+    r"""
+    Compute the anti-symmetrized cup product between a k-cochain and an l-cochain.
+
+    Parameters
+    ----------
+    k
+        The order of the k-cochain.
+    l
+        The order of the l-cochain.
+    mesh
+        A simplicial mesh over which the cochains are defined.
+
+    Notes
+    -----
+    The anti-symmetrized cup product differs from the regular cup product in that
+    it averages over all permutations of k-front and k-back face splits, thus
+    is invariant to simplex vertex permutation.
+
+    As a result of this permutation invariance, this operator satisfies the the
+    graded commutativity property; i.e., $\xi \wedge \eta = (-1)^{kl} \eta \wedge \xi$.
+    However, unlike the regular cup product, it does not in general satisfies the
+    associativity rule or the Leibniz rule.
+    """
+
     def __init__(
         self,
         k: int,
         l: int,
         mesh: SimplicialMesh,
     ):
-        """
-        Compute the anti-symmetrized cup product between a `k`-cochain `ξ` and an
-        `l`-cochain `η`, which produces a `(k+l)`-cochain. This differs from the
-        regular cup product in that it averages over all permutations of k-front
-        and k-back face splits, thus is invariant to simplex vertex permutation.
-
-        This operator satisfies the the graded commutativity property; i.e.,
-        `ξ ⋀ η = (-1)^(k*l)*(η ⋀ ξ)`. However, unlike the regular cup product,
-        it does not ingeneral satisfies the associativity rule or the Leibniz
-        rule.
-        """
         super().__init__()
 
         m = k + l
@@ -201,7 +251,7 @@ class AntisymmetricCupProduct(torch.nn.Module):
         self.m_splx_parity: Float[Tensor, " m_splx"]
         self.register_buffer("m_splx_parity", m_splx_parity)
 
-        # Identify permutations of the  k-front faces of (k+l)-simplices and their
+        # Identify permutations of the k-front faces of (k+l)-simplices and their
         # sign correction.
         uf_face: Integer[Tensor, "m_splx uf_face k+1"] = m_splx_sorted[
             :, perm.unique_front
@@ -269,6 +319,34 @@ class AntisymmetricCupProduct(torch.nn.Module):
         l_cochain: Float[Tensor, " l_splx *ch_in"],
         pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
     ) -> Float[Tensor, " m_splx *ch_out"]:
+        """
+        Execute on the anti-symmetrized cup product between a k-cochain and an l-cochain.
+
+        Parameters
+        ----------
+        k_cochain : [k_splx, *ch_in]
+            The k-cochain. The trailing channel/batch dimensions should match
+            those of the `l_cochain`.
+        l_cochain : [l_splx, *ch_in]
+            The l-cochain. The trailing channel/batch dimensions should match
+            those of the `k_cochain`.
+        pairing
+            How to pair the channel dimensions of the input cochains. If
+            `pairing=scalar`, then the cup product is performed elementwise.
+            If `pairing` is "dot", "cross", or "outer", then `*ch_in` must match
+            to one dimension, and the cup product performs a dot, cross, or outer
+            product, respectively, along the channel dimension between the k-cochain
+            at the k-front faces and the l-cochain at the k-back faces.
+
+        Returns
+        -------
+        [m_splx, *ch_out]
+            The cup product between the k-cochain and the l-cochain. If `pairing`
+            is "scalar", then `*ch_out` matches the input `*ch_in`; if `pairing`
+            is "dot", then `*ch_out` is trivial; if `pairing` is "cross", then
+            `*ch_out` matches the single `ch_in` dimension; if `pairing` is
+            "outer", then `*ch_out` matches to `(ch_in, ch_in)`.
+        """
         k_cochain_at_f_face: Float[Tensor, "m_splx face *ch_in"] = k_cochain[
             self.f_face_idx
         ]
@@ -283,15 +361,18 @@ class AntisymmetricCupProduct(torch.nn.Module):
             * self.perm_sign
         )
 
-        # If pairing='scalar', *ch_in can match to an arbitrary number of channel
-        # dimensions; for other pairing method, *ch_in need to match to one dimension.
+        n_face_splits = combined_perm_sign.size(1)
+
         match pairing:
             case "scalar":
-                prod = torch.einsum(
-                    "nf,nf...->n...",
-                    combined_perm_sign.squeeze(-1),
-                    k_cochain_at_f_face * l_cochain_at_b_face,
-                ) / combined_perm_sign.size(1)
+                prod = (
+                    torch.einsum(
+                        "nf,nf...->n...",
+                        combined_perm_sign.squeeze(-1),
+                        k_cochain_at_f_face * l_cochain_at_b_face,
+                    )
+                    / n_face_splits
+                )
 
             case "dot":
                 prod = torch.mean(
@@ -311,14 +392,17 @@ class AntisymmetricCupProduct(torch.nn.Module):
                 )
 
             case "outer":
-                prod = torch.einsum(
-                    "nf,nfk,nfl->nkl",
-                    combined_perm_sign.flatten(start_dim=1),
-                    k_cochain_at_f_face,
-                    l_cochain_at_b_face,
-                ) / combined_perm_sign.size(1)
+                prod = (
+                    torch.einsum(
+                        "nf,nfk,nfl->nkl",
+                        combined_perm_sign.squeeze(-1),
+                        k_cochain_at_f_face,
+                        l_cochain_at_b_face,
+                    )
+                    / n_face_splits
+                )
 
             case _:
-                raise ValueError()
+                raise ValueError(f"Unknown pairing method '{pairing}'.")
 
         return prod
