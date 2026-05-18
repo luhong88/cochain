@@ -35,7 +35,8 @@ def mixed_mass(
     mode
         If `mode` is "element", then the vector space basis functions are defined
         to be piecewise-constant per top-level simplex; if `mode` is "vertex",
-        then the vector space basis functions are anchored at the vertices.
+        then the vector space basis functions are defined to be piecewise-linear
+        and anchored at the vertices.
 
     Returns
     -------
@@ -55,7 +56,7 @@ def mixed_mass(
 
     where $\lambda_i(r)$ is the barycentric coordinate function of point $r$
     associated with the vertex $i$. Note that the gradients of the barycentric
-    coordiante functions are constant vectors independent of $r$.
+    coordinate functions are constant vectors independent of $r$.
 
     If `mode` is "element", the vector space basis functions are attached to
     the top-level simplices and defined as the set $\{1_\sigma e_c\}$, where
@@ -172,7 +173,8 @@ def vector_mass(
     mode
         If `mode` is "element", then the vector space basis functions are defined
         to be piecewise-constant per top-level simplex; if `mode` is "vertex",
-        then the vector space basis functions are anchored at the vertices.
+        then the vector space basis functions defined to be piecewise-linear and
+        anchored at the vertices.
     diagonal
         If `mode` is "vertex", `diagonal=False` computes the exact vector mass
         matrix from the consistent 0-mass matrix, which is in general not diagonal,
@@ -304,10 +306,9 @@ def galerkin_flat(
     ----------
     vec_field : [splx, coord]
         The input vector field. The interpretation of the first `splx` dimension
-        depends on the `mode` argument. If `mode` is "element", the input vector
-        field is assumed to be discrete/piecewise constant and associated with
-        the top-level simplices of the mesh. If `mode` is "vertex", the input vector
-        field is assumed to be associated with the vertices of the mesh.
+        depends on the `mode` argument. If `mode` is "element", then `splx` refers
+        to the number of top-level simplices; if `mode` is "vertex", then `splx`
+        refers to the number of vertices. In either case, `coord` is 3.
     mass_1 : [edge, edge]
         The 1-mass matrix. If this is a callable `InvSparseOperator`, the RHS
         ($P^T V$) will be passed to the operator to solve for $\eta$; if the mass
@@ -321,8 +322,9 @@ def galerkin_flat(
     mode
         If `mode` is "element", the input vector field should be piecewise-constant
         and defined over the top-level-simplices of the mesh; if `mode` is "vertex",
-        the input vector field should be defined over the vertices of the mesh.
-        The input `mass_mixed` matrix should be computed using the same `mode`
+        the input vector field should be piecewise-linear and defined over the
+        vertices of the mesh. The input `mass_mixed` matrix should be computed
+        using the same `mode`
         argument.
     solver_kwargs
         If `mass_1` is a callable `InvSparseOperator`, additional keyword arguments
@@ -422,9 +424,9 @@ def galerkin_sharp(
     mode
         If `mode` is "element", the output vector field will be piecewise-constant
         and defined over the top-level-simplices of the mesh; if `mode` is "vertex",
-        the output vector field will be defined over the vertices of the mesh. The
-        input `mass_vec` and `mass_mixed` matrix should be computed using the same
-        `mode` argument.
+        the output vector field will be piecewise-linear and defined over the
+        vertices of the mesh. The input `mass_vec` and `mass_mixed` matrix should
+        be computed using the same `mode` argument.
     solver_kwargs
         If `mass_vec` is a callable `InvSparseOperator`, additional keyword
         arguments can be passed to the sparse solver here.

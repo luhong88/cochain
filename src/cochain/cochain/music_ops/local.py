@@ -27,7 +27,8 @@ def local_flat(
         depends on the `mode` argument. If `mode` is "element", the input vector
         field is assumed to be discrete/piecewise constant and associated with
         the top-level simplices of the mesh. If `mode` is "vertex", the input vector
-        field is assumed to be associated with the vertices of the mesh.
+        field is assumed to be piecewise linear associated with the vertices of
+        the mesh.
     mesh
         A simplicial mesh.
     mode
