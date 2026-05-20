@@ -13,26 +13,59 @@ from ._whitney_utils import (
 def _inv_metric_det(
     bc_grad_dot: Float[Tensor, "splx vert vert"], form_deg: int
 ) -> Float[Tensor, " splx *d_lambda"]:
-    """
-    Compute the scalar inner products between wedge products of dλ's, which is
-    equivalent to computing the determinant of the inner products of the gradients
-    of λ's.
+    r"""
+    Compute the scalar inner products between barycentric differentials.
+
+    Parameters
+    ----------
+    bc_grad_dot : [splx, vert, vert]
+        The pairwise inner products between the gradients of barycentric
+        coordinate functions within each top-level simplex.
+    form_deg
+        The degree of the form.
+
+    Returns
+    -------
+    [splx, *d_lambda]
+
+    Notes
+    -----
+    Let $d$ be the `form_deg`. For $d=0$, this function returns 1 for each
+    simplex, since the Whitney 0-form basis functions do not involve any
+    $d\lambda$'s. For $d=1$, this function returns all pairwise
+
+    $$
+    \left<d\lambda_i, d\lambda_j\right> =
+    \left<\nabla \lambda_i, \nabla \lambda_j\right>
+    $$
+
+    for each top-level simplex, which is simply the input `bc_grad_dot`. For 
+    $d=2$, this function returns all pairwise
+
+    $$
+    \left<d\lambda_i \wedge d\lambda_j, d\lambda_k \wedge d\lambda_l\right> =
+    \begin{vmatrix}
+        \left<\nabla \lambda_i, \nabla \lambda_k\right> &
+        \left<\nabla \lambda_i, \nabla \lambda_l\right> \\
+        \left<\nabla \lambda_j, \nabla \lambda_k\right> &
+        \left<\nabla \lambda_j, \nabla \lambda_l\right>
+    \end{vmatrix}
+    $$
+
+    for each top-level simplex; this equality follows from the Binet-Cauchy identity.
     """
     match form_deg:
-        # Because Whitney 0-forms do not involve dλ terms, return 1 for each simplex.
         case 0:
             d_bc_wedge_dot = torch.ones(
-                bc_grad_dot.shape[0], dtype=bc_grad_dot.dtype, device=bc_grad_dot.device
+                bc_grad_dot.shape[0],
+                dtype=bc_grad_dot.dtype,
+                device=bc_grad_dot.device,
             )
 
-        # <dλ_i, dλ_j> = <grad[λ_i], grad[λ_j]>
         case 1:
             d_bc_wedge_dot = bc_grad_dot
 
-        # <dλ_i ⋀ dλ_j, dλ_k ⋀ dλ_l> is equal to the determinant of
-        #
-        # | <grad[λ_i], grad[λ_k]> <grad[λ_i], grad[λ_l]> |
-        # | <grad[λ_j], grad[λ_k]> <grad[λ_j], grad[λ_l]> |
+        # <dλ_i ⋀ dλ_j, dλ_k ⋀ dλ_l>
         case 2:
             n_splx = bc_grad_dot.size(0)
             n_vert = bc_grad_dot.size(-1)
@@ -47,58 +80,14 @@ def _inv_metric_det(
                 device=bc_grad_dot.device,
             )
 
+            # <dλ_i, dλ_k><dλ_j, dλ_l>
             d_bc_wedge_dot.add_(
                 torch.einsum("tik,tjl->tijkl", bc_grad_dot, bc_grad_dot)
             )
+            # <dλ_i, dλ_l><dλ_j, dλ_k>
             d_bc_wedge_dot.sub_(
                 torch.einsum("til,tjk->tijkl", bc_grad_dot, bc_grad_dot)
             )
-
-        # <dλ_i ⋀ dλ_j ⋀ dλ_k, dλ_a ⋀ dλ_b ⋀ dλ_c> is equal to the determinant of
-        #
-        # | <grad[λ_i], grad[λ_a]> <grad[λ_i], grad[λ_b]> <grad[λ_i], grad[λ_c]> |
-        # | <grad[λ_j], grad[λ_a]> <grad[λ_j], grad[λ_b]> <grad[λ_j], grad[λ_c]> |
-        # | <grad[λ_k], grad[λ_a]> <grad[λ_k], grad[λ_b]> <grad[λ_k], grad[λ_c]> |
-        case 3:
-            n_splx = bc_grad_dot.size(0)
-            n_vert = bc_grad_dot.size(-1)
-
-            d_bc_wedge_dot = torch.zeros(
-                n_splx,
-                n_vert,
-                n_vert,
-                n_vert,
-                n_vert,
-                n_vert,
-                n_vert,
-                dtype=bc_grad_dot.dtype,
-                device=bc_grad_dot.device,
-            )
-
-            # Denote <grad[λ_i], grad[λ_a]> as g_ia. Computing the determinant
-            # is equivalent to summing over all permutations of all products of
-            # the form sign(xyz)*g_ix*g_jy*gkz where x, y, z denotes permutations
-            # of a, b, c and the sign(xyz) denotes the parity of the permutation
-            # to arnage x, y, z back to lex order.
-            for x, y, z in ["abc", "bca", "cab"]:
-                d_bc_wedge_dot.add_(
-                    torch.einsum(
-                        f"ti{x},tj{y},tk{z}->tijkabc",
-                        bc_grad_dot,
-                        bc_grad_dot,
-                        bc_grad_dot,
-                    )
-                )
-
-            for x, y, z in ["acb", "bac", "cba"]:
-                d_bc_wedge_dot.sub_(
-                    torch.einsum(
-                        f"ti{x},tj{y},tk{z}->tijkabc",
-                        bc_grad_dot,
-                        bc_grad_dot,
-                        bc_grad_dot,
-                    )
-                )
 
     return d_bc_wedge_dot
 

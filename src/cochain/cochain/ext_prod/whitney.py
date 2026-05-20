@@ -49,21 +49,18 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
         m_faces = mesh.faces(m)
 
         self.k_face_idx: Integer[Tensor, "top_splx k_face"]
-        self.register_buffer("k_face_idx", k_faces.idx)
-
         self.k_face_parity: Float[Tensor, "top_splx k_face"]
+        self.register_buffer("k_face_idx", k_faces.idx)
         self.register_buffer("k_face_parity", k_faces.parity)
 
         self.l_face_idx: Integer[Tensor, "top_splx l_face"]
-        self.register_buffer("l_face_idx", l_faces.idx)
-
         self.l_face_parity: Float[Tensor, "top_splx l_face"]
+        self.register_buffer("l_face_idx", l_faces.idx)
         self.register_buffer("l_face_parity", l_faces.parity)
 
         self.m_face_idx: Integer[Tensor, "top_splx m_face"]
-        self.register_buffer("m_face_idx", m_faces.idx)
-
         self.m_face_parity: Float[Tensor, "top_splx m_face"]
+        self.register_buffer("m_face_idx", m_faces.idx)
         self.register_buffer("m_face_parity", m_faces.parity)
 
         self.n_m_splx = mesh.splx[m].size(0)
