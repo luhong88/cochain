@@ -67,7 +67,10 @@ def _compute_unit_tet_3_form_perms(
 
     A convenient way to account for both $\text{sign}(ijk)$ and $(-1)^{l+1}$ is
     by computing $C_{ijk} = \text{sign}(ijkl)$ (i.e., appending the missing $l$
-    to the end).
+    to the end). The tensor represented by $\text{sign}(ijkl)$ is known as the
+    4D Levi-Civita symbol $\epsilon_{ijkl}$, and $C_{ijk}$ is related to
+    $\epsilon_{ijkl}$ by contracting out the last $l$ dimension (note that any
+    combination of $i$, $j$, and $k$ leaves at most one $l$ with nonzero values).
     """
     form3_perms = torch.zeros(4, 4, 4, dtype=dtype, device=device)
 
@@ -111,13 +114,13 @@ def _compute_3_form_squared_norm(
     For the sake of simplicity, let us write
 
     $$
-    g_ij = \left< d\lambda_i, d\lambda_j \right>
+    g_{ij} = \left< d\lambda_i, d\lambda_j \right>
     $$
 
     Then, one can show, using the Cauchy-Binet formula, that
 
     $$
-    \|d\lambda_0 \wedge d\lambda_1 \wedge d\lambda_2\| = 
+    \|d\lambda_0 \wedge d\lambda_1 \wedge d\lambda_2\|^2 = 
     \begin{vmatrix}
         g_{00} & g_{01} & g_{02} \\
         g_{10} & g_{11} & g_{12} \\
