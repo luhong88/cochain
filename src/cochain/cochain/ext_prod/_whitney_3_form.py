@@ -100,7 +100,7 @@ def _get_triple_tensor_prod_einsum_str_3_form(k: int, l: int) -> str:
     return einsum_str
 
 
-def triple_tensor_prod_3_form(
+def compute_3_form_triple_prod_tensor(
     k: int,
     l: int,
     mesh: SimplicialMesh,

@@ -1,4 +1,5 @@
 import torch
+from einops import einsum
 from jaxtyping import Float
 from torch import Tensor
 
@@ -11,8 +12,8 @@ from ._whitney_utils import (
 
 
 def _inv_metric_det(
-    bc_grad_dot: Float[Tensor, "splx vert vert"], form_deg: int
-) -> Float[Tensor, " splx *d_lambda"]:
+    bc_grad_dot: Float[Tensor, "top_splx vert vert"], form_deg: int
+) -> Float[Tensor, " top_splx *d_lambda"]:
     r"""
     Compute the scalar inner products between barycentric differentials.
 
@@ -22,11 +23,18 @@ def _inv_metric_det(
         The pairwise inner products between the gradients of barycentric
         coordinate functions within each top-level simplex.
     form_deg
-        The degree of the form.
+        The degree of the form. If the `form_deg` is $k$, compute all possible
+        pairwise inner products between the wedge products of $k$ barycentric
+        differentials.
 
     Returns
     -------
     [splx, *d_lambda]
+        The output inner product tensor. The `splx` dimension refers to the top-level
+        simplices, and the `*d_lambda` dimension(s) refer to the barycentric
+        differentials. If the `form_deg` is $k$ and the dimension of the top-level
+        simplices is $d$, then there are $2^k$ such `d_lambda` dimensions, and each 
+        `d_\lambda` dimension is of size $d+1$.
 
     Notes
     -----
@@ -93,53 +101,95 @@ def _inv_metric_det(
 
 
 def _get_triple_tensor_prod_einsum_str(k: int, l: int) -> str:
-    """
-    Generate the string used in einsum() to compute the triple tensor product
-    from constituent components.
-    """
+    """Generate the string used in einsum() to compute the triple tensor product."""
     m = k + l
-    d_lambda_input_vars = "xyz"
-    d_lambda_output_vars = "pqr"
+    d_lambda_input_vars = ["dl_x", "dl_y", "dl_z"]
+    d_lambda_output_vars = ["dl_p", "dl_q", "dl_r"]
 
-    k_d_lambda_vars = d_lambda_input_vars[:k]
-    l_d_lambda_vars = d_lambda_input_vars[k : k + l]
-    m_d_lambda_vars = d_lambda_output_vars[:m]
+    k_d_lambdas = d_lambda_input_vars[:k]
+    l_d_lambdas = d_lambda_input_vars[k : k + l]
+    m_d_lambdas = d_lambda_output_vars[:m]
 
     einsum_inputs = [
-        "ua" + k_d_lambda_vars,  # k-form router
-        "vb" + l_d_lambda_vars,  # l-form router
-        "wc" + m_d_lambda_vars,  # m-form router
-        "t",  # simplex size
-        "abc",  # moments
-        "t" + k_d_lambda_vars + l_d_lambda_vars + m_d_lambda_vars,  # wedge dot
+        " ".join(["k_face", "l_a"] + k_d_lambdas),  # k-form router
+        " ".join(["l_face", "l_b"] + l_d_lambdas),  # l-form router
+        " ".join(["m_face", "l_c"] + m_d_lambdas),  # m-form router
+        "top_splx",  # simplex size
+        "l_a l_b l_c",  # moments
+        " ".join(["top_splx"] + k_d_lambdas + l_d_lambdas + m_d_lambdas),  # wedge dot
     ]
 
-    einsum_output = "tuvw"
+    einsum_output = "top_splx k_face l_face m_face"
 
-    einsum_str = ",".join(einsum_inputs) + "->" + einsum_output
+    einsum_str = ",".join(einsum_inputs) + " -> " + einsum_output
 
     return einsum_str
 
 
-def triple_tensor_prod(
+def compute_triple_prod_tensor(
     k: int,
     l: int,
     mesh: SimplicialMesh,
 ) -> Float[Tensor, "top_splx k_face l_face m_face"]:
-    """
-    Compute the triple product tensor T_ijk required for computing the load vector.
+    r"""
+    Compute the triple product tensor required for the Galerkin wedge product.
 
-    T_uvw is defined as the L^2 inner product <ϕ_u ⋀ ϕ_v, ϕ_w>, where ϕ_u is the
-    Whitney k-form defined on the k-simplex u, ϕ_v is the Whitney l-form defined
-    on the l-simplex v, and ϕ_w is the Whitney (k+l)-form defined on the
-    (k+l)-simplex w.
+    Parameters
+    ----------
+    k
+        The order of the k-cochain.
+    l
+        The order of the l-cochain.
+    mesh
+        A simplicial mesh over which the cochains are defined.
+
+    Returns
+    -------
+    [top_splx, k_face, l_face, m_face]
+        The triple product tensor.
+
+    Notes
+    -----
+    Let $m = k + l$. To compute the wedge product between a $k$-cochain and an
+    $l$-cochain using the Galerkin approach requires computing, for each top-level
+    simplex, the triple product
+
+    $$
+    T_{rst} = \int_\Omega \left<W_{kr} \wedge W_{ls}, W_{mt}\right> dV
+    $$
+
+    where $r$ iterates over the $k$-faces, $s$ iterates over the $l$-faces, and
+    $t$ iterates over the $m$-faces; $W_{kr}$ is the Whitney $k$-form basis function
+    defined on the $k$-simplex $r$, $W_{ls}$ is the Whitney $l$-form basis function
+    defined on the $l$-simplex $s$, and $W_{mt}$ is the Whitney $(k+l)$-form basis
+    function defined on the $(k+l)$-simplex $t$.
+
+    In general, a Whitney basis form (of the lowest order) consists of multiple
+    terms with a barycentric weight coefficient (which is coordinate dependent)
+    and a wedge product of a variable number of barycentric differentials (which
+    is coordinate independent). Therefore, the integral for $T_{rst}$ can be split
+    into a product of two terms:
+
+    * An inner product between wedge products of barycentric differentials, which
+      is computed by the `_inv_metric_det()` function.
+    * An area/volume integral of products of barycentric weights, which is computed
+      using the magic formula by the `compute_moments()` function. However, note
+      that `compute_moments()` performs the integral over a reference simplex,
+      and therefore a third term is required to account for the area/volume of
+      the top-level simplex.
+
+    This function achieves this by dynamically computing "router" tensors for
+    the Whitney $k$-, $l$-, and $m$-basis forms, which, when contracted with the
+    outputs from the `_inv_metric_det()` and `compute_moments()` functions,
+    implicitly assemble the correct basis forms and compute their triple product
+    tensor.
     """
     device = mesh.device
     dtype = mesh.dtype
 
     k_form_router = compute_whitney_router(mesh.dim, k, device, dtype)
     l_form_router = compute_whitney_router(mesh.dim, l, device, dtype)
-    kl_form_router = compute_whitney_router(mesh.dim, k + l, device, dtype)
+    m_form_router = compute_whitney_router(mesh.dim, k + l, device, dtype)
 
     moments = compute_moments(3, mesh.dim, device, dtype)
 
@@ -148,12 +198,12 @@ def triple_tensor_prod(
 
     einsum_str = _get_triple_tensor_prod_einsum_str(k, l)
 
-    return torch.einsum(
-        einsum_str,
+    return einsum(
         k_form_router,
         l_form_router,
-        kl_form_router,
+        m_form_router,
         splx_size,
         moments,
         wedge_dot,
+        einsum_str,
     )

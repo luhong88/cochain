@@ -42,7 +42,7 @@ def compute_whitney_router(
 
     Notes
     -----
-    In general, a Whitney k-form basis function defined on the $k$-simplex
+    In general, a Whitney $k$-form basis function defined on the $k$-simplex
     $012\cdots k$ is given by
 
     $$
@@ -52,7 +52,7 @@ def compute_whitney_router(
 
     where the hat indicates an omitted term. There is, however, a somewhat more
     verbose but equivalent definition that is more amenable to algorithmic
-    implementation: For a given k-simplex, enumerate all permutations of its
+    implementation: For a given $k$-simplex, enumerate all permutations of its
     vertices and determine the parity of the permutations. Then, each permutation
     can be interpreted as a term in the Whitney k-form basis function. Specifically,
     the first vertex is a barycentric weight while the rest are barycentric
@@ -162,7 +162,7 @@ def compute_moments(
 
 def dispatch_bc_grad_dot(
     mesh: SimplicialMesh,
-) -> tuple[Float[Tensor, "splx vert vert"], Float[Tensor, " splx"]]:
+) -> tuple[Float[Tensor, "top_splx vert vert"], Float[Tensor, " top_splx"]]:
     """Dispatch the correct bary_coord_grad_inner_prods() for tri or tet meshes."""
     match mesh.dim:
         case 2:
