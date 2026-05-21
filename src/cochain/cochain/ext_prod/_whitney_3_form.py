@@ -1,6 +1,7 @@
 import itertools
 
 import torch
+from einops import einsum
 from jaxtyping import Float
 from torch import Tensor
 
@@ -13,89 +14,159 @@ from ._whitney_utils import (
 )
 
 
-def _compute_mask_3_form(
+def _compute_unit_tet_3_form_perms(
     device: torch.device, dtype: torch.dtype
 ) -> Float[Tensor, "d_lambda d_lambda d_lambda"]:
+    r"""
+    Enumerate the Whitney 3-form permutations over a tet with unit volume.
+
+    Parameters
+    ----------
+    device
+        The device of the output tensor.
+    dtype
+        The dtype of the output tensor.
+
+    Returns
+    -------
+    form3_perms : [d_lambda, d_lambda, d_lambda]
+        The output tensor containing the Whitney 3-form permutation signs.
+
+    Notes
+    -----
+    The space of Whitney 3-forms in $\mathbb R^3$ is one-dimensional, and all
+    3-forms can be written as:
+
+    $$
+    d\lambda_i \wedge d\lambda_j \wedge d\lambda_k =
+    C_{ijk} (d\lambda_0 \wedge d\lambda_1 \wedge d\lambda_2)
+    $$
+
+    This function computes the $C_{ijk}$ coefficient tensor.
+
+    The $C_{ijk}$ tensor contains only $1$, $0$, and $-1$ and is constructed
+    using the following rules:
+
+    * If there are any duplicates in $i$, $j$, $k$, then $C_{ijk} = 0$.
+    * If $i$, $j$, and $k$ are distinct, then $C_{ijk} = \text{sign}(ijk)(-1)^{l+1}$.
+      Here, $\text{sign}(ijk)$ is the parity of permutation required to put $ijk$
+      back to lex order, and $l$ denotes the missing index.
+
+    To see why the missing index factors into the calculation, consider the example
+    $dd\lambda_0 \wedge d\lambda_1 \wedge d\lambda_3$. If $C_{ijk}$ is solely
+    determined by $\text{sign}(ijk)$, then $C_{013} = 1$. However, since the complete
+    set of barycentric coordinates satisfies the partition of unity (i.e.,
+    $\lambda_0 + \lambda_1 + \lambda_2 + \lambda_3 = 1$), we can show that
+
+    $$
+    d\lambda_0 \wedge d\lambda_1 \wedge (- d\lambda_0 - d\lambda_1 - d\lambda_2)
+    = -d\lambda_0 \wedge d\lambda_1 \wedge d\lambda_2
+    $$
+
+    and thus $C_{013} = -1$ (i.e., $l=2$ and $(-1)^{2+1} = -1$).
+
+    A convenient way to account for both $\text{sign}(ijk)$ and $(-1)^{l+1}$ is
+    by computing $C_{ijk} = \text{sign}(ijkl)$ (i.e., appending the missing $l$
+    to the end).
     """
-    The space of 3-forms in R^3 is one-dimensional, and all 3-forms can be related
-    to the reference form via:
-
-    dλ_i ⋀ dλ_j ⋀ dλ_k = C_ijk * (dλ_0 ⋀ dλ_1 ⋀ dλ_2)
-
-    This function computes the C_ijk tensor.
-
-    The C_ijk tensor contains only 1, 0, and -1 and is constructed using the
-    following rules:
-
-    * If there is any duplicates in i, j, k, then C_ijk = 0.
-    * If i, j, and k are distinct, then C_ijk = sign(ijk)*(-1)**(l+1). Here, sign(ijk)
-      is the parity of permutation required to put ijk back to lex order, and l
-      denotes the missing index.
-
-    To see why the missing index is required, consider the example dλ_0 ⋀ dλ_1 ⋀ dλ_3,
-    since λ_0 + λ_1 + λ_2 + λ_3 = 1, this 3-form is related to the reference form by
-
-    dλ_0 ⋀ dλ_1 ⋀ (-dλ_0 - dλ_1 - dλ_2) = -dλ_0 ⋀ dλ_1 ⋀ dλ_2
-
-    This sign is equivalent to (-1)**(2 + 1) = -1. A convenient way to compute
-    the combined sign is as C_ijk = sign(ijkl) (i.e., appending l to the end).
-    """
-    mask = torch.zeros(4, 4, 4, dtype=dtype, device=device)
+    form3_perms = torch.zeros(4, 4, 4, dtype=dtype, device=device)
 
     perm = torch.tensor(
         list(itertools.permutations(range(4), r=4)), dtype=torch.int64, device=device
     )
     signs = compute_lex_rel_orient(perm).to(dtype=dtype)
 
-    mask[perm[:, :-1].T.unbind(0)] = signs
+    form3_perms[perm[:, :-1].T.unbind(0)] = signs
 
-    return mask
+    return form3_perms
 
 
-def _inv_metric_det_3_form(
+def _compute_3_form_squared_norm(
     bc_grad_dot: Float[Tensor, "tet vert vert"],
 ) -> Float[Tensor, " tet"]:
+    r"""
+    Compute the squared norm of the Whitney 3-form basis on the tets.
+
+    This function is a specialized version of `_compute_inv_metric_det()` that
+    optimizes the calculation for Whitney 3-forms.
+
+    Parameters
+    ----------
+    bc_grad_dot : [tet, vert, vert]
+        The pairwise inner products between the gradients of barycentric
+        coordinate functions within each tet.
+
+    Returns
+    -------
+    form3_norm2 : [tet,]
+        The output Whitney 3-form squared norms tensor.
+
+    Notes
+    -----
+    The space of Whitney 3-forms in $\mathbb R^3$ is one-dimensional. If one
+    takes $d\lambda_0 \wedge d\lambda_1 \wedge d\lambda_2$ as the basis function,
+    then the only unique inner product (up to sign) between 3-forms is between
+    $d\lambda_0 \wedge d\lambda_1 \wedge d\lambda_2$ and itself.
+
+    For the sake of simplicity, let us write
+
+    $$
+    g_ij = \left< d\lambda_i, d\lambda_j \right>
+    $$
+
+    Then, one can show, using the Cauchy-Binet formula, that
+
+    $$
+    \|d\lambda_0 \wedge d\lambda_1 \wedge d\lambda_2\| = 
+    \begin{vmatrix}
+        g_{00} & g_{01} & g_{02} \\
+        g_{10} & g_{11} & g_{12} \\
+        g_{20} & g_{21} & g_{22}
+    \end{vmatrix}
+    $$
     """
-    A specialized version of _inv_metric_det() that optimizes the calculation for
-    3-forms; specifically, it computes <dλ_0 ⋀ dλ_1 ⋀ dλ_2, dλ_0 ⋀ dλ_1 ⋀ dλ_2>
-    for all tets.
+    form3_norm2 = torch.linalg.det(bc_grad_dot[:, :-1, :-1])
+    return form3_norm2
+
+
+def _get_3_form_triple_prod_einsum_str(k: int, l: int) -> str:
     """
-    ref_det_012 = torch.linalg.det(bc_grad_dot[:, :-1, :-1])
-    return ref_det_012
+    Generate the einsum string for computing the triple product when $k + l = 3$.
 
+    This function is a specialized version of `_get_triple_prod_einsum_str()`
+    for when $k + l = 3$. If one were to use the logic in `_get_triple_prod_einsum_str()`,
+    the `d_bc_wedge_dot` tensor would have the shape `(tet, vert, vert, vert, vert, vert, vert)`.
+    Instead, when $k + l = 3$, the `d_bc_wedge_dot` consists of inner products
+    between permutations of the Whitney 3-form, which consists of a single
+    unique element (per tet) as computed by `_compute_3_form_squared_norm()` up
+    to sign, and the sign for each operand of the inner product is computed by
+    `_compute_unit_tet_3_form_perms()`. In other words, the dimensions of
+    `d_bc_wedge_dot` are "separable" into three groups:
 
-def _get_triple_tensor_prod_einsum_str_3_form(k: int, l: int) -> str:
+    `d_bc_wedge_dot[t,x,y,z,p,q,r]=form3_norm2[t]*form3_perms[x,y,z]*form3_perms[p,q,r]`
+
+    Given this separation, there are only two tensors in the final einsum that
+    depends on the `tet` dimension and only on the `tet` dimension: the tet volumes
+    and the `form3_norm2` tensor. We therefore left the `tet` dimension out of
+    the einsum and treat it separately in `compute_3_form_triple_prod_tensor()`.
     """
-    A specialized version of _get_triple_tensor_prod_einsum_str() for when
-    k + l = 3. In this case, instead of using the d_bc_wedge_dot tensor from
-    _inv_metric_det(), which has shape (tet, vert, vert, vert, vert, vert, vert),
-    decompose this tensor as
-
-    T_txyzpqr= ref_det_012_t * C_xyz * C_pqr
-
-    Here, ref_det_012_t comes from _inv_metric_det_3_form(), and C_xyz and C_pqr
-    comes from _compute_mask_3_form().
-
-    Since there are only two terms involving the tet dimension (tet volume and
-    rer_det_012), they are left out of this einsum to be treated separately.
-    """
-    m = k + l
-    d_lambda_input_vars = "xyz"
-    d_lambda_output_vars = "pqr"
+    d_lambda_input_vars = ["dl_x", "dl_y", "dl_z"]
+    d_lambda_output_vars = ["dl_p", "dl_q", "dl_r"]
 
     k_d_lambda_vars = d_lambda_input_vars[:k]
     l_d_lambda_vars = d_lambda_input_vars[k : k + l]
-    m_d_lambda_vars = d_lambda_output_vars[:m]
 
     einsum_inputs = [
-        "ua" + k_d_lambda_vars,  # k-form router
-        "vb" + l_d_lambda_vars,  # l-form router
-        "wc" + m_d_lambda_vars,  # m-form router
-        k_d_lambda_vars + l_d_lambda_vars,  # C_xyz
-        m_d_lambda_vars,  # C_pqr
-        "abc",  # moments
+        " ".join(["k_face", "l_a"] + k_d_lambda_vars),  # k-form router
+        " ".join(["l_face", "l_b"] + l_d_lambda_vars),  # l-form router
+        " ".join(["m_face", "l_c"] + d_lambda_output_vars),  # m-form router
+        " ".join(d_lambda_input_vars),  # C_xyz
+        " ".join(d_lambda_output_vars),  # C_pqr
+        "l_a l_b l_c",  # moments
     ]
-    einsum_str = ",".join(einsum_inputs) + "->uvw"
+    einsum_output = "k_face l_face m_face"
+
+    einsum_str = ",".join(einsum_inputs) + " -> " + einsum_output
 
     return einsum_str
 
@@ -105,34 +176,40 @@ def compute_3_form_triple_prod_tensor(
     l: int,
     mesh: SimplicialMesh,
 ) -> Float[Tensor, "tet k_face l_face 3_face"]:
-    """
-    A specialized version of triple_tensor_prod() for when k + l = 3.
-    """
+    """Perform a specialized `compute_triple_prod_tensor()` for when $k + l = 3$."""
     device = mesh.device
     dtype = mesh.dtype
 
     k_form_router = compute_whitney_router(mesh.dim, k, device, dtype)
     l_form_router = compute_whitney_router(mesh.dim, l, device, dtype)
-    kl_form_router = compute_whitney_router(mesh.dim, k + l, device, dtype)
+    m_form_router = compute_whitney_router(mesh.dim, k + l, device, dtype)
 
     moments = compute_moments(3, mesh.dim, device, dtype)
 
     bc_grad_dot, splx_size = dispatch_bc_grad_dot(mesh)
-    ref_det_012 = _inv_metric_det_3_form(bc_grad_dot)
+    form3_norm2 = _compute_3_form_squared_norm(bc_grad_dot)
+    form3_perms = _compute_unit_tet_3_form_perms(device=device, dtype=dtype)
 
-    mask_3_form = _compute_mask_3_form(device=device, dtype=dtype)
+    einsum_str = _get_3_form_triple_prod_einsum_str(k, l)
 
-    einsum_str = _get_triple_tensor_prod_einsum_str_3_form(k, l)
-
-    prod1: Float[Tensor, " tet"] = splx_size * ref_det_012
-    prod2: Float[Tensor, "k_face l_face m_face"] = torch.einsum(
-        einsum_str,
+    # As noted in _get_3_form_triple_prod_einsum_str(), we split the calculation
+    # into two products: one that depends only on the tet dimension, and one that
+    # does not depend on the tet dimension, and piece them together afterwards.
+    tet_prod = splx_size * form3_norm2
+    face_prod = einsum(
         k_form_router,
         l_form_router,
-        kl_form_router,
-        mask_3_form,
-        mask_3_form,
+        m_form_router,
+        form3_perms,
+        form3_perms,
         moments,
+        einsum_str,
     )
 
-    return prod1.view(-1, 1, 1, 1) * prod2.unsqueeze(0)
+    triple_prod = einsum(
+        tet_prod,
+        face_prod,
+        "tet, k_face l_face m_face -> tet k_face l_face m_face",
+    )
+
+    return triple_prod

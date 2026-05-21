@@ -11,7 +11,7 @@ from ._whitney_utils import (
 )
 
 
-def _inv_metric_det(
+def _compute_inv_metric_det(
     bc_grad_dot: Float[Tensor, "top_splx vert vert"], form_deg: int
 ) -> Float[Tensor, " top_splx *d_lambda"]:
     r"""
@@ -100,8 +100,8 @@ def _inv_metric_det(
     return d_bc_wedge_dot
 
 
-def _get_triple_tensor_prod_einsum_str(k: int, l: int) -> str:
-    """Generate the string used in einsum() to compute the triple tensor product."""
+def _get_triple_prod_einsum_str(k: int, l: int) -> str:
+    """Generate the einsum string for computing the triple product."""
     m = k + l
     d_lambda_input_vars = ["dl_x", "dl_y", "dl_z"]
     d_lambda_output_vars = ["dl_p", "dl_q", "dl_r"]
@@ -118,7 +118,6 @@ def _get_triple_tensor_prod_einsum_str(k: int, l: int) -> str:
         "l_a l_b l_c",  # moments
         " ".join(["top_splx"] + k_d_lambdas + l_d_lambdas + m_d_lambdas),  # wedge dot
     ]
-
     einsum_output = "top_splx k_face l_face m_face"
 
     einsum_str = ",".join(einsum_inputs) + " -> " + einsum_output
@@ -168,10 +167,11 @@ def compute_triple_prod_tensor(
     terms with a barycentric weight coefficient (which is coordinate dependent)
     and a wedge product of a variable number of barycentric differentials (which
     is coordinate independent). Therefore, the integral for $T_{rst}$ can be split
-    into a product of two terms:
+    into a sum of products of two terms:
 
     * An inner product between wedge products of barycentric differentials, which
-      is computed by the `_inv_metric_det()` function.
+      is computed by the `_inv_metric_det()` function. Specifically, the inner
+      product is between two Whitney $m$-form basis functions.
     * An area/volume integral of products of barycentric weights, which is computed
       using the magic formula by the `compute_moments()` function. However, note
       that `compute_moments()` performs the integral over a reference simplex,
@@ -194,9 +194,9 @@ def compute_triple_prod_tensor(
     moments = compute_moments(3, mesh.dim, device, dtype)
 
     bc_grad_dot, splx_size = dispatch_bc_grad_dot(mesh)
-    wedge_dot = _inv_metric_det(bc_grad_dot, k + l)
+    wedge_dot = _compute_inv_metric_det(bc_grad_dot, k + l)
 
-    einsum_str = _get_triple_tensor_prod_einsum_str(k, l)
+    einsum_str = _get_triple_prod_einsum_str(k, l)
 
     return einsum(
         k_form_router,
