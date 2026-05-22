@@ -115,14 +115,14 @@ def compute_moments(
     dtype: torch.dtype = torch.float32,
 ) -> Tensor:
     r"""
-    Compute all moment integrals of a given order over a reference simplex.
+    Compute all moment integrals of a given order over a unit volume simplex.
 
     Parameters
     ----------
     order
         The order of the moment integrals.
     splx_dim
-        The dimension of the reference simplex.
+        The dimension of the unit volume simplex.
     device
         The device of the output tensor.
     dtype
@@ -130,15 +130,14 @@ def compute_moments(
 
     Returns
     -------
-    Given a reference simplex of dimension $n$ and moment order $d$, this function
+    Given a unit volume simplex of dimension $n$ and moment order $d$, this function
     returns a tensor of shape `(n + 1, ..., n + 1)` (`d` times). An element at
     index `(i_1, ..., i_d)` corresponds to the integral of the product of barycentric
-    coordinate functions $\lambda_{i_1} \cdots \lambda_{i_d}$ over the reference
-    simplex.
+    coordinate functions $\lambda_{i_1} \cdots \lambda_{i_d}$ over the simplex.
 
     Notes
     -----
-    For a ref $n$-simplex with unit volume and $n + 1$ barycentric coordinate
+    For an $n$-simplex with unit volume and $n + 1$ barycentric coordinate
     functions $\lambda_i$, the magic formula gives
 
     $$

@@ -19,9 +19,11 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
     To compute the wedge product between a $k$-cochain and an $l$-cochain, first
     use this class to compute the load vector $b$, then, solve the linear system
     $M \mu = b$ to find the wedge product $(k+l)$-cochain $\mu$; here, $M$ is the
-    $(k+l)$-mass matrix.
+    $(k+l)$-mass matrix. This wedge product is also known as the $L^2$-projected
+    wedge product.
 
-    This wedge product is also known as the $L^2$-projected wedge product.
+    Instances of this class must be re-initialized whenever the mesh geometry
+    is modified.
 
     Parameters
     ----------
@@ -115,10 +117,8 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
         self.register_buffer("l_face_idx", l_faces.idx)
         self.register_buffer("l_face_parity", l_faces.parity)
 
-        self.m_face_idx: Integer[Tensor, "top_splx m_face"]
-        self.m_face_parity: Float[Tensor, "top_splx m_face"]
-        self.register_buffer("m_face_idx", m_faces.idx)
-        self.register_buffer("m_face_parity", m_faces.parity)
+        self.m_face_idx_flat: Integer[Tensor, " top_splx_by_m_face"]
+        self.register_buffer("m_face_idx_flat", m_faces.idx.flatten())
 
         self.n_m_splx = mesh.splx[m].size(0)
 
@@ -129,14 +129,20 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
         else:
             triple_prod = compute_triple_prod_tensor(k, l, mesh)
 
-        self.triple_prod: Float[Tensor, "top_splx k_face l_face m_face"]
-        self.register_buffer("triple_prod", triple_prod)
+        triple_prod_with_parity = einsum(
+            triple_prod,
+            m_faces.parity,
+            "splx k l m, splx m -> splx k l m",
+        )
+
+        self.triple_prod_with_parity: Float[Tensor, "top_splx k_face l_face m_face"]
+        self.register_buffer("triple_prod_with_parity", triple_prod_with_parity)
 
     def forward(
         self,
         k_cochain: Float[Tensor, " k_splx *ch_in"],
         l_cochain: Float[Tensor, " l_splx *ch_in"],
-        pairing: Literal["scalar", "dot", "cross"] = "scalar",
+        pairing: Literal["scalar", "dot", "cross", "outer"] = "scalar",
     ) -> Float[Tensor, " m_splx *ch_out"]:
         """
         Execute on the wedge product between a k-cochain and an l-cochain.
@@ -176,20 +182,18 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
         match pairing:
             case "scalar":
                 m_cochain_at_m_face = einsum(
-                    self.triple_prod,
+                    self.triple_prod_with_parity,
                     k_cochain_at_k_face,
                     l_cochain_at_l_face,
-                    self.m_face_parity,
-                    "splx k l m, splx k ..., splx l ..., splx m -> splx m ...",
+                    "splx k l m, splx k ..., splx l ... -> splx m ...",
                 )
 
             case "dot":
                 m_cochain_at_m_face = einsum(
-                    self.triple_prod,
+                    self.triple_prod_with_parity,
                     k_cochain_at_k_face,
                     l_cochain_at_l_face,
-                    self.m_face_parity,
-                    "splx k l m, splx k ch, splx l ch, splx m -> splx m",
+                    "splx k l m, splx k ch, splx l ch -> splx m",
                 ).unsqueeze(-1)
 
             case "cross":
@@ -201,26 +205,24 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
                         [[0.0, 0.0, -1.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
                         [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
                     ],
-                    device=self.triple_prod.device,
-                    dtype=self.triple_prod.dtype,
+                    device=self.triple_prod_with_parity.device,
+                    dtype=self.triple_prod_with_parity.dtype,
                 )
 
                 m_cochain_at_m_face = einsum(
-                    self.triple_prod,
+                    self.triple_prod_with_parity,
                     k_cochain_at_k_face,
                     l_cochain_at_l_face,
-                    self.m_face_parity,
                     epsilon,
-                    "splx k l m, splx k e_i, splx l e_j, splx m, e_i e_j e_k -> splx m e_k",
+                    "splx k l m, splx k e_i, splx l e_j, e_i e_j e_k -> splx m e_k",
                 )
 
             case "outer":
                 m_cochain_at_m_face = einsum(
-                    self.triple_prod,
+                    self.triple_prod_with_parity,
                     k_cochain_at_k_face,
                     l_cochain_at_l_face,
-                    self.m_face_parity,
-                    "splx k l m, splx k ch1, splx l ch2, splx m -> splx m ch1 ch2",
+                    "splx k l m, splx k ch1, splx l ch2 -> splx m ch1 ch2",
                 )
 
             case _:
@@ -229,14 +231,14 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
         ch_out_shape = m_cochain_at_m_face.shape[2:]
         load = torch.zeros(
             (self.n_m_splx,) + ch_out_shape,
-            device=self.triple_prod.device,
-            dtype=self.triple_prod.dtype,
+            device=self.triple_prod_with_parity.device,
+            dtype=self.triple_prod_with_parity.dtype,
         )
 
         # load[m_face_idx[i], ...] = m_cochain_at_m_face[i, ...]
         load.index_add_(
             dim=0,
-            index=self.m_face_idx.flatten(),
+            index=self.m_face_idx_flat,
             source=m_cochain_at_m_face.flatten(end_dim=1),
         )
 
