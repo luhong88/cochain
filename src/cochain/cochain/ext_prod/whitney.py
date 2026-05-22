@@ -8,8 +8,8 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ...complex import SimplicialMesh
-from ._whitney_3_form import compute_3_form_triple_prod_tensor
-from ._whitney_m_form import compute_triple_prod_tensor
+from ._triple_prod_3_form import compute_3_form_triple_prod_tensor
+from ._triple_prod_m_form import compute_triple_prod_tensor
 
 
 class WhitneyWedgeL2Projector(torch.nn.Module):
