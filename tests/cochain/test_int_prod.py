@@ -15,6 +15,8 @@ from cochain.sparse.linalg.solvers import SuperLU
 
 def test_galerkin_contraction_1_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, device):
     """
+    Test the interior product between a constant vector field and a constant k-form.
+
     Test that the interior product between a constant vector field and a constant
     k-form can be exactly reproduced on a tet mesh using the Galerkin method.
 
@@ -205,10 +207,9 @@ def test_galerkin_contraction_3_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
 
 def test_galerkin_contraction_nilpotency_2_form(two_tets_mesh: SimplicialMesh, device):
     """
-    Test that contracting a k-cochain twice against the same vector field gives
-    zero.
+    Test that contracting a k-cochain twice against the same vector field gives zero.
 
-    Note that, due to L^2 projection errors, the Galerkin method does not strictly
+    Note that, due to $L^2$ projection errors, the Galerkin method does not strictly
     satisfy the nilpotency property unless tested on constant vector fields and
     constant k-forms.
     """
@@ -390,3 +391,102 @@ def test_galerkin_contraction_linearity(k: int, mesh, request, device):
     )
 
     torch.testing.assert_close(int_prod_1 + int_prod_2, int_prod_sum)
+
+
+@pytest.mark.parametrize(
+    "k, mesh",
+    [
+        (1, "two_tets_mesh"),
+        (2, "two_tets_mesh"),
+        (3, "two_tets_mesh"),
+        (1, "two_tris_mesh"),
+        (2, "two_tris_mesh"),
+    ],
+)
+def test_galerkin_contraction_backward(k: int, mesh, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    vec_field_flat = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    vec_field_flat.requires_grad_()
+
+    k_cochain = torch.randn(mesh.n_splx[k], dtype=mesh.dtype, device=mesh.device)
+    k_cochain.requires_grad_()
+
+    wedge_op = WhitneyWedgeL2Projector(k=1, l=k - 1, mesh=mesh)
+
+    match mesh.dim:
+        case 3:
+            mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(mesh)
+        case 2:
+            mass_km1 = getattr(tri_masses, f"mass_{k - 1}")(mesh)
+
+    int_prod = galerkin_contract(
+        vec_field_flat=vec_field_flat,
+        cochain_k=k_cochain,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op,
+    )
+
+    output = int_prod.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+    assert vec_field_flat.grad is not None
+    assert torch.isfinite(vec_field_flat.grad).all()
+
+    assert k_cochain.grad is not None
+    assert torch.isfinite(k_cochain.grad).all()
+
+
+@pytest.mark.parametrize(
+    "k, mesh",
+    [
+        (1, "two_tets_mesh"),
+        (2, "two_tets_mesh"),
+        (3, "two_tets_mesh"),
+        (1, "two_tris_mesh"),
+        (2, "two_tris_mesh"),
+    ],
+)
+def test_galerkin_contraction_gradcheck(k: int, mesh, request, device):
+    mesh = request.getfixturevalue(mesh)
+
+    vert_coords = mesh.vert_coords.clone().to(dtype=torch.float64, device=device)
+    vert_coords.requires_grad_()
+
+    vec_field_flat = torch.randn(mesh.n_edges, dtype=torch.float64, device=device)
+    vec_field_flat.requires_grad_()
+
+    k_cochain = torch.randn(mesh.n_splx[k], dtype=torch.float64, device=device)
+    k_cochain.requires_grad_()
+
+    def galerkin_contraction_fxn(test_vert_coords, test_vec_field_flat, test_k_cochain):
+        test_mesh = mesh.to(device=device, dtype=torch.float64)
+        test_mesh.vert_coords = test_vert_coords
+
+        wedge_op = WhitneyWedgeL2Projector(k=1, l=k - 1, mesh=test_mesh)
+
+        match test_mesh.dim:
+            case 3:
+                mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(test_mesh)
+            case 2:
+                mass_km1 = getattr(tri_masses, f"mass_{k - 1}")(test_mesh)
+
+        int_prod = galerkin_contract(
+            vec_field_flat=test_vec_field_flat,
+            cochain_k=test_k_cochain,
+            mass_km1=mass_km1,
+            wedge_op=wedge_op,
+        )
+
+        output = int_prod.sum()
+        return output
+
+    assert torch.autograd.gradcheck(
+        galerkin_contraction_fxn,
+        (vert_coords, vec_field_flat, k_cochain),
+        fast_mode=True,
+    )
