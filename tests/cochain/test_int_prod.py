@@ -4,7 +4,7 @@ import pytest
 import torch
 from einops import einsum, repeat
 
-from cochain.cochain.discretize import DeRhamMap
+from cochain.cochain import DeRhamMap
 from cochain.cochain.ext_prod.whitney import WhitneyWedgeL2Projector
 from cochain.cochain.int_prod import galerkin_contract
 from cochain.complex import SimplicialMesh
@@ -442,6 +442,90 @@ def test_galerkin_contraction_backward(k: int, mesh, request, device):
 
     assert k_cochain.grad is not None
     assert torch.isfinite(k_cochain.grad).all()
+
+
+@pytest.mark.parametrize(
+    "k, mesh",
+    [
+        (1, "two_tets_mesh"),
+        (2, "two_tets_mesh"),
+        (3, "two_tets_mesh"),
+        (1, "two_tris_mesh"),
+        (2, "two_tris_mesh"),
+    ],
+)
+def test_galerkin_contraction_solver_backward(k: int, mesh, request, device):
+    # First, compute backward using dense mass matrix.
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    vec_field_flat = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    vec_field_flat.requires_grad_()
+
+    k_cochain = torch.randn(mesh.n_splx[k], dtype=mesh.dtype, device=mesh.device)
+    k_cochain.requires_grad_()
+
+    wedge_op = WhitneyWedgeL2Projector(k=1, l=k - 1, mesh=mesh)
+
+    match mesh.dim:
+        case 3:
+            mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(mesh)
+        case 2:
+            mass_km1 = getattr(tri_masses, f"mass_{k - 1}")(mesh)
+
+    int_prod = galerkin_contract(
+        vec_field_flat=vec_field_flat,
+        cochain_k=k_cochain,
+        mass_km1=mass_km1,
+        wedge_op=wedge_op,
+    )
+
+    output = int_prod.sum()
+    output.backward()
+
+    mesh_grad_true = mesh.grad.detach().clone()
+    mesh.grad = None
+
+    vec_field_flat_grad_true = vec_field_flat.grad.detach().clone()
+    vec_field_flat.grad = None
+
+    k_cochain_grad_true = k_cochain.grad.detach().clone()
+    k_cochain.grad = None
+
+    # Then, compute backward using mass matrix sparse solver.
+    wedge_op = WhitneyWedgeL2Projector(k=1, l=k - 1, mesh=mesh)
+
+    match mesh.dim:
+        case 3:
+            mass_km1 = getattr(tet_masses, f"mass_{k - 1}")(mesh)
+        case 2:
+            mass_km1 = getattr(tri_masses, f"mass_{k - 1}")(mesh)
+
+    mass_km1_op = SuperLU(mass_km1, backend="scipy")
+
+    int_prod_with_op = galerkin_contract(
+        vec_field_flat=vec_field_flat,
+        cochain_k=k_cochain,
+        mass_km1=mass_km1_op,
+        wedge_op=wedge_op,
+    )
+
+    output_with_op = int_prod_with_op.sum()
+    output_with_op.backward()
+
+    mesh_grad = mesh.grad.detach().clone()
+    mesh.grad = None
+
+    vec_field_flat_grad = vec_field_flat.grad.detach().clone()
+    vec_field_flat.grad = None
+
+    k_cochain_grad = k_cochain.grad.detach().clone()
+    k_cochain.grad = None
+
+    # Check that the two approaches give the same gradients.
+    torch.testing.assert_close(mesh_grad, mesh_grad_true)
+    torch.testing.assert_close(vec_field_flat_grad, vec_field_flat_grad_true)
+    torch.testing.assert_close(k_cochain_grad, k_cochain_grad_true)
 
 
 @pytest.mark.parametrize(

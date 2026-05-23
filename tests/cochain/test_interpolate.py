@@ -6,8 +6,7 @@ from einops import einsum, repeat
 from jaxtyping import Float
 from torch import Tensor
 
-from cochain.cochain.discretize import DeRhamMap
-from cochain.cochain.interpolate import barycentric_whitney_map
+from cochain.cochain import DeRhamMap, barycentric_whitney_map
 from cochain.metric.tet import _tet_geometry
 from cochain.metric.tri import _tri_geometry
 from cochain.utils.faces import enumerate_local_faces
@@ -637,7 +636,7 @@ def test_interpolate_backward(mesh, k, quad, device, request):
     mesh = request.getfixturevalue(mesh).to(device)
     mesh.requires_grad_()
 
-    k_cochain = torch.randn(mesh.splx[k].size(0)).to(device)
+    k_cochain = torch.randn(mesh.n_splx[k], dtype=mesh.dtype).to(device)
     k_cochain.requires_grad_()
 
     bary_coords, weights = quad(dtype=mesh.dtype, device=mesh.device).get_rule(degree=3)

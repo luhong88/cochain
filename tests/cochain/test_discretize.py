@@ -2,7 +2,7 @@ import pytest
 import torch
 from einops import einsum, repeat
 
-from cochain.cochain.discretize import DeRhamMap
+from cochain.cochain import DeRhamMap
 from cochain.metric.tet._tet_geometry import compute_tet_signed_vols
 
 
