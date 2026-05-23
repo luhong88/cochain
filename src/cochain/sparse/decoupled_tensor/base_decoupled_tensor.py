@@ -194,6 +194,14 @@ class BaseDecoupledTensor(ABC):
         self.values.requires_grad_(requires_grad)
         return self
 
+    @property
+    def grad(self) -> Tensor | None:
+        return self.vert_coords.grad
+
+    @grad.setter
+    def grad(self, value):
+        self.vert_coords.grad = value
+
     @abstractmethod
     def to(self, *args, **kwargs) -> BaseDecoupledTensor: ...
 

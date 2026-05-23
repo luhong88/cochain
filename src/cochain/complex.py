@@ -209,6 +209,10 @@ class SimplicialMesh:
     def grad(self) -> Tensor | None:
         return self.vert_coords.grad
 
+    @grad.setter
+    def grad(self, value):
+        self.vert_coords.grad = value
+
     @property
     def verts(self) -> Integer[Tensor, "vert 1"]:
         return self.splx[0]
