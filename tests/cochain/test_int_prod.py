@@ -15,7 +15,7 @@ from cochain.sparse.linalg.solvers import SuperLU
 
 def test_galerkin_contraction_1_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, device):
     """
-    Test the interior product between a constant vector field and a constant k-form.
+    Test the interior product between a constant vector field and a constant 1-form.
 
     Test that the interior product between a constant vector field and a constant
     k-form can be exactly reproduced on a tet mesh using the Galerkin method.
@@ -80,6 +80,7 @@ def test_galerkin_contraction_1_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
 
 
 def test_galerkin_contraction_2_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, device):
+    """Test the interior product between a constant vector field and a constant 2-form."""
     mesh = two_tets_mesh.to(device)
 
     # Set up a constant vector field and a constant 2-form and compute their
@@ -144,6 +145,7 @@ def test_galerkin_contraction_2_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
 
 
 def test_galerkin_contraction_3_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, device):
+    """Test the interior product between a constant vector field and a constant 3-form."""
     mesh = two_tets_mesh.to(device)
 
     # Set up a constant vector field and a constant 3-form and compute their
@@ -207,7 +209,7 @@ def test_galerkin_contraction_3_form_on_tet_mesh(two_tets_mesh: SimplicialMesh, 
 
 def test_galerkin_contraction_nilpotency_2_form(two_tets_mesh: SimplicialMesh, device):
     """
-    Test that contracting a k-cochain twice against the same vector field gives zero.
+    Test that contracting a 2-cochain twice against the same vector field gives zero.
 
     Note that, due to $L^2$ projection errors, the Galerkin method does not strictly
     satisfy the nilpotency property unless tested on constant vector fields and
@@ -264,6 +266,7 @@ def test_galerkin_contraction_nilpotency_2_form(two_tets_mesh: SimplicialMesh, d
 
 
 def test_galerkin_contraction_nilpotency_3_form(two_tets_mesh: SimplicialMesh, device):
+    """Test that contracting a 3-cochain twice against the same vector field gives zero."""
     k = 3
     mesh = two_tets_mesh.to(device)
 

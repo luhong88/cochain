@@ -13,8 +13,6 @@ from cochain.metric.tri import _tri_geometry
 from cochain.utils.faces import enumerate_local_faces
 from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 
-# TODO: test gradients
-
 
 @pytest.mark.parametrize(
     "mesh, k, quad",
@@ -28,9 +26,10 @@ from cochain.utils.quadrature import Dunavant, GaussLegendre, Keast
 )
 def test_interpolate_discretize_left_inverse(mesh, k, quad, device, request):
     """
-    Test that the de Rham map is the left inverse of the Whitney map; i.e., applying
-    the Whitney map to interpolate a k-cochain, followed by applying the de Rham
-    map to discretize the k-form, gives back the same k-cochain.
+    Test that the de Rham map is the left inverse of the Whitney map.
+
+    Check that applying the Whitney map to interpolate a k-cochain, followed by
+    applying the de Rham map to discretize the k-form, gives back the same k-cochain.
     """
     mesh = request.getfixturevalue(mesh).to(device)
     k_cochain_true = torch.randn(mesh.splx[k].size(0)).to(device)
@@ -56,9 +55,11 @@ def test_interpolate_discretize_left_inverse(mesh, k, quad, device, request):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_commutativity_with_d_on_0_form(mesh, request, device):
-    """
-    Test that the Whitney map W commutes with the exterior derivative d using
-    0-cochains; i.e., for any 0-cochain η, W(dη) = d(Wη).
+    r"""
+    Test that the Whitney map commutes with the exterior derivative using 0-cochains.
+
+    Let $W$ be the Whitney map and $d$ the exterior derivative, then, for any
+    0-cochain $\eta$, check that $W(d\eta) = d(W\eta)$.
     """
     mesh = request.getfixturevalue(mesh).to(device)
 
@@ -126,10 +127,7 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_commutativity_with_d_on_1_form(mesh, request, device):
-    """
-    Test that the Whitney map W commutes with the exterior derivative d using
-    1-cochains; i.e., for any 1-cochain η, W(dη) = d(Wη).
-    """
+    """Test that the Whitney map commutes with the exterior derivative using 1-cochains."""
     mesh = request.getfixturevalue(mesh).to(device)
 
     # Generate a common set of sampled points on the interior of the top-level simplices.
@@ -219,11 +217,8 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
     torch.testing.assert_close(w_d_cochain, d_w_cochain_formed)
 
 
-def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
-    """
-    Test that the Whitney map W commutes with the exterior derivative d using
-    2-cochains; i.e., for any 2-cochain η, W(dη) = d(Wη).
-    """
+def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
+    """Test that the Whitney map commutes with the exterior derivative using 2-cochains."""
     mesh = two_tets_mesh.to(device)
 
     # Generate a common set of sampled points on the interior of the top-level simplices.
@@ -300,11 +295,13 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, request, device):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_0_form_interpolate_discretize_right_project(mesh, request, device):
-    """
+    r"""
+    Test that interpolation of a discretized constant 0-form is exact.
+
     Test that the Whitney interpolation of a 0-cochain discretized from a constant
     0-form returns the original 0-form. This is a consequence of the fact that
-    W ∘ π is a projection operator that projects k-forms to the subspace spanned
-    by the Whitney basis functions.
+    $W \circ \pi$ is a projection operator that projects k-forms to the subspace
+    spanned by the Whitney basis functions.
     """
     mesh = request.getfixturevalue(mesh).to(device)
 
@@ -338,10 +335,7 @@ def test_0_form_interpolate_discretize_right_project(mesh, request, device):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_1_form_interpolate_discretize_right_project(mesh, request, device):
-    """
-    Test that the Whitney interpolation of a 1-cochain discretized from a constant
-    1-form is exact.
-    """
+    """Test that interpolation of a discretized constant 1-form is exact."""
     mesh = request.getfixturevalue(mesh).to(device)
 
     const_vec = torch.randn(3, dtype=mesh.dtype, device=device)
@@ -406,10 +400,7 @@ def test_1_form_interpolate_discretize_right_project(mesh, request, device):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_2_form_interpolate_discretize_right_project(mesh, request, device):
-    """
-    Test that the Whitney interpolation of a 2-cochain discretized from a constant
-    2-form is exact.
-    """
+    """Test that interpolation of a discretized constant 2-form is exact."""
     mesh = request.getfixturevalue(mesh).to(device)
 
     const_vec = torch.randn(3, dtype=mesh.dtype, device=device)
@@ -473,10 +464,7 @@ def test_2_form_interpolate_discretize_right_project(mesh, request, device):
 
 
 def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
-    """
-    Test that the Whitney interpolation of a 3-cochain discretized from a constant
-    3-form is exact.
-    """
+    """Test that interpolation of a discretized constant 3-form is exact."""
     mesh = two_tets_mesh.to(device)
 
     const_scalar = torch.randn(1, dtype=mesh.dtype, device=device)
@@ -508,6 +496,8 @@ def test_3_form_interpolate_discretize_right_project(two_tets_mesh, device):
 
 def test_1_form_tangential_continuity_on_tri_mesh(two_tris_mesh, device):
     """
+    Test tangential component continuity of interpolated 1-forms on tri meshes.
+
     Testing that the interpolated 1-form on the shared 1-face of two triangles
     must agree in their tangential components.
     """
@@ -546,6 +536,8 @@ def test_1_form_tangential_continuity_on_tri_mesh(two_tris_mesh, device):
 
 def test_1_form_tangential_continuity_on_tet_mesh(two_tets_mesh, device):
     """
+    Test tangential component continuity of interpolated 1-forms on tet meshes.
+
     Testing that the interpolated 1-form on the shared 1-face of two tets
     must agree in their tangential components.
     """
@@ -584,6 +576,8 @@ def test_1_form_tangential_continuity_on_tet_mesh(two_tets_mesh, device):
 
 def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     """
+    Test normal component continuity of interpolated 2-forms on tet meshes.
+
     Testing that the interpolated 2-form on the shared 2-face of two tets
     must agree in their normal components.
     """
@@ -627,3 +621,83 @@ def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     # the normal components of the 2-form on the shared 2-faces should point in
     # the same, not the opposite, directions.
     torch.testing.assert_close(form_2_normal_1, form_2_normal_2)
+
+
+@pytest.mark.parametrize(
+    "mesh, k, quad",
+    [
+        ("hollow_tet_mesh", 1, GaussLegendre),
+        ("hollow_tet_mesh", 2, Dunavant),
+        ("two_tets_mesh", 1, GaussLegendre),
+        ("two_tets_mesh", 2, Dunavant),
+        ("two_tets_mesh", 3, Keast),
+    ],
+)
+def test_interpolate_backward(mesh, k, quad, device, request):
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    k_cochain = torch.randn(mesh.splx[k].size(0)).to(device)
+    k_cochain.requires_grad_()
+
+    bary_coords, weights = quad(dtype=mesh.dtype, device=mesh.device).get_rule(degree=3)
+
+    k_form = barycentric_whitney_map(
+        k=k,
+        k_cochain=k_cochain,
+        bary_coords=bary_coords.unsqueeze(0),
+        mesh=mesh,
+        mode="boundary",
+        boundary_reduction="mean",
+    )
+
+    output = torch.linalg.norm(k_form, dim=-1).sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+    assert k_cochain.grad is not None
+    assert torch.isfinite(k_cochain.grad).all()
+
+
+@pytest.mark.parametrize(
+    "mesh, k, quad",
+    [
+        ("hollow_tet_mesh", 1, GaussLegendre),
+        ("hollow_tet_mesh", 2, Dunavant),
+        ("two_tets_mesh", 1, GaussLegendre),
+        ("two_tets_mesh", 2, Dunavant),
+        ("two_tets_mesh", 3, Keast),
+    ],
+)
+def test_interpolate_gradcheck(mesh, k, quad, device, request):
+    mesh = request.getfixturevalue(mesh)
+
+    vert_coords = mesh.vert_coords.clone().to(dtype=torch.float64, device=device)
+    vert_coords.requires_grad_()
+
+    k_cochain = torch.randn(mesh.splx[k].size(0), dtype=torch.float64).to(device)
+    k_cochain.requires_grad_()
+
+    bary_coords, weights = quad(dtype=torch.float64, device=device).get_rule(degree=3)
+
+    def whitney_fxn(test_vert_coords, test_k_cochain):
+        test_mesh = mesh.to(device=device, dtype=torch.float64)
+        test_mesh.vert_coords = test_vert_coords
+
+        k_form = barycentric_whitney_map(
+            k=k,
+            k_cochain=k_cochain,
+            bary_coords=bary_coords.unsqueeze(0),
+            mesh=test_mesh,
+            mode="boundary",
+            boundary_reduction="mean",
+        )
+
+        output = torch.linalg.norm(k_form, dim=-1).sum()
+        return output
+
+    assert torch.autograd.gradcheck(
+        whitney_fxn, (vert_coords, k_cochain), fast_mode=True
+    )
