@@ -2,6 +2,7 @@ import itertools
 
 import pytest
 import torch
+from einops import repeat
 
 from cochain.cochain.ext_prod.cup import AntisymmetricCupProduct, CupProduct
 from cochain.complex import SimplicialMesh
@@ -279,22 +280,84 @@ def test_cup_product_cohomology_class(hollow_tet_mesh, device):
 
 @pytest.mark.parametrize("operator", [CupProduct, AntisymmetricCupProduct])
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
-def test_cup_product_backward(mesh_name, operator, request, device):
+def test_cup_product_pairing_methods(mesh_name, operator, request, device):
     mesh: SimplicialMesh = request.getfixturevalue(mesh_name).to(device)
 
     n_splx_map = mesh.n_splx
 
     for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
         if k + l <= mesh.dim:
-            k_cochain = torch.randn(n_splx_map[k]).to(device)
+            # We use channel dimension = 3 so that the cross product is defined.
+            k_cochain = torch.randn((n_splx_map[k], 3), device=device)
+            l_cochain = torch.randn((n_splx_map[l], 3), device=device)
+
+            wedge_kl = operator(k, l, mesh).to(device)
+
+            # Check dot product pairing over the channel dim.
+            dot_prod = wedge_kl(k_cochain, l_cochain, pairing="dot")
+            scalar_prod = wedge_kl(k_cochain, l_cochain, pairing="scalar")
+            torch.testing.assert_close(dot_prod, scalar_prod.sum(dim=-1, keepdim=True))
+
+            # Outer product can be computed using the scalar pairing with expanded inputs.
+            k_cochain_exp = repeat(k_cochain, "splx ch1 -> splx ch1 ch2", ch2=3)
+            l_cochain_exp = repeat(l_cochain, "splx ch2 -> splx ch1 ch2", ch1=3)
+            outer_prod_ref = wedge_kl(k_cochain_exp, l_cochain_exp, pairing="scalar")
+
+            outer_prod = wedge_kl(k_cochain, l_cochain, pairing="outer")
+            torch.testing.assert_close(outer_prod, outer_prod_ref)
+
+            # Cross product can be computed using the outer product.
+            # To see why, note that, for the k-cochain ξ and l-cochain η, the
+            # wedge product with pairing="outer" computes the matrix, over each
+            # (k+l)-simplex,
+            #
+            # | ξ_x η_x ξ_x η_y ξ_x η_z |
+            # | ξ_y η_x ξ_y η_y ξ_y η_z |
+            # | ξ_z η_x ξ_z η_y ξ_z η_z |
+            #
+            # where ξ_i is the i-th coordinate value of ξ at the k-front face and
+            # η_j is the j-th coordinate value of η at the k-back face. The values
+            # in this matrix can then be used to compute the cross product, which
+            # is given by the determinant
+            #
+            # | e_x e_y e_z |
+            # | ξ_y ξ_y ξ_y |
+            # | η_x η_y η_z |
+            cross_prod = wedge_kl(k_cochain, l_cochain, pairing="cross")
+            cross_prod_ref = torch.stack(
+                [
+                    outer_prod[:, 1, 2] - outer_prod[:, 2, 1],
+                    outer_prod[:, 2, 0] - outer_prod[:, 0, 2],
+                    outer_prod[:, 0, 1] - outer_prod[:, 1, 0],
+                ],
+                dim=-1,
+            )
+
+            torch.testing.assert_close(cross_prod, cross_prod_ref)
+
+            with pytest.raises(ValueError, match="Unknown pairing method"):
+                wedge_kl(k_cochain, l_cochain, pairing="unknown")
+
+
+@pytest.mark.parametrize("operator", [CupProduct, AntisymmetricCupProduct])
+@pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize("pairing", ["scalar", "dot", "cross", "outer"])
+def test_cup_product_backward(mesh_name, operator, pairing, request, device):
+    mesh: SimplicialMesh = request.getfixturevalue(mesh_name).to(device)
+
+    n_splx_map = mesh.n_splx
+
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
+        if k + l <= mesh.dim:
+            k_cochain = torch.randn((n_splx_map[k], 3), device=device)
             k_cochain.requires_grad_()
 
-            l_cochain = torch.randn(n_splx_map[l]).to(device)
+            l_cochain = torch.randn((n_splx_map[l], 3), device=device)
             l_cochain.requires_grad_()
 
             wedge_kl = operator(k, l, mesh)
 
-            m_cochain = wedge_kl(k_cochain, l_cochain)
+            m_cochain = wedge_kl(k_cochain, l_cochain, pairing=pairing)
 
             output = m_cochain.sum()
             output.backward()
@@ -308,7 +371,8 @@ def test_cup_product_backward(mesh_name, operator, request, device):
 
 @pytest.mark.parametrize("operator", [CupProduct, AntisymmetricCupProduct])
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
-def test_cup_product_gradcheck(mesh_name, operator, request, device):
+@pytest.mark.parametrize("pairing", ["scalar", "dot", "cross", "outer"])
+def test_cup_product_gradcheck(mesh_name, operator, pairing, request, device):
     mesh: SimplicialMesh = request.getfixturevalue(mesh_name).to(
         dtype=torch.float64, device=device
     )
@@ -317,16 +381,20 @@ def test_cup_product_gradcheck(mesh_name, operator, request, device):
 
     for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
         if k + l <= mesh.dim:
-            k_cochain = torch.randn(n_splx_map[k], dtype=torch.float64, device=device)
+            k_cochain = torch.randn(
+                (n_splx_map[k], 3), dtype=torch.float64, device=device
+            )
             k_cochain.requires_grad_()
 
-            l_cochain = torch.randn(n_splx_map[l], dtype=torch.float64, device=device)
+            l_cochain = torch.randn(
+                (n_splx_map[l], 3), dtype=torch.float64, device=device
+            )
             l_cochain.requires_grad_()
 
             wedge_kl = operator(k, l, mesh)
 
             def cup_prod_fxn(test_k_cochain, test_l_cochain, wedge_op):
-                m_cochain = wedge_op(test_k_cochain, test_l_cochain)
+                m_cochain = wedge_op(test_k_cochain, test_l_cochain, pairing=pairing)
                 output = m_cochain.sum()
                 return output
 
@@ -335,6 +403,3 @@ def test_cup_product_gradcheck(mesh_name, operator, request, device):
                 (k_cochain, l_cochain, wedge_kl),
                 fast_mode=True,
             )
-
-
-# TODO: test other pairing methods
