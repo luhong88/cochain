@@ -50,6 +50,7 @@ class CupProduct(torch.nn.Module):
         super().__init__()
 
         m = k + l
+        device = mesh.device
 
         # Note that, in algebraic topology, the orientation on the chain groups
         # is imposed globally by the lex order of the vertex indices. In the
@@ -78,7 +79,9 @@ class CupProduct(torch.nn.Module):
             m_splx_parity = compute_lex_rel_orient(mesh.splx[m]).to(dtype=mesh.dtype)
         else:
             m_splx_sorted = mesh.splx[m]
-            m_splx_parity = torch.ones(1, dtype=mesh.dtype).expand(mesh.splx[m].size(0))
+            m_splx_parity = torch.ones(1, dtype=mesh.dtype, device=device).expand(
+                mesh.splx[m].size(0)
+            )
 
         self.m_splx_parity: Float[Tensor, " m_splx"]
         self.register_buffer("m_splx_parity", m_splx_parity)
@@ -98,7 +101,7 @@ class CupProduct(torch.nn.Module):
         if k == mesh.dim:
             f_face_parity = compute_lex_rel_orient(mesh.splx[k][self.f_face_idx])
         else:
-            f_face_parity = torch.ones(1, dtype=mesh.dtype).expand(
+            f_face_parity = torch.ones(1, dtype=mesh.dtype, device=device).expand(
                 self.f_face_idx.size(0)
             )
 
@@ -120,7 +123,7 @@ class CupProduct(torch.nn.Module):
         if l == mesh.dim:
             b_face_parity = compute_lex_rel_orient(mesh.splx[l][self.b_face_idx])
         else:
-            b_face_parity = torch.ones(1, dtype=mesh.dtype).expand(
+            b_face_parity = torch.ones(1, dtype=mesh.dtype, device=device).expand(
                 self.b_face_idx.size(0)
             )
 
@@ -239,8 +242,9 @@ class AntisymmetricCupProduct(torch.nn.Module):
         super().__init__()
 
         m = k + l
+        device = mesh.device
 
-        perm = compute_face_perm_lut(k, l)
+        perm = compute_face_perm_lut(k, l, device=device)
 
         # Compared to the regular cup product, the antisymmetrized cup product
         # requires an additional sign correction handled by the FacePermLUT class
@@ -255,7 +259,9 @@ class AntisymmetricCupProduct(torch.nn.Module):
             m_splx_parity = compute_lex_rel_orient(mesh.splx[m]).to(dtype=mesh.dtype)
         else:
             m_splx_sorted = mesh.splx[m]
-            m_splx_parity = torch.ones(1, dtype=mesh.dtype).expand(mesh.splx[m].size(0))
+            m_splx_parity = torch.ones(1, dtype=mesh.dtype, device=device).expand(
+                mesh.splx[m].size(0)
+            )
 
         self.m_splx_parity: Float[Tensor, " m_splx"]
         self.register_buffer("m_splx_parity", m_splx_parity)
@@ -284,7 +290,7 @@ class AntisymmetricCupProduct(torch.nn.Module):
                 .view(*uf_face.shape[:-1])[:, perm.front_idx]
             )
         else:
-            f_face_parity = torch.ones(1, dtype=mesh.dtype).expand(
+            f_face_parity = torch.ones(1, dtype=mesh.dtype, device=device).expand(
                 self.f_face_idx.shape
             )
 
@@ -315,7 +321,7 @@ class AntisymmetricCupProduct(torch.nn.Module):
                 .view(*ub_face.shape[:-1])[:, perm.back_idx]
             )
         else:
-            b_face_parity = torch.ones(1, dtype=mesh.dtype).expand(
+            b_face_parity = torch.ones(1, dtype=mesh.dtype, device=device).expand(
                 self.b_face_idx.shape
             )
 

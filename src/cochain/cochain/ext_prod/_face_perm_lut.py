@@ -52,10 +52,10 @@ class FacePermLUT:
     sign: Float[Tensor, "1 face 1"]
 
 
-def compute_face_perm_lut(k: int, l: int) -> FacePermLUT:
+def compute_face_perm_lut(k: int, l: int, device: torch.device) -> FacePermLUT:
     m = k + l
 
-    all_perms = torch.tensor(list(itertools.permutations(range(m + 1))))
+    all_perms = torch.tensor(list(itertools.permutations(range(m + 1))), device=device)
 
     f_faces = all_perms[:, : k + 1]
     b_faces = all_perms[:, k:]
