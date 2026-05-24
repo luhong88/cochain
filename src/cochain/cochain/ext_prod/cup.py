@@ -42,7 +42,7 @@ class CupProduct(torch.nn.Module):
     In general, let $\xi$, $\eta$, and $\mu$ be cochains defined on a simplicial
     complex. The cup product satisfies the following properties:
 
-    * Associativity: $(\xi \smile \eta) \smile mu = \xi \smile (\eta \smile \mu)$.
+    * Associativity: $(\xi \smile \eta) \smile \mu = \xi \smile (\eta \smile \mu)$.
     * Leibniz rule: $d(\xi \smile \eta) = d\xi \smile \eta + (-1)^k \xi \smile d\eta$,
       where $d$ is the coboundary operator.
 
@@ -236,7 +236,7 @@ class AntisymmetricCupProduct(torch.nn.Module):
     it averages over all permutations of k-front and k-back face splits, thus
     is invariant to simplex vertex permutation.
 
-    As a result of this permutation invariance, this operator satisfies the the
+    As a result of this permutation invariance, this operator satisfies the
     graded commutativity property; i.e., $\xi \smile \eta = (-1)^{kl} \eta \smile \xi$.
     However, unlike the regular cup product, it does not in general satisfies the
     associativity rule or the Leibniz rule.
