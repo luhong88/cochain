@@ -130,7 +130,7 @@ def local_sharp(
             )
 
         case _:
-            raise ValueError()
+            raise ValueError(f"Unsupported mesh dimension {mesh.dim}.")
 
     match (mode, mesh.dim):
         case ("element", 2):

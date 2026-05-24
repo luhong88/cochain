@@ -56,7 +56,9 @@ class DeRhamMap:
 
     def __post_init__(self):
         if self.k > self.mesh.dim:
-            raise ValueError()
+            raise ValueError(
+                f"k-form degree ({self.k}) cannot be greater than mesh dimension ({self.mesh.dim})."
+            )
 
         match self.k:
             case 1:
@@ -66,7 +68,9 @@ class DeRhamMap:
             case 3:
                 self.quad = quadrature.Keast
             case _:
-                raise ValueError()
+                raise ValueError(
+                    f"Unsupported k-form degree: {self.k}. Only 1, 2, and 3 are supported."
+                )
 
     def _get_quad_rule(self):
         dtype = self.mesh.dtype
