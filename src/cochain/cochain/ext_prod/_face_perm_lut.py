@@ -2,7 +2,7 @@ import itertools
 from dataclasses import dataclass
 
 import torch
-from jaxtyping import Integer
+from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ...utils.perm_parity import compute_lex_rel_orient
@@ -11,23 +11,36 @@ from ...utils.perm_parity import compute_lex_rel_orient
 @dataclass
 class FacePermLUT:
     """
+    A "lookup table" for face permutation information.
+
     This class contains face permutation information required for computing the
     anti-symmetrized cup product between a k-cochain and an l-cochain.
 
-    unique_front: a list of all unique k-subcomplexes (up to vertex permutation)
-    in a (k+l)-simplex.
-
-    unique_back: a lsit of all unique l-subcomplexes (up to vertex permutation)
-    in a (k+l)-simplex.
-
-    front_idx/back_idx: indices of (k-subcomplex, l-subcomplex) pairs that form
-    a valid k-front face/k-back face split of a (k+l)-simplex (up to vertex
-    permutation within the subcomplexes).
-
-    sign: the parity of the permutation required to rearrange the (k+l)-simplex
-    vertex indices to the front/back split order. Note that this correction is
-    distinct from the sign correction required to map a geometric simplex to
-    a canonical simplex (with lex sorted indices).
+    Parameters
+    ----------
+    k
+        The order of the k-cochain.
+    l
+        The order of the l-cochain.
+    unique_front : [uf_face, vert]
+        A list of all unique k-subcomplexes (up to vertex permutation) in a
+        (k+l)-simplex.
+    unique_back : [ub_face, verta]
+        A list of all unique l-subcomplexes (up to vertex permutation) in a
+        (k+l)-simplex.
+    front_idx : [face,]
+        A list of indices referring to the indices of k-front faces in the
+        `unique_front` tensor. Together with the `back_idx`, forms the
+        (k-subcomplex, l-subcomplex) index pairs that enumerate all valid k-front
+        face/k-back face splits of a (k+l)-simplex (up to vertex permutation within
+        the fron/back subcomplexes).
+    back_idx : [face,]
+        See `front_idx`.
+    sign : [1, face, 1]
+        The parity of the permutation required to rearrange the (k+l)-simplex
+        vertex indices to the front/back split order. Note that this correction is
+        distinct from the sign correction required to map a geometric simplex to
+        a canonical simplex (with lex sorted indices).
     """
 
     k: int
@@ -36,13 +49,13 @@ class FacePermLUT:
     unique_back: Integer[Tensor, "ub_face vert"]
     front_idx: Integer[Tensor, " face"]
     back_idx: Integer[Tensor, " face"]
-    sign: Integer[Tensor, "1 face 1"]
+    sign: Float[Tensor, "1 face 1"]
 
 
-def compute_face_perm_lut(k: int, l: int) -> FacePermLUT:
+def compute_face_perm_lut(k: int, l: int, device: torch.device) -> FacePermLUT:
     m = k + l
 
-    all_perms = torch.tensor(list(itertools.permutations(range(m + 1))))
+    all_perms = torch.tensor(list(itertools.permutations(range(m + 1))), device=device)
 
     f_faces = all_perms[:, : k + 1]
     b_faces = all_perms[:, k:]

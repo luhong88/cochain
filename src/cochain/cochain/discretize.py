@@ -1,3 +1,5 @@
+__all__ = ["DeRhamMap"]
+
 from dataclasses import dataclass
 
 import torch
@@ -12,31 +14,39 @@ from ..utils import quadrature
 @dataclass
 class DeRhamMap:
     """
+    Discretize k-forms via the de Rham map.
+
     This class implements the de Rham map and discretizes k-forms by mapping them
-    to discrete k-cochains via numerical integration. Note that, for 0-forms, the
-    de Rham map is "trivial" and equivalent to sampling the 0-form (scalar function)
-    at the vertex positions; therefore, only k = 1, 2, or 3 are supported.
+    to discrete k-cochains via numerical integration. In particular, this class
+    uses Gauss-Legendre, Dunavant, and Keast numerical quadrature rules for
+    integrating over 1-, 2-, and 2-simplices, respectively. Notably, these rules
+    are invariant to vertex permutation.
 
     To use this class, first call `sample_points()` to get a set of points on the
     mesh at which to evaluate the k-form. Then, call `discretize()` with the
     sampled k-form to perform the integration. It is possible to call `discretize()`
-    directly without having called `sample_points()`. Note that this function
-    supports input sampled k-forms with arbitrary batch/channel dimensions (but
-    note that the batch/channel dimensions precedes the final coordiate dimension).
+    directly without having called `sample_points()`.
 
-    This class uses Gauss-Legendre, Dunavant, and Keast numerical quadrature
-    rules for integrating over 1-, 2-, and 2-simplices, respectively. These rules
-    have the following properties:
+    Attributes
+    ----------
+    k
+        The degree of the k-form. Only k = 1, 2, and 3 are supported.
+    quad_degree
+        The degree of the numerical quadrature/integration rule. Currently, degrees
+        between 0 and 5 (inclusive) are supported. In general, higher degree rules
+        require more sampled points.
+    mesh
+        A simplicial mesh.
+    allow_neg_weights
+        Whether to allow for negative weights. Note that only some of the Keast
+        rules employ negative weights; such rules require fewer points to achieve
+        the same exactness, but may be less numerically stable due to potential
+        cancellations with adjacent positively weighted points.
 
-    * Invariance to vertex permutation.
-    * Can integrate polynomial functions exactly (currently, up to degree 5 is
-      supported); in general, higher degree rules require more sampled points. The
-      degree is specified via the `quad_degree` argument.
-
-    Note that some of the Keast rules employ negative weights; such rules require
-    fewer points to achieve the same exactness, but may be less numerically
-    stable due to potential cancellations with adjacent positively weighted points.
-    The argument `allow_neg_weights` specifies whether such rules are allowed.
+    Notes
+    -----
+    This class does not support 0-forms. For 0-forms, the de Rham map is "trivial"
+    and equivalent to sampling the 0-form (scalar function) at the vertex positions.
     """
 
     k: int
@@ -46,7 +56,9 @@ class DeRhamMap:
 
     def __post_init__(self):
         if self.k > self.mesh.dim:
-            raise ValueError()
+            raise ValueError(
+                f"k-form degree ({self.k}) cannot be greater than mesh dimension ({self.mesh.dim})."
+            )
 
         match self.k:
             case 1:
@@ -56,7 +68,9 @@ class DeRhamMap:
             case 3:
                 self.quad = quadrature.Keast
             case _:
-                raise ValueError()
+                raise ValueError(
+                    f"Unsupported k-form degree: {self.k}. Only 1, 2, and 3 are supported."
+                )
 
     def _get_quad_rule(self):
         dtype = self.mesh.dtype
@@ -70,6 +84,14 @@ class DeRhamMap:
         self.weights = weights
 
     def sample_points(self) -> Float[Tensor, "k_splx pt coord=3"]:
+        """
+        Get the k-form sample points for the given quadrature.
+
+        Returns
+        -------
+        [k_splx, pt, coord=3]
+            The spatial points on each k-simplex over which to sample the k-form.
+        """
         if not hasattr(self, "bary_coords"):
             self._get_quad_rule()
 
@@ -90,6 +112,30 @@ class DeRhamMap:
         self,
         k_forms: Float[Tensor, "k_splx pt *ch coord"],
     ) -> Float[Tensor, " k_splx *ch"]:
+        r"""
+        Discretize a k-form using the sampled values.
+
+        Parameters
+        ----------
+        k_forms : [k_splx, pt, *ch, coord]
+            The k-form sampled at the points specified by the quadrature. Note that
+            this function sampled k-forms with arbitrary batch/channel dimensions
+            (but the batch/channel dimensions must precede the final coordiate
+            dimension).
+
+        Returns
+        -------
+        [k_splx, *ch]
+            The discretized k-cochain associated with the k-simplices.
+
+        Notes
+        -----
+        For 2-forms, we assume that they are represented with the basis
+        $\{dy \wedge dz, dz \wedge dx, dx \wedge dy\}$, or, equivalently (under
+        the Hodge star isomorphism), as proxy 1-forms represented with the basis
+        $\{dx, dy, dz\}$. For 3-forms, we assume that they are represented as
+        scalars and the coord dimension of `k_forms` is trivial.
+        """
         if not hasattr(self, "bary_coords"):
             self._get_quad_rule()
 
@@ -121,10 +167,7 @@ class DeRhamMap:
                 return circulation
 
             case 2:
-                # For 2-forms, we assume that they are represented with the basis
-                # {dy⋀dz, dz⋀dx, dx⋀dy}, or, equivalently (under the Hodge star
-                # isomorphism), as proxy 1-forms represented with the basis {dx,
-                # dy, dz}. The Jacobian for edge triangle consists of the edge column
+                # The Jacobian for edge triangle consists of the edge column
                 # vectors {v1 - v0, v2 - v0}, and the pullback is the dot product
                 # between the proxy 1-form and the triangle normal vector (oriented
                 # to satisfy the right-hand rule and scaled to the triangle area).
@@ -142,8 +185,7 @@ class DeRhamMap:
             case 3:
                 # For 3-forms, the pullback consists of the scalar product between
                 # the 3-form (a scalar) and the determinant of the Jacobian (scaled
-                # to the tet volume by the 1/6 factor). Note that, for 3-forms,
-                # the coord dimension is trivial.
+                # to the tet volume by the 1/6 factor).
                 signed_vol: Float[Tensor, " k_splx"] = torch.linalg.det(jacs) / 6.0
                 pullback = einsum(
                     signed_vol,

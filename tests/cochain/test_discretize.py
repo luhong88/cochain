@@ -2,10 +2,8 @@ import pytest
 import torch
 from einops import einsum, repeat
 
-from cochain.cochain.discretize import DeRhamMap
+from cochain.cochain import DeRhamMap
 from cochain.metric.tet._tet_geometry import compute_tet_signed_vols
-
-# TODO: test gradients
 
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
@@ -76,11 +74,16 @@ def test_const_3_form_integration(two_tets_mesh, device):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_commutativity_with_d_on_0_form(mesh, request, device):
-    """
-    Test that the de Rham map π commutes with the exterior derivative d using
-    0-forms; i.e., for any 0-form ω, π(dω) = d(πω). Recall that dω for a 0-form
-    is analogous to the gradient of scalar functions. The test is restricted to
-    polynomial basis functions of degree 1.
+    r"""
+    Test that the de Rham map commutes with the exterior derivative using 0-forms.
+
+    Let $\pi$ be the de Rham map and let $d$ be the exterior derivative. For any
+    0-form $\omega$, we assert that
+
+    $$\pi(d\omega) = d(\pi\omega)$$
+
+    Recall that $d\omega$ for a 0-form is the flat to the gradient of a scalar
+    function. The test is restricted to polynomial basis functions of degree 1.
     """
     mesh = request.getfixturevalue(mesh).to(device)
 
@@ -118,11 +121,16 @@ def test_commutativity_with_d_on_0_form(mesh, request, device):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_commutativity_with_d_on_1_form(mesh, request, device):
-    """
-    Test that the de Rham map π commutes with the exterior derivative d using
-    1-forms; i.e., for any 1-form ω, π(dω) = d(πω). Recall that dω for a 1-form
-    is analogous to the curl of vector fields. The test is restricted to polynomial
-    basis functions of degree 1.
+    r"""
+    Test that the de Rham map commutes with the exterior derivative using 1-forms.
+
+    Let $\pi$ be the de Rham map and let $d$ be the exterior derivative. For any
+    1-form $\omega$, we assert that
+
+    $$\pi(d\omega) = d(\pi\omega)$$
+
+    Recall that $d\omega$ for a 1-form is the flat to the curl of a vector field.
+    The test is restricted to polynomial basis functions of degree 1.
     """
     mesh = request.getfixturevalue(mesh).to(device)
 
@@ -196,11 +204,16 @@ def test_commutativity_with_d_on_1_form(mesh, request, device):
 
 
 def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
-    """
-    Test that the de Rham map π commutes with the exterior derivative d using
-    2-forms; i.e., for any 2-form ω, π(dω) = d(πω). Recall that dω for a 2-form
-    is analogous to the divergence of vector fields. The test is restricted to
-    polynomial basis functions of degree 1.
+    r"""
+    Test that the de Rham map commutes with the exterior derivative using 2-forms.
+
+    Let $\pi$ be the de Rham map and let $d$ be the exterior derivative. For any
+    2-form $\omega$, we assert that
+
+    $$\pi(d\omega) = d(\pi\omega)$$
+
+    Recall that $d\omega$ for a 2-form is the flat to the divergence of a vector
+    field. The test is restricted to polynomial basis functions of degree 1.
     """
     mesh = two_tets_mesh.to(device)
 
@@ -277,6 +290,8 @@ def test_commutativity_with_d_on_2_form(two_tets_mesh, device):
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
     """
+    Test degree 2 1-form integration exactness.
+
     Test that the numerical integration of a polynomial 1-form of degree 2 should
     be exact using a quadrature rule of the same degree.
     """
@@ -363,6 +378,8 @@ def test_1_form_polynomial_deg_2_exact_integration(mesh, request, device):
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_2_form_polynomial_deg_2_exact_integration(mesh, request, device):
     """
+    Test degree 2 2-form integration exactness.
+
     Test that the numerical integration of a polynomial 2-form of degree 2 should
     be exact using a quadrature rule of the same degree. See the test for 1-form
     for more information.
@@ -454,6 +471,8 @@ def test_2_form_polynomial_deg_2_exact_integration(mesh, request, device):
 
 def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
     """
+    Test degree 2 3-form integration exactness.
+
     Test that the numerical integration of a polynomial 3-form of degree 2 should
     be exact using a quadrature rule of the same degree. See the test for 1-form
     for more information.
@@ -589,3 +608,74 @@ def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
 
     # Check that the analytical line integrals agree with the numerical quadratures.
     torch.testing.assert_close(discretized_cochain, dot_prod)
+
+
+@pytest.mark.parametrize("k", [1, 2, 3])
+@pytest.mark.parametrize("degree", [1, 2, 3, 4, 5])
+def test_discretize_backward_two_leaf_tensors(k, degree, two_tets_mesh, device):
+    mesh = two_tets_mesh.to(device)
+    mesh.requires_grad_()
+
+    de_rham = DeRhamMap(k=k, quad_degree=degree, mesh=mesh)
+
+    pts = de_rham.sample_points()
+    n_splx, n_pts, _ = pts.shape
+
+    form = torch.rand(
+        (n_splx, n_pts, 2, 3),
+        dtype=mesh.dtype,
+        device=device,
+        requires_grad=True,
+    )
+    cochain = de_rham.discretize(form)
+
+    cochain.sum().backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+    assert form.grad is not None
+    assert torch.isfinite(form.grad).all()
+
+
+@pytest.mark.parametrize("k", [1, 2, 3])
+@pytest.mark.parametrize("degree", [1, 2, 3, 4, 5])
+def test_discretize_backward_one_leaf_tensor(k, degree, two_tets_mesh, device):
+    mesh = two_tets_mesh.to(device)
+    mesh.requires_grad_()
+
+    de_rham = DeRhamMap(k=k, quad_degree=degree, mesh=mesh)
+
+    pts = de_rham.sample_points()
+
+    form = torch.sin(pts)
+    cochain = de_rham.discretize(form)
+
+    cochain.sum().backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+
+@pytest.mark.parametrize("k", [1, 2, 3])
+@pytest.mark.parametrize("degree", [1, 2, 3, 4, 5])
+def test_discretize_gradcheck(k, degree, two_tets_mesh, device):
+    vert_coords = two_tets_mesh.vert_coords.clone().to(
+        dtype=torch.float64, device=device
+    )
+    vert_coords.requires_grad_()
+
+    def discretize_fxn(test_vert_coords):
+        mesh = two_tets_mesh.to(device)
+        mesh.vert_coords = test_vert_coords
+
+        de_rham = DeRhamMap(k=k, quad_degree=degree, mesh=mesh)
+
+        pts = de_rham.sample_points()
+
+        form = torch.sin(pts)
+        cochain = de_rham.discretize(form)
+
+        return cochain.sum()
+
+    assert torch.autograd.gradcheck(discretize_fxn, (vert_coords,), fast_mode=True)

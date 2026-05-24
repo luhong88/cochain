@@ -2,6 +2,7 @@ import itertools
 
 import pytest
 import torch
+from einops import repeat
 
 from cochain.cochain.ext_prod.cup import AntisymmetricCupProduct, CupProduct
 from cochain.complex import SimplicialMesh
@@ -10,6 +11,8 @@ from cochain.metric.tri._tri_geometry import compute_tri_areas
 
 def test_cup_product_patch(square_mesh: SimplicialMesh, device):
     """
+    Perform patch test on the cup product.
+
     For a tri mesh on the z = 0 plane, the cup product between the constant
     1-forms dx and dy is not expected to exactly match the area 2-form dx ⋀ dy.
     But the absolute sum of the cup product 2-form over all 2-simplices should
@@ -23,7 +26,7 @@ def test_cup_product_patch(square_mesh: SimplicialMesh, device):
     dx = d_0 @ x
     dy = d_0 @ y
 
-    wedge = AntisymmetricCupProduct(1, 1, square_mesh).to(device)
+    wedge = CupProduct(1, 1, square_mesh).to(device)
 
     dxdy = wedge(dx, dy)
 
@@ -34,6 +37,8 @@ def test_cup_product_patch(square_mesh: SimplicialMesh, device):
 
 def test_antisymmetric_cup_product_patch(square_mesh: SimplicialMesh, device):
     """
+    Perform patch test on the antisymmetric cup product.
+
     For a tri mesh on the z = 0 plane, the antisymmetric cup product between the
     constant 1-forms dx and dy should exactly match the area 2-form dx ⋀ dy, up
     to a sign flip.
@@ -239,6 +244,8 @@ def test_cup_product_leibniz(mesh_name, request, device):
 
 def test_cup_product_cohomology_class(hollow_tet_mesh, device):
     """
+    Check that the cup and antisymmetric cup products belong to the same cohomology class.
+
     The cup product and the antisymmetric cup product should belong to the same
     cohomology class (i.e., differ by a coboundary). Therefore, on a closed mesh,
     the surface integral of the two products of exact forms should match.
@@ -251,16 +258,16 @@ def test_cup_product_cohomology_class(hollow_tet_mesh, device):
         if k == 0:
             k_cochain = torch.randn(1).expand(n_splx_map[k]).to(device)
         if k > 0:
-            d_k_1 = hollow_tet_mesh.cbd[k - 1].to(device)
+            d_km1 = hollow_tet_mesh.cbd[k - 1].to(device)
             k_1_cochain = torch.randn(n_splx_map[k - 1]).to(device)
-            k_cochain = d_k_1 @ k_1_cochain
+            k_cochain = d_km1 @ k_1_cochain
 
         if l == 0:
             l_cochain = torch.randn(1).expand(n_splx_map[l]).to(device)
         if l > 0:
-            d_l_1 = hollow_tet_mesh.cbd[l - 1].to(device)
+            d_lm1 = hollow_tet_mesh.cbd[l - 1].to(device)
             l_1_cochain = torch.randn(n_splx_map[l - 1]).to(device)
-            l_cochain = d_l_1 @ l_1_cochain
+            l_cochain = d_lm1 @ l_1_cochain
 
         cup_kl = CupProduct(k, l, hollow_tet_mesh).to(device)
         anti_cup_kl = AntisymmetricCupProduct(k, l, hollow_tet_mesh).to(device)
@@ -271,4 +278,128 @@ def test_cup_product_cohomology_class(hollow_tet_mesh, device):
         )
 
 
-# TODO: test other pairing methods
+@pytest.mark.parametrize("operator", [CupProduct, AntisymmetricCupProduct])
+@pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
+def test_cup_product_pairing_methods(mesh_name, operator, request, device):
+    mesh: SimplicialMesh = request.getfixturevalue(mesh_name).to(device)
+
+    n_splx_map = mesh.n_splx
+
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
+        if k + l <= mesh.dim:
+            # We use channel dimension = 3 so that the cross product is defined.
+            k_cochain = torch.randn((n_splx_map[k], 3), device=device)
+            l_cochain = torch.randn((n_splx_map[l], 3), device=device)
+
+            wedge_kl = operator(k, l, mesh).to(device)
+
+            # Check dot product pairing over the channel dim.
+            dot_prod = wedge_kl(k_cochain, l_cochain, pairing="dot")
+            scalar_prod = wedge_kl(k_cochain, l_cochain, pairing="scalar")
+            torch.testing.assert_close(dot_prod, scalar_prod.sum(dim=-1, keepdim=True))
+
+            # Outer product can be computed using the scalar pairing with expanded inputs.
+            k_cochain_exp = repeat(k_cochain, "splx ch1 -> splx ch1 ch2", ch2=3)
+            l_cochain_exp = repeat(l_cochain, "splx ch2 -> splx ch1 ch2", ch1=3)
+            outer_prod_ref = wedge_kl(k_cochain_exp, l_cochain_exp, pairing="scalar")
+
+            outer_prod = wedge_kl(k_cochain, l_cochain, pairing="outer")
+            torch.testing.assert_close(outer_prod, outer_prod_ref)
+
+            # Cross product can be computed using the outer product.
+            # To see why, note that, for the k-cochain ξ and l-cochain η, the
+            # wedge product with pairing="outer" computes the matrix, over each
+            # (k+l)-simplex,
+            #
+            # | ξ_x η_x ξ_x η_y ξ_x η_z |
+            # | ξ_y η_x ξ_y η_y ξ_y η_z |
+            # | ξ_z η_x ξ_z η_y ξ_z η_z |
+            #
+            # where ξ_i is the i-th coordinate value of ξ at the k-front face and
+            # η_j is the j-th coordinate value of η at the k-back face. The values
+            # in this matrix can then be used to compute the cross product, which
+            # is given by the determinant
+            #
+            # | e_x e_y e_z |
+            # | ξ_y ξ_y ξ_y |
+            # | η_x η_y η_z |
+            cross_prod = wedge_kl(k_cochain, l_cochain, pairing="cross")
+            cross_prod_ref = torch.stack(
+                [
+                    outer_prod[:, 1, 2] - outer_prod[:, 2, 1],
+                    outer_prod[:, 2, 0] - outer_prod[:, 0, 2],
+                    outer_prod[:, 0, 1] - outer_prod[:, 1, 0],
+                ],
+                dim=-1,
+            )
+
+            torch.testing.assert_close(cross_prod, cross_prod_ref)
+
+            with pytest.raises(ValueError, match="Unknown pairing method"):
+                wedge_kl(k_cochain, l_cochain, pairing="unknown")
+
+
+@pytest.mark.parametrize("operator", [CupProduct, AntisymmetricCupProduct])
+@pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize("pairing", ["scalar", "dot", "cross", "outer"])
+def test_cup_product_backward(mesh_name, operator, pairing, request, device):
+    mesh: SimplicialMesh = request.getfixturevalue(mesh_name).to(device)
+
+    n_splx_map = mesh.n_splx
+
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
+        if k + l <= mesh.dim:
+            k_cochain = torch.randn((n_splx_map[k], 3), device=device)
+            k_cochain.requires_grad_()
+
+            l_cochain = torch.randn((n_splx_map[l], 3), device=device)
+            l_cochain.requires_grad_()
+
+            wedge_kl = operator(k, l, mesh)
+
+            m_cochain = wedge_kl(k_cochain, l_cochain, pairing=pairing)
+
+            output = m_cochain.sum()
+            output.backward()
+
+            assert k_cochain.grad is not None
+            assert torch.isfinite(k_cochain.grad).all()
+
+            assert l_cochain.grad is not None
+            assert torch.isfinite(l_cochain.grad).all()
+
+
+@pytest.mark.parametrize("operator", [CupProduct, AntisymmetricCupProduct])
+@pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize("pairing", ["scalar", "dot", "cross", "outer"])
+def test_cup_product_gradcheck(mesh_name, operator, pairing, request, device):
+    mesh: SimplicialMesh = request.getfixturevalue(mesh_name).to(
+        dtype=torch.float64, device=device
+    )
+
+    n_splx_map = mesh.n_splx
+
+    for k, l in itertools.product(range(mesh.dim + 1), repeat=2):
+        if k + l <= mesh.dim:
+            k_cochain = torch.randn(
+                (n_splx_map[k], 3), dtype=torch.float64, device=device
+            )
+            k_cochain.requires_grad_()
+
+            l_cochain = torch.randn(
+                (n_splx_map[l], 3), dtype=torch.float64, device=device
+            )
+            l_cochain.requires_grad_()
+
+            wedge_kl = operator(k, l, mesh)
+
+            def cup_prod_fxn(test_k_cochain, test_l_cochain, wedge_op):
+                m_cochain = wedge_op(test_k_cochain, test_l_cochain, pairing=pairing)
+                output = m_cochain.sum()
+                return output
+
+            assert torch.autograd.gradcheck(
+                cup_prod_fxn,
+                (k_cochain, l_cochain, wedge_kl),
+                fast_mode=True,
+            )

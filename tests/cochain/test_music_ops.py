@@ -34,6 +34,8 @@ def test_vector_mass_spd(mesh, mode, diagonal, request, device):
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_local_vertex_based_const_vec_field_reconstruction(mesh, request, device):
     """
+    Check that the sharp of the flat of a constant vector field is exact (local vertex).
+
     Taking the flat of a constant vector field, followed by sharp, should reproduce
     the same constant vector field. Note that the inverse of this process (cochain
     -> vector field -> cochain) does not work.
@@ -61,7 +63,7 @@ def test_local_vertex_based_const_vec_field_reconstruction(mesh, request, device
         * torch.linalg.norm(vec_field_reconstructed, dim=-1)
     )
 
-    assert (vec_field_cos_dist > 0.7).all()
+    assert (vec_field_cos_dist > 0.95).all()
 
 
 @pytest.mark.parametrize(
@@ -76,11 +78,11 @@ def test_local_element_based_const_vec_field_reconstruction(
     mesh, location, request, device
 ):
     """
-    Taking the flat of a constant vector field, followed by sharp, should reproduce
-    the same constant vector field.
+    Check that the sharp of the flat of a constant vector field is exact (local element).
 
-    Note that, for the tri mesh, the reconstructed vector field is strictly inside
-    the tangent spaces of the triangles.
+    Taking the flat of a constant vector field, followed by sharp, should reproduce
+    the same constant vector field. Note that, for the tri mesh, the reconstructed
+    vector field is strictly inside the tangent spaces of the triangles.
     """
     mesh = request.getfixturevalue(mesh).to(device)
 
@@ -125,12 +127,14 @@ def test_local_element_based_const_vec_field_reconstruction(
 def test_galerkin_vertex_based_const_vec_field_reconstruction(
     mesh, diagonal, request, device
 ):
-    """
+    r"""
+    Check that the sharp of the flat of a constant vector field is exact (galerkin vertex).
+
     Taking the flat of a constant vector field, followed by sharp, should reproduce
     the same constant vector field.
 
     Note that, for this test to pass on a tri mesh, we setup the mesh to be
-    flat and entirely within the z = 0 plane, and test a random vector field with
+    flat and entirely within the $z = 0$ plane, and test a random vector field with
     zero z-component. This is partly because the flat and sharp operators operate
     on the tangent spaces of the triangles (as is with the local approaches).
     Furthermore, if a tri mesh has non-zero curvature, projecting a constant vector
@@ -140,11 +144,11 @@ def test_galerkin_vertex_based_const_vec_field_reconstruction(
     Therefore, the reconstructed vector field will only match the original on a
     tri mesh if (1) the mesh has no curvature and (2) the starting vector field
     has no component normal to the mesh. Note that this restriction does not apply
-    to a tet mesh because it is a flat 3-manifold embedded in R^3 and its tangent
-    space spans R^3.
+    to a tet mesh because it is a flat 3-manifold embedded in $\mathbb R^3$ and
+    its tangent space spans $\mathbb R^3$.
 
-    Lastly, note that, for a constant vector field v, M_V@v gives the same result
-    whether M_V is derived from the consistent mass-0 matrix or the diagonal
+    Lastly, note that, for a constant vector field $v$, $M_V v$ gives the same result
+    whether $M_V$ is derived from the consistent mass-0 matrix or the diagonal
     Hodge star-0 matrix.
     """
     mesh = request.getfixturevalue(mesh).to(device)
@@ -208,6 +212,7 @@ def test_galerkin_vertex_based_const_vec_field_reconstruction(
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_galerkin_element_based_const_vec_field_reconstruction(mesh, request, device):
+    """Check that the sharp of the flat of a constant vector field is exact (galerkin element)."""
     mesh = request.getfixturevalue(mesh).to(device)
 
     match mesh.dim:
@@ -273,15 +278,16 @@ def test_galerkin_element_based_const_vec_field_reconstruction(mesh, request, de
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_galerkin_element_based_adjoint_relation(mesh, request, device):
-    """
-    Test the adjoint relation between the sharp and flat operators. Specifically,
-    for a given vector field v and 1-cochain η,
+    r"""
+    Test the adjoint relation between the sharp and flat operators (Galerkin element).
 
-    <v, ♯η> = <♭v, η>
+    Specifically, for a given vector field $v$ and 1-cochain $\eta$,
 
-    where the first inner product is defined in the vector space L^2(V) and evaluated
-    as v.T @ M_V @ ♯η, and the second inner product is defined in the edge space
-    L^2(E) and evaluated as ♭v.T @ M_1 @ η.
+    $$\left<v, \eta^\sharp\right> = \left<v^\flat, \eta\right>$$
+
+    where the first inner product is defined in the vector space $L^2(V)$ and
+    evaluated as $v^T M_V \eta^\sharp$, and the second inner product is defined
+    in the edge space $L^2(E)$ and evaluated as $(v^\flat)^T M_1 \eta$.
 
     Note that this adjoint relation (as defined above) is not satisfied by
     the local approaches.
@@ -320,9 +326,7 @@ def test_galerkin_element_based_adjoint_relation(mesh, request, device):
 
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 def test_galerkin_vertex_based_adjoint_relation(mesh, request, device):
-    """
-    Test the adjoint relation between the sharp and flat operators.
-    """
+    """Test the adjoint relation between the sharp and flat operators (Galerkin vertex)."""
     mesh = request.getfixturevalue(mesh).to(device)
 
     match mesh.dim:
@@ -354,3 +358,419 @@ def test_galerkin_vertex_based_adjoint_relation(mesh, request, device):
     rhs = torch.sum(vec_field_flat * (mass_1 @ cochain))
 
     torch.testing.assert_close(lhs, rhs)
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize("mode", ["vertex", "element"])
+def test_local_flat_backward(mesh, mode, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    match mode:
+        case "vertex":
+            n_vec = mesh.n_verts
+        case "element":
+            n_vec = mesh.n_splx[mesh.dim]
+
+    vec_field = torch.randn((n_vec, 3), dtype=mesh.dtype, device=mesh.device)
+    vec_field.requires_grad_()
+
+    cochain = music_ops.local_flat(vec_field=vec_field, mesh=mesh, mode=mode)
+
+    output = cochain.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+    assert vec_field.grad is not None
+    assert torch.isfinite(vec_field.grad).all()
+
+
+@pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize("mode", ["vertex", "element"])
+def test_local_flat_gradcheck(mesh, mode, request, device):
+    mesh = request.getfixturevalue(mesh)
+
+    vert_coords = mesh.vert_coords.clone().to(dtype=torch.float64, device=device)
+    vert_coords.requires_grad_()
+
+    match mode:
+        case "vertex":
+            n_vec = mesh.n_verts
+        case "element":
+            n_vec = mesh.n_splx[mesh.dim]
+
+    vec_field = torch.randn((n_vec, 3), dtype=torch.float64, device=device)
+    vec_field.requires_grad_()
+
+    def local_flat_fxn(test_vert_coords, test_vec_field):
+        test_mesh = mesh.to(device=device, dtype=torch.float64)
+        test_mesh.vert_coords = test_vert_coords
+
+        cochain = music_ops.local_flat(
+            vec_field=test_vec_field, mesh=test_mesh, mode=mode
+        )
+
+        output = cochain.sum()
+        return output
+
+    assert torch.autograd.gradcheck(
+        local_flat_fxn,
+        (vert_coords, vec_field),
+        fast_mode=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "mesh, location, mode",
+    [
+        ("hollow_tet_mesh", "barycenter", "element"),
+        ("hollow_tet_mesh", "circumcenter", "element"),
+        ("two_tets_mesh", "barycenter", "element"),
+        ("hollow_tet_mesh", "barycenter", "vertex"),
+        ("two_tets_mesh", "barycenter", "vertex"),
+    ],
+)
+def test_local_sharp_backward(mesh, location, mode, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    cochain = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    cochain.requires_grad_()
+
+    vec_field = music_ops.local_sharp(
+        cochain_1=cochain, mesh=mesh, mode=mode, location=location
+    )
+
+    output = torch.linalg.norm(vec_field, dim=-1).sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+    assert cochain.grad is not None
+    assert torch.isfinite(cochain.grad).all()
+
+
+@pytest.mark.parametrize(
+    "mesh, location, mode",
+    [
+        ("hollow_tet_mesh", "barycenter", "element"),
+        ("hollow_tet_mesh", "circumcenter", "element"),
+        ("two_tets_mesh", "barycenter", "element"),
+        ("hollow_tet_mesh", "barycenter", "vertex"),
+        ("two_tets_mesh", "barycenter", "vertex"),
+    ],
+)
+def test_local_sharp_gradcheck(mesh, location, mode, request, device):
+    mesh = request.getfixturevalue(mesh)
+
+    vert_coords = mesh.vert_coords.clone().to(dtype=torch.float64, device=device)
+    vert_coords.requires_grad_()
+
+    cochain = torch.randn(mesh.n_edges, dtype=torch.float64, device=device)
+    cochain.requires_grad_()
+
+    def local_sharp_fxn(test_vert_coords, test_cochain):
+        test_mesh = mesh.to(device=device, dtype=torch.float64)
+        test_mesh.vert_coords = test_vert_coords
+
+        vec_field = music_ops.local_sharp(
+            cochain_1=test_cochain, mesh=test_mesh, mode=mode, location=location
+        )
+
+        output = torch.linalg.norm(vec_field, dim=-1).sum()
+        return output
+
+    assert torch.autograd.gradcheck(
+        local_sharp_fxn,
+        (vert_coords, cochain),
+        fast_mode=True,
+    )
+
+
+@pytest.mark.parametrize("mesh", ["two_tris_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize("mode", ["element", "vertex"])
+def test_galerkin_flat_backward(mesh, mode, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    match mesh.dim:
+        case 2:
+            mass_1 = tri_masses.mass_1(mesh)
+        case 3:
+            mass_1 = tet_masses.mass_1(mesh)
+
+    mass_mixed = music_ops.mixed_mass(mesh, mode=mode)
+
+    match mode:
+        case "vertex":
+            n_vec = mesh.n_verts
+        case "element":
+            n_vec = mesh.n_splx[mesh.dim]
+
+    vec_field = torch.randn((n_vec, 3), dtype=mesh.dtype, device=mesh.device)
+    vec_field.requires_grad_()
+
+    cochain = music_ops.galerkin_flat(
+        vec_field=vec_field,
+        mass_1=mass_1,
+        mass_mixed=mass_mixed,
+        mode=mode,
+    )
+
+    output = cochain.sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+    assert vec_field.grad is not None
+    assert torch.isfinite(vec_field.grad).all()
+
+
+@pytest.mark.parametrize("mesh", ["two_tris_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize("mode", ["element", "vertex"])
+def test_galerkin_flat_solver_backward(mesh, mode, request, device):
+    # First, compute backward using dense mass matrix.
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    match mode:
+        case "vertex":
+            n_vec = mesh.n_verts
+        case "element":
+            n_vec = mesh.n_splx[mesh.dim]
+
+    match mesh.dim:
+        case 2:
+            mass_1 = tri_masses.mass_1(mesh)
+        case 3:
+            mass_1 = tet_masses.mass_1(mesh)
+
+    mass_mixed = music_ops.mixed_mass(mesh, mode=mode)
+
+    vec_field = torch.randn((n_vec, 3), dtype=mesh.dtype, device=mesh.device)
+    vec_field.requires_grad_()
+
+    cochain = music_ops.galerkin_flat(
+        vec_field=vec_field,
+        mass_1=mass_1,
+        mass_mixed=mass_mixed,
+        mode=mode,
+    )
+
+    output = cochain.sum()
+    output.backward()
+
+    mesh_grad_true = mesh.grad.detach().clone()
+    mesh.grad = None
+
+    vec_field_grad_true = vec_field.grad.detach().clone()
+    vec_field.grad = None
+
+    # Then, compute backward using mass matrix sparse solver.
+    match mesh.dim:
+        case 2:
+            mass_1 = tri_masses.mass_1(mesh)
+        case 3:
+            mass_1 = tet_masses.mass_1(mesh)
+
+    mass_1_op = SuperLU(mass_1, backend="scipy")
+
+    mass_mixed = music_ops.mixed_mass(mesh, mode=mode)
+
+    cochain_with_op = music_ops.galerkin_flat(
+        vec_field=vec_field,
+        mass_1=mass_1_op,
+        mass_mixed=mass_mixed,
+        mode=mode,
+    )
+
+    output = cochain_with_op.sum()
+    output.backward()
+
+    mesh_grad = mesh.grad.detach().clone()
+    mesh.grad = None
+
+    vec_field_grad = vec_field.grad.detach().clone()
+    vec_field.grad = None
+
+    # Check that the two approaches give the same gradients.
+    torch.testing.assert_close(mesh_grad, mesh_grad_true)
+    torch.testing.assert_close(vec_field_grad, vec_field_grad_true)
+
+
+@pytest.mark.parametrize("mesh", ["two_tris_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize("mode", ["element", "vertex"])
+def test_galerkin_flat_gradcheck(mesh, mode, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
+
+    vert_coords = mesh.vert_coords.clone().to(dtype=torch.float64, device=device)
+    vert_coords.requires_grad_()
+
+    match mode:
+        case "vertex":
+            n_vec = mesh.n_verts
+        case "element":
+            n_vec = mesh.n_splx[mesh.dim]
+
+    vec_field = torch.randn((n_vec, 3), dtype=torch.float64, device=device)
+    vec_field.requires_grad_()
+
+    def galerkin_flat_fxn(test_vert_coords, test_vec_field):
+        test_mesh = mesh.to(device=device, dtype=torch.float64)
+        test_mesh.vert_coords = test_vert_coords
+
+        match mesh.dim:
+            case 2:
+                mass_1 = tri_masses.mass_1(test_mesh)
+            case 3:
+                mass_1 = tet_masses.mass_1(test_mesh)
+
+        mass_mixed = music_ops.mixed_mass(test_mesh, mode=mode)
+
+        cochain = music_ops.galerkin_flat(
+            vec_field=test_vec_field,
+            mass_1=mass_1,
+            mass_mixed=mass_mixed,
+            mode=mode,
+        )
+
+        output = cochain.sum()
+        return output
+
+    assert torch.autograd.gradcheck(
+        galerkin_flat_fxn,
+        (vert_coords, vec_field),
+        fast_mode=True,
+        nondet_tol=1e-7,
+    )
+
+
+@pytest.mark.parametrize("mesh", ["two_tris_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize(
+    "mode, diagonal",
+    [("element", True), ("vertex", True), ("vertex", False)],
+)
+def test_galerkin_sharp_backward(mesh, mode, diagonal, request, device):
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    mass_vec = music_ops.vector_mass(mesh, mode=mode, diagonal=diagonal)
+    mass_mixed = music_ops.mixed_mass(mesh, mode=mode)
+
+    cochain = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    cochain.requires_grad_()
+
+    vec_field = music_ops.galerkin_sharp(
+        cochain_1=cochain,
+        mass_vec=mass_vec,
+        mass_mixed=mass_mixed,
+        mode=mode,
+    )
+
+    output = torch.linalg.norm(vec_field, dim=-1).sum()
+    output.backward()
+
+    assert mesh.grad is not None
+    assert torch.isfinite(mesh.grad).all()
+
+    assert cochain.grad is not None
+    assert torch.isfinite(cochain.grad).all()
+
+
+@pytest.mark.parametrize("mesh", ["two_tris_mesh", "two_tets_mesh"])
+def test_galerkin_sharp_solver_backward(mesh, request, device):
+    # First, compute backward using dense mass matrix.
+    mesh = request.getfixturevalue(mesh).to(device)
+    mesh.requires_grad_()
+
+    # Only the "vertex" mode has non-diagonal vector mass matrix.
+    mass_vec = music_ops.vector_mass(mesh, mode="vertex", diagonal=False)
+    mass_mixed = music_ops.mixed_mass(mesh, mode="vertex")
+
+    cochain = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
+    cochain.requires_grad_()
+
+    vec_field = music_ops.galerkin_sharp(
+        cochain_1=cochain,
+        mass_vec=mass_vec,
+        mass_mixed=mass_mixed,
+        mode="vertex",
+    )
+
+    output = torch.linalg.norm(vec_field, dim=-1).sum()
+    output.backward()
+
+    mesh_grad_true = mesh.grad.detach().clone()
+    mesh.grad = None
+
+    cochain_grad_true = cochain.grad.detach().clone()
+    cochain.grad = None
+
+    # Then, compute backward using mass matrix sparse solver.
+    mass_vec = music_ops.vector_mass(mesh, mode="vertex", diagonal=False)
+    mass_vec_op = SuperLU(mass_vec, backend="scipy")
+
+    mass_mixed = music_ops.mixed_mass(mesh, mode="vertex")
+
+    vec_field_with_op = music_ops.galerkin_sharp(
+        cochain_1=cochain,
+        mass_vec=mass_vec_op,
+        mass_mixed=mass_mixed,
+        mode="vertex",
+    )
+
+    output = torch.linalg.norm(vec_field_with_op, dim=-1).sum()
+    output.backward()
+
+    mesh_grad = mesh.grad.detach().clone()
+    mesh.grad = None
+
+    cochain_grad = cochain.grad.detach().clone()
+    cochain.grad = None
+
+    # Check that the two approaches give the same gradients.
+    torch.testing.assert_close(mesh_grad, mesh_grad_true)
+    torch.testing.assert_close(cochain_grad, cochain_grad_true)
+
+
+@pytest.mark.parametrize("mesh", ["two_tris_mesh", "two_tets_mesh"])
+@pytest.mark.parametrize(
+    "mode, diagonal",
+    [("element", True), ("vertex", True), ("vertex", False)],
+)
+def test_galerkin_sharp_gradcheck(mesh, mode, diagonal, request, device):
+    mesh = request.getfixturevalue(mesh)
+
+    vert_coords = mesh.vert_coords.clone().to(dtype=torch.float64, device=device)
+    vert_coords.requires_grad_()
+
+    cochain = torch.randn(mesh.n_edges, dtype=torch.float64, device=device)
+    cochain.requires_grad_()
+
+    def galerkin_sharp_fxn(test_vert_coords, test_cochain):
+        test_mesh = mesh.to(device=device, dtype=torch.float64)
+        test_mesh.vert_coords = test_vert_coords
+
+        mass_vec = music_ops.vector_mass(test_mesh, mode=mode, diagonal=diagonal)
+        mass_mixed = music_ops.mixed_mass(test_mesh, mode=mode)
+
+        vec_field = music_ops.galerkin_sharp(
+            cochain_1=test_cochain,
+            mass_vec=mass_vec,
+            mass_mixed=mass_mixed,
+            mode=mode,
+        )
+
+        output = torch.linalg.norm(vec_field, dim=-1).sum()
+        return output
+
+    assert torch.autograd.gradcheck(
+        galerkin_sharp_fxn,
+        (vert_coords, cochain),
+        fast_mode=True,
+        nondet_tol=1e-7,
+    )

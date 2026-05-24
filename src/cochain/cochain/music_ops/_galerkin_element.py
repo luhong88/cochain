@@ -2,9 +2,10 @@ from typing import Any
 
 import torch
 from einops import einsum, rearrange, repeat
-from jaxtyping import Float, Integer
+from jaxtyping import Float
 from torch import Tensor
 
+from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     DiagDecoupledTensor,
@@ -13,25 +14,18 @@ from ...sparse.decoupled_tensor import (
 from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
 from ...utils.faces import enumerate_local_faces
 
-# TODO: investigate sparse coo tensor mesh caching.
-
 
 def element_based_tri_mixed_mass_matrix(
-    n_edges: int,
-    tri_edge_idx: Integer[Tensor, "tri local_edge=3"],
-    tri_edge_orientations: Float[Tensor, "tri local_edge=3"],
+    mesh: SimplicialMesh,
     tri_areas: Float[Tensor, " tri"],
     bary_coords_grad: Float[Tensor, "tri vert=3 coord=3"],
 ) -> Float[SparseDecoupledTensor, "tri*coord global_edge"]:
-    """
-    Compute the cross/mixed mass matrix containing the inner products between the
-    per-triangle, piecewise-constant Cartesian basis vectors and the (sharp of the)
-    Whitney basis functions of 1-forms (of the lowest order) on a triangular mesh.
+    n_edges = mesh.n_edges
 
-    More specifically, the basis vectors are (ϕ_i*e_1, ϕ_i*e_2, ϕ_i*e_3), where
-    ϕ_i is the indicator function for triangle i, and the e's are the standard
-    Cartesian basis vectors.
-    """
+    tri_edge_faces = mesh.edge_faces
+    tri_edge_idx = tri_edge_faces.idx
+    tri_edge_orientations = tri_edge_faces.parity
+
     local_edge_idx = enumerate_local_faces(
         splx_dim=2, face_dim=1, device=bary_coords_grad.device
     )
@@ -78,29 +72,27 @@ def element_based_tri_mixed_mass_matrix(
         )
     )
 
-    cross_mass = torch.sparse_coo_tensor(
+    cross_mass = mesh._sparse_coalesced_matrix(
+        operator="element_based_tri_mixed_mass_matrix",
         indices=coo_idx,
         values=basis_int.flatten(),
         size=(n_tris * n_coords, n_edges),
-        dtype=bary_coords_grad.dtype,
-        device=bary_coords_grad.device,
-    ).coalesce()
+    )
 
-    return SparseDecoupledTensor.from_tensor(cross_mass)
+    return cross_mass
 
 
 def element_based_tet_mixed_mass_matrix(
-    n_edges: int,
-    tet_edge_idx: Integer[Tensor, "tet local_edge=6"],
-    tet_edge_orientations: Float[Tensor, "tet local_edge=6"],
+    mesh: SimplicialMesh,
     tet_unsigned_vols: Float[Tensor, " tet"],
     bary_coords_grad: Float[Tensor, "tet vert=4 coord=3"],
 ) -> Float[SparseDecoupledTensor, "tri*coord global_edge"]:
-    """
-    Compute the cross/mixed mass matrix containing the inner products between the
-    per-tet, piecewise-constant Cartesian basis vectors and the (sharp of the)
-    Whitney basis functions of 1-forms (of the lowest order) on a tet mesh.
-    """
+    n_edges = mesh.n_edges
+
+    tet_edge_faces = mesh.edge_faces
+    tet_edge_idx = tet_edge_faces.idx
+    tet_edge_orientations = tet_edge_faces.parity
+
     local_edge_idx = enumerate_local_faces(
         splx_dim=3, face_dim=1, device=bary_coords_grad.device
     )
@@ -139,25 +131,19 @@ def element_based_tet_mixed_mass_matrix(
         )
     )
 
-    cross_mass = torch.sparse_coo_tensor(
+    cross_mass = mesh._sparse_coalesced_matrix(
+        operator="element_based_tet_mixed_mass_matrix",
         indices=coo_idx,
         values=basis_int.flatten(),
         size=(n_tets * n_coords, n_edges),
-        dtype=bary_coords_grad.dtype,
-        device=bary_coords_grad.device,
-    ).coalesce()
+    )
 
-    return SparseDecoupledTensor.from_tensor(cross_mass)
+    return cross_mass
 
 
 def element_based_tri_vector_mass_matrix(
     tri_areas: Float[Tensor, " tri"],
 ) -> Float[DiagDecoupledTensor, "tri*coord tri*coord"]:
-    """
-    Compute the vector mass matrix containing the inner products between the
-    per-triangle, piecewise-constant Cartesian basis vectors, which is simply
-    the area-scaled identity matrix.
-    """
     val = repeat(tri_areas, "tri -> (tri coord)", coord=3)
     return DiagDecoupledTensor(val)
 
@@ -165,11 +151,6 @@ def element_based_tri_vector_mass_matrix(
 def element_based_tet_vector_mass_matrix(
     tet_unsigned_vols: Float[Tensor, " tet"],
 ) -> Float[DiagDecoupledTensor, "tri*coord tri*coord"]:
-    """
-    Compute the vector mass matrix containing the inner products between the
-    per-tet, piecewise-constant Cartesian basis vectors, which is simply
-    the volume-scaled identity matrix.
-    """
     val = repeat(tet_unsigned_vols, "tet -> (tet coord)", coord=3)
     return DiagDecoupledTensor(val)
 
@@ -181,13 +162,8 @@ def element_based_galerkin_flat(
     mass_mixed: Float[SparseDecoupledTensor, "top_splx*coord edge"],
     solver_kwargs: dict[str, Any],
 ) -> Float[Tensor, " edge"]:
-    """
-    Compute the flat of a piecewise constant vector field defined over the top-level
-    simplices of the mesh using the Galerkin projection method.
-
-    Formula: M_1@η = P.T@v, where M_1 is the edge mass matrix, η is the 1-cochain,
-    P is the mixed mass matrix, and v is the vector field.
-    """
+    # Formula: M_1@η = P.T@v, where M_1 is the edge mass matrix, η is the 1-cochain,
+    # P is the mixed mass matrix, and v is the vector field.
     rhs = mass_mixed.T @ vec_field.flatten()
 
     match mass_1:
@@ -204,15 +180,8 @@ def element_based_galerkin_sharp(
     mass_vec: Float[DiagDecoupledTensor, "top_splx*coord top_splx*coord"],
     mass_mixed: Float[SparseDecoupledTensor, "top_splx*coord edge"],
 ) -> Float[Tensor, "top_splx coord=3"]:
-    """
-    Compute the sharp of a 1-cochain using the Galerkin projection method. The
-    resulting vector field is piecewise constant and defined over the top-level
-    simplices of the mesh.
-
-    Formula: M_V@v = P@η, where M_V is the vector mass matrix, v is the vector field,
-    P is the mixed mass matrix, and η is the 1-cochain.
-    """
-
+    # Formula: M_V@v = P@η, where M_V is the vector mass matrix, v is the vector field,
+    # P is the mixed mass matrix, and η is the 1-cochain.
     return rearrange(
         mass_vec.inv @ mass_mixed @ cochain_1,
         "(top_splx coord) -> top_splx coord",
