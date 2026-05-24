@@ -27,15 +27,27 @@ class CupProduct(torch.nn.Module):
 
     Notes
     -----
-    Let $\xi$, $\eta$, and $\mu$ be cochains defined on a simplicial complex. The
-    cup product satisfies the following properties:
+    Let $\xi$ be a $k$-cochain and $\eta$ an $l$-cochain. The cup product between
+    $\xi$ and $\eta$ over a $(k+l)$-simplex $\sigma$ is defined as
 
-    * Associativity: $(\xi \wedge \eta) \wedge mu = \xi \wedge (\eta \wedge \mu)$.
-    * Leibniz rule: $d(\xi \wedge \eta) = d\xi \wedge \eta + (-1)^k \xi \wedge d\eta$,
+    $$
+    (\xi \smile \eta)(\sigma) = \xi(\sigma_{\le k})\eta(\sigma_{\ge k})
+    $$
+
+    where $\sigma_{\le k}$ denotes the $k$-th front face of $\sigma$ (a $k$-simplex
+    consisting of the first $k+1$ vertices of $\sigma$) and
+    $\sigma_{\ge k}$ denotes the $k$-th back face of $\sigma$ (an $l$-simplex
+    consisting of the last $l$ vertices of $\sigma$).
+
+    In general, let $\xi$, $\eta$, and $\mu$ be cochains defined on a simplicial
+    complex. The cup product satisfies the following properties:
+
+    * Associativity: $(\xi \smile \eta) \smile mu = \xi \smile (\eta \smile \mu)$.
+    * Leibniz rule: $d(\xi \smile \eta) = d\xi \smile \eta + (-1)^k \xi \smile d\eta$,
       where $d$ is the coboundary operator.
 
     However, this operator does not satisfy the graded commutativity property;
-    i.e., in general, it is not true that $\xi \wedge \eta = (-1)^{kl} \eta \wedge \xi$,
+    i.e., in general, it is not true that $\xi \smile \eta = (-1)^{kl} \eta \smile \xi$,
     unless $k = l = 0$.
 
     The cup product is purely topological and is independent of the mesh geometry.
@@ -225,7 +237,7 @@ class AntisymmetricCupProduct(torch.nn.Module):
     is invariant to simplex vertex permutation.
 
     As a result of this permutation invariance, this operator satisfies the the
-    graded commutativity property; i.e., $\xi \wedge \eta = (-1)^{kl} \eta \wedge \xi$.
+    graded commutativity property; i.e., $\xi \smile \eta = (-1)^{kl} \eta \smile \xi$.
     However, unlike the regular cup product, it does not in general satisfies the
     associativity rule or the Leibniz rule.
 
