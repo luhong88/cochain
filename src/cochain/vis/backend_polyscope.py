@@ -1,5 +1,4 @@
 from collections import ChainMap
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -11,29 +10,35 @@ from torch import Tensor
 
 from ..complex import SimplicialMesh
 from ..utils.parsing import to_np
-from .backend_base import VisBackend
 
 
-@dataclass
-class PolyscopeBackend(VisBackend):
-    name: str
-    mesh: SimplicialMesh
+class PolyscopeMesh:
+    """
+    A class for visualization of SimplicialMesh objects with Polyscope.
 
-    def __post_init__(self):
-        self.tri_edge_perm_map = self._compute_ps_edge_map(dim=2)
+    Parameters
+    ----------
+    name
+        The name of the mesh.
+    mesh
+        The mesh to visualize.
+    kwargs
+        Additional keyword arguments to pass to Polyscope `register_surface_mesh()`
+        and `register_volume_mesh()` functions.
 
-        self.ps_skel_1: ps.CurveNetwork | None = None
-        self.ps_skel_2: ps.SurfaceMesh | None = None
-        self.ps_mesh: ps.Structure
+    Notes
+    -----
+    Polyscope needs to be initialized with `ps.init()` before constructing this
+    class. Use `ps.show()` to display the mesh and attached quantities.
+    """
 
-    def init(self, mesh_kwargs: dict[str, Any] | None = None):
-        ps.init()
-
-        if mesh_kwargs is None:
-            mesh_kwargs = {}
+    def __init__(self, name: str, mesh: SimplicialMesh, **kwargs):
+        self.name = name
+        self.mesh = mesh
+        self._tri_edge_perm_map = self._compute_ps_edge_map(dim=2)
 
         default_kwargs = {"edge_width": 1.0}
-        kwargs = ChainMap(mesh_kwargs, default_kwargs)
+        updated_mesh_kwargs = ChainMap(kwargs, default_kwargs)
 
         match self.mesh.dim:
             case 2:
@@ -41,24 +46,49 @@ class PolyscopeBackend(VisBackend):
                     name=self.name,
                     vertices=to_np(self.mesh.vert_coords),
                     triangles=to_np(self.mesh.tris),
-                    **kwargs,
+                    **updated_mesh_kwargs,
                 )
-                self.ps_mesh.set_edge_permutation(perm=self.tri_edge_perm_map)
+                self.ps_mesh.set_edge_permutation(perm=self._tri_edge_perm_map)
 
             case 3:
                 self.ps_mesh: ps.VolumeMesh = ps.register_volume_mesh(
                     name=self.name,
                     vertices=to_np(self.mesh.vert_coords),
                     tets=to_np(self.mesh.tets),
-                    **kwargs,
+                    **updated_mesh_kwargs,
                 )
 
             case _:
                 raise ValueError(f"Unsupported mesh dimension: {self.mesh.dim}.")
 
+        self._ps_skel_1: ps.CurveNetwork | None = None
+        self._ps_skel_2: ps.SurfaceMesh | None = None
+
     def add_k_cochain(
         self, k: int, name: str, cochain: Float[Tensor, " k_splx"], **kwargs
     ):
+        """
+        Add a cochain to the Polyscope mesh visualization.
+
+        Parameters
+        ----------
+        k
+            The degree of the cochain.
+        name
+            The name of the cochain.
+        cochain : [k_splx,]
+            The cochain tensor.
+        kwargs
+            Additional keyword arguments to pass to Polyscope `add_scalar_quantity()`
+            function.
+
+        Notes
+        -----
+        For tet/volume meshes, Polyscope does not allow for visualization of
+        scalar quantities attached to the edge and tri faces of the tets. To
+        bypass this limitation, we create a 2-skeleton surface mesh and attach
+        the 1- and 2-cochains to the 2-skeleton instead.
+        """
         self._add_scalar_quantity(
             name=name,
             values=to_np(cochain),
@@ -69,15 +99,39 @@ class PolyscopeBackend(VisBackend):
     def add_vector_field(
         self, k: int, name: str, vec_field: Float[Tensor, "k_splx coord=3"], **kwargs
     ):
+        """
+        Add a vector-like field to the Polyscope mesh visualization.
+
+        Parameters
+        ----------
+        k
+            The dimension of the simplices to which the vectors are attached to.
+        name
+            The name of the vector field.
+        vec_field : [k_splx, coord]
+            The vector field tensor.
+        kwargs
+            Additional keyword arguments to pass to Polyscope `add_vector_quantity()`
+            function.
+
+        Notes
+        -----
+        For both tet/volume meshes and tri/surface meshes, Polyscope does not allow
+        for visualization of vector quantities attached to the edge faces of the
+        top-level simplices. To bypass this limitation, we create a 1-skeleton
+        curve network and attach the vectors to the curve network instead.
+
+        For tet/volume meshes, Polyscope in addition does not allow for visualization
+        of vector quantities attached to the tri faces of the tets. To bypass this
+        limitation, we create a 2-skeleton surface mesh and attach the vectors to
+        the 2-skeleton instead.
+        """
         self._add_vector_quantity(
             name=name,
             values=to_np(vec_field),
             degree=k,
             vector_kwargs=kwargs,
         )
-
-    def show(self):
-        ps.show()
 
     def _compute_ps_edge_map(self, dim: int) -> Integer[np.ndarray, " edge"]:
         """
@@ -146,8 +200,8 @@ class PolyscopeBackend(VisBackend):
         return ps_perm
 
     def _register_1_skeleton(self):
-        if self.ps_skel_1 is None:
-            self.ps_skel_1 = ps.register_curve_network(
+        if self._ps_skel_1 is None:
+            self._ps_skel_1 = ps.register_curve_network(
                 name=f"{self.name}_skel_1",
                 nodes=to_np(self.mesh.vert_coords),
                 edges=to_np(self.mesh.edges),
@@ -155,14 +209,14 @@ class PolyscopeBackend(VisBackend):
             )
 
     def _register_2_skeleton(self):
-        if self.ps_skel_2 is None:
-            self.ps_skel_2 = ps.register_surface_mesh(
+        if self._ps_skel_2 is None:
+            self._ps_skel_2 = ps.register_surface_mesh(
                 name=f"{self.name}_skel_2",
                 vertices=to_np(self.mesh.vert_coords),
                 triangles=to_np(self.mesh.tris),
                 edge_width=0.0,
             )
-            self.ps_skel_2.set_edge_permutation(perm=self.tri_edge_perm_map)
+            self._ps_skel_2.set_edge_permutation(perm=self._tri_edge_perm_map)
 
     def _add_scalar_quantity(
         self,
@@ -179,7 +233,7 @@ class PolyscopeBackend(VisBackend):
 
             case (1, 3):
                 self._register_2_skeleton()
-                self.ps_skel_2.add_scalar_quantity(
+                self._ps_skel_2.add_scalar_quantity(
                     name, values, defined_on="edges", **scalar_kwargs
                 )
             case (1, 2):
@@ -189,7 +243,7 @@ class PolyscopeBackend(VisBackend):
 
             case (2, 3):
                 self._register_2_skeleton()
-                self.ps_skel_2.add_scalar_quantity(
+                self._ps_skel_2.add_scalar_quantity(
                     name, values, defined_on="faces", **scalar_kwargs
                 )
             case (2, 2):
@@ -221,13 +275,13 @@ class PolyscopeBackend(VisBackend):
 
             case (1, _):
                 self._register_1_skeleton()
-                self.ps_skel_1.add_vector_quantity(
+                self._ps_skel_1.add_vector_quantity(
                     name, values, defined_on="edges", **vector_kwargs
                 )
 
             case (2, 3):
                 self._register_2_skeleton()
-                self.ps_skel_2.add_vector_quantity(
+                self._ps_skel_2.add_vector_quantity(
                     name, values, defined_on="faces", **vector_kwargs
                 )
             case (2, 2):
