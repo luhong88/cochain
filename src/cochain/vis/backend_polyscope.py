@@ -20,8 +20,7 @@ class PolyscopeBackend(VisBackend):
     mesh: SimplicialMesh
 
     def __post_init__(self):
-        self.edge_perm_map: Integer[np.ndarray, " edge"]
-        self._compute_ps_edge_map()
+        self.tri_edge_perm_map = self._compute_ps_edge_map(dim=2)
 
         self.ps_skel_1: ps.CurveNetwork | None = None
         self.ps_skel_2: ps.SurfaceMesh | None = None
@@ -44,7 +43,7 @@ class PolyscopeBackend(VisBackend):
                     triangles=to_np(self.mesh.tris),
                     **kwargs,
                 )
-                self.ps_mesh.set_edge_permutation(perm=self.edge_perm_map)
+                self.ps_mesh.set_edge_permutation(perm=self.tri_edge_perm_map)
 
             case 3:
                 self.ps_mesh: ps.VolumeMesh = ps.register_volume_mesh(
@@ -80,12 +79,17 @@ class PolyscopeBackend(VisBackend):
     def show(self):
         ps.show()
 
-    def _compute_ps_edge_map(self):
+    def _compute_ps_edge_map(self, dim: int) -> Integer[np.ndarray, " edge"]:
         """
         Compute the Polyscope edge permutation map.
 
         Computes the permutation tensor required by Polyscope to map its internally
         generated edge indices to lex-ordered edge indices.
+
+        Parameters
+        ----------
+        dim
+            The dimension of the top-level simplices whose edge faces are considered.
 
         Returns
         -------
@@ -94,7 +98,7 @@ class PolyscopeBackend(VisBackend):
             to Polyscope's i-th dynamically generated edge.
         """
         # Get the top level tris/tets
-        splx = self.mesh.splx[self.mesh.dim]
+        splx = self.mesh.splx[dim]
 
         dtype = splx.dtype
         device = splx.device
@@ -139,7 +143,7 @@ class PolyscopeBackend(VisBackend):
         # Rank the canonical edges by discovery time to get the permutation map.
         ps_perm = torch.argsort(disc_times)
 
-        self.edge_perm_map = to_np(ps_perm)
+        return ps_perm
 
     def _register_1_skeleton(self):
         if self.ps_skel_1 is None:
@@ -158,7 +162,7 @@ class PolyscopeBackend(VisBackend):
                 triangles=to_np(self.mesh.tris),
                 edge_width=0.0,
             )
-            self.ps_skel_2.set_edge_permutation(perm=self.edge_perm_map)
+            self.ps_skel_2.set_edge_permutation(perm=self.tri_edge_perm_map)
 
     def _add_scalar_quantity(
         self,
