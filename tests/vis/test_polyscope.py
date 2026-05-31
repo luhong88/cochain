@@ -1,6 +1,6 @@
 import polyscope as ps
 
-from cochain.vis.polyscope import PolyscopeViewer
+from cochain.vis import PolyscopeViewer
 
 
 def test_tri_mesh_vis_with_polyscope(icosphere_mesh, device):
