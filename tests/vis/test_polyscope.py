@@ -1,6 +1,6 @@
 import polyscope as ps
 
-from cochain.vis.backend_polyscope import PolyscopeMesh
+from cochain.vis.polyscope import PolyscopeViewer
 
 
 def test_tri_mesh_vis_with_polyscope(icosphere_mesh, device):
@@ -18,7 +18,7 @@ def test_tri_mesh_vis_with_polyscope(icosphere_mesh, device):
     vec_1 = mesh.vert_coords[mesh.edges].mean(dim=1)
     vec_2 = mesh.vert_coords[mesh.tris].mean(dim=1)
 
-    ps_mesh = PolyscopeMesh(name="test_tri_mesh", mesh=mesh)
+    ps_mesh = PolyscopeViewer(name="test_tri_mesh", mesh=mesh)
 
     ps_mesh.add_k_cochain(k=0, name="cochain_0", cochain=cochain_0)
     ps_mesh.add_k_cochain(k=1, name="cochain_1", cochain=cochain_1)
@@ -50,7 +50,7 @@ def test_tet_mesh_vis_with_polyscope(solid_torus_mesh, device):
     vec_2 = mesh.vert_coords[mesh.tris].mean(dim=1)
     vec_3 = mesh.vert_coords[mesh.tets].mean(dim=1)
 
-    ps_mesh = PolyscopeMesh(name="test_tet_mesh", mesh=mesh)
+    ps_mesh = PolyscopeViewer(name="test_tet_mesh", mesh=mesh)
 
     ps_mesh.add_k_cochain(k=0, name="cochain_0", cochain=cochain_0)
     ps_mesh.add_k_cochain(k=1, name="cochain_1", cochain=cochain_1)

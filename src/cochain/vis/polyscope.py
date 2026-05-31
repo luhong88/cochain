@@ -12,7 +12,7 @@ from ..complex import SimplicialMesh
 from ..utils.parsing import to_np
 
 
-class PolyscopeMesh:
+class PolyscopeViewer:
     """
     A class for visualization of SimplicialMesh objects with Polyscope.
 
