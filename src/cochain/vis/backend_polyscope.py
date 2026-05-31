@@ -46,7 +46,7 @@ class PolyscopeMesh:
     def __init__(self, name: str, mesh: SimplicialMesh, **kwargs):
         self.name = name
         self.mesh = mesh
-        self._tri_edge_perm_map = self._compute_ps_edge_map(dim=2)
+        self._tri_edge_perm_map = to_np(self._compute_ps_edge_map(dim=2))
 
         default_kwargs = {"edge_width": 1.0}
         updated_mesh_kwargs = ChainMap(kwargs, default_kwargs)
@@ -56,7 +56,7 @@ class PolyscopeMesh:
                 self.ps_mesh: ps.SurfaceMesh = ps.register_surface_mesh(
                     name=self.name,
                     vertices=to_np(self.mesh.vert_coords),
-                    triangles=to_np(self.mesh.tris),
+                    faces=to_np(self.mesh.tris),
                     **updated_mesh_kwargs,
                 )
                 self.ps_mesh.set_edge_permutation(perm=self._tri_edge_perm_map)
@@ -223,11 +223,14 @@ class PolyscopeMesh:
             )
 
     def _register_2_skeleton(self):
+        # Note that the 2-skeleton is disabled by default to avoid obscuring
+        # the visualization of the tet mesh.
         if self.ps_skel_2 is None:
             self.ps_skel_2 = ps.register_surface_mesh(
                 name=f"{self.name}_skel_2",
                 vertices=to_np(self.mesh.vert_coords),
-                triangles=to_np(self.mesh.tris),
+                faces=to_np(self.mesh.tris),
+                enabled=False,
                 edge_width=0.0,
             )
             self.ps_skel_2.set_edge_permutation(perm=self._tri_edge_perm_map)
