@@ -11,13 +11,7 @@ from torch import Tensor
 
 from ..complex import SimplicialMesh
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
-
-
-def _to_np(tensor: Tensor, dtype: np.dtype | None = None) -> npt.NDArray:
-    if dtype is None:
-        return tensor.detach().cpu().numpy()
-    else:
-        return tensor.detach().cpu().numpy().astype(dtype)
+from ..utils.parsing import to_np
 
 
 def _prepare_inputs(
@@ -88,10 +82,10 @@ def _prepare_inputs(
     """
     # Attach the scalar field to higher-order simplices
     splx_scalar_fields = (
-        _to_np(scalar_field.view(-1, 1)),
-        _to_np(scalar_field[mesh.edges]),
-        _to_np(scalar_field[mesh.tris]),
-        _to_np(scalar_field[mesh.tets]),
+        to_np(scalar_field.view(-1, 1)),
+        to_np(scalar_field[mesh.edges]),
+        to_np(scalar_field[mesh.tris]),
+        to_np(scalar_field[mesh.tets]),
     )
 
     splx_scalar_sum = np.concat(
@@ -104,7 +98,7 @@ def _prepare_inputs(
     # Sort the vertices in ascending order by the scalar value; stable=True
     # ensures tiebreak using vertex indices.
     ordered_verts = torch.argsort(scalar_field, stable=True, dim=0)
-    ordered_verts_np = _to_np(ordered_verts, int_dtype)
+    ordered_verts_np = to_np(ordered_verts, int_dtype)
 
     # Use the vert ordering to assign a ranking to each vert, which establishes
     # a strict total ordering of the verts.
@@ -114,14 +108,14 @@ def _prepare_inputs(
     vert_ranks[ordered_verts] = torch.arange(
         ordered_verts.size(0), dtype=ordered_verts.dtype, device=ordered_verts.device
     )
-    vert_ranks_np = _to_np(vert_ranks, int_dtype)
+    vert_ranks_np = to_np(vert_ranks, int_dtype)
 
     # Use the max vert rank to assign a rank score per simplex.
     splx_vert_ranks = (
-        _to_np(vert_ranks.view(-1, 1), int_dtype),
-        _to_np(vert_ranks[mesh.edges], int_dtype),
-        _to_np(vert_ranks[mesh.tris], int_dtype),
-        _to_np(vert_ranks[mesh.tets], int_dtype),
+        to_np(vert_ranks.view(-1, 1), int_dtype),
+        to_np(vert_ranks[mesh.edges], int_dtype),
+        to_np(vert_ranks[mesh.tris], int_dtype),
+        to_np(vert_ranks[mesh.tets], int_dtype),
     )
 
     splx_vert_rank_max = np.concat(
@@ -143,14 +137,14 @@ def _prepare_inputs(
     cbd_03 = mesh.cbd[2].abs() @ cbd_02
 
     vert_coface_indices = (
-        _to_np(mesh.cbd[0].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[1],
-        _to_np(cbd_02.pattern.idx_row_csc, int_dtype) + splx_dim_offsets[2],
-        _to_np(cbd_03.pattern.idx_row_csc, int_dtype) + splx_dim_offsets[3],
+        to_np(mesh.cbd[0].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[1],
+        to_np(cbd_02.pattern.idx_row_csc, int_dtype) + splx_dim_offsets[2],
+        to_np(cbd_03.pattern.idx_row_csc, int_dtype) + splx_dim_offsets[3],
     )
     vert_coface_offset = (
-        _to_np(mesh.cbd[0].pattern.idx_ccol, int_dtype),
-        _to_np(cbd_02.pattern.idx_ccol, int_dtype),
-        _to_np(cbd_03.pattern.idx_ccol, int_dtype),
+        to_np(mesh.cbd[0].pattern.idx_ccol, int_dtype),
+        to_np(cbd_02.pattern.idx_ccol, int_dtype),
+        to_np(cbd_03.pattern.idx_ccol, int_dtype),
     )
 
     # Also compute the coface relations between k-simplices and (k+1)-simplices.
@@ -158,14 +152,14 @@ def _prepare_inputs(
     # contains the 0-indices of the k-simplices, and we need to shift this local
     # 0-index scheme to the global simplex index scheme described above.
     codim1_coface_indices = (
-        _to_np(mesh.cbd[0].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[1],
-        _to_np(mesh.cbd[1].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[2],
-        _to_np(mesh.cbd[2].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[3],
+        to_np(mesh.cbd[0].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[1],
+        to_np(mesh.cbd[1].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[2],
+        to_np(mesh.cbd[2].pattern.idx_row_csc, int_dtype) + splx_dim_offsets[3],
     )
     codim1_coface_offset = (
-        _to_np(mesh.cbd[0].pattern.idx_ccol, int_dtype),
-        _to_np(mesh.cbd[1].pattern.idx_ccol, int_dtype),
-        _to_np(mesh.cbd[2].pattern.idx_ccol, int_dtype),
+        to_np(mesh.cbd[0].pattern.idx_ccol, int_dtype),
+        to_np(mesh.cbd[1].pattern.idx_ccol, int_dtype),
+        to_np(mesh.cbd[2].pattern.idx_ccol, int_dtype),
     )
 
     # Similarly compute the face relations between (k+1)-simplices and k-simplices
@@ -174,19 +168,19 @@ def _prepare_inputs(
     # we need to shift this local 0-index scheme to the global index scheme
     # described above.
     codim1_face_indices = (
-        _to_np(mesh.cbd[0].pattern.idx_col, int_dtype) + splx_dim_offsets[0],
-        _to_np(mesh.cbd[1].pattern.idx_col, int_dtype) + splx_dim_offsets[1],
-        _to_np(mesh.cbd[2].pattern.idx_col, int_dtype) + splx_dim_offsets[2],
+        to_np(mesh.cbd[0].pattern.idx_col, int_dtype) + splx_dim_offsets[0],
+        to_np(mesh.cbd[1].pattern.idx_col, int_dtype) + splx_dim_offsets[1],
+        to_np(mesh.cbd[2].pattern.idx_col, int_dtype) + splx_dim_offsets[2],
     )
     codim1_face_offset = (
-        _to_np(mesh.cbd[0].pattern.idx_crow, int_dtype),
-        _to_np(mesh.cbd[1].pattern.idx_crow, int_dtype),
-        _to_np(mesh.cbd[2].pattern.idx_crow, int_dtype),
+        to_np(mesh.cbd[0].pattern.idx_crow, int_dtype),
+        to_np(mesh.cbd[1].pattern.idx_crow, int_dtype),
+        to_np(mesh.cbd[2].pattern.idx_crow, int_dtype),
     )
     codim1_face_signs = (
-        _to_np(mesh.cbd[0].values),
-        _to_np(mesh.cbd[1].values),
-        _to_np(mesh.cbd[2].values),
+        to_np(mesh.cbd[0].values),
+        to_np(mesh.cbd[1].values),
+        to_np(mesh.cbd[2].values),
     )
 
     # Determine the max possible lower star size. To compute this size, we

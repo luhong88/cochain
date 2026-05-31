@@ -7,8 +7,9 @@ from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
 from torch import Tensor
 
-from cochain.sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
-from cochain.utils.search import splx_search
+from ..sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+from ..utils.parsing import to_np
+from ..utils.search import splx_search
 
 
 def _minimum_spanning_tree(
@@ -60,15 +61,11 @@ def _minimum_spanning_tree(
 
     # int32 is required for scipy sparse array indices
     idx_coo_full = adjacency.pattern.idx_coo.to(dtype=torch.int32)
-    idx_coo_rows_full = idx_coo_full[0].detach().cpu().numpy()
-    idx_coo_cols_full = idx_coo_full[1].detach().cpu().numpy()
+    idx_coo_rows_full = to_np(idx_coo_full[0])
+    idx_coo_cols_full = to_np(idx_coo_full[1])
 
     # If provided, the weights overwrite the adjacency matrix data.
-    coo_data_full = (
-        adjacency.values.detach().cpu().numpy()
-        if weights is None
-        else weights.detach().cpu().numpy()
-    )
+    coo_data_full = to_np(adjacency.values) if weights is None else to_np(weights)
 
     # If provided, use the exclusion mask to remove banned edges.
     if exclusion_mask is None:
@@ -76,14 +73,14 @@ def _minimum_spanning_tree(
         idx_coo_cols = idx_coo_cols_full
         coo_data = coo_data_full
     else:
-        exclusion_mask_np = exclusion_mask.detach().cpu().numpy()
+        exclusion_mask_np = to_np(exclusion_mask)
 
         idx_coo_rows = idx_coo_rows_full[~exclusion_mask_np]
         idx_coo_cols = idx_coo_cols_full[~exclusion_mask_np]
         coo_data = coo_data_full[~exclusion_mask_np]
 
     if (root_mask is not None) and (root_mask.any()):
-        root_mask_np = root_mask.detach().cpu().numpy()
+        root_mask_np = to_np(root_mask)
 
         idx_dtype = idx_coo_rows.dtype
         data_dtype = coo_data.dtype

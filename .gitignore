@@ -217,3 +217,6 @@ __marimo__/
 *.bib
 *.bbl
 *.blg
+
+# Polyscope init files
+*.ini

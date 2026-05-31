@@ -25,6 +25,9 @@ if TYPE_CHECKING:
     import cupyx.scipy.sparse as cp_sp
 
 
+from ...utils.parsing import to_np
+
+
 @dataclass
 class SpSpMMFwdPlan:
     c_nnz: int
@@ -484,11 +487,11 @@ def get_bwd_plan_A(
     device: torch.device | None = None,
 ) -> SpSpMMBwdPlanA:
     """Wrap for _collect_dLdA_idx()."""
-    a_idx_coo_np = a_idx_coo.detach().cpu().numpy()
-    c_idx_crow_np = c_idx_crow.detach().cpu().numpy()
-    c_idx_col_np = c_idx_col.detach().cpu().numpy()
-    b_idx_crow_np = b_idx_crow.detach().cpu().numpy()
-    b_idx_col_np = b_idx_col.detach().cpu().numpy()
+    a_idx_coo_np = to_np(a_idx_coo)
+    c_idx_crow_np = to_np(c_idx_crow)
+    c_idx_col_np = to_np(c_idx_col)
+    b_idx_crow_np = to_np(b_idx_crow)
+    b_idx_col_np = to_np(b_idx_col)
 
     a_nnz, dLdA_idx_np, dLdC_idx_np, b_idx_np = _collect_dLdA_idx(
         a_idx_coo_np,
@@ -524,13 +527,13 @@ def get_bwd_plan_B(
         idx_crow=c_idx_crow, idx_col=c_idx_col, n_cols=c_shape[-1]
     )
 
-    b_idx_coo_np = b_idx_coo.detach().cpu().numpy()
-    c_idx_ccol_np = c_idx_ccol.detach().cpu().numpy()
-    c_idx_row_np = c_idx_row_csc.detach().cpu().numpy()
-    c_csc_to_coo_map_np = c_csc_to_coo_map.detach().cpu().numpy()
-    a_idx_ccol_np = a_idx_ccol.detach().cpu().numpy()
-    a_idx_row_np = a_idx_row.detach().cpu().numpy()
-    a_csc_to_coo_map_np = a_csc_to_coo_map.detach().cpu().numpy()
+    b_idx_coo_np = to_np(b_idx_coo)
+    c_idx_ccol_np = to_np(c_idx_ccol)
+    c_idx_row_np = to_np(c_idx_row_csc)
+    c_csc_to_coo_map_np = to_np(c_csc_to_coo_map)
+    a_idx_ccol_np = to_np(a_idx_ccol)
+    a_idx_row_np = to_np(a_idx_row)
+    a_csc_to_coo_map_np = to_np(a_csc_to_coo_map)
 
     b_nnz, dLdB_idx_np, dLdC_idx_np, a_idx_np = _collect_dLdB_idx(
         b_idx_coo_np,
@@ -565,12 +568,12 @@ def get_fwd_plan(
     device: torch.device | None = None,
 ) -> SpSpMMFwdPlan:
     """Wrap for _collect_C_idx()."""
-    c_idx_coo_np = c_idx_coo.detach().cpu().numpy()
-    a_idx_crow_np = a_idx_crow.detach().cpu().numpy()
-    a_idx_col_np = a_idx_col.detach().cpu().numpy()
-    b_idx_ccol_np = b_idx_ccol.detach().cpu().numpy()
-    b_idx_row_np = b_idx_row.detach().cpu().numpy()
-    b_csc_to_coo_map_np = b_csc_to_coo_map.detach().cpu().numpy()
+    c_idx_coo_np = to_np(c_idx_coo)
+    a_idx_crow_np = to_np(a_idx_crow)
+    a_idx_col_np = to_np(a_idx_col)
+    b_idx_ccol_np = to_np(b_idx_ccol)
+    b_idx_row_np = to_np(b_idx_row)
+    b_csc_to_coo_map_np = to_np(b_csc_to_coo_map)
 
     c_nnz, c_n_row, c_n_col, c_idx_np, a_idx_np, b_idx_np = _collect_C_idx(
         c_idx_coo_np,
