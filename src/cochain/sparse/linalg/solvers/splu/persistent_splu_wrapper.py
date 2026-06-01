@@ -9,6 +9,7 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 from torch.autograd.function import once_differentiable
 
+from .....utils.parsing import to_np
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from .._inv_sparse_operator import InvSparseOperator
 
@@ -127,7 +128,7 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
         # The A_val and A_pattern are still required for gradient tracking
         # purposes, even though they are not used in the forward pass.
 
-        b_np = b.detach().contiguous().cpu().numpy()
+        b_np = to_np(b, contiguous=True)
         x = torch.from_numpy(solver.solve(b_np, trans=trans)).to(
             dtype=A_val.dtype, device=A_val.device
         )
@@ -166,7 +167,7 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
 
         # If the forward pass is "N", then the backward requires "T" and vice versa.
         lambda_np = solver.solve(
-            dLdx.detach().contiguous().cpu().numpy(),
+            to_np(dLdx, contiguous=True),
             trans="T" if ctx.trans == "N" else "N",
         )
         lambda_: Float[Tensor, " r *ch"] = torch.from_numpy(lambda_np).to(
@@ -255,9 +256,9 @@ class SuperLU(InvSparseOperator):
                     self.solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
 
             case "scipy":
-                val_np = val.cpu().numpy()
-                idx_ccol_np = idx_ccol.cpu().numpy()
-                idx_row_np = idx_row.contiguous().cpu().numpy()
+                val_np = to_np(val)
+                idx_ccol_np = to_np(idx_ccol)
+                idx_row_np = to_np(idx_row)
 
                 A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
                     (val_np, idx_row_np, idx_ccol_np),

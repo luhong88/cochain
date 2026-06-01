@@ -9,6 +9,7 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 from torch.autograd.function import once_differentiable
 
+from .....utils.parsing import to_np
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 
 try:
@@ -17,10 +18,12 @@ try:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
     _HAS_CUPY = True
+
 except ImportError:
     _HAS_CUPY = False
 
 if TYPE_CHECKING:
+    import cupy as cp
     import cupyx.scipy.sparse as cp_sp
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
@@ -28,14 +31,14 @@ if TYPE_CHECKING:
 class _CuPySuperLUAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[Tensor, " nnz"],
-        A_pattern: Integer[SparsityPattern, "r c"],
+        a_val: Float[Tensor, " nz"],
+        a_pattern: Integer[SparsityPattern, "r c"],
         b: Float[Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
-        val = A_val[A_pattern.csc_to_coo_map].detach().contiguous()
-        idx_ccol = A_pattern.idx_ccol.detach().contiguous()
-        idx_row = A_pattern.idx_row_csc.detach().contiguous()
+        val = a_val[a_pattern.csc_to_coo_map].detach().contiguous()
+        idx_ccol = a_pattern.idx_ccol.detach().contiguous()
+        idx_row = a_pattern.idx_row_csc.detach().contiguous()
 
         # Force CuPy to use the current Pytorch stream.
         stream = torch.cuda.current_stream()
@@ -46,7 +49,7 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
                     cp.from_dlpack(idx_row),
                     cp.from_dlpack(idx_ccol),
                 ),
-                shape=tuple(A_pattern.shape),
+                shape=tuple(a_pattern.shape),
             )
             b_cp = cp.from_dlpack(b.detach().contiguous())
 
@@ -57,32 +60,31 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_pattern, b, splu_kwargs = inputs
+        a_val, a_pattern, b, splu_kwargs = inputs
 
         x, solver = output
 
         ctx.save_for_backward(x)
         ctx.solver = solver
-        ctx.A_pattern = A_pattern
+        ctx.a_pattern = a_pattern
 
     @staticmethod
     @once_differentiable
     def backward(
         ctx, dLdx: Float[Tensor, " c *ch"], _
     ) -> tuple[
-        Float[Tensor, " nnz"] | None,
+        Float[Tensor, " nz"] | None,
         None,
         Float[Tensor, " r *ch"] | None,
         None,
     ]:
-        """
-        Let x be the solution to the linear system A@x = b. To find the gradient
-        of some loss L wrt A and b, the adjoint method first defines a Lagrangian
-        function F = L - lambda.T@(A@x - b), where lambda is the Lagrangian multiplier.
-        By definition, F and L (as well as their total differentials) must be
-        equal whenver A@x = b. From this condition, it follows that dLdb is given
-        by lambda, and dLdA is given by the outer product -lambda@x.T.
-        """
+        # Let x be the solution to the linear system A@x = b. To find the gradient
+        # of some loss L wrt A and b, the adjoint method first defines a Lagrangian
+        # function F = L - lambda.T@(A@x - b), where lambda is the Lagrangian multiplier.
+        # By definition, F and L (as well as their total differentials) must be
+        # equal whenever A@x = b. From this condition, it follows that dLdb is given
+        # by lambda, and dLdA is given by the outer product -lambda@x.T.
+
         needs_grad_A_val = ctx.needs_input_grad[0]
         needs_grad_b = ctx.needs_input_grad[2]
 
@@ -90,7 +92,7 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
             return (None,) * 4
 
         (x,) = ctx.saved_tensors
-        A_pattern: SparsityPattern = ctx.A_pattern
+        a_pattern: SparsityPattern = ctx.a_pattern
 
         if ctx.solver is None:
             raise RuntimeError(
@@ -117,10 +119,10 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
         if lambda_.dim() > 1:
             # If there is a channel dimension, sum over it.
             dLdA_val = torch.sum(
-                -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]], dim=-1
+                -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]], dim=-1
             )
         else:
-            dLdA_val = -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]]
+            dLdA_val = -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None)
@@ -132,37 +134,37 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
 class _SciPySuperLUAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[Tensor, " nnz"],
-        A_pattern: Integer[SparsityPattern, "r c"],
+        a_val: Float[Tensor, " nz"],
+        a_pattern: Integer[SparsityPattern, "r c"],
         b: Float[Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
-        val = A_val[A_pattern.csc_to_coo_map].detach().contiguous().cpu().numpy()
-        idx_ccol = A_pattern.idx_ccol.detach().contiguous().cpu().numpy()
-        idx_row = A_pattern.idx_row_csc.detach().contiguous().cpu().numpy()
+        val = to_np(a_val[a_pattern.csc_to_coo_map], contiguous=True)
+        idx_ccol = to_np(a_pattern.idx_ccol, contiguous=True)
+        idx_row = to_np(a_pattern.idx_row_csc, contiguous=True)
 
-        A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
+        a_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
             (val, idx_row, idx_ccol),
-            shape=A_pattern.shape,
+            shape=a_pattern.shape,
         )
-        b_np = b.detach().contiguous().cpu().numpy()
+        b_np = to_np(b, contiguous=True)
 
-        solver = scipy.sparse.linalg.splu(A_scipy, **splu_kwargs)
+        solver = scipy.sparse.linalg.splu(a_scipy, **splu_kwargs)
         x = torch.from_numpy(solver.solve(b_np, trans="N")).to(
-            dtype=A_val.dtype, device=A_val.device
+            dtype=a_val.dtype, device=a_val.device
         )
 
         return x, solver
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_pattern, b, splu_kwargs = inputs
+        A_val, a_pattern, b, splu_kwargs = inputs
 
         x, solver = output
 
         ctx.save_for_backward(x)
         ctx.solver = solver
-        ctx.A_pattern = A_pattern
+        ctx.a_pattern = a_pattern
 
     @staticmethod
     @once_differentiable
@@ -181,7 +183,7 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
             return (None,) * 4
 
         (x,) = ctx.saved_tensors
-        A_pattern: SparsityPattern = ctx.A_pattern
+        a_pattern: SparsityPattern = ctx.a_pattern
 
         if ctx.solver is None:
             raise RuntimeError(
@@ -191,7 +193,7 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
         else:
             solver: scipy.sparse.linalg.SuperLU = ctx.solver
 
-        lambda_np = solver.solve(dLdx.detach().contiguous().cpu().numpy(), trans="T")
+        lambda_np = solver.solve(to_np(dLdx, contiguous=True), trans="T")
         lambda_: Float[Tensor, " r *ch"] = torch.from_numpy(lambda_np).to(
             dtype=dLdx.dtype, device=dLdx.device
         )
@@ -206,10 +208,10 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
         if lambda_.ndim > 1:
             # If there is a channel dimension, sum over it.
             dLdA_val = torch.sum(
-                -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]], dim=-1
+                -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]], dim=-1
             )
         else:
-            dLdA_val = -lambda_[A_pattern.idx_coo[0]] * x[A_pattern.idx_coo[1]]
+            dLdA_val = -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None)
