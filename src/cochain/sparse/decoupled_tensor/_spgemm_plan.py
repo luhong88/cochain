@@ -631,10 +631,10 @@ def discover_matmul_pattern(
     dtype = a_idx_crow.dtype
 
     if device.type == "cpu":
-        a_idx_crow_np = a_idx_crow.detach().contiguous().cpu().numpy()
-        a_idx_col_np = a_idx_col.detach().contiguous().cpu().numpy()
-        b_idx_crow_np = b_idx_crow.detach().contiguous().cpu().numpy()
-        b_idx_col_np = b_idx_col.detach().contiguous().cpu().numpy()
+        a_idx_crow_np = to_np(a_idx_crow, contiguous=True)
+        a_idx_col_np = to_np(a_idx_col, contiguous=True)
+        b_idx_crow_np = to_np(b_idx_crow, contiguous=True)
+        b_idx_col_np = to_np(b_idx_col, contiguous=True)
 
         a_val_dummy = np.ones_like(a_idx_col, dtype=np.float32)
         b_val_dummy = np.ones_like(b_idx_col, dtype=np.float32)
