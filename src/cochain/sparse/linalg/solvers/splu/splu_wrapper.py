@@ -229,43 +229,57 @@ def splu(
     **splu_kwargs,
 ) -> Float[Tensor, " c *ch"]:
     """
-    Differentiable wrapper for SuperLU.
+    "Stateless" differentiable wrapper for SuperLU.
+
+    Given a sparse 2D matrix `a` and a vector `b`, solve the linear system
+    `a @ x = b` for `x`.
 
     Parameters
     ----------
     a : [r, c]
-        A 2D matrix represented as a `SparseDecoupledTensor`.
+        A sparse 2D matrix represented as a `SparseDecoupledTensor`.
     b : [r, *ch]
         The RHS vector as a dense tensor with optional channel dimensions.
+    backend
+        Whether to use the CuPy (`"cupy"`) or SciPy (`"scipy"`) implementation of
+        `SuperLU`. If the backend is CuPy, `a` and `b` must be on the CUDA device.
+        If backend is SciPy, `a` and `b` will be copied to CPU. Note that `SuperLU`
+        handles the factorization step on the host CPU, regardless of the backend.
+    channel_first
+        If `channel_first` is `True`, all but the last dimension of `b` is treated
+        as channel dimensions; if it is `False`, all but the first dimension of
+        `b` is treated as channel dimensions.
+    splu_kwargs
+        Additional keyword arguments to be passed to `cupyx.scipy.sparse.linalg.splu()`
+        if the backend is CuPy or `scipy.sparse.linalg.splu()` if the backend is
+        SciPy.
 
-    Here, A is a SparseDecoupledTensor and b is a dense tensor with optional channel
-    dimensions. If `channel_first` is `True`, all but the last dimension of `b`
-    is treated as channel dimensions; if it is `False`, all but the first dimension
-    of `b` is treated as channel dimensions.
 
-    If backend is 'cupy', `A` and `b` must be on the CUDA device. If backend is
-    'scipy', `A` and `b` will be copied to CPU.
+    Returns
+    -------
+    [c, *ch]
+        The unknown vector `x` with channel dimensions matching those of `b`.
 
-    If either `A` or `b` requires gradient, then a `SuperLU` solver object will be
+    Notes
+    -----
+    If either `a` or `b` requires gradient, then a `SuperLU` solver object will be
     cached in memory to accelerate the backward pass; this memory will not be
     cleaned up until one of the following conditions is met:
 
-    1) a backward() call with `retain_graph=False` has been made through the
-    computation graph containing `A` or `b`, or
-    2) all references to the output tensor (and its `grad_fn` and `ctx` attributes)
+    * a backward() call with `retain_graph=False` has been made through the
+    computation graph containing `a` or `b`, or
+    * all references to the output tensor (and its `grad_fn` and `ctx` attributes)
     from this function (and any derived tensors thereof) has gone out of scope/been
     detached from the computation graph.
 
-    This function currently has the following limitations:
+    In addition, note that this function has the following limitations:
 
-    * Double backward through this function is currently not supported.
-    * The sparse indices of `A` will be downcasted to `int32` for compatibility with
-    the solver; this necessitates copying of the index tensor.
-    * SuperLU handles the factorization step on the host CPU, regardless of the
-    location of `A` and `b`.
-    * The SuperLU solver supports batching/channel dimensions of the `b` tensor,
+    * Currently, double backward through this function is not supported.
+    * The sparse indices of `a` must be of datatype `int32` for compatibility with
+    the solver.
+    * The `SuperLU` solver supports batching/channel dimensions of the `b` tensor,
     but there can only be one channel dimension, and the channel dimension must
-    be the last dimension (i.e., `b` is either of shape `(r,)` or `(r, ch)`).
+    be the last dimension (i.e., `b` is either of shape `[r,]` or `[r, ch]`).
     Therefore, if the input `b` tensor does not conform to this layout, the function
     will have to create a reshaped and memory-contiguous copy of `b`. Batching of
     the `A` tensor is not supported by the solver.
@@ -303,7 +317,7 @@ def splu(
             )
 
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknwon 'backend' argument '{backend}'.")
 
     if x.ndim == 1:
         x_reshaped = x
