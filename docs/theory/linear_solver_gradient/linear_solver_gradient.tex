@@ -1,0 +1,77 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[T1]{fontenc} 
+\usepackage{cmbright}
+
+% --- Essential Math Packages ---
+\usepackage{amsmath}    % Core math environments
+\usepackage{amssymb}    % Math symbols
+\usepackage{mathtools}  % Improvements to amsmath (fixes spacing)
+\usepackage{bm}         % Bold math (better than \mathbf for greek letters)
+
+% --- Formatting & Utilities ---
+\usepackage[margin=1in]{geometry} % Standard margins
+\usepackage{microtype}            % Subliminally improves spacing/kerning
+\usepackage{hyperref}             % Clickable links in PDF
+\usepackage{cleveref}             % Smart referencing (use \cref instead of \ref)
+\usepackage{url}
+
+% --- Settings ---
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=green,
+    urlcolor=cyan
+}
+
+\title{Note on reverse-mode linear solver gradients}
+\author{Lu Hong}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+Let $A\in\mathbb R^{N\times N}$ be an invertible matrix and $b\in\mathbb R^{N}$ such that there is a unique $x\in\mathbb R^N$ that satisfies
+
+\begin{equation}
+    Ax=b \label{linear_sys}
+\end{equation}
+
+Let $L:\mathbb R^N\to \mathbb R$ be a loss function of $x$. The goal of this note is to derive an expression for the gradient of $L$ with respect to $A$ and $b$.
+
+To find these gradients, we use the adjoint method and start by defining the Lagrangian
+\begin{equation}
+    F(x, A, b, \lambda) = L(x) - \left<\lambda, Ax-b\right> \label{lagrangian}
+\end{equation}
+By this definition, when $x$ is a valid solution to \eqref{linear_sys}, the second term in \eqref{lagrangian} vanishes, which implies that $F=L$; a consequence of this equality is that the total derivatives of $F$ and $L$ with respect to $A$ and $b$ are also identical.
+
+Therefore, if $x$ is a solution to \eqref{linear_sys}, we can compute the total derivative (i.e., gradient) of $L$ with respect to $A$ as
+\begin{equation}
+    \frac{dL}{dA} = \frac{dF}{dA} = \frac{\partial F}{\partial x}\frac{\partial x}{\partial A} + \frac{\partial F}{\partial A} \label{partial_A}
+\end{equation}
+where the second equality follows from the fact that $F$ depends on A both directly and indirectly via $x(A, b)$. Note that, to compute $\partial x/\partial A$ would require tracking gradients through the linear solver, which is expensive. Since $\lambda$ is a free vector, we can choose a $\lambda$ such that the first term in \eqref{partial_A} vanishes and \eqref{partial_A} reduces to
+\begin{equation}
+    \frac{dL}{dA} = \frac{\partial F}{\partial A} \label{partial_A_simplified}
+\end{equation}
+This is equivalent to the requirement that
+\begin{align}
+    \frac{\partial F}{\partial x} & = 0 \\
+    \frac{\partial L}{\partial x} - \frac{\partial}{\partial x}\left<\lambda, Ax\right> & = 0 \\
+    \frac{\partial}{\partial x}\left<A^T\lambda, x\right> & = \frac{\partial L}{\partial x} \\ 
+    A^T\lambda & = \frac{\partial L}{\partial x} \label{lambda_linear_sys}
+\end{align}
+Note that the adjoint property of $A$ is the key step in enabling the simplification of the derivative of the inner product $\left<\lambda, Ax\right>$ with respect to $x$ by moving the action of $A$ to the other side of the inner product (hence the name ``adjoint method'').
+
+Taken together, once we solve \eqref{lambda_linear_sys} for $\lambda$, we can use \eqref{partial_A_simplified} to find the total derivative of $L$ with respect to $A$ as
+\begin{equation}
+    \frac{dL}{dA} = \frac{\partial F}{\partial A} = \frac{\partial L}{\partial A} + \frac{\partial}{\partial A}\left<-\lambda, Ax-b\right> = -\lambda x^T
+\end{equation}
+note that $\partial L/\partial A$ is zero since $L(x)$ has no explicit dependency on $A$. Repeating the same argument for $b$, we find that the same $\lambda$ can be used to find the total derivative of $L$ with respect to $b$ as
+\begin{equation}
+    \frac{dL}{db} = \frac{\partial F}{\partial b} = \frac{\partial}{\partial b}\left<-\lambda, Ax-b\right> = \lambda
+\end{equation}
+
+Note that, since the adjoint method depends on $x(A, b)$ being a well-defined function of $A$ and $b$, it breaks down if the solution to \eqref{linear_sys} is not unique. In such cases, some methods will fail to find a solution (e.g., those based on LU factorization), in which case the gradients are undefined. However, some linear solvers (e.g., those computing the Moore-Penrose pseudoinverse via SVD or LSQR) enforce a minimum-norm condition if \eqref{linear_sys} has non-unique solutions (i.e., the uniqueness condition is guaranteed by finding $x$ with the smallest $\|x\|^2$); in such cases, the adjoint method presented above gives incorrect gradients, because it does not account for the minimum-norm constraint. In cases where \eqref{linear_sys} is close to singular, the gradients given by the adjoint method are still correct, but the solution to \eqref{lambda_linear_sys} will be numerically unstable since the condition number of $A$ is large.
+
+\end{document}
