@@ -19,10 +19,12 @@ try:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
     _HAS_CUPY = True
+
 except ImportError:
     _HAS_CUPY = False
 
 if TYPE_CHECKING:
+    import cupy as cp
     import cupyx.scipy.sparse as cp_sp
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
@@ -93,13 +95,14 @@ class _PersistentCuPySuperLUAutogradFunction(torch.autograd.Function):
             return (None, None, lambda_, None, None)
 
         # dLdA will have the same sparsity pattern as A.
+        i, j = a_pattern.idx_coo.unbind(0)
         if lambda_.dim() > 1:
             # If there is a channel dimension, sum over it.
-            dLda_val = torch.sum(
-                -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]], dim=-1
-            )
+            # dLdA_ij = Σ_c[λ_ic * x_jc]
+            dLda_val = torch.sum(-lambda_[i] * x[j], dim=-1)
         else:
-            dLda_val = -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]]
+            # dLdA_ij = λ_i*x_j
+            dLda_val = -lambda_[i] * x[j]
 
         if needs_grad_a_val and not needs_grad_b:
             return (dLda_val, None, None, None, None)
@@ -119,7 +122,6 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
     ) -> Float[Tensor, " c *ch"]:
         # The a_val and a_pattern are still required for gradient tracking
         # purposes, even though they are not used in the forward pass.
-
         b_np = to_np(b, contiguous=True)
         x = torch.from_numpy(solver.solve(b_np, trans=trans)).to(
             dtype=a_val.dtype, device=a_val.device
@@ -170,13 +172,14 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
             return (None, None, lambda_, None, None)
 
         # dLdA will have the same sparsity pattern as A.
+        i, j = a_pattern.idx_coo.unbind(0)
         if lambda_.ndim > 1:
             # If there is a channel dimension, sum over it.
-            dLda_val = torch.sum(
-                -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]], dim=-1
-            )
+            # dLdA_ij = Σ_c[λ_ic * x_jc]
+            dLda_val = torch.sum(-lambda_[i] * x[j], dim=-1)
         else:
-            dLda_val = -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]]
+            # dLdA_ij = λ_i*x_j
+            dLda_val = -lambda_[i] * x[j]
 
         if needs_grad_a_val and not needs_grad_b:
             return (dLda_val, None, None, None, None)
@@ -207,22 +210,16 @@ class SuperLU(InvSparseOperator):
         if the backend is CuPy or `scipy.sparse.linalg.splu()` if the backend is
         SciPy.
 
-
-    This class implements a similar wrapper to cupy/scipy `splu()` as the functional
-    `splu()` wrapper. Both wrappers cache the solver object and the factorized matrix
-    for backward passes; however, in the functional wrapper, the cached solver is
-    tied to the computation graph and gc'ed after the backward pass, whereas, in
-    this class, the cached solver is tied to the lifecycle of the class instances,
-    which allows the same factorized matrix to be re-used to solve different linear
-    systems.
-
+    Notes
+    -----
+    This class implements a similar `SuperLU` wrapper as the functional `splu()`.
+    Both wrappers cache the solver object and the factorized matrix for backward
+    passes; however, in the functional wrapper, the cached solver is tied to the
+    computation graph and gc'ed after the backward pass, whereas, in this class,
+    the cached solver is tied to the lifecycle of the class instances, which allows
+    the same factorized matrix to be re-used to solve different linear systems.
     See the `splu()` function for more details on the requirements and limitations
-    of this wrapper. This wrapper also differs from the functional version in the
-    following ways:
-
-    * This class is callable with a "trans" option that supports directly solving
-    a transposed linear system.
-    * This class assumes that the input vector b is always of the shape (r, *ch).
+    of this wrapper.
     """
 
     def __init__(
@@ -238,6 +235,9 @@ class SuperLU(InvSparseOperator):
                 "cast to int32 dtype."
             )
 
+        if (backend == "cupy") and not _HAS_CUPY:
+            raise ImportError("CuPy backend required.")
+
         self.a_val = a.values
         self.a_pattern = a.pattern
         self.backend = backend
@@ -250,7 +250,7 @@ class SuperLU(InvSparseOperator):
         idx_ccol = a.pattern.idx_ccol.detach().contiguous()
         idx_row = a.pattern.idx_row_csc.detach().contiguous()
 
-        match backend:
+        match self.backend:
             case "cupy":
                 # Force CuPy to use the current Pytorch stream.
                 stream = torch.cuda.current_stream()
@@ -273,7 +273,7 @@ class SuperLU(InvSparseOperator):
 
                 A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
                     (val_np, idx_row_np, idx_ccol_np),
-                    shape=a.pattern.shape,
+                    shape=tuple(a.pattern.shape),
                 )
 
                 self.solver = scipy.sparse.linalg.splu(A_scipy, **splu_kwargs)

@@ -109,13 +109,14 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
             return (None, None, lambda_, None)
 
         # dLdA will have the same sparsity pattern as A.
+        i, j = a_pattern.idx_coo.unbind(0)
         if lambda_.dim() > 1:
             # If there is a channel dimension, sum over it.
-            dLdA_val = torch.sum(
-                -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]], dim=-1
-            )
+            # dLdA_ij = Σ_c[λ_ic * x_jc]
+            dLdA_val = torch.sum(-lambda_[i] * x[j], dim=-1)
         else:
-            dLdA_val = -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]]
+            # dLdA_ij = λ_i*x_j
+            dLdA_val = -lambda_[i] * x[j]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None)
@@ -198,13 +199,14 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
             return (None, None, lambda_, None)
 
         # dLdA will have the same sparsity pattern as A.
+        i, j = a_pattern.idx_coo.unbind(0)
         if lambda_.ndim > 1:
             # If there is a channel dimension, sum over it.
-            dLdA_val = torch.sum(
-                -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]], dim=-1
-            )
+            # dLdA_ij = Σ_c[λ_ic * x_jc]
+            dLdA_val = torch.sum(-lambda_[i] * x[j], dim=-1)
         else:
-            dLdA_val = -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]]
+            # dLdA_ij = λ_i*x_j
+            dLdA_val = -lambda_[i] * x[j]
 
         if needs_grad_A_val and not needs_grad_b:
             return (dLdA_val, None, None, None)
@@ -255,6 +257,9 @@ def splu(
 
     Notes
     -----
+    If the linear system `a @ x = b` does not have a unique solution, then both
+    the forward pass and backward gradient will fail.
+
     If either `a` or `b` requires gradient, then a `SuperLU` solver object will be
     cached in memory to accelerate the backward pass; this memory will not be
     cleaned up until one of the following conditions is met:
