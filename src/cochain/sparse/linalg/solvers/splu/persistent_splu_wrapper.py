@@ -69,13 +69,6 @@ class _PersistentCuPySuperLUAutogradFunction(torch.autograd.Function):
         None,
         None,
     ]:
-        # Let x be the solution to the linear system A@x = b. To find the gradient
-        # of some loss L wrt A and b, the adjoint method first defines a Lagrangian
-        # function F = L - lambda.T@(A@x - b), where lambda is the Lagrangian multiplier.
-        # By definition, F and L (as well as their total differentials) must be
-        # equal whenver A@x = b. From this condition, it follows that dLdb is given
-        # by lambda, and dLdA is given by the outer product -lambda@x.T.
-
         needs_grad_a_val = ctx.needs_input_grad[0]
         needs_grad_b = ctx.needs_input_grad[2]
 
