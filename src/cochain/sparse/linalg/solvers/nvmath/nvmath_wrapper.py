@@ -47,11 +47,7 @@ if _HAS_NVMATH:
             super().__init__(*args, **kwargs)
 
         def __del__(self):
-            if (
-                hasattr(self, "valid_state")
-                and self.valid_state
-                and hasattr(self, "free")
-            ):
+            if getattr(self, "valid_state", False) and hasattr(self, "free"):
                 # Force device sync before gc.
                 try:
                     import torch
@@ -236,12 +232,12 @@ def nvmath_direct_solver(
     `b`. More specifically, this class supports the following four batching
     configurations:
 
-    | Config                     | `a.shape`   | `b.shape`     | `x.shape`     |
-    |----------------------------|-------------|---------------|---------------|
-    | No batching or channel dim | `[r, c]`    | `[r,]`        | `[c,]`        |
-    | Channel dim                | `[r, c]`    | `[r, *ch]`    | `[c, *ch]`    |
-    | Batching                   | `[b, r, c]` | `[b, r, (1)]` | `[b, c, (1)]` |
-    | Batching + channel dim     | `[b, r, c]` | `[b, r, *ch]` | `[b, c, *ch]` |
+    | Batch | Channel | `a.shape`   | `b.shape`     | `x.shape`     |
+    |-------|---------|-------------|---------------|---------------|
+    | False | False   | `[r, c]`    | `[r,]`        | `[c,]`        |
+    | False | True    | `[r, c]`    | `[r, *ch]`    | `[c, *ch]`    |
+    | True  | False   | `[b, r, c]` | `[b, r, (1)]` | `[b, c, (1)]` |
+    | True  | True    | `[b, r, c]` | `[b, r, *ch]` | `[b, c, *ch]` |
 
     Note that, if batch dimensions are present, the `DirectSolver` class requires
     that `b` have a channel dimension, even if it is trivial (indicated by the
