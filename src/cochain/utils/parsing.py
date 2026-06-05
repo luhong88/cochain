@@ -60,41 +60,68 @@ def to_col_major(tensor: Tensor, *, batch_first: bool = False) -> Tensor:
                 # Input tensor: (b, r)
                 # Col-major stride: (r, 1)
                 # Note that this is a batch of 1D vectors; identical to row-major stride.
-                return tensor.contiguous()
+                s0, s1 = tensor.shape
+                expected_stride = (s1, 1)
+
+                output_tensor = tensor.contiguous()
+
             case 3:
                 # Input tensor: (b, r, c)
                 # Col-major stride: (r*c, 1, r)
-                # If transposed inner dims are contiguous, it's already batched col-major.
-                if tensor.transpose(-1, -2).is_contiguous():
-                    return tensor
+                s0, s1, s2 = tensor.shape
+                expected_stride = (s1 * s2, 1, s1)
+
+                if tensor.stride() == expected_stride:
+                    output_tensor = tensor
                 else:
-                    return (
+                    output_tensor = (
                         tensor.contiguous()
                         .transpose(-1, -2)
                         .contiguous()
                         .transpose(-1, -2)
                     )
+
+            case _:
+                raise ValueError(
+                    "Tensors with more than three dimensions are not supported."
+                )
+
     else:
         match tensor.ndim:
             case 2:
                 # Input tensor: (r, c)
                 # Col-major stride: (1, r)
-                if tensor.T.is_contiguous():
-                    return tensor
+                s0, s1 = tensor.shape
+                expected_stride = (1, s0)
+
+                if tensor.stride() == expected_stride:
+                    output_tensor = tensor
                 else:
-                    return tensor.T.contiguous().T
+                    output_tensor = tensor.T.contiguous().T
+
             case 3:
                 # Input tensor: (x, y, z)
                 # Col-major stride: (1, x, x*y)
-                # Reverse all dims: if that is contiguous, original was fully col-major.
-                if tensor.permute(2, 1, 0).is_contiguous():
-                    return tensor
+                s0, s1, s2 = tensor.shape
+                expected_stride = (1, s0, s0 * s1)
+
+                if tensor.stride() == expected_stride:
+                    output_tensor = tensor
                 else:
-                    return (
+                    output_tensor = (
                         tensor.contiguous()
                         .transpose(0, -1)
                         .contiguous()
                         .transpose(0, -1)
                     )
 
-    return tensor
+            case _:
+                raise ValueError(
+                    "Tensors with more than three dimensions are not supported."
+                )
+
+    # Explicitly enforce the expected stride; necessary for trivial dimensions
+    # to be annotated with the correct stride.
+    strided_tensor = output_tensor.as_strided(tensor.shape, expected_stride)
+
+    return strided_tensor
