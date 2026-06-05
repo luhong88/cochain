@@ -1,3 +1,5 @@
+__all__ = ["DirectSolverConfig"]
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -7,8 +9,6 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ....decoupled_tensor import SparsityPattern
-
-__all__ = ["DirectSolverConfig"]
 
 sp_literal_to_matrix_type = {
     "general": nvmath_sp.DirectSolverMatrixType.GENERAL,

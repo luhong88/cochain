@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["NVMathDirectSolver"]
+
 from typing import TYPE_CHECKING, Literal
 
 import torch
@@ -28,8 +30,6 @@ except ImportError:
 if TYPE_CHECKING:
     import nvmath.sparse.advanced as nvmath_sp
     from cuda.core.experimental import Device
-
-__all__ = ["NVMathDirectSolver"]
 
 
 class _PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):

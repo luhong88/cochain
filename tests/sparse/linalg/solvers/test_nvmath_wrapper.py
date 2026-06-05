@@ -28,12 +28,12 @@ def test_direct_solver_with_channel_dim(a, device):
     n_dim = A_op.size(0)
     n_ch = 2
 
-    x_true = torch.randn(n_ch, n_dim).to(device)
-    b = torch.einsum("ij,kj->ki", A_dense, x_true)
+    x_true = torch.randn(n_dim, n_ch).to(device)
+    b = torch.einsum("ij,jk->ik", A_dense, x_true)
 
     x = nvmath_direct_solver(A_op, b)
 
-    torch.testing.assert_close(x, x_true.T)
+    torch.testing.assert_close(x, x_true)
 
 
 @pytest.mark.gpu_only
@@ -45,12 +45,11 @@ def test_direct_solver_with_batch_dim(a_with_batch, device):
     n_batch = A_op.size(0)
 
     x_true = torch.randn(n_batch, n_dim).to(device)
-    b = torch.einsum("bij,bj->bi", A_dense, x_true).view(n_batch, 1, n_dim)
+    b = torch.einsum("bij,bj->bi", A_dense, x_true)
 
     x = nvmath_direct_solver(A_op, b)
-    x_true_shaped = x_true.view(n_batch, n_dim, 1)
 
-    torch.testing.assert_close(x, x_true_shaped)
+    torch.testing.assert_close(x, x_true)
 
 
 @pytest.mark.gpu_only
@@ -63,7 +62,7 @@ def test_direct_solver_with_batch_channel_dim(a_with_batch, device):
     n_ch = 2
 
     x_true = torch.randn(n_batch, n_dim, n_ch).to(device)
-    b = torch.einsum("bij,bjc->bci", A_dense, x_true)
+    b = torch.einsum("bij,bjc->bic", A_dense, x_true)
 
     x = nvmath_direct_solver(A_op, b)
 
