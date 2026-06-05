@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["SuperLU"]
+
 from typing import TYPE_CHECKING, Literal
 
 import scipy.sparse
@@ -27,8 +29,6 @@ if TYPE_CHECKING:
     import cupy as cp
     import cupyx.scipy.sparse as cp_sp
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
-
-__all__ = ["SuperLU"]
 
 
 class _PersistentCuPySuperLUAutogradFunction(torch.autograd.Function):
@@ -229,6 +229,10 @@ class SuperLU(InvSparseOperator):
         backend: Literal["cupy", "scipy"],
         **splu_kwargs,
     ):
+        if a.n_batch_dim > 0:
+            raise ValueError("Batch dimension in 'a' is not supported.")
+        if a.n_dense_dim > 0:
+            raise ValueError("Dense dimension in 'a' is not supported.")
         if not a.pattern._is_int32_safe:
             raise ValueError(
                 "The sparse indices of the input tensor 'A' cannot be safely "

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["splu"]
+
 from typing import TYPE_CHECKING, Any, Literal
 
 import scipy.sparse
@@ -282,6 +284,10 @@ def splu(
     will have to create a reshaped and memory-contiguous copy of `b`. Batching of
     the `A` tensor is not supported by the solver.
     """
+    if a.n_batch_dim > 0:
+        raise ValueError("Batch dimension in 'a' is not supported.")
+    if a.n_dense_dim > 0:
+        raise ValueError("Dense dimension in 'a' is not supported.")
     if not a.pattern._is_int32_safe:
         raise ValueError(
             "The sparse indices of the input tensor 'A' cannot be safely cast to int32 dtype."
