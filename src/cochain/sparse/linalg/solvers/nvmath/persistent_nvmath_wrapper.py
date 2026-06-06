@@ -263,7 +263,12 @@ class NVMathDirectSolver(InvSparseOperator):
         Parameters
         ----------
         b : [r, *ch]
-            The RHS vector as a dense tensor with optional channel dimensions.
+            The RHS vector as a dense tensor; `b` can have at most one batch
+            dimension but arbitrary channel dimensions. Internally, the `DirectSolver`
+            expects `b` to be in column-major memory layout (i.e., the `r` dimension
+            has stride 1) and have at most one channel dimension. If the input
+            tensor `b` does not conform to this requirement, a reshaped copy will
+            be created; see the `nvmath_direct_solver()` function for more details.
 
         Returns
         -------

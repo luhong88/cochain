@@ -209,7 +209,11 @@ def nvmath_direct_solver(
         one batch dimenion is supported.
     b : [*b, r, *ch]
         The RHS vector as a dense tensor; `b` can have at most one batch dimension
-        but arbitrary channel dimensions.
+        but arbitrary channel dimensions. Internally, the `DirectSolver` expects
+        `b` to be in column-major memory layout (i.e., the `r` dimension has
+        stride 1) and have at most one channel dimension. If the input tensor `b`
+        does not conform to this requirement, a reshaped copy will be created; see
+        the Notes section for more details.
     sparse_system_type
         Whether the matrix `a` is symmetric, symmetric positive definite, or
         a general 2D matrix. It is recommended to specify the `sparse_system_type`
@@ -223,14 +227,13 @@ def nvmath_direct_solver(
     Returns
     -------
     [*b, c, *ch]
-        The unknwon vector `x`; the batch and channel dimensions, if there is any,
-        match those of the input `b`.
+        The unknwon vector `x` in column-major memory layout; the batch and channel
+        dimensions, if there is any, match those of the input `b`.
 
     Notes
     -----
     The `DirectSolver` class supports batching/channel dimensions in both `a` and
-    `b`. More specifically, this class supports the following four batching
-    configurations:
+    `b`. More specifically, this class supports the following four configurations:
 
     | Batch | Channel | `a.shape`   | `b.shape`     | `x.shape`     |
     |-------|---------|-------------|---------------|---------------|
@@ -239,21 +242,31 @@ def nvmath_direct_solver(
     | True  | False   | `[b, r, c]` | `[b, r, (1)]` | `[b, c, (1)]` |
     | True  | True    | `[b, r, c]` | `[b, r, *ch]` | `[b, c, *ch]` |
 
-    Note that, if batch dimensions are present, the `DirectSolver` class requires
-    that `b` have a channel dimension, even if it is trivial (indicated by the
-    `(1)` notation). In this function, the trivial channel dimensions are handled
-    internally.
+    Here, `(1)` indicates an optional trivial channel dimension. When both `b`
+    and `ch` dimensions are "active", the solver effectively solves `b*ch` linear
+    systems of the form `a_i@x_ij = b_ij` for matrices `a_i` and vectors `x_ij`
+    and `b_ij`, where `i` iterates over `b` and `j` iterates over the flattened
+    channel dimensions.
 
-    When both `b` and `ch` dimensions are "active", the solver effectively
-    solves `b*ch` linear systems of the form `a_i@x_ij = b_ij` for matrices `a_i`
-    and vectors `x_ij` and `b_ij`, where `i` iterates over `b` and `j` iterates
-    over the flattened channel dimensions.
+    Internally, `DirectSolver` expects that `b` has one of the following shape and
+    memory layout configurations:
 
-    The `DirectSolver` class expects the `b` tensor to be in the column-major
-    memory layout (i.e., the `r` dimension has stride 1) and will return an `x`
-    tensor in the same layout (i.e., the `c` dimension has stride 1). By default,
-    Pytorch construct tensors in row-major ordering; the conversion of `b` to
-    column-major ordering is handled internally in this function.
+    | Batch | Channel | `b.shape`         | `b.stride()`        |
+    |-------|---------|-------------------|---------------------|
+    | False | False   | `[r,]`            | `(1,)`              |
+    | False | True    | `[r, ch_flat]`    | `(1, r)`            |
+    | True  | False   | `[b, r, 1]`       | `(r, 1, r)`         |
+    | True  | True    | `[b, r, ch_flat]` | `(r*ch_flat, 1, r)` |
+
+    Specifically, `DirectSolver` expects `b` to be in the column-major memory layout
+    with at most one batch and/or channel dimension. If the input tensor `b` does
+    not have the correct shape and stride, this function will create a reshaped
+    copy of `b`; note that, by default, PyTorch constructs tensors in row-major
+    ordering.
+
+    Note that `DirectSolver` also returns an `x` tensor in a similar column-major
+    memory layout as `b`. This function returns a view of `x` that matches the
+    shape of the input `b`, if possible.
 
     If either `A` or `b` requires gradient, then a `DirectSolver` object will be
     cached in memory to accelerate the backward pass; this memory will not be

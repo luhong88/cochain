@@ -233,14 +233,18 @@ def splu(
     Parameters
     ----------
     a : [r, c]
-        A sparse 2D matrix represented as a `SparseDecoupledTensor`.
+        A sparse 2D matrix represented as a `SparseDecoupledTensor`. Note that
+        the `SuperLU` solver does not allow for batch dimensions in `a`.
     b : [r, *ch]
-        The RHS vector as a dense tensor with optional channel dimensions.
+        The RHS vector as a dense tensor with arbitrary channel dimensions. Internally,
+        the solver expects `b` to be a contiguous tensor of shape `[r,]` or
+        `[r, ch]`; if the input tensor `b` does not conform to this requirement,
+        a reshaped copy will be created.
     backend
         Whether to use the CuPy (`"cupy"`) or SciPy (`"scipy"`) implementation of
         `SuperLU`. If the backend is CuPy, `a` and `b` must be on the CUDA device.
         If backend is SciPy, `a` and `b` will be copied to CPU. Note that `SuperLU`
-        handles the factorization step on the host CPU, regardless of the backend.
+        handles the LU factorization step on the host CPU, regardless of the backend.
     splu_kwargs
         Additional keyword arguments to be passed to `cupyx.scipy.sparse.linalg.splu()`
         if the backend is CuPy or `scipy.sparse.linalg.splu()` if the backend is
@@ -271,12 +275,6 @@ def splu(
     * Currently, double backward through this function is not supported.
     * The sparse indices of `a` must be of datatype `int32` for compatibility with
     the solver.
-    * The `SuperLU` solver supports batching/channel dimensions of the `b` tensor,
-    but there can only be one channel dimension, and the channel dimension must
-    be the last dimension (i.e., `b` is either of shape `[r,]` or `[r, ch]`).
-    Therefore, if the input `b` tensor does not conform to this layout, the function
-    will have to create a reshaped and memory-contiguous copy of `b`. Batching of
-    the `A` tensor is not supported by the solver.
     """
     if a.n_batch_dim > 0:
         raise ValueError("Batch dimension in 'a' is not supported.")

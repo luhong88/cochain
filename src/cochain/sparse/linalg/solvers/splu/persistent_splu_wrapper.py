@@ -199,7 +199,8 @@ class SuperLU(InvSparseOperator):
     Parameters
     ----------
     a : [r, c]
-        A sparse 2D matrix represented as a `SparseDecoupledTensor`.
+        A sparse 2D matrix represented as a `SparseDecoupledTensor`. Note that
+        the `SuperLU` solver does not allow for batch dimensions in `a`.
     backend
         Whether to use the CuPy (`"cupu"`) or SciPy (`"scipy"`) implementation of
         `SuperLU`. If the backend is CuPy, `a` and `b` must be on the CUDA device.
@@ -311,7 +312,10 @@ class SuperLU(InvSparseOperator):
         Parameters
         ----------
         b : [r, *ch]
-            The RHS vector as a dense tensor with optional channel dimensions.
+            The RHS vector as a dense tensor with arbitrary channel dimensions.
+            Internally, the solver expects `b` to be a contiguous tensor of shape
+            `[r,]` or `[r, ch]`; if the input tensor `b` does not conform to this
+            requirement, a reshaped copy will be created.
         trans
             If "N", solve the normal system `a @ x = b`; if "T", solve the transposed
             system `a.T @ x = b`.
