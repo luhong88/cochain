@@ -232,6 +232,9 @@ def nvmath_direct_solver(
 
     Notes
     -----
+    If the linear system `a @ x = b` does not have a unique solution, then both
+    the forward pass and backward gradient will fail.
+
     The `DirectSolver` class supports batching/channel dimensions in both `a` and
     `b`. More specifically, this class supports the following four configurations:
 
