@@ -222,7 +222,6 @@ def splu(
     b: Float[Tensor, " r *ch"],
     *,
     backend: Literal["cupy", "scipy"],
-    channel_first: bool = False,
     **splu_kwargs,
 ) -> Float[Tensor, " c *ch"]:
     """
@@ -242,15 +241,10 @@ def splu(
         `SuperLU`. If the backend is CuPy, `a` and `b` must be on the CUDA device.
         If backend is SciPy, `a` and `b` will be copied to CPU. Note that `SuperLU`
         handles the factorization step on the host CPU, regardless of the backend.
-    channel_first
-        If `channel_first` is `True`, all but the last dimension of `b` is treated
-        as channel dimensions; if it is `False`, all but the first dimension of
-        `b` is treated as channel dimensions.
     splu_kwargs
         Additional keyword arguments to be passed to `cupyx.scipy.sparse.linalg.splu()`
         if the backend is CuPy or `scipy.sparse.linalg.splu()` if the backend is
         SciPy.
-
 
     Returns
     -------
@@ -294,17 +288,13 @@ def splu(
         )
 
     match b.ndim:
-        case 1:
+        case 0:
+            raise ValueError("'b' must have at least one dimension.")
+        case 1 | 2:
             b_ready = b
-        case 2:
-            b_ready = b.transpose(0, 1) if channel_first else b
         case _:
-            if channel_first:
-                # (*ch, r) -> (r, ch_flat)
-                b_ready = torch.movedim(b, -1, 0).reshape(b.shape[-1], -1)
-            else:
-                # (r, *ch) -> (r, ch_flat)
-                b_ready = b.reshape(b.shape[0], -1)
+            # (r, *ch) -> (r, ch_flat)
+            b_ready = b.reshape(b.shape[0], -1)
 
     match backend:
         case "cupy":
@@ -326,11 +316,7 @@ def splu(
     if x.ndim == 1:
         x_reshaped = x
     else:
-        if channel_first:
-            # (c, ch_flat) -> (*ch, c)
-            x_reshaped = x.transpose(0, 1).reshape(*b.shape[:-1], -1)
-        else:
-            # (c, ch_flat) -> (c, *ch)
-            x_reshaped = x.reshape(-1, *b.shape[1:])
+        # (c, ch_flat) -> (c, *ch)
+        x_reshaped = x.reshape(-1, *b.shape[1:])
 
     return x_reshaped

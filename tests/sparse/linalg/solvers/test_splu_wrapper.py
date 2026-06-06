@@ -40,9 +40,7 @@ def test_splu_forward_with_channel_dim(a, backend, device):
     b = A_dense @ x_true
 
     x = splu(A_op, b, backend=backend)
-    x_T = splu(A_op, b.T, backend=backend, channel_first=True)
 
-    torch.testing.assert_close(x.T, x_T)
     torch.testing.assert_close(x, x_true)
 
 
@@ -61,9 +59,7 @@ def test_splu_forward_with_complex_channel_dim(a, n_ch1, n_ch2, backend, device)
     b = torch.einsum("ij,jkl->ikl", A_dense, x_true)
 
     x = splu(A_op, b, backend="scipy")
-    x_T = splu(A_op, b.movedim(0, -1), backend=backend, channel_first=True)
 
-    torch.testing.assert_close(x.movedim(0, -1), x_T)
     torch.testing.assert_close(x, x_true)
 
 
