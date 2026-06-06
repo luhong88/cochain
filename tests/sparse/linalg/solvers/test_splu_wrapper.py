@@ -219,6 +219,34 @@ def test_persistent_splu_forward(a, backend, device):
 
 
 @itemize_backend
+@pytest.mark.parametrize(
+    "n_ch1, n_ch2",
+    [(2, 3), (2, 1), (1, 2)],
+)
+def test_persistent_splu_forward_with_complex_channel_dim(
+    a, n_ch1, n_ch2, backend, device
+):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    a_dense = a_sdt.to_dense()
+
+    n_dim = a_sdt.size(0)
+
+    x1_true = torch.randn(n_dim, n_ch1, n_ch2).to(device)
+    x2_true = torch.randn(n_dim, n_ch1, n_ch2).to(device)
+
+    b1 = torch.einsum("ij,jkl->ikl", a_dense, x1_true)
+    b2 = torch.einsum("ij,jkl->ikl", a_dense, x2_true)
+
+    solver = SuperLU(a_sdt, backend=backend)
+
+    x1 = solver(b1)
+    x2 = solver(b2)
+
+    torch.testing.assert_close(x1, x1_true)
+    torch.testing.assert_close(x2, x2_true)
+
+
+@itemize_backend
 def test_persistent_splu_sequential_backward_pattern_1(a, backend, device):
     """
     Test persistent solver sequential backward passes.
@@ -360,3 +388,44 @@ def test_persistent_splu_sequential_backward_pattern_2(a, backend, device):
     torch.testing.assert_close(a_sp_grad, a_dense_grad)
     torch.testing.assert_close(b1_sp_grad, b1_dense_grad)
     torch.testing.assert_close(b2_sp_grad, b2_dense_grad)
+
+
+@itemize_backend
+def test_persistent_splu_backward_with_channel_dim(a, backend, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    a_dense = a_sdt.to_dense()
+    n_dim = a_sdt.size(0)
+    n_ch = 3
+
+    # Compute b and v with channel dimensions.
+    b = torch.randn(n_dim, n_ch).to(device)
+    v = torch.randn(n_dim, n_ch).to(device)
+
+    # Define solver and compute gradients via adjoint method.
+    a_sdt.requires_grad_()
+    b.requires_grad_()
+    solver = SuperLU(a_sdt, backend=backend)
+    x_via_sp = solver(b)
+    loss = torch.sum(x_via_sp * v)
+    loss.backward()
+
+    a_sp_grad = a_sdt.values.grad.detach().clone()
+    b_sp_grad = b.grad.detach().clone()
+
+    # Compute dense autograd baseline.
+    a_dense.requires_grad_()
+    b.grad = None
+    x_via_dense = torch.linalg.solve(a_dense, b)
+    loss = torch.sum(x_via_dense * v)
+    loss.backward()
+
+    a_dense_grad = (
+        a_dense.grad[a_sdt.pattern.idx_coo[0], a_sdt.pattern.idx_coo[1]]
+        .detach()
+        .clone()
+    )
+    b_dense_grad = b.grad.detach().clone()
+
+    # Assert that the adjoint method gradients agree with autograd.
+    torch.testing.assert_close(a_sp_grad, a_dense_grad)
+    torch.testing.assert_close(b_sp_grad, b_dense_grad)
