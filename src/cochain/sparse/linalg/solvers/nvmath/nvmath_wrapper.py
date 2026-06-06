@@ -72,7 +72,7 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
         Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"],
         AutogradDirectSolver,
     ]:
-        A_csr = SparseDecoupledTensor(a_pattern, a_val).to_sparse_csr()
+        a_csr = SparseDecoupledTensor(a_pattern, a_val).to_sparse_csr()
 
         stream = torch.cuda.current_stream()
 
@@ -81,7 +81,7 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
         # individual methods to ensure sync between pytorch and nvmath.
         solver = AutogradDirectSolver(
             a_val.device,
-            A_csr,
+            a_csr,
             b,
             options=config.options,
             execution=config.execution,
@@ -193,14 +193,14 @@ def nvmath_direct_solver(
     a: Float[SparseDecoupledTensor, "*b r c"],
     b: Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"],
     *,
-    sparse_system_type: Literal["general", "symmetric", "SPD"] = "general",
+    sparse_system_type: Literal["general", "symmetric", "spd"] = "general",
     config: DirectSolverConfig | None = None,
 ) -> Float[Tensor, " c *ch"] | Float[Tensor, "b c *ch"]:
     """
     "Stateless" differentiable wrapper for `nvmath.sparse.advanced.DirectSolver`.
 
-    Given a sparse 2D matrix `a` and a vector `b`, solve the linear system
-    `a @ x = b` for `x`.
+    Given a (batch of) sparse 2D matrix `a` and a (batch of) vector `b`, solve
+    the linear system `a @ x = b` for `x`.
 
     Parameters
     ----------
@@ -331,7 +331,9 @@ def nvmath_direct_solver(
         config,
     )
 
-    # Restore the channel dims in the output.
+    # Restore the channel dims in the output. Get the expected non-channel
+    # dimension shapes from x_flat itself, and get the expected channel dimension
+    # shapes from b.
     x = x_flat.reshape(*x_flat.shape[:n_non_ch_dims], *b.shape[n_non_ch_dims:])
 
     return x

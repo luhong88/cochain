@@ -190,7 +190,7 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
 
 class SuperLU(InvSparseOperator):
     """
-    "Stateless" differentiable wrapper for SuperLU.
+    "Stateful" differentiable wrapper for SuperLU.
 
     Given a sparse 2D matrix `a` and a vector `b`, this class computes and caches
     the LU factorization of `a` for the purpose of solving the linear system
