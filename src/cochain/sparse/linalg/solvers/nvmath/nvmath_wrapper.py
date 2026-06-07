@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["nvmath_direct_solver"]
+
 from typing import TYPE_CHECKING, Literal
 
 import torch
@@ -7,6 +9,7 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 from torch.autograd.function import once_differentiable
 
+from .....utils.parsing import to_col_major
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 
 try:
@@ -28,14 +31,15 @@ if TYPE_CHECKING:
     import nvmath.sparse.advanced as nvmath_sp
     from cuda.core.experimental import Device
 
-__all__ = ["nvmath_direct_solver"]
 
 if _HAS_NVMATH:
 
     class AutogradDirectSolver(nvmath_sp.DirectSolver):
         """
-        Adapts DirectSolver for Autograd by tying resource release to gc (__del__)
-        rather than scope (__exit__).
+        Autograd-compatible `DirectSolver` class.
+
+        This class adapts `DirectSolver` for autograd by tying resource release
+        to gc (`__del__`) rather than scope (`__exit__`).
         """
 
         def __init__(self, device, *args, **kwargs):
@@ -43,7 +47,7 @@ if _HAS_NVMATH:
             super().__init__(*args, **kwargs)
 
         def __del__(self):
-            if hasattr(self, "free"):
+            if getattr(self, "valid_state", False) and hasattr(self, "free"):
                 # Force device sync before gc.
                 try:
                     import torch
@@ -60,17 +64,15 @@ if _HAS_NVMATH:
 class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[Tensor, " nnz"],
-        A_pattern: Integer[SparsityPattern, "*b r c"],
-        b: Float[Tensor, " r"] | Float[Tensor, "*b *ch r"],
+        a_val: Float[Tensor, " nz"],
+        a_pattern: Integer[SparsityPattern, "*b r c"],
+        b: Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"],
         config: DirectSolverConfig,
-    ) -> tuple[Float[Tensor, "*b c *ch"], AutogradDirectSolver]:
-        A_csr = SparseDecoupledTensor(A_pattern, A_val).to_sparse_csr()
-
-        if b.ndim > 1:
-            b_col_major = b.contiguous().transpose(-1, -2)
-        else:
-            b_col_major = b.contiguous()
+    ) -> tuple[
+        Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"],
+        AutogradDirectSolver,
+    ]:
+        a_csr = SparseDecoupledTensor(a_pattern, a_val).to_sparse_csr()
 
         stream = torch.cuda.current_stream()
 
@@ -78,9 +80,9 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
         # possible stream mismatch in backward(); instead, pass the stream to
         # individual methods to ensure sync between pytorch and nvmath.
         solver = AutogradDirectSolver(
-            A_val.device,
-            A_csr,
-            b_col_major,
+            a_val.device,
+            a_csr,
+            b,
             options=config.options,
             execution=config.execution,
         )
@@ -101,28 +103,30 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_pattern, b, config = inputs
+        a_val, a_pattern, b, config = inputs
 
         x, solver = output
 
         ctx.save_for_backward(x)
         ctx.solver = solver
-        ctx.A_pattern = A_pattern
+        ctx.a_pattern = a_pattern
 
     @staticmethod
     @once_differentiable
     def backward(
-        ctx, dLdx: Float[Tensor, "*b c *ch"], _
+        ctx,
+        dLdx: Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"],
+        _,
     ) -> tuple[
-        Float[Tensor, " nnz"] | None,
+        Float[Tensor, " nz"] | None,
         None,
-        Float[Tensor, "*b *ch r"] | None,
+        Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"] | None,
         None,
     ]:
-        needs_grad_A_val = ctx.needs_input_grad[0]
+        needs_grad_a_val = ctx.needs_input_grad[0]
         needs_grad_b = ctx.needs_input_grad[2]
 
-        if not (needs_grad_A_val or needs_grad_b):
+        if not (needs_grad_a_val or needs_grad_b):
             return (None,) * 4
 
         if ctx.solver is None:
@@ -134,7 +138,7 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
             solver: AutogradDirectSolver = ctx.solver
 
         (x,) = ctx.saved_tensors
-        A_pattern: SparsityPattern = ctx.A_pattern
+        a_pattern: SparsityPattern = ctx.a_pattern
 
         if x.is_cuda:
             # torch calls backward() on a separate thread where nvmath's internal
@@ -146,12 +150,7 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
 
         stream = torch.cuda.current_stream()
 
-        if dLdx.ndim > 1:
-            dLdx_col_major: Float[Tensor, "*b c *ch"] = (
-                dLdx.transpose(-1, -2).contiguous().transpose(-1, -2)
-            )
-        else:
-            dLdx_col_major = dLdx
+        dLdx_col_major = to_col_major(dLdx, batch_first=a_pattern.n_batch_dim > 0)
 
         if (
             ctx.solver.options.sparse_system_type
@@ -164,7 +163,7 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
             # a transpose mode option, which would have been preferred over
             # re-initializing the solver.
             A_T = SparseDecoupledTensor(
-                A_pattern, solver.a.tensor.values().flatten()
+                a_pattern, solver.a.tensor.values().flatten()
             ).to_sparse_csr_transposed()
             solver.reset_operands(a=A_T, b=dLdx_col_major, stream=stream)
             solver.plan(stream=stream)
@@ -174,72 +173,103 @@ class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
             # If A is symmetric, only update the RHS of the solver.
             solver.reset_operands(b=dLdx_col_major, stream=stream)
 
-        lambda_: Float[Tensor, "*b r *ch"] = solver.solve(stream=stream)
+        # lambda_ has the same shape as b.
+        lambda_ = solver.solve(stream=stream)
 
-        # Note that, the lambda_ variable needs to be transposed to conform to
-        # the shape of the input b vector in the forward pass.
-        if lambda_.ndim > 1:
-            dLdb: Float[Tensor, "*b *ch r"] = lambda_.transpose(-1, -2)
-        else:
-            dLdb = lambda_
-
-        if needs_grad_b and not needs_grad_A_val:
-            return (None, None, dLdb, None)
+        if needs_grad_b and not needs_grad_a_val:
+            return (None, None, lambda_, None)
 
         # dLdA will have the same sparsity pattern as A.
-        dLdA_val = nvmath_adjoint_method(A_pattern, x, lambda_)
+        dLda_val = nvmath_adjoint_method(a_pattern, x, lambda_)
 
-        if needs_grad_A_val and not needs_grad_b:
-            return (dLdA_val, None, None, None)
+        if needs_grad_a_val and not needs_grad_b:
+            return (dLda_val, None, None, None)
 
-        if needs_grad_A_val and needs_grad_b:
-            return (dLdA_val, None, dLdb, None)
+        if needs_grad_a_val and needs_grad_b:
+            return (dLda_val, None, lambda_, None)
 
 
 def nvmath_direct_solver(
-    A: Float[SparseDecoupledTensor, "*b r c"],
-    b: Float[Tensor, "*b *ch r"],
+    a: Float[SparseDecoupledTensor, "*b r c"],
+    b: Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"],
     *,
-    sparse_system_type: Literal["general", "symmetric", "SPD"] = "general",
+    sparse_system_type: Literal["general", "symmetric", "spd"] = "general",
     config: DirectSolverConfig | None = None,
-) -> Float[Tensor, "*b c *ch"]:
+) -> Float[Tensor, " c *ch"] | Float[Tensor, "b c *ch"]:
     """
-    This function provides a differentiable wrapper for the `nvmath.sparse.advanced.DirectSolver`
-    class in `nvmath-python` for solving sparse linear systems of the form `A@x=b`.
+    "Stateless" differentiable wrapper for `nvmath.sparse.advanced.DirectSolver`.
 
-    Here, `A` is a SparseDecoupledTensor and `b` is a dense tensor. The `DirectSolver`
-    class supports batching in `A` and/or `b` tensors. In particular, there are
-    four supported batching configurations:
+    Given a (batch of) sparse 2D matrix `a` and a (batch of) vector `b`, solve
+    the linear system `a @ x = b` for `x`.
 
-    * No batching in either `A` or `b`; in this case `A` has shape `(r, c)`,
-    `b` has shape `(r,)` and the output `x` has shape `(c,)`.
+    Parameters
+    ----------
+    a : [*b, r, c]
+        A sparse 2D matrix represented as a `SparseDecoupledTensor`; at most
+        one batch dimenion is supported.
+    b : [*b, r, *ch]
+        The RHS vector as a dense tensor; `b` can have at most one batch dimension
+        but arbitrary channel dimensions. Internally, the `DirectSolver` expects
+        `b` to be in column-major memory layout (i.e., the `r` dimension has
+        stride 1) and have at most one channel dimension. If the input tensor `b`
+        does not conform to this requirement, a reshaped copy will be created; see
+        the Notes section for more details.
+    sparse_system_type
+        Whether the matrix `a` is symmetric, symmetric positive definite, or
+        a general 2D matrix. It is recommended to specify the `sparse_system_type`
+        argument to exploit the symmetry and spectral properties of `a`. Note that,
+        `sparse_system_type` will override the `options.sparse_system_type`
+        attribute in the `config`.
+    config
+        Additional config arguments to the `DirectSolver`; see the `DirectSolverConfig`
+        class for more information.
 
-    * No batching in `A`, but `b` has a channel dimension `ch`; in this case, `A`
-    has shape `(r, c)`, `b` has shape `(ch, r)`, and `x` has shape `(c, ch)`.
+    Returns
+    -------
+    [*b, c, *ch]
+        The unknwon vector `x` in column-major memory layout; the batch and channel
+        dimensions, if there is any, match those of the input `b`.
 
-    * `A` and `b` has one matching batch dimension `b`; in this case, `A` has shape
-    `(b, r, c)`, `b` has shape `(b, 1, r)`, and `x` has shape `(b, c, 1)`.
+    Notes
+    -----
+    If the linear system `a @ x = b` does not have a unique solution, then both
+    the forward pass and backward gradient will fail.
 
-    * `A` and `b` has one matching batch dimension `b`, and the `b` tensor has a
-    channel dimension `ch`; in this case, `A` has shape `(b, r, c)`, `b` has shape
-    `(b, ch, r)`, and `x` has shape `(b, c, ch)`. When both `b` and `ch` dimensions
-    are "active", the solver effectively solves `b*ch` linear systems of the form
-    `A_i@x_ij = b_ij` for matrices `A_i` and vectors `x_ij` and `b_ij`, where `i`
-    iterates over `b` and `j` iterates over `ch`.
+    The `DirectSolver` class supports batching/channel dimensions in both `a` and
+    `b`. More specifically, this class supports the following four configurations:
 
-    Note that, if `b` has more than one dimension, the `DirectSolver` object expects
-    the `b` tensor to have the shape `(*b, r, ch)` where the stride of the `r`
-    dimension is 1 (i.e., `b` is "column-major"). Because PyTorch, by default,
-    construct tensors in row-major ordering, we achieve this by ensuring that `b`
-    is contiguous in memory in the `(*b, ch, r)` shape, so that it can pass a view
-    `(*b, r, ch)` to the solver with no copying. Similarly, the solver always returns
-    a "column-major" tensor of shape `(*b, c, ch)`, where the stride of the `c`
-    dimension is 1.
+    | Batch | Channel | `a.shape`   | `b.shape`     | `x.shape`     |
+    |-------|---------|-------------|---------------|---------------|
+    | False | False   | `[r, c]`    | `[r,]`        | `[c,]`        |
+    | False | True    | `[r, c]`    | `[r, *ch]`    | `[c, *ch]`    |
+    | True  | False   | `[b, r, c]` | `[b, r, (1)]` | `[b, c, (1)]` |
+    | True  | True    | `[b, r, c]` | `[b, r, *ch]` | `[b, c, *ch]` |
 
-    While it is possible to call the `DirectSolver` using the default config,
-    it is recommended to at least specify the `sparse_system_type` argument to
-    exploit the symmetry and spectral properties of `A`. Note that, `sparse_system_type`
-    will override the `options.sparse_system_type` attribute in the `config`.
+    Here, `(1)` indicates an optional trivial channel dimension. When both `b`
+    and `ch` dimensions are "active", the solver effectively solves `b*ch` linear
+    systems of the form `a_i@x_ij = b_ij` for matrices `a_i` and vectors `x_ij`
+    and `b_ij`, where `i` iterates over `b` and `j` iterates over the flattened
+    channel dimensions.
+
+    Internally, `DirectSolver` expects that `b` has one of the following shape and
+    memory layout configurations:
+
+    | Batch | Channel | `b.shape`         | `b.stride()`        |
+    |-------|---------|-------------------|---------------------|
+    | False | False   | `[r,]`            | `(1,)`              |
+    | False | True    | `[r, ch_flat]`    | `(1, r)`            |
+    | True  | False   | `[b, r, 1]`       | `(r, 1, r)`         |
+    | True  | True    | `[b, r, ch_flat]` | `(r*ch_flat, 1, r)` |
+
+    Specifically, `DirectSolver` expects `b` to be in the column-major memory layout
+    with at most one batch and/or channel dimension. If the input tensor `b` does
+    not have the correct shape and stride, this function will create a reshaped
+    copy of `b`; note that, by default, PyTorch constructs tensors in row-major
+    ordering.
+
+    Note that `DirectSolver` also returns an `x` tensor in a similar column-major
+    memory layout as `b`. This function returns a view of `x` that matches the
+    shape of the input `b`, if possible.
 
     If either `A` or `b` requires gradient, then a `DirectSolver` object will be
     cached in memory to accelerate the backward pass; this memory will not be
@@ -257,20 +287,22 @@ def nvmath_direct_solver(
     * `DirectSolver` also supports explicit batching, where a tensor with a batch
     dimension is represented as a list of tensors; this method is not supported
     in this function.
-    * The `DirectSolver` class supports `A` as a batched sparse CSR tensor with an
-    arbitrary number of batch dimensions, but this function only supports A with
+    * The `DirectSolver` class supports `a` as a batched sparse CSR tensor with an
+    arbitrary number of batch dimensions, but this function only supports `a` with
     at most one batch dimension.
-    * The sparse indices of `A` will be downcasted to `int32` for compatibility with
+    * The sparse indices of `a` will be downcasted to `int32` for compatibility with
     the cuDSS backend.
-    * If `A` is a general, non-symmetric property, the solver will need to redo
-    the factorization step in backward() for the transposed tensor, because the
+    * If `a` is a general, non-symmetric matrix, the solver will need to redo
+    the factorization step in `backward()` for the transposed matrix, because the
     `DirectSolver` class currently does not expose an option to solve the adjoint
     system directly.
     """
     if not _HAS_NVMATH:
         raise ImportError("nvmath-python backend required.")
 
-    if not A.pattern._is_int32_safe:
+    if a.n_dense_dim > 0:
+        raise ValueError("Dense dimension in 'a' is not supported.")
+    if not a.pattern._is_int32_safe:
         raise ValueError(
             "The sparse indices of the input tensor 'A' cannot be "
             "safely cast to int32 dtype."
@@ -288,11 +320,36 @@ def nvmath_direct_solver(
             sparse_system_type
         ]
 
-    x, solver = _NvmathDirectSolverAutogradFunction.apply(
-        A.values,
-        A.pattern,
-        b,
+    # Get the number of batch and non-channel dimensions in b and x.
+    n_non_ch_dims = a.n_batch_dim + 1
+
+    # Put b in the correct shape and then the col-major layout.
+    if b.ndim > n_non_ch_dims:
+        # If b has channel dimension(s), flatten them.
+        b_flat = b.flatten(start_dim=n_non_ch_dims)
+    elif a.n_batch_dim > 0:
+        # If b has no channel dimension but a batch dimension, add in a trivial
+        # channel dimension.
+        b_flat = b.unsqueeze(-1)
+    else:
+        # Otherwise b is a 1D vector and no reshaping is required.
+        b_flat = b
+
+    b_ready = to_col_major(
+        b_flat,
+        batch_first=a.n_batch_dim > 0,
+    )
+
+    x_flat, solver = _NvmathDirectSolverAutogradFunction.apply(
+        a.values,
+        a.pattern,
+        b_ready,
         config,
     )
+
+    # Restore the channel dims in the output. Get the expected non-channel
+    # dimension shapes from x_flat itself, and get the expected channel dimension
+    # shapes from b.
+    x = x_flat.reshape(*x_flat.shape[:n_non_ch_dims], *b.shape[n_non_ch_dims:])
 
     return x

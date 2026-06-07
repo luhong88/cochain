@@ -39,7 +39,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     This class is primarily designed for sparse, 2D matrices (with block diagonal
     batching). However, this class does allow for (at most) one leading batch
     dimension and arbitrary trailing dense dimensions. Therefore, the shape of a
-    supported tensor is (*b, r, c, *d), where *b matches to at most one dimension.
+    supported tensor is `[*b, r, c, *d]`, where `*b` matches to at most one dimension.
     Due to pytorch CSR/CSC requirements, if the sparse tensor has a batch dimension,
     then all sparse matrices in the batch must have the same number of nonzero
     elements.

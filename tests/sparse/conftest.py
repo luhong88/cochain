@@ -6,6 +6,7 @@ from torch import Tensor
 
 @pytest.fixture
 def a() -> Float[Tensor, "4 4"]:
+    """Construct a 4x4 diagonally-dominant sparse COO tensor."""
     n_row = 4
     nnz = int(n_row * n_row * 0.4)
 

@@ -11,6 +11,7 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
+from .....utils.parsing import to_np
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 
@@ -32,13 +33,13 @@ class SciPyEigshConfig:
     def __post_init__(self):
         match self.v0:
             case Tensor():
-                self.v0 = self.v0.detach().contiguous().cpu().numpy()
+                self.v0 = to_np(self.v0, contiguous=True)
             case Sequence():
                 v0_list = []
                 for v0 in self.v0:
                     match v0:
                         case Tensor():
-                            v0_list.append(v0.detach().contiguous().cpu().numpy())
+                            v0_list.append(to_np(v0, contiguous=True))
                         case _:
                             v0_list.append(v0)
                 self.v0 = v0_list
@@ -62,9 +63,9 @@ def _sdt_to_scipy_csr(
 ) -> Float[scipy.sparse.csr_array, "r c"]:
     sp_op_scipy = scipy.sparse.csr_array(
         (
-            val.detach().contiguous().cpu().numpy(),
-            pattern.idx_col.detach().contiguous().cpu().numpy(),
-            pattern.idx_crow.detach().contiguous().cpu().numpy(),
+            to_np(val, contiguous=True),
+            to_np(pattern.idx_col, contiguous=True),
+            to_np(pattern.idx_crow, contiguous=True),
         ),
         shape=pattern.shape,
     )
@@ -77,9 +78,9 @@ def _sdt_to_scipy_csc(
 ) -> Float[scipy.sparse.csc_array, "r c"]:
     sp_op_scipy = scipy.sparse.csc_array(
         (
-            val[pattern.csc_to_coo_map].detach().contiguous().cpu().numpy(),
-            pattern.idx_row_csc.detach().contiguous().cpu().numpy(),
-            pattern.idx_ccol.detach().contiguous().cpu().numpy(),
+            to_np(val[pattern.csc_to_coo_map], contiguous=True),
+            to_np(pattern.idx_row_csc, contiguous=True),
+            to_np(pattern.idx_ccol, contiguous=True),
         ),
         shape=pattern.shape,
     )
