@@ -139,7 +139,6 @@ class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
 
         ctx.save_for_backward(eig_vals, eig_vecs)
         ctx.A_pattern = A_pattern
-        ctx.k = k
         ctx.eps = eps
 
     @staticmethod
@@ -219,7 +218,6 @@ class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
         ctx.save_for_backward(eig_vals, eig_vecs)
         ctx.A_pattern = A_pattern
         ctx.M_pattern = M_pattern
-        ctx.k = k
         ctx.eps = eps
 
     @staticmethod

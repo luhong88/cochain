@@ -137,7 +137,6 @@ class _CuPyEigshAutogradFunction(torch.autograd.Function):
 
         ctx.save_for_backward(eig_vals, eig_vecs)
         ctx.A_pattern = A_pattern
-        ctx.k = k
         ctx.eps = eps
 
     @staticmethod

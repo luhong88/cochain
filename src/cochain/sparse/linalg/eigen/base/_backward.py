@@ -9,12 +9,12 @@ def compute_eig_vec_grad_proj(
     eig_vecs: Float[Tensor, "c k"],
     dLdv: Float[Tensor, "c k"],
 ) -> Float[Tensor, "k k"]:
-    # Compute the projection of eigenvector gradients onto the eigenspace.
+    """Compute the projection of eigenvector gradients onto the eigenspace."""
     return eig_vecs.T @ dLdv
 
 
 def compute_cauchy_matrix(
-    eig_vals: Float[Tensor, " k"], k: int, eps: float | int
+    eig_vals: Float[Tensor, " k"], eps: float | int
 ) -> Float[Tensor, "k k"]:
     """Compute the matrix F, where F_ij = 1/(λ_j - λ_i) and F_ii = 0."""
     eig_val_diffs = eig_vals.view(1, -1) - eig_vals.view(-1, 1)
@@ -139,7 +139,7 @@ def dLdA_backward(ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "c k"] | N
         cauchy = None
     else:
         eig_vec_grad_proj = compute_eig_vec_grad_proj(eig_vecs, dLdv)
-        cauchy = compute_cauchy_matrix(eig_vals, ctx.k, ctx.eps)
+        cauchy = compute_cauchy_matrix(eig_vals, ctx.eps)
 
     dLdA_val = compute_dLdA_val(
         A_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
@@ -178,7 +178,7 @@ def dLdA_dLdM_backward(
             cauchy = None
         else:
             eig_vec_grad_proj = compute_eig_vec_grad_proj(eig_vecs, dLdv)
-            cauchy = compute_cauchy_matrix(eig_vals, ctx.k, ctx.eps)
+            cauchy = compute_cauchy_matrix(eig_vals, ctx.eps)
 
     if needs_grad_A_val:
         dLdA_val = compute_dLdA_val(
