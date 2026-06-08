@@ -1,4 +1,5 @@
 import torch
+from einops import einsum, rearrange
 from jaxtyping import Float, Integer
 from torch import Tensor
 
@@ -16,83 +17,91 @@ def compute_eig_vec_grad_proj(
 def compute_cauchy_matrix(
     eig_vals: Float[Tensor, " k"], eps: float | int
 ) -> Float[Tensor, "k k"]:
-    """Compute the matrix F, where F_ij = 1/(λ_j - λ_i) and F_ii = 0."""
-    eig_val_diffs = eig_vals.view(1, -1) - eig_vals.view(-1, 1)
+    """Compute the Cauchy/Lorentz matrix with optional regularization."""
+    delta = rearrange(eig_vals, "j -> 1 j") - rearrange(eig_vals, "i -> i 1")
 
     if eps == 0:
-        eig_val_diffs.fill_diagonal_(float("inf"))
-        cauchy = 1.0 / eig_val_diffs
+        delta.fill_diagonal_(float("inf"))
+        cauchy = 1.0 / delta
 
     else:
-        # If eps > 0, compute a regularized version where
-        # F_ij = Δ_ji / (Δ_ji^2 + ϵ), where Δ_ji = λ_j - λ_i.
-        # When Δ >> 0, this recovers the true definition; when Δ is close
-        # to 0, this prevents the gradient from exploding by decaying to 0.
-        cauchy = eig_val_diffs / (eig_val_diffs.pow(2) + eps)
+        # If eps > 0, compute a regularized version, where F_ij = Δ_ji / (Δ_ji^2 + ϵ).
+        cauchy = delta / (delta.pow(2) + eps)
 
     return cauchy
 
 
 def compute_dLdA_val(
-    A_pattern: Integer[SparsityPattern, "r c"],
+    a_pattern: Integer[SparsityPattern, "r c"],
     eig_vecs: Float[Tensor, "c k"],
     dLdl: Float[Tensor, " k"],
     dLdv: Float[Tensor, "c k"] | None,
     eig_vec_grad_proj: Float[Tensor, "k k"] | None,
     cauchy: Float[Tensor, "k k"] | None,
-) -> Float[Tensor, " nnz"]:
+) -> Float[Tensor, " nz"]:
     """
-    The formula is the same for standard and generalized eigenvalue problems.
-    """
-    eig_vecs_row = eig_vecs[A_pattern.idx_coo[0]]
-    eig_vecs_col = eig_vecs[A_pattern.idx_coo[1]]
+    Compute the gradient with respect to the nonzero values of A.
 
-    # If the loss does not depend on the eigenvectors, then the "eigenvalue"
+    Note that the formula implemented in this function is applicable to both
+    standard and generalized eigenvalue problems.
+    """
+    eig_vecs_row = eig_vecs[a_pattern.idx_coo[0]]
+    eig_vecs_col = eig_vecs[a_pattern.idx_coo[1]]
+
+    # If the loss does not depend on the eigenvectors, then the eigenvalue
     # component of the gradient is given by dLdA_ij = sum_k[dLdλ_k * V_ik * V_jk]
-    dLdA_eig_vals = torch.sum(
-        dLdl.view(1, -1) * eig_vecs_row * eig_vecs_col,
-        dim=1,
+    dLdA_eig_vals = einsum(
+        eig_vecs_row,
+        eig_vecs_col,
+        dLdl,
+        "nz eig, nz eig, eig -> nz",
     )
 
     if dLdv is None:
         dLdA_val = dLdA_eig_vals
 
     else:
-        anti_symmetric_proj = 0.5 * (eig_vec_grad_proj - eig_vec_grad_proj.T)
+        anti_sym_proj = 0.5 * (eig_vec_grad_proj - eig_vec_grad_proj.T)
 
         # Compute the Hadamard product K = F * P
-        kernel: Float[Tensor, "k k"] = cauchy * anti_symmetric_proj
+        kernel: Float[Tensor, "k k"] = cauchy * anti_sym_proj
 
-        # The "eigenvector" component is given by V @ K @ V.T
-        dLdA_eig_vecs = torch.sum(
-            (eig_vecs_row @ kernel) * eig_vecs_col,
-            dim=1,
+        # The eigenvector component is given by V @ K @ V.T, or
+        # dLdA_ij = V_ik * K_kl * V_jl
+        dLdA_eig_vecs = einsum(
+            eig_vecs_row,
+            eig_vecs_col,
+            kernel,
+            "nz eig_k, nz eig_l, eig_k eig_l -> nz",
         )
 
-        # Sum together the "eigenvalue" and "eigenvector" components of the gradient.
+        # Sum together the eigenvalue and eigenvector components of the gradient.
         dLdA_val = dLdA_eig_vals + dLdA_eig_vecs
 
     return dLdA_val
 
 
 def compute_dLdM_val(
-    M_pattern: Integer[SparsityPattern, "r c"],
+    m_pattern: Integer[SparsityPattern, "r c"],
     eig_vals: Float[Tensor, " k"],
     eig_vecs: Float[Tensor, "c k"],
     dLdl: Float[Tensor, " k"],
     dLdv: Float[Tensor, "c k"] | None,
     eig_vec_grad_proj: Float[Tensor, "k k"] | None,
     cauchy: Float[Tensor, "k k"] | None,
-) -> Float[Tensor, " nnz"]:
-    eig_vecs_row = eig_vecs[M_pattern.idx_coo[0]]
-    eig_vecs_col = eig_vecs[M_pattern.idx_coo[1]]
+) -> Float[Tensor, " nz"]:
+    eig_vecs_row = eig_vecs[m_pattern.idx_coo[0]]
+    eig_vecs_col = eig_vecs[m_pattern.idx_coo[1]]
 
-    # If the loss does not depend on the eigenvectors, then the "eigenvalue"
+    # If the loss does not depend on the eigenvectors, then the eigenvalue
     # component of the gradient is given by
     # dLdM_ij = -sum_k[λ_k * dLdλ_k * V_ik * V_jk]
-    dLdM_eig_vals = -torch.sum(
-        eig_vals.view(1, -1) * dLdl.view(1, -1) * eig_vecs_row * eig_vecs_col,
-        dim=1,
+    dLdM_eig_vals = -einsum(
+        eig_vals,
+        dLdl,
+        eig_vecs_row,
+        eig_vecs_col,
+        "eig, eig, nz eig, nz eig -> nz",
     )
 
     if dLdv is None:
@@ -107,30 +116,30 @@ def compute_dLdM_val(
         kernel_diag = -0.5 * torch.diag(eig_vec_grad_proj)
         kernel: Float[Tensor, "k k"] = torch.diagflat(kernel_diag) + kernel_off_diag
 
-        # The "eigenvector" component is given by V @ K @ V.T
-        dLdM_eig_vecs = torch.sum(
-            (eig_vecs_row @ kernel) * eig_vecs_col,
-            dim=1,
+        # The "eigenvector" component is given by V @ K @ V.T, or
+        # dLdM_ij = V_ik * K_kl * V_jl
+        dLdM_eig_vecs = einsum(
+            eig_vecs_row,
+            eig_vecs_col,
+            kernel,
+            "nz eig_k, nz eig_l, eig_k eig_l -> nz",
         )
 
-        # Sum together the "eigenvalue" and "eigenvector" components of the
-        # gradient.
+        # Sum together the eigenvalue and eigenvector components of the gradient.
         dLdM_val = dLdM_eig_vals + dLdM_eig_vecs
 
     return dLdM_val
 
 
-def dLdA_backward(ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "c k"] | None):
-    """
-    A function that encapsulates the shared backward() gradient logic for eigenvalue
-    problems.
-    """
+def dLdA_backward(
+    ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "c k"] | None
+) -> Float[Tensor, " nz"]:
+    """Backward gradient logic for eigenvalue problems."""
     # The eigenvectors need to be length-normalized for the following calculation.
     eig_vals, eig_vecs = ctx.saved_tensors
     A_pattern: SparsityPattern = ctx.A_pattern
 
-    # This error should never be triggered if the user-facing wrapper does
-    # its job.
+    # This error should never be triggered if the user-facing wrapper does its job.
     if eig_vecs is None:
         raise ValueError("Eigenvectors are required for backward().")
 
@@ -154,22 +163,19 @@ def dLdA_dLdM_backward(
     dLdv: Float[Tensor, "c k"] | None,
     needs_grad_A_val: bool,
     needs_grad_M_val: bool,
-):
-    """
-    A function encapsulates the shared backward() gradient logic for generalized
-    eigenvalue problems.
-    """
+) -> tuple[Float[Tensor, " A_nz"], Float[Tensor, " M_nz"]]:
+    """Backward gradient logic for generalized eigenvalue problems."""
     dLdA_val = None
     dLdM_val = None
 
-    # The eigenvectors need to be orthonormal wrt M for the following calculation.
+    # The eigenvectors are assumed to be orthonormal wrt M, which is required for
+    # the following calculation.
     eig_vals, eig_vecs = ctx.saved_tensors
     A_pattern: SparsityPattern = ctx.A_pattern
     M_pattern: SparsityPattern = ctx.M_pattern
 
     if needs_grad_A_val or needs_grad_M_val:
-        # This error should never be triggered if the user-facing wrapper does
-        # its job.
+        # This error should never be triggered if the user-facing wrapper does its job.
         if eig_vecs is None:
             raise ValueError("Eigenvectors are required for backward().")
 
