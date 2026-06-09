@@ -6,7 +6,7 @@ from torch import Tensor
 
 from ....decoupled_tensor import SparseDecoupledTensor
 from ...solvers import DirectSolverConfig
-from ..base.utils import M_orthonormalize
+from ..base.utils import m_orthonormalize
 from ._lobpcg_operators import (
     IdentityOperator,
     ShiftInvSymGEPSpOp,
@@ -64,7 +64,7 @@ def _lobpcg_one_iter(
     # the subspace basis vectors.
     V = torch.hstack((X_current, W, P))
 
-    V_ortho = M_orthonormalize(V, M_op, n_min=n, generator=generator, max_iter=3)
+    V_ortho = m_orthonormalize(V, M_op, n_min=n, generator=generator, max_iter=3)
     TV_ortho = T_op @ V_ortho
 
     # Rayleigh-Ritz projection
@@ -121,7 +121,7 @@ def _lobpcg_loop(
     niter: int,
     generator: torch.Generator | None,
 ) -> tuple[Float[Tensor, " n"], Float[Tensor, "m n"]]:
-    X_current = M_orthonormalize(
+    X_current = m_orthonormalize(
         X_0, M_op, n_min=X_0.size(-1), generator=generator, max_iter=3
     )
     X_prev = X_current

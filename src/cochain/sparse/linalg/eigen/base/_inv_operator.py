@@ -54,7 +54,11 @@ class BaseNVMathInvSymSpOp:
 
     def __del__(self):
         # DirectSolver needs an explicit free() step to free up memory/resources.
-        if hasattr(self, "solver") and self.solver is not None:
+        if (
+            hasattr(self, "solver")
+            and (self.solver is not None)
+            and getattr(self.solver, "valid_state", False)
+        ):
             # Force device sync before gc.
             try:
                 import torch
