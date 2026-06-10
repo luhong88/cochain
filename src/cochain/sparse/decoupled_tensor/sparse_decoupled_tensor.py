@@ -77,9 +77,6 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
     Notes
     -----
-    Operations that preserve SparsityPattern.
-    Operations that preserve BlockDiagConfig.
-
     Let `a` be a scalar-like object (float, int, or a 1D/0D tensor with one element),
     and let `A and `B` be two `SparseDecoupledTensor`s with the same sparsity pattern.
     This class supports the following tensor arithmetic operations:
