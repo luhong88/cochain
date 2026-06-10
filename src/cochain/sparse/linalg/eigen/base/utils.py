@@ -179,11 +179,11 @@ def m_orthonormalize(
             # the current V_ortho column space.
             pad_overlap = v_ortho_double.T @ (m_double @ pad)
             pad_proj = v_ortho_double @ pad_overlap
-            pad_res = pad - pad_proj
+            pad_perp = pad - pad_proj
 
             # The padded vectors need to be M-orthonormal.
             pad_res_ortho, pad_cond = _m_orthonormalize_one_iter(
-                pad_res, m_double, rtol
+                pad_perp, m_double, rtol
             )
 
             # Concat to form the new basis.
@@ -289,49 +289,108 @@ def canonicalize_eig_vec_signs(
 def grassmann_proj_dists(
     eig_vecs_pred: Float[Tensor, "m k"],
     eig_vecs_true: Float[Tensor, "m k"],
-    M: Float[Tensor, "m m"] | Float[SparseDecoupledTensor, "m m"] | None = None,
+    m: Float[Tensor, "m m"] | Float[SparseDecoupledTensor, "m m"] | None = None,
     mode: Literal["pairwise", "subspace"] = "subspace",
 ) -> Float[Tensor, "*k"]:
-    """
+    r"""   
     Compute the Grassmann projection distance between two sets of eigenvectors.
 
-    If `mode='pairwise'`, the function compares the i-th eigenspace of `eig_vecs_pred`
-    with the i-th eigenspace of `eig_vecs_true`; mathematically, it computes
-    1 - (v_i_pred.T @ M @ v_i_true)^2, or ||P_i_pred - P_i_true||_F^2/2. For this
-    mode to produce meaningful results, the eigenvector pairs in `eig_vecs_pred`
-    and `eig_vecs_true` need to correspond to the same true eigenvalue, and there
-    need to be no degenerate eigenvalues (eigenvectors of degenerate eigenvalues
-    can differ by a rotation and it is only meaningful to compare the projection
-    matrices of the degenerate eigenspaces, not the individual eigenvectors).
+    Parameters
+    ----------
+    eig_vecs_pred : [m, k]
+        A matrix whose columns are the predicted eigenvectors.
+    eig_vecs_true : [m, k]
+        A matrix whose columns are the true eigenvectors.
+    m : [m, m]
+        A symmetric positive definite matrix that induces an inner product on
+        the column space.
+    mode
+        If `mode` is `"pairwise"`, this function compares the $i$-th eigenspace
+        of `eig_vecs_pred` with the $i$-th eigenspace of `eig_vecs_true`.
+        If `mode` is `"subspace"`, this function compares the eigenspace spanned
+        by the entire $k$ eigenvectors in `eig_vecs_pred` and `eig_vecs_true`.
 
-    If `mode=subspace`', the function compares the eigenspace spanned by the entire
-    k eigenvectors in `eig_vecs_pred` and `eig_vecs_true`; mathematically, it
-    computes k - ||V_pred.T @ M @ V_true||_F^2, or ||P_pred - P_true||_F^2/2. This
-    mode is robust to eigenvalue/eigenvector permutations and degenerate eigenvalues.
-    For this mode to produce meaningful results, there needs to be a gap between
-    λ_k and λ_(k+1) to prevent the possibility of a degeneracy at the exact
-    spetral cutoff point (if such degeneracy exists, then the comparison of the kth
-    eigenspace is not meaningful). If k = m (i.e., a full eigendecomposition),
-    then this mode returns 0, assuming that `eig_vecs_pred` and `eig_vecs_true`
-    both satisfies the M-orthonormality condition.
+    Returns
+    -------
+    [*k]
+        The Grassmann projection distance. If `mode` is `"pairwise"`, then
+        `k` distances are calculated, one for each pair of `pred` and `true`
+        eigenvectors. If `mode` is `"subspace"`, then a single distance is
+        returned.
 
-    If the M matrix is provided, it is assumed that the eigenvectors are derived
-    from a generalized eigenvalue problem, and both the `eig_vecs_pred` and
-    `eig_vecs_true` are M-orthonormal. If M is None, then the eigenvectors are
-    assumed to be orthonormal w.r.torch. the standard Euclidean metric.
+    Notes
+    -----
+    If the $M$ matrix is provided, it is assumed that the eigenvectors are 
+    derived from a generalized eigenvalue problem, and both the `eig_vecs_pred` 
+    and `eig_vecs_true` are $M$-orthonormal. If $M$ is `None`, then the 
+    eigenvectors are assumed to be orthonormal w.r.t. the standard Euclidean 
+    metric.
+
+    In general, consider two $M$-orthogonal matrices $U$ and $V$. To compare 
+    the distance between the column spaces of $U$ and $V$, we define the 
+    chordal distance
+
+    $$d^2(U, V) = \frac 1 2 \text{tr}[(P_U - P_V)^2]$$
+
+    where $P_U = U U^T M$ is the $M$-orthogonal projection matrix onto the 
+    column space of $U$ and $P_V$ is the $M$-orthogonal projection matrix onto the
+    column space of $V$.
+
+    This definition can be further simplified to avoid the need to explicitly compute 
+    the projection matrices,
+
+    $$
+    \begin{aligned}
+    d^2(U, V) &= \frac 1 2 \text{tr}(P_U^2 - P_U P_V - P_V P_U + P_V^2) \\
+    & \overset{(1)}{=} \frac 1 2 \text{tr}(P_U - P_U P_V - P_V P_U + P_V) \\
+    & \overset{(2)}{=} k - \text{tr}(P_U P_V) \\
+    & = k - \text{tr}[(U^T M V) (V^T M U)] \\
+    & \overset{(3)}{=} k - \|U^T M V\|_F^2
+    \end{aligned}
+    $$
+
+    where $\|\cdot\|_F$ is the Frobenius matrix norm. Here, equality (1) follows
+    from the fact that the projection matrix is idempotent (e.g., $P_U^2 = P_U$), 
+    equality (2) follows from the fact that the trace of a projection operator is 
+    equal to the dimensionality of the subspace it projects onto (i.e., $k$) and the 
+    trace operator is invariant to cyclic permutation of matrix multiplication, and 
+    equality (3) follows from the fact that $\|A\|_F^2 = \text{tr}(A^TA)$.
+
+    In the `"pairwise"` mode, we compare the eigenspace spanned by the $i$-th
+    columns of $U$ and $V$ independently,
+
+    $$d^2(u_i, v_i) = 1 - (u_i^T M v_i)^2$$
+
+    For this mode to produce meaningful results, each eigenvector pairs in 
+    `eig_vecs_pred` and `eig_vecs_true` need to correspond to the same true 
+    eigenvalue, and there need to be no degenerate eigenvalues (eigenvectors 
+    of degenerate eigenvalues can differ by a rotation and it is only meaningful 
+    to compare the projection matrices of the degenerate eigenspaces, not 
+    the individual eigenvectors).
+
+    In the `"subspace"` mode, we compare the eigenspace spanned by the entire
+    $k$ eigenvectors in `eig_vecs_pred` and `eig_vecs_true`. This mode is 
+    robust to eigenvalue/eigenvector permutations and degenerate eigenvalues.
+    However, for this mode to produce meaningful results, there needs to be 
+    a gap between $\lambda_k$ and $\lambda_{k+1}$ to prevent the possibility 
+    of a degeneracy at the exact spetral cutoff point (if such degeneracy 
+    exists, then the comparison of the $k$-th eigenspace is not meaningful). 
+    If $k = m$ (i.e., a full eigendecomposition), then this mode returns 0, 
+    assuming that `eig_vecs_pred` and `eig_vecs_true` both satisfies the 
+    $M$-orthonormality condition.
     """
-    if M is None:
-        W = eig_vecs_true
+    if m is None:
+        w = eig_vecs_true
     else:
-        W = M @ eig_vecs_true
+        w = m @ eig_vecs_true
 
     match mode:
         case "pairwise":
-            dist = 1 - torch.sum(eig_vecs_pred * W, dim=0).pow(2)
+            dist = 1 - torch.sum(eig_vecs_pred * w, dim=0).pow(2)
         case "subspace":
             k = eig_vecs_true.size(-1)
-            dist = k - torch.sum((eig_vecs_pred.T @ W).pow(2))
+            dist = k - torch.sum((eig_vecs_pred.T @ w).pow(2))
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown mode argument '{mode}'.")
 
     return dist
