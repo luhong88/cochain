@@ -88,14 +88,15 @@ class _CuPyEigshAutogradFunction(torch.autograd.Function):
         cp_config: CuPyEigshConfig,
         nvmath_config: DirectSolverConfig,
     ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"] | None]:
-        from ._cupy_eigsh_operators import CuPyShiftInvSymOp, sp_op_comps_to_cp_csr
+        from ....decoupled_tensor._conversion import sdt_to_cupy_csr
+        from ._cupy_eigsh_operators import CuPyShiftInvSymOp
 
         # Force CuPy to use the current Pytorch stream.
         stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
             if cp_config.sigma is None:
                 # cupy supports CSR matrices with int64 indices.
-                A_cp = sp_op_comps_to_cp_csr(A_val, A_pattern)
+                A_cp = sdt_to_cupy_csr(A_val, A_pattern)
             else:
                 # CuPyShiftInvSymOp only supports int32 index tensors due to
                 # sparse solver limitations.

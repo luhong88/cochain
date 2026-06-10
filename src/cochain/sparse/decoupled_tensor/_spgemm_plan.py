@@ -636,17 +636,15 @@ def discover_matmul_pattern(
         b_idx_crow_np = to_np(b_idx_crow, contiguous=True)
         b_idx_col_np = to_np(b_idx_col, contiguous=True)
 
-        a_val_dummy = np.ones_like(a_idx_col, dtype=np.float32)
-        b_val_dummy = np.ones_like(b_idx_col, dtype=np.float32)
+        a_val_dummy = np.ones_like(a_idx_col, dtype=np.bool)
+        b_val_dummy = np.ones_like(b_idx_col, dtype=np.bool)
 
         a_csr_scipy = scipy.sparse.csr_array(
             (a_val_dummy, a_idx_col_np, a_idx_crow_np),
-            dtype=np.bool,
             shape=tuple(a_shape),
         )
         b_csr_scipy = scipy.sparse.csr_array(
             (b_val_dummy, b_idx_col_np, b_idx_crow_np),
-            dtype=np.bool,
             shape=tuple(b_shape),
         )
 

@@ -13,6 +13,7 @@ from torch.autograd.function import once_differentiable
 
 from .....utils.parsing import to_np
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ....decoupled_tensor._conversion import sdt_to_cupy_csc, sdt_to_scipy_csc
 from .._inv_sparse_operator import InvSparseOperator
 
 try:
@@ -251,34 +252,20 @@ class SuperLU(InvSparseOperator):
         self.device = a.device
         self.shape = a.shape
 
-        val = a.values[a.pattern.csc_to_coo_map].detach().contiguous()
-        idx_ccol = a.pattern.idx_ccol.detach().contiguous()
-        idx_row = a.pattern.idx_row_csc.detach().contiguous()
-
         match self.backend:
             case "cupy":
                 # Force CuPy to use the current Pytorch stream.
                 stream = torch.cuda.current_stream()
                 with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-                    A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
-                        (
-                            cp.from_dlpack(val),
-                            cp.from_dlpack(idx_row),
-                            cp.from_dlpack(idx_ccol),
-                        ),
-                        shape=tuple(a.pattern.shape),
+                    A_cp: Float[cp_sp.csc_matrix, "r c"] = sdt_to_cupy_csc(
+                        self.a_val, self.a_pattern
                     )
 
                     self.solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
 
             case "scipy":
-                val_np = to_np(val)
-                idx_ccol_np = to_np(idx_ccol)
-                idx_row_np = to_np(idx_row)
-
-                A_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
-                    (val_np, idx_row_np, idx_ccol_np),
-                    shape=tuple(a.pattern.shape),
+                A_scipy: Float[scipy.sparse.csc_array, "r c"] = sdt_to_scipy_csc(
+                    self.a_val, self.a_pattern
                 )
 
                 self.solver = scipy.sparse.linalg.splu(A_scipy, **splu_kwargs)

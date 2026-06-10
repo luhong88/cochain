@@ -13,6 +13,7 @@ from torch import Tensor
 
 from .....utils.parsing import to_np
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ....decoupled_tensor._conversion import sdt_to_scipy_csc, sdt_to_scipy_csr
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 
 
@@ -56,37 +57,6 @@ class SciPyEigshConfig:
         return config_list
 
 
-# TODO: check whether int64 is allowed.
-def _sdt_to_scipy_csr(
-    val: Float[Tensor, " nnz"],
-    pattern: Integer[SparsityPattern, "r c"],
-) -> Float[scipy.sparse.csr_array, "r c"]:
-    sp_op_scipy = scipy.sparse.csr_array(
-        (
-            to_np(val, contiguous=True),
-            to_np(pattern.idx_col, contiguous=True),
-            to_np(pattern.idx_crow, contiguous=True),
-        ),
-        shape=pattern.shape,
-    )
-    return sp_op_scipy
-
-
-def _sdt_to_scipy_csc(
-    val: Float[Tensor, " nnz"],
-    pattern: Integer[SparsityPattern, "r c"],
-) -> Float[scipy.sparse.csc_array, "r c"]:
-    sp_op_scipy = scipy.sparse.csc_array(
-        (
-            to_np(val[pattern.csc_to_coo_map], contiguous=True),
-            to_np(pattern.idx_row_csc, contiguous=True),
-            to_np(pattern.idx_ccol, contiguous=True),
-        ),
-        shape=pattern.shape,
-    )
-    return sp_op_scipy
-
-
 class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
@@ -100,12 +70,12 @@ class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = _sdt_to_scipy_csr(A_val, A_pattern)
+            A_scipy = sdt_to_scipy_csr(A_val, A_pattern)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = _sdt_to_scipy_csc(A_val, A_pattern)
+            A_scipy = sdt_to_scipy_csc(A_val, A_pattern)
 
         # In both cases, scipy supports CSC/CSR arrays with int64 index tensors.
         results = scipy.sparse.linalg.eigsh(
@@ -174,15 +144,15 @@ class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = _sdt_to_scipy_csr(A_val, A_pattern)
+            A_scipy = sdt_to_scipy_csr(A_val, A_pattern)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = _sdt_to_scipy_csc(A_val, A_pattern)
+            A_scipy = sdt_to_scipy_csc(A_val, A_pattern)
 
         # M should always be in CSC format for LU factorization.
-        M_scipy = _sdt_to_scipy_csc(M_val, M_pattern)
+        M_scipy = sdt_to_scipy_csc(M_val, M_pattern)
 
         # In both cases, scipy supports CSC/CSR arrays with int64 index tensors.
         results = scipy.sparse.linalg.eigsh(

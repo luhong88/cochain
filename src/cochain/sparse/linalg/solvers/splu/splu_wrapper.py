@@ -13,6 +13,7 @@ from torch.autograd.function import once_differentiable
 
 from .....utils.parsing import to_np
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ....decoupled_tensor._conversion import sdt_to_cupy_csc, sdt_to_scipy_csc
 
 try:
     import cupy as cp
@@ -38,21 +39,10 @@ class _CuPySuperLUAutogradFunction(torch.autograd.Function):
         b: Float[Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
-        val = a_val[a_pattern.csc_to_coo_map].detach().contiguous()
-        idx_ccol = a_pattern.idx_ccol.detach().contiguous()
-        idx_row = a_pattern.idx_row_csc.detach().contiguous()
-
         # Force CuPy to use the current Pytorch stream.
         stream = torch.cuda.current_stream()
         with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            A_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
-                (
-                    cp.from_dlpack(val),
-                    cp.from_dlpack(idx_row),
-                    cp.from_dlpack(idx_ccol),
-                ),
-                shape=tuple(a_pattern.shape),
-            )
+            A_cp: Float[cp_sp.csc_matrix, "r c"] = sdt_to_cupy_csc(a_val, a_pattern)
             b_cp = cp.from_dlpack(b.detach().contiguous())
 
             solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
@@ -135,13 +125,8 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
         b: Float[Tensor, " r *ch"],
         splu_kwargs: dict[str, Any],
     ) -> tuple[Float[Tensor, " c *ch"], scipy.sparse.linalg.SuperLU]:
-        val = to_np(a_val[a_pattern.csc_to_coo_map], contiguous=True)
-        idx_ccol = to_np(a_pattern.idx_ccol, contiguous=True)
-        idx_row = to_np(a_pattern.idx_row_csc, contiguous=True)
-
-        a_scipy: Float[scipy.sparse.csc_array, "r c"] = scipy.sparse.csc_array(
-            (val, idx_row, idx_ccol),
-            shape=a_pattern.shape,
+        a_scipy: Float[scipy.sparse.csc_array, "r c"] = sdt_to_scipy_csc(
+            a_val, a_pattern
         )
         b_np = to_np(b, contiguous=True)
 
