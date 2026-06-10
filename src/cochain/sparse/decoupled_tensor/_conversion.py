@@ -2,14 +2,22 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import cupy as cp
-import cupyx.scipy.sparse as cp_sp
 import scipy
 from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ...utils.parsing import to_np
 from .pattern import SparsityPattern
+
+try:
+    import cupy as cp
+    import cupyx.scipy.sparse as cp_sp
+
+    _HAS_CUPY = True
+
+except ImportError:
+    _HAS_CUPY = False
+
 
 if TYPE_CHECKING:
     import cupy as cp
@@ -47,31 +55,32 @@ def sdt_to_scipy_csc(
     return sdt_scipy
 
 
-def sdt_to_cupy_csr(
-    val: Float[Tensor, " nnz"],
-    pattern: Integer[SparsityPattern, "r c"],
-) -> Float[cp_sp.csr_matrix, "r c"]:
-    sdt_cupy = cp_sp.csr_matrix(
-        (
-            cp.from_dlpack(val.detach().contiguous()),
-            cp.from_dlpack(pattern.idx_col.detach().contiguous()),
-            cp.from_dlpack(pattern.idx_crow.detach().contiguous()),
-        ),
-        shape=tuple(pattern.shape),
-    )
-    return sdt_cupy
+if _HAS_CUPY:
 
+    def sdt_to_cupy_csr(
+        val: Float[Tensor, " nnz"],
+        pattern: Integer[SparsityPattern, "r c"],
+    ) -> Float[cp_sp.csr_matrix, "r c"]:
+        sdt_cupy = cp_sp.csr_matrix(
+            (
+                cp.from_dlpack(val.detach().contiguous()),
+                cp.from_dlpack(pattern.idx_col.detach().contiguous()),
+                cp.from_dlpack(pattern.idx_crow.detach().contiguous()),
+            ),
+            shape=tuple(pattern.shape),
+        )
+        return sdt_cupy
 
-def sdt_to_cupy_csc(
-    val: Float[Tensor, " nnz"],
-    pattern: Integer[SparsityPattern, "r c"],
-) -> Float[cp_sp.csc_matrix, "r c"]:
-    sdt_cupy = cp_sp.csc_matrix(
-        (
-            cp.from_dlpack(val[pattern.csc_to_coo_map].detach().contiguous()),
-            cp.from_dlpack(pattern.idx_row_csc.detach().contiguous()),
-            cp.from_dlpack(pattern.idx_ccol.detach().contiguous()),
-        ),
-        shape=tuple(pattern.shape),
-    )
-    return sdt_cupy
+    def sdt_to_cupy_csc(
+        val: Float[Tensor, " nnz"],
+        pattern: Integer[SparsityPattern, "r c"],
+    ) -> Float[cp_sp.csc_matrix, "r c"]:
+        sdt_cupy = cp_sp.csc_matrix(
+            (
+                cp.from_dlpack(val[pattern.csc_to_coo_map].detach().contiguous()),
+                cp.from_dlpack(pattern.idx_row_csc.detach().contiguous()),
+                cp.from_dlpack(pattern.idx_ccol.detach().contiguous()),
+            ),
+            shape=tuple(pattern.shape),
+        )
+        return sdt_cupy
