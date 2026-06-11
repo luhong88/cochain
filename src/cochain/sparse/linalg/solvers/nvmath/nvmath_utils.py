@@ -102,7 +102,7 @@ def nvmath_adjoint_method(
         dLdA_val = torch.sum(-lambda_[r_idx.unbind(0)] * x[c_idx.unbind(0)], dim=-1)
 
     else:
-        # if there are no batch dimensions, then the A_pattern.idx_coo is of
+        # if there are no batch dimensions, then the a_pattern.idx_coo is of
         # shape (sp=2, nnz).
         dLdA_val = -lambda_[a_pattern.idx_coo[0]] * x[a_pattern.idx_coo[1]]
 

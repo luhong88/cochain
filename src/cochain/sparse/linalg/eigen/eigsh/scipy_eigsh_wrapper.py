@@ -60,8 +60,8 @@ class SciPyEigshConfig:
 class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[Tensor, " nnz"],
-        A_pattern: Integer[SparsityPattern, "r c"],
+        a_val: Float[Tensor, " nz"],
+        a_pattern: Integer[SparsityPattern, "r c"],
         k: int,
         eps: float | int,
         compute_eig_vecs: bool,
@@ -70,16 +70,16 @@ class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = sdt_to_scipy_csr(A_val, A_pattern)
+            a_scipy = sdt_to_scipy_csr(a_val, a_pattern)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = sdt_to_scipy_csc(A_val, A_pattern)
+            a_scipy = sdt_to_scipy_csc(a_val, a_pattern)
 
         # In both cases, scipy supports CSC/CSR arrays with int64 index tensors.
         results = scipy.sparse.linalg.eigsh(
-            A=A_scipy,
+            A=a_scipy,
             k=k,
             return_eigenvectors=compute_eig_vecs,
             **asdict(config),
@@ -89,7 +89,7 @@ class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
             eig_vals_np, eig_vecs_np = results
 
             eig_vecs = torch.from_numpy(eig_vecs_np).to(
-                dtype=A_val.dtype, device=A_val.device
+                dtype=a_val.dtype, device=a_val.device
             )
 
         else:
@@ -97,25 +97,25 @@ class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
             eig_vecs = None
 
         eig_vals = torch.from_numpy(eig_vals_np).to(
-            dtype=A_val.dtype, device=A_val.device
+            dtype=a_val.dtype, device=a_val.device
         )
 
         return eig_vals, eig_vecs
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_pattern, k, eps, compute_eig_vecs, config = inputs
+        a_val, a_pattern, k, eps, compute_eig_vecs, config = inputs
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
-        ctx.A_pattern = A_pattern
+        ctx.a_pattern = a_pattern
         ctx.eps = eps
 
     @staticmethod
     def backward(
         ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "c k"] | None
     ) -> tuple[
-        Float[Tensor, " nnz"] | None,
+        Float[Tensor, " nz"] | None,
         None,
         None,
         None,
@@ -132,10 +132,10 @@ class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
 class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[Tensor, " A_nnz"],
-        A_pattern: Integer[SparsityPattern, "r c"],
-        M_val: Float[Tensor, " M_nnz"],
-        M_pattern: Integer[SparsityPattern, "r c"],
+        a_val: Float[Tensor, " A_nz"],
+        a_pattern: Integer[SparsityPattern, "r c"],
+        m_val: Float[Tensor, " M_nz"],
+        m_pattern: Integer[SparsityPattern, "r c"],
         k: int,
         eps: float | int,
         compute_eig_vecs: bool,
@@ -144,21 +144,21 @@ class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
         # When solving the standard A@x=λx, the CSR format is preferred for
         # matrix-vector multiplication.
         if config.sigma is None:
-            A_scipy = sdt_to_scipy_csr(A_val, A_pattern)
+            a_scipy = sdt_to_scipy_csr(a_val, a_pattern)
 
         # In the shift-invert mode, an LU factorization of A + σI is required,
         # and therefore the CSC format is preferred.
         else:
-            A_scipy = sdt_to_scipy_csc(A_val, A_pattern)
+            a_scipy = sdt_to_scipy_csc(a_val, a_pattern)
 
         # M should always be in CSC format for LU factorization.
-        M_scipy = sdt_to_scipy_csc(M_val, M_pattern)
+        m_scipy = sdt_to_scipy_csc(m_val, m_pattern)
 
         # In both cases, scipy supports CSC/CSR arrays with int64 index tensors.
         results = scipy.sparse.linalg.eigsh(
-            A=A_scipy,
+            A=a_scipy,
             k=k,
-            M=M_scipy,
+            M=m_scipy,
             return_eigenvectors=compute_eig_vecs,
             **asdict(config),
         )
@@ -167,7 +167,7 @@ class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
             eig_vals_np, eig_vecs_np = results
 
             eig_vecs = torch.from_numpy(eig_vecs_np).to(
-                dtype=A_val.dtype, device=A_val.device
+                dtype=a_val.dtype, device=a_val.device
             )
 
         else:
@@ -175,28 +175,28 @@ class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
             eig_vecs = None
 
         eig_vals = torch.from_numpy(eig_vals_np).to(
-            dtype=A_val.dtype, device=A_val.device
+            dtype=a_val.dtype, device=a_val.device
         )
 
         return eig_vals, eig_vecs
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A_val, A_pattern, M_val, M_pattern, k, eps, compute_eig_vecs, config = inputs
+        a_val, a_pattern, m_val, m_pattern, k, eps, compute_eig_vecs, config = inputs
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
-        ctx.A_pattern = A_pattern
-        ctx.M_pattern = M_pattern
+        ctx.a_pattern = a_pattern
+        ctx.m_pattern = m_pattern
         ctx.eps = eps
 
     @staticmethod
     def backward(
         ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "c k"] | None
     ) -> tuple[
-        Float[Tensor, " A_nnz"] | None,
+        Float[Tensor, " A_nz"] | None,
         None,
-        Float[Tensor, " M_nnz"] | None,
+        Float[Tensor, " M_nz"] | None,
         None,
         None,
         None,
@@ -214,46 +214,48 @@ class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
 
 
 def _scipy_eigsh_no_batch(
-    A: Float[SparseDecoupledTensor, "r c"],
-    M: Float[SparseDecoupledTensor, "r c"] | None,
+    a: Float[SparseDecoupledTensor, "r c"],
+    m: Float[SparseDecoupledTensor, "r c"] | None,
     k: int,
     eps: float | int,
     compute_eig_vecs: bool,
     config: SciPyEigshConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
-    if M is None:
+    if m is None:
         eig_vals, eig_vecs = _SciPyEigshStandardAutogradFunction.apply(
-            A.values, A.pattern, k, eps, compute_eig_vecs, config
+            a.values, a.pattern, k, eps, compute_eig_vecs, config
         )
     else:
         eig_vals, eig_vecs = _SciPyEigshGEPAutogradFunction.apply(
-            A.values, A.pattern, M.values, M.pattern, k, eps, compute_eig_vecs, config
+            a.values, a.pattern, m.values, m.pattern, k, eps, compute_eig_vecs, config
         )
 
     return eig_vals, eig_vecs
 
 
 def _scipy_eigsh_batch(
-    A_batched: Float[SparseDecoupledTensor, "r c"],
-    M_batched: Float[SparseDecoupledTensor, "r c"] | None,
+    a_batched: Float[SparseDecoupledTensor, "r c"],
+    m_batched: Float[SparseDecoupledTensor, "r c"] | None,
     k: int,
     eps: float | int,
     compute_eig_vecs: bool,
     config_batched: SciPyEigshConfig,
 ) -> tuple[Float[Tensor, "b k"], Float[Tensor, "c k"]]:
     # Unpack the A, M (if not None), and v0 (if not None) for looping
-    A_list = A_batched.unpack_block_diag()
-    if M_batched is None:
-        M_list = [None] * len(A_list)
+    a_list = a_batched.unpack_block_diag()
+    if m_batched is None:
+        m_list = [None] * len(a_list)
     else:
-        M_list = M_batched.unpack_block_diag()
+        m_list = m_batched.unpack_block_diag()
 
-    config_list = config_batched.expand(n=len(A_list))
+    config_list = config_batched.expand(n=len(a_list))
 
     eig_val_list = []
     eig_vec_list = []
-    for A, M, config in zip(A_list, M_list, config_list, strict=True):
-        eig_val, eig_vec = _scipy_eigsh_no_batch(A, M, k, eps, compute_eig_vecs, config)
+    for a_sdt, m_sdt, config in zip(a_list, m_list, config_list, strict=True):
+        eig_val, eig_vec = _scipy_eigsh_no_batch(
+            a_sdt, m_sdt, k, eps, compute_eig_vecs, config
+        )
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
 
@@ -268,8 +270,9 @@ def _scipy_eigsh_batch(
 
 
 def scipy_eigsh(
-    A: Float[SparseDecoupledTensor, "r c"],
-    M: Float[SparseDecoupledTensor, "r c"] | None = None,
+    a: Float[SparseDecoupledTensor, "r c"],
+    m: Float[SparseDecoupledTensor, "r c"] | None = None,
+    *,
     block_diag_batch: bool = False,
     k: int = 6,
     eps: float | int = 1e-6,
@@ -323,19 +326,19 @@ def scipy_eigsh(
     """
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors
-    if A.requires_grad:
+    if a.requires_grad:
         compute_eig_vecs = True
-    if (M is not None) and M.requires_grad:
+    if (m is not None) and m.requires_grad:
         compute_eig_vecs = True
 
     if config is None:
         config = SciPyEigshConfig()
 
     if block_diag_batch:
-        eig_vals, eig_vecs = _scipy_eigsh_batch(A, M, k, eps, compute_eig_vecs, config)
+        eig_vals, eig_vecs = _scipy_eigsh_batch(a, m, k, eps, compute_eig_vecs, config)
     else:
         eig_vals, eig_vecs = _scipy_eigsh_no_batch(
-            A, M, k, eps, compute_eig_vecs, config
+            a, m, k, eps, compute_eig_vecs, config
         )
 
     if return_eigenvectors:

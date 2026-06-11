@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
+from typing import Literal
 
 import torch
 from jaxtyping import Float, Integer
@@ -80,8 +81,8 @@ if _HAS_CUPY:
     class _CuPyEigshAutogradFunction(torch.autograd.Function):
         @staticmethod
         def forward(
-            A_val: Float[Tensor, " nnz"],
-            A_pattern: Integer[SparsityPattern, "r c"],
+            a_val: Float[Tensor, " nnz"],
+            a_pattern: Integer[SparsityPattern, "r c"],
             k: int,
             eps: float | int,
             compute_eig_vecs: bool,
@@ -93,12 +94,12 @@ if _HAS_CUPY:
             with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
                 if cp_config.sigma is None:
                     # cupy supports CSR matrices with int64 indices.
-                    A_cp = sdt_to_cupy_csr(A_val, A_pattern)
+                    A_cp = sdt_to_cupy_csr(a_val, a_pattern)
                 else:
                     # CuPyShiftInvSymOp only supports int32 index tensors due to
                     # sparse solver limitations.
                     A_cp = CuPyShiftInvSymOp(
-                        A_val, A_pattern, cp_config.sigma, nvmath_config
+                        a_val, a_pattern, cp_config.sigma, nvmath_config
                     )
 
                 cp_config_dict = asdict(cp_config)
@@ -130,13 +131,13 @@ if _HAS_CUPY:
 
         @staticmethod
         def setup_context(ctx, inputs, output):
-            A_val, A_pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config = (
+            a_val, a_pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config = (
                 inputs
             )
             eig_vals, eig_vecs = output
 
             ctx.save_for_backward(eig_vals, eig_vecs)
-            ctx.A_pattern = A_pattern
+            ctx.a_pattern = a_pattern
             ctx.eps = eps
 
         @staticmethod

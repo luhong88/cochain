@@ -46,22 +46,22 @@ class LOBPCGConfig:
 class _LOBPCGAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        A_val: Float[Tensor, " A_nnz"],
-        A_pattern: Integer[SparsityPattern, "m m"],
-        M_val: Float[Tensor, " M_nnz"] | None,
-        M_pattern: Integer[SparsityPattern, "m m"] | None,
+        a_val: Float[Tensor, " A_nnz"],
+        a_pattern: Integer[SparsityPattern, "m m"],
+        m_val: Float[Tensor, " M_nnz"] | None,
+        m_pattern: Integer[SparsityPattern, "m m"] | None,
         k: int,
         eps: float | int,
         lobpcg_config: LOBPCGConfig,
         precond_config: LOBPCGPrecondConfig,
         nvmath_config: DirectSolverConfig,
     ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
-        A_op = SparseDecoupledTensor(A_pattern, A_val)
+        A_op = SparseDecoupledTensor(a_pattern, a_val)
 
-        if (M_val is None) and (M_pattern is None):
+        if (m_val is None) and (m_pattern is None):
             M_op = None
-        elif (M_val is not None) and (M_pattern is not None):
-            M_op = SparseDecoupledTensor(M_pattern, M_val)
+        elif (m_val is not None) and (m_pattern is not None):
+            M_op = SparseDecoupledTensor(m_pattern, m_val)
         else:
             raise ValueError()
 
@@ -84,10 +84,10 @@ class _LOBPCGAutogradFunction(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         (
-            A_val,
-            A_pattern,
-            M_val,
-            M_pattern,
+            a_val,
+            a_pattern,
+            m_val,
+            m_pattern,
             k,
             eps,
             lobpcg_config,
@@ -97,8 +97,8 @@ class _LOBPCGAutogradFunction(torch.autograd.Function):
         eig_vals, eig_vecs = output
 
         ctx.save_for_backward(eig_vals, eig_vecs)
-        ctx.A_pattern = A_pattern
-        ctx.M_pattern = M_pattern
+        ctx.a_pattern = a_pattern
+        ctx.m_pattern = m_pattern
         ctx.eps = eps
 
     @staticmethod
@@ -118,7 +118,7 @@ class _LOBPCGAutogradFunction(torch.autograd.Function):
         needs_grad_A_val = ctx.needs_input_grad[0]
         needs_grad_M_val = ctx.needs_input_grad[2]
 
-        if ctx.M_pattern is None:
+        if ctx.m_pattern is None:
             dLdA_val = dLdA_backward(ctx, dLdl, dLdv) if needs_grad_A_val else None
             dLdM_val = None
         else:

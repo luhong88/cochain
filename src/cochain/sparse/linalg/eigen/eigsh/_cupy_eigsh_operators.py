@@ -44,12 +44,12 @@ if _HAS_NVMATH and _HAS_CUPY:
 
         def __init__(
             self,
-            A_val: Float[Tensor, " nnz"],
-            A_pattern: Integer[SparsityPattern, "r c"],
+            a_val: Float[Tensor, " nnz"],
+            a_pattern: Integer[SparsityPattern, "r c"],
             sigma: float,
             config: DirectSolverConfig,
         ):
-            if not A_pattern._is_int32_safe:
+            if not a_pattern._is_int32_safe:
                 raise ValueError(
                     "The sparse indices of the input tensor 'A' cannot be safely "
                     "cast to int32 dtype."
@@ -59,7 +59,7 @@ if _HAS_NVMATH and _HAS_CUPY:
 
             # Prepare Cupy arrays.
             with cp.cuda.ExternalStream(t_stream.cuda_stream, t_stream.device_index):
-                A_cp = sdt_to_cupy_csr(A_val, A_pattern)
+                A_cp = sdt_to_cupy_csr(a_val, a_pattern)
 
                 diag_cp = sigma * cp_sp.identity(
                     A_cp.shape[0], dtype=A_cp.dtype, format="csr"

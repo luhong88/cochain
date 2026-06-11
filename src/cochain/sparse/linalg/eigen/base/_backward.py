@@ -137,7 +137,7 @@ def dLdA_backward(
     """Backward gradient logic for eigenvalue problems."""
     # The eigenvectors need to be length-normalized for the following calculation.
     eig_vals, eig_vecs = ctx.saved_tensors
-    A_pattern: SparsityPattern = ctx.A_pattern
+    a_pattern: SparsityPattern = ctx.a_pattern
 
     # This error should never be triggered if the user-facing wrapper does its job.
     if eig_vecs is None:
@@ -151,7 +151,7 @@ def dLdA_backward(
         cauchy = compute_cauchy_matrix(eig_vals, ctx.eps)
 
     dLdA_val = compute_dLdA_val(
-        A_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+        a_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
     )
 
     return dLdA_val
@@ -171,8 +171,8 @@ def dLdA_dLdM_backward(
     # The eigenvectors are assumed to be orthonormal wrt M, which is required for
     # the following calculation.
     eig_vals, eig_vecs = ctx.saved_tensors
-    A_pattern: SparsityPattern = ctx.A_pattern
-    M_pattern: SparsityPattern = ctx.M_pattern
+    a_pattern: SparsityPattern = ctx.a_pattern
+    m_pattern: SparsityPattern = ctx.m_pattern
 
     if needs_grad_A_val or needs_grad_M_val:
         # This error should never be triggered if the user-facing wrapper does its job.
@@ -188,12 +188,12 @@ def dLdA_dLdM_backward(
 
     if needs_grad_A_val:
         dLdA_val = compute_dLdA_val(
-            A_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+            a_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
         )
 
     if needs_grad_M_val:
         dLdM_val = compute_dLdM_val(
-            M_pattern, eig_vals, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+            m_pattern, eig_vals, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
         )
 
     return dLdA_val, dLdM_val
