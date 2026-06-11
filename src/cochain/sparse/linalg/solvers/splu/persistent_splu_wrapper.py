@@ -28,7 +28,7 @@ except ImportError:
     _HAS_CUPY = False
 
 
-class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
+class PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " nz"],
@@ -107,7 +107,7 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
 
 if _HAS_CUPY:
 
-    class _PersistentCuPySuperLUAutogradFunction(torch.autograd.Function):
+    class PersistentCuPySuperLUAutogradFunction(torch.autograd.Function):
         @staticmethod
         def forward(
             a_val: Float[Tensor, " nz"],
@@ -186,7 +186,7 @@ if _HAS_CUPY:
 
 else:
 
-    class _PersistentCuPySuperLUAutogradFunction:
+    class PersistentCuPySuperLUAutogradFunction:
         def apply(*args, **kwargs):
             raise ImportError("CuPy backend required.")
 
@@ -321,11 +321,11 @@ class SuperLU(InvSparseOperator):
 
         match self.backend:
             case "cupy":
-                x = _PersistentCuPySuperLUAutogradFunction.apply(
+                x = PersistentCuPySuperLUAutogradFunction.apply(
                     self.a_val, self.a_pattern, b_flat, self.solver, trans
                 )
             case "scipy":
-                x = _PersistentSciPySuperLUAutogradFunction.apply(
+                x = PersistentSciPySuperLUAutogradFunction.apply(
                     self.a_val, self.a_pattern, b_flat, self.solver, trans
                 )
 

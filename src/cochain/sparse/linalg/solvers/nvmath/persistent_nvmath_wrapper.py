@@ -35,7 +35,7 @@ if _HAS_NVMATH:
 
 if _HAS_NVMATH:
 
-    class _PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):
+    class PersistentNvmathDirectSolverAutogradFunction(torch.autograd.Function):
         @staticmethod
         def forward(
             a_val: Float[Tensor, " nz"],
@@ -286,7 +286,7 @@ if _HAS_NVMATH:
 
             b_ready = to_col_major(b_flat, batch_first=False)
 
-            x_flat = _PersistentNvmathDirectSolverAutogradFunction.apply(
+            x_flat = PersistentNvmathDirectSolverAutogradFunction.apply(
                 self.a_val, self.a_pattern, b_ready, self.solver
             )
             x_shaped = x_flat.view(-1, *b.shape[1:])

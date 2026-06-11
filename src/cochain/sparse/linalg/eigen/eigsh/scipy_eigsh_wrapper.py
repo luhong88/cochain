@@ -57,7 +57,7 @@ class SciPyEigshConfig:
         return config_list
 
 
-class _SciPyEigshStandardAutogradFunction(torch.autograd.Function):
+class SciPyEigshStandardAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " nz"],
@@ -222,7 +222,7 @@ def _scipy_eigsh_no_batch(
     config: SciPyEigshConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     if m is None:
-        eig_vals, eig_vecs = _SciPyEigshStandardAutogradFunction.apply(
+        eig_vals, eig_vecs = SciPyEigshStandardAutogradFunction.apply(
             a.values, a.pattern, k, eps, compute_eig_vecs, config
         )
     else:

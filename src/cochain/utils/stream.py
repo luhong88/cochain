@@ -23,7 +23,7 @@ if _HAS_CUPY:
             self.stream = stream
 
         def __cuda_stream__(self) -> tuple[int, int]:
-            # The protocol strictly expects a 2-tuple: (version_number, pointer)
+            # The protocol strictly expects a 2-tuple: (version_number, pointer).
             return (0, self.stream.cuda_stream)
 
     @contextlib.contextmanager

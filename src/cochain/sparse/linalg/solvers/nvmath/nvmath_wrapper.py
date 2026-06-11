@@ -60,7 +60,7 @@ if _HAS_NVMATH:
 
                 self.free()
 
-    class _NvmathDirectSolverAutogradFunction(torch.autograd.Function):
+    class NvmathDirectSolverAutogradFunction(torch.autograd.Function):
         @staticmethod
         def forward(
             a_val: Float[Tensor, " nz"],
@@ -335,7 +335,7 @@ if _HAS_NVMATH:
             batch_first=a.n_batch_dim > 0,
         )
 
-        x_flat, solver = _NvmathDirectSolverAutogradFunction.apply(
+        x_flat, solver = NvmathDirectSolverAutogradFunction.apply(
             a.values,
             a.pattern,
             b_ready,

@@ -79,7 +79,7 @@ class CuPyEigshConfig:
 
 if _HAS_CUPY:
 
-    class _CuPyEigshAutogradFunction(torch.autograd.Function):
+    class CuPyEigshAutogradFunction(torch.autograd.Function):
         @staticmethod
         def forward(
             a_val: Float[Tensor, " nnz"],
@@ -166,7 +166,7 @@ if _HAS_CUPY:
         cp_config: CuPyEigshConfig,
         nvmath_config: DirectSolverConfig,
     ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
-        eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
+        eig_vals, eig_vecs = CuPyEigshAutogradFunction.apply(
             A.values, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
         )
 

@@ -43,7 +43,7 @@ class LOBPCGConfig:
         return config_list
 
 
-class _LOBPCGAutogradFunction(torch.autograd.Function):
+class LOBPCGAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " A_nnz"],
@@ -139,7 +139,7 @@ def _lobpcg_no_batch(
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
     if M is None:
-        eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
+        eig_vals, eig_vecs = LOBPCGAutogradFunction.apply(
             A.values,
             A.pattern,
             None,
@@ -151,7 +151,7 @@ def _lobpcg_no_batch(
             nvmath_config,
         )
     else:
-        eig_vals, eig_vecs = _LOBPCGAutogradFunction.apply(
+        eig_vals, eig_vecs = LOBPCGAutogradFunction.apply(
             A.values,
             A.pattern,
             M.values,
