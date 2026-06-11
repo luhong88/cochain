@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import scipy
 from jaxtyping import Float, Integer
 from torch import Tensor
@@ -17,11 +15,6 @@ try:
 
 except ImportError:
     _HAS_CUPY = False
-
-
-if TYPE_CHECKING:
-    import cupy as cp
-    import cupyx.scipy.sparse as cp_sp
 
 
 # TODO: check whether int64 is allowed.

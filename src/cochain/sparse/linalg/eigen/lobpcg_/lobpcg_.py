@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
-from typing import TYPE_CHECKING, Sequence
+from typing import Sequence
 
 import torch
 from jaxtyping import Float, Integer

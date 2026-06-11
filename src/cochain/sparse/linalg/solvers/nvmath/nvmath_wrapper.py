@@ -2,7 +2,7 @@ from __future__ import annotations
 
 __all__ = ["nvmath_direct_solver"]
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import torch
 from jaxtyping import Float, Integer
@@ -19,17 +19,18 @@ from .nvmath_utils import (
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
-    from cuda.core.experimental import Device
 
     _HAS_NVMATH = True
 
 except ImportError:
     _HAS_NVMATH = False
 
-if TYPE_CHECKING:
-    import nvmath.sparse.advanced as nvmath_sp
-    from cuda.core.experimental import Device
 
+if _HAS_NVMATH:
+    try:
+        from cuda.core import Device
+    except ImportError:
+        from cuda.core.experimental import Device
 
 if _HAS_NVMATH:
 

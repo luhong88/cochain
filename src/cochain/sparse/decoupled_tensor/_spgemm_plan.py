@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numba
 import numpy as np
@@ -19,10 +18,6 @@ try:
 
 except ImportError:
     _HAS_CUPY = False
-
-if TYPE_CHECKING:
-    import cupy as cp
-    import cupyx.scipy.sparse as cp_sp
 
 
 from ...utils.parsing import to_np

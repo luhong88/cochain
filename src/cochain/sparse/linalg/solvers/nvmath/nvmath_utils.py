@@ -3,7 +3,7 @@ from __future__ import annotations
 __all__ = ["DirectSolverConfig"]
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 from jaxtyping import Float, Integer
@@ -18,9 +18,6 @@ try:
 
 except ImportError:
     _HAS_NVMATH = False
-
-if TYPE_CHECKING:
-    import nvmath.sparse.advanced as nvmath_sp
 
 
 if _HAS_NVMATH:

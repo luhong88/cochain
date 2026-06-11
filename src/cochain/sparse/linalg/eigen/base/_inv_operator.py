@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from ...solvers.nvmath.nvmath_wrapper import (
+    DirectSolverConfig,
+    sp_literal_to_matrix_type,
+)
+
 try:
     import nvmath.sparse.advanced as nvmath_sp
-
-    from ...solvers.nvmath.nvmath_wrapper import (
-        DirectSolverConfig,
-        sp_literal_to_matrix_type,
-    )
 
     _HAS_NVMATH = True
 
@@ -24,15 +22,6 @@ try:
     import cupy as cp
 except ImportError:
     pass
-
-if TYPE_CHECKING:
-    import cupy as cp
-    import nvmath.sparse.advanced as nvmath_sp
-
-    from ...solvers.nvmath.nvmath_wrapper import (
-        DirectSolverConfig,
-        sp_literal_to_matrix_type,
-    )
 
 
 if _HAS_NVMATH:

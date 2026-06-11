@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
@@ -22,18 +20,18 @@ except ImportError:
     _HAS_CUPY = False
 
 try:
-    from cuda.core.experimental import Device
+    import nvmath.sparse.advanced
 
     _HAS_NVMATH = True
 
 except ImportError:
     _HAS_NVMATH = False
 
-if TYPE_CHECKING:
-    import cupy as cp
-    import cupyx.scipy.sparse as cp_sp
-    import cupyx.scipy.sparse.linalg as cp_sp_linalg
-    from cuda.core.experimental import Device
+if _HAS_NVMATH:
+    try:
+        from cuda.core import Device
+    except ImportError:
+        from cuda.core.experimental import Device
 
 
 if _HAS_NVMATH and _HAS_CUPY:

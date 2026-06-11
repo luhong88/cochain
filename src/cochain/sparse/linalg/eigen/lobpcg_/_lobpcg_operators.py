@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -11,15 +9,18 @@ from ...solvers import DirectSolverConfig
 from ..base._inv_operator import BaseNVMathInvSymSpOp
 
 try:
-    from cuda.core.experimental import Device
+    import nvmath.sparse.advanced
 
     _HAS_NVMATH = True
 
 except ImportError:
     _HAS_NVMATH = False
 
-if TYPE_CHECKING:
-    from cuda.core.experimental import Device
+if _HAS_NVMATH:
+    try:
+        from cuda.core import Device
+    except ImportError:
+        from cuda.core.experimental import Device
 
 
 class IdentityOperator:

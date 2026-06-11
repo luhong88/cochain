@@ -2,7 +2,7 @@ from __future__ import annotations
 
 __all__ = ["SuperLU"]
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import scipy.sparse
 import scipy.sparse.linalg
@@ -25,11 +25,6 @@ try:
 
 except ImportError:
     _HAS_CUPY = False
-
-if TYPE_CHECKING:
-    import cupy as cp
-    import cupyx.scipy.sparse as cp_sp
-    import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
 
 class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):

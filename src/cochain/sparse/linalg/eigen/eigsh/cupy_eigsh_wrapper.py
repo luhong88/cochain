@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
-from typing import TYPE_CHECKING, Literal
 
 import torch
 from jaxtyping import Float, Integer
@@ -30,10 +29,6 @@ try:
 
 except ImportError:
     _HAS_NVMATH = False
-
-if TYPE_CHECKING:
-    import cupy as cp
-    import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
 
 @dataclass
