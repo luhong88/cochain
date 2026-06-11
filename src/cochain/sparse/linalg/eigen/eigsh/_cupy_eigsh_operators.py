@@ -1,8 +1,8 @@
-import cupy as cp
-import cupyx.scipy.sparse as cp_sp
-import cupyx.scipy.sparse.linalg as cp_sp_linalg
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
-from cuda.core.experimental import Device
 from jaxtyping import Float, Integer
 from torch import Tensor
 
@@ -11,67 +11,101 @@ from ....decoupled_tensor._conversion import sdt_to_cupy_csr
 from ...solvers import DirectSolverConfig
 from ..base._inv_operator import BaseNVMathInvSymSpOp
 
+try:
+    import cupy as cp
+    import cupyx.scipy.sparse as cp_sp
+    import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
-class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
-    """
-    A CuPy LinearOperator object used to solve an eigenvalue problem in the
-    shift inverse mode.
-    """
+    _HAS_CUPY = True
 
-    def __init__(
-        self,
-        A_val: Float[Tensor, " nnz"],
-        A_pattern: Integer[SparsityPattern, "r c"],
-        sigma: float,
-        config: DirectSolverConfig,
-    ):
-        if not A_pattern._is_int32_safe:
-            raise ValueError(
-                "The sparse indices of the input tensor 'A' cannot be safely "
-                "cast to int32 dtype."
-            )
+except ImportError:
+    _HAS_CUPY = False
 
-        t_stream = torch.cuda.current_stream()
+try:
+    from cuda.core.experimental import Device
 
-        # Prepare Cupy arrays.
-        with cp.cuda.ExternalStream(t_stream.cuda_stream, t_stream.device_index):
-            A_cp = sdt_to_cupy_csr(A_val, A_pattern)
+    _HAS_NVMATH = True
 
-            diag_cp = sigma * cp_sp.identity(
-                A_cp.shape[0], dtype=A_cp.dtype, format="csr"
-            )
+except ImportError:
+    _HAS_NVMATH = False
 
-            A_shift_inv_cp = A_cp - diag_cp
+if TYPE_CHECKING:
+    import cupy as cp
+    import cupyx.scipy.sparse as cp_sp
+    import cupyx.scipy.sparse.linalg as cp_sp_linalg
+    from cuda.core.experimental import Device
 
-            b_dummy = cp.zeros(A_cp.shape[0], dtype=A_cp.dtype)
 
-            BaseNVMathInvSymSpOp.__init__(
-                self,
-                a=A_shift_inv_cp,
-                b=b_dummy,
-                config=config,
-                stream=cp.cuda.get_current_stream(),
-            )
+if _HAS_NVMATH and _HAS_CUPY:
 
-        cp_sp_linalg.LinearOperator.__init__(self, dtype=A_cp.dtype, shape=A_cp.shape)
-
-    def _matvec(self, x: Float[cp.ndarray, " c"]):
+    class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
         """
-        For the operator L = inv(A - σI), the matrix-vector multiplication L@x = b
-        can also be written as x = (A - σI)@b, or solve(A - σI, x).
+        A CuPy LinearOperator object used to solve an eigenvalue problem in the
+        shift inverse mode.
         """
-        cp_stream = cp.cuda.get_current_stream()
-        Device(cp_stream.device_id).set_current()
 
-        self.solver.reset_operands(b=x, stream=cp_stream)
-        b = self.solver.solve(stream=cp_stream)
+        def __init__(
+            self,
+            A_val: Float[Tensor, " nnz"],
+            A_pattern: Integer[SparsityPattern, "r c"],
+            sigma: float,
+            config: DirectSolverConfig,
+        ):
+            if not A_pattern._is_int32_safe:
+                raise ValueError(
+                    "The sparse indices of the input tensor 'A' cannot be safely "
+                    "cast to int32 dtype."
+                )
 
-        return b
+            t_stream = torch.cuda.current_stream()
 
-    def _matmat(self, X):
-        # Cupy eigsh() should not need matrix-matrix multiplications
-        raise NotImplementedError()
+            # Prepare Cupy arrays.
+            with cp.cuda.ExternalStream(t_stream.cuda_stream, t_stream.device_index):
+                A_cp = sdt_to_cupy_csr(A_val, A_pattern)
 
-    def _adjoint(self):
-        # The adjoint operator is self since self is symmetric.
-        return self
+                diag_cp = sigma * cp_sp.identity(
+                    A_cp.shape[0], dtype=A_cp.dtype, format="csr"
+                )
+
+                A_shift_inv_cp = A_cp - diag_cp
+
+                b_dummy = cp.zeros(A_cp.shape[0], dtype=A_cp.dtype)
+
+                BaseNVMathInvSymSpOp.__init__(
+                    self,
+                    a=A_shift_inv_cp,
+                    b=b_dummy,
+                    config=config,
+                    stream=cp.cuda.get_current_stream(),
+                )
+
+            cp_sp_linalg.LinearOperator.__init__(
+                self, dtype=A_cp.dtype, shape=A_cp.shape
+            )
+
+        def _matvec(self, x: Float[cp.ndarray, " c"]):
+            """
+            For the operator L = inv(A - σI), the matrix-vector multiplication L@x = b
+            can also be written as x = (A - σI)@b, or solve(A - σI, x).
+            """
+            cp_stream = cp.cuda.get_current_stream()
+            Device(cp_stream.device_id).set_current()
+
+            self.solver.reset_operands(b=x, stream=cp_stream)
+            b = self.solver.solve(stream=cp_stream)
+
+            return b
+
+        def _matmat(self, X):
+            # Cupy eigsh() should not need matrix-matrix multiplications
+            raise NotImplementedError()
+
+        def _adjoint(self):
+            # The adjoint operator is self since self is symmetric.
+            return self
+
+else:
+
+    class CuPyShiftInvSymOp:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("CuPy and nvmath-python backends required.")

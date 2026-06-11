@@ -9,7 +9,10 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ....decoupled_tensor._conversion import sdt_to_cupy_csr
+from ...solvers import DirectSolverConfig
 from ..base._backward import dLdA_backward
+from ._cupy_eigsh_operators import CuPyShiftInvSymOp
 
 try:
     import cupy as cp
@@ -21,7 +24,7 @@ except ImportError:
     _HAS_CUPY = False
 
 try:
-    import nvmath.sparse.advanced as nvmath_sp
+    import nvmath.sparse.advanced
 
     _HAS_NVMATH = True
 
@@ -29,269 +32,273 @@ except ImportError:
     _HAS_NVMATH = False
 
 if TYPE_CHECKING:
+    import cupy as cp
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
-    from ...solvers import DirectSolverConfig
+
+@dataclass
+class CuPyEigshConfig:
+    sigma: float | None = None
+    which: Literal["LM", "LA", "SA"] = "LM"
+    v0: (
+        Float[Tensor | cp.ndarray, " c"]
+        | Sequence[Float[Tensor | cp.ndarray, " c"] | None]
+        | None
+    ) = None
+    ncv: int | None = None
+    maxiter: int | None = None
+    tol: float | int = 0
+
+    def __post_init__(self):
+        if not _HAS_CUPY:
+            raise ImportError("CuPy backend required.")
+
+        match self.v0:
+            case Tensor():
+                self.v0 = cp.from_dlpack(self.v0.detach().contiguous())
+            case Sequence():
+                v0_list = []
+                for v0 in self.v0:
+                    match v0:
+                        case Tensor():
+                            v0_list.append(
+                                cp.from_dlpack(self.v0.detach().contiguous())
+                            )
+                        case _:
+                            v0_list.append(v0)
+                self.v0 = v0_list
+
+    def expand(self, n: int) -> list[CuPyEigshConfig]:
+        config_list = []
+        if isinstance(self.v0, list):
+            config_list.append(replace(self, v0=v0) for v0 in self.v0)
+            if len(config_list) != n:
+                raise ValueError("Inconsistent v0 specification.")
+        else:
+            config_list = [self] * n
+
+        return config_list
 
 
 if _HAS_CUPY:
 
-    @dataclass
-    class CuPyEigshConfig:
-        sigma: float | None = None
-        which: Literal["LM", "LA", "SA"] = "LM"
-        v0: (
-            Float[Tensor | cp.ndarray, " c"]
-            | Sequence[Float[Tensor | cp.ndarray, " c"] | None]
-            | None
-        ) = None
-        ncv: int | None = None
-        maxiter: int | None = None
-        tol: float | int = 0
+    class _CuPyEigshAutogradFunction(torch.autograd.Function):
+        @staticmethod
+        def forward(
+            A_val: Float[Tensor, " nnz"],
+            A_pattern: Integer[SparsityPattern, "r c"],
+            k: int,
+            eps: float | int,
+            compute_eig_vecs: bool,
+            cp_config: CuPyEigshConfig,
+            nvmath_config: DirectSolverConfig,
+        ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"] | None]:
+            # Force CuPy to use the current Pytorch stream.
+            stream = torch.cuda.current_stream()
+            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+                if cp_config.sigma is None:
+                    # cupy supports CSR matrices with int64 indices.
+                    A_cp = sdt_to_cupy_csr(A_val, A_pattern)
+                else:
+                    # CuPyShiftInvSymOp only supports int32 index tensors due to
+                    # sparse solver limitations.
+                    A_cp = CuPyShiftInvSymOp(
+                        A_val, A_pattern, cp_config.sigma, nvmath_config
+                    )
 
-        def __post_init__(self):
-            match self.v0:
-                case Tensor():
-                    self.v0 = cp.from_dlpack(self.v0.detach().contiguous())
-                case Sequence():
-                    v0_list = []
-                    for v0 in self.v0:
-                        match v0:
-                            case Tensor():
-                                v0_list.append(
-                                    cp.from_dlpack(self.v0.detach().contiguous())
-                                )
-                            case _:
-                                v0_list.append(v0)
-                    self.v0 = v0_list
+                cp_config_dict = asdict(cp_config)
+                del cp_config_dict["sigma"]
 
-        def expand(self, n: int) -> list[CuPyEigshConfig]:
-            config_list = []
-            if isinstance(self.v0, list):
-                config_list.append(replace(self, v0=v0) for v0 in self.v0)
-                if len(config_list) != n:
-                    raise ValueError("Inconsistent v0 specification.")
+                results = cp_sp_linalg.eigsh(
+                    a=A_cp,
+                    k=k,
+                    return_eigenvectors=compute_eig_vecs,
+                    **cp_config_dict,
+                )
+
+                if compute_eig_vecs:
+                    eig_vals_cp, eig_vecs_cp = results
+                    eig_vecs = torch.from_dlpack(eig_vecs_cp)
+                else:
+                    eig_vals_cp = results
+                    eig_vecs = None
+
+                eig_vals = torch.from_dlpack(eig_vals_cp)
+
+            if cp_config.sigma is None:
+                eig_vals_true = eig_vals
             else:
-                config_list = [self] * n
+                # In shift-invert mode, λ_returned = 1 / (λ_true - σ)
+                eig_vals_true = cp_config.sigma + (1.0 / eig_vals)
 
-            return config_list
+            return eig_vals_true, eig_vecs
 
+        @staticmethod
+        def setup_context(ctx, inputs, output):
+            A_val, A_pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config = (
+                inputs
+            )
+            eig_vals, eig_vecs = output
 
-class _CuPyEigshAutogradFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(
-        A_val: Float[Tensor, " nnz"],
-        A_pattern: Integer[SparsityPattern, "r c"],
+            ctx.save_for_backward(eig_vals, eig_vecs)
+            ctx.A_pattern = A_pattern
+            ctx.eps = eps
+
+        @staticmethod
+        def backward(
+            ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "c k"] | None
+        ) -> tuple[
+            Float[Tensor, " nnz"] | None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ]:
+            needs_grad_A_val = ctx.needs_input_grad[0]
+
+            dLdA_val = dLdA_backward(ctx, dLdl, dLdv) if needs_grad_A_val else None
+
+            return dLdA_val, None, None, None, None, None, None
+
+    def _cupy_eigsh_no_batch(
+        A: Float[SparseDecoupledTensor, "r c"],
         k: int,
         eps: float | int,
         compute_eig_vecs: bool,
         cp_config: CuPyEigshConfig,
         nvmath_config: DirectSolverConfig,
-    ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"] | None]:
-        from ....decoupled_tensor._conversion import sdt_to_cupy_csr
-        from ._cupy_eigsh_operators import CuPyShiftInvSymOp
+    ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
+        eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
+            A.values, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
+        )
 
-        # Force CuPy to use the current Pytorch stream.
-        stream = torch.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            if cp_config.sigma is None:
-                # cupy supports CSR matrices with int64 indices.
-                A_cp = sdt_to_cupy_csr(A_val, A_pattern)
-            else:
-                # CuPyShiftInvSymOp only supports int32 index tensors due to
-                # sparse solver limitations.
-                A_cp = CuPyShiftInvSymOp(
-                    A_val, A_pattern, cp_config.sigma, nvmath_config
-                )
+        return eig_vals, eig_vecs
 
-            cp_config_dict = asdict(cp_config)
-            del cp_config_dict["sigma"]
+    def _cupy_eigsh_batch(
+        A_batched: Float[SparseDecoupledTensor, "r c"],
+        k: int,
+        eps: float | int,
+        compute_eig_vecs: bool,
+        cp_config_batched: CuPyEigshConfig,
+        nvmath_config: DirectSolverConfig,
+    ) -> tuple[Float[Tensor, "b k"], Float[Tensor, "c k"]]:
+        A_list = A_batched.unpack_block_diag()
 
-            results = cp_sp_linalg.eigsh(
-                a=A_cp,
-                k=k,
-                return_eigenvectors=compute_eig_vecs,
-                **cp_config_dict,
+        cp_config_list = cp_config_batched.expand(n=len(A_list))
+
+        eig_val_list = []
+        eig_vec_list = []
+        for A, cp_config in zip(A_list, cp_config_list):
+            eig_val, eig_vec = _cupy_eigsh_no_batch(
+                A, k, eps, compute_eig_vecs, cp_config, nvmath_config
+            )
+            eig_val_list.append(eig_val)
+            eig_vec_list.append(eig_vec)
+
+        eig_vals = torch.vstack(eig_val_list)
+
+        if eig_vec_list[0] is None:
+            eig_vecs = None
+        else:
+            eig_vecs = torch.vstack(eig_vec_list)
+
+        return eig_vals, eig_vecs
+
+    def cupy_eigsh(
+        A: Float[SparseDecoupledTensor, "r c"],
+        block_diag_batch: bool = False,
+        k: int = 6,
+        eps: float | int = 1e-6,
+        return_eigenvectors: bool = True,
+        cp_config: CuPyEigshConfig | None = None,
+        nvmath_config: DirectSolverConfig | None = None,
+    ) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "c k"] | None]:
+        """
+        Sparse eigensolver for symmetric square matrices using CuPy.
+
+        This function provides a differentiable wrapper for the GPU-based
+        `cupyx.scipy.sparse.linalg.eigsh()` method.
+
+        The API for `eigsh()` is almost reproduced one-to-one, with the following
+        exceptions:
+
+        * The arguments `which`, `v0`, `ncv`, `maxiter`, and `tol`, are collected in
+        a `CuPyEigshConfig` dataclass object, whilc the rest of the arguments are
+        exposed as direct arguments to this function.
+        * The `A` matrix must be a `SparseDecoupledTensor` object and will be converted to
+        CuPy CSR matrix. The `v0` argument can be a torch tensor, but will be converted
+        to a cupy array and copied. The use of CuPy `LinearOperator` objects for `A`
+        is not supported.
+        * The shift-invert mode requires that the sparse CSR index tensors of `A` be
+        downcast to int32 due to underlying sparse solver requirement. The standard
+        mode can support both int32 and int64 index dtypes, but will automatically
+        downcast to int32 if possible.
+        * The `eps` argument is used for Lorentzian broadening/regularization in the
+        gradient calculation to prevent gradient explosion when the eigenvalues are
+        (near) degenerate.
+
+        Note that the CuPy `eigsh()` and SciPy `eigsh()` differ in some major aspects.
+
+        * The CuPy `eigsh()` does not support generalized eigenvalue problems.
+        * The CuPy `eigsh()` does not natively support the shift-invert mode. Here,
+        the shift-invert mode is implemented by constructing a CuPy `LinearOperator`
+        object for the L = inv(A - σI) matrix; computing the matrix-vector multiplication
+        L@x = b is then equivalent to solving a sparse linear system with matrix
+        A - σI and vector x. This approach corresonds to the `mode='normal'` option
+        in SciPy `eigsh()`. Currently, the sparse solver is implemented using the
+        `DirectSolver()` class of `nvmath-python`; the behavior of this solver can
+        be changed via the `nvmath_config` argument.
+
+
+        Note on performance:
+
+        * If `A` requires gradient tracking, eigenvectors will be computed; in this
+        case, if `return_eigenvectors=False`, the computed eigenvectors are not
+        returned.
+        * The autograd through eigenvectors do not account for contributions from the
+        unresolved eigenvectors.
+        * The `eigsh()` function does not natively support batching. if
+        `block_diag_batch` is True, the `A` `SparseDecoupledTensor` will be split into
+        individual sparse matrices and solved sequentially. The resulting eigenvalue
+        tensor will contain a leading batch dimension, but the resulting eigenvector
+        tensor will respect the original concatenated/packed format. This requires
+        that `A` has a valid `BlockDiagConfig` for unpacking the block diagonal
+        batch structure.
+        """
+        if (
+            (cp_config is not None)
+            and (cp_config.sigma is not None)
+            and (not _HAS_NVMATH)
+        ):
+            raise ImportError("nvmath-python backend required for shift-invert mode.")
+
+        # Eigenvectors are required for backward().
+        compute_eig_vecs = return_eigenvectors
+        if A.requires_grad:
+            compute_eig_vecs = True
+
+        if cp_config is None:
+            cp_config = CuPyEigshConfig()
+        if nvmath_config is None:
+            nvmath_config = DirectSolverConfig()
+
+        if block_diag_batch:
+            eig_vals, eig_vecs = _cupy_eigsh_batch(
+                A, k, eps, compute_eig_vecs, cp_config, nvmath_config
+            )
+        else:
+            eig_vals, eig_vecs = _cupy_eigsh_no_batch(
+                A, k, eps, compute_eig_vecs, cp_config, nvmath_config
             )
 
-            if compute_eig_vecs:
-                eig_vals_cp, eig_vecs_cp = results
-                eig_vecs = torch.from_dlpack(eig_vecs_cp)
-            else:
-                eig_vals_cp = results
-                eig_vecs = None
-
-            eig_vals = torch.from_dlpack(eig_vals_cp)
-
-        if cp_config.sigma is None:
-            eig_vals_true = eig_vals
+        if return_eigenvectors:
+            return eig_vals, eig_vecs
         else:
-            # In shift-invert mode, λ_returned = 1 / (λ_true - σ)
-            eig_vals_true = cp_config.sigma + (1.0 / eig_vals)
+            return eig_vals
 
-        return eig_vals_true, eig_vecs
+else:
 
-    @staticmethod
-    def setup_context(ctx, inputs, output):
-        A_val, A_pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config = inputs
-        eig_vals, eig_vecs = output
-
-        ctx.save_for_backward(eig_vals, eig_vecs)
-        ctx.A_pattern = A_pattern
-        ctx.eps = eps
-
-    @staticmethod
-    def backward(
-        ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "c k"] | None
-    ) -> tuple[
-        Float[Tensor, " nnz"] | None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    ]:
-        needs_grad_A_val = ctx.needs_input_grad[0]
-
-        dLdA_val = dLdA_backward(ctx, dLdl, dLdv) if needs_grad_A_val else None
-
-        return dLdA_val, None, None, None, None, None, None
-
-
-def _cupy_eigsh_no_batch(
-    A: Float[SparseDecoupledTensor, "r c"],
-    k: int,
-    eps: float | int,
-    compute_eig_vecs: bool,
-    cp_config: CuPyEigshConfig,
-    nvmath_config: DirectSolverConfig,
-) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
-    eig_vals, eig_vecs = _CuPyEigshAutogradFunction.apply(
-        A.values, A.pattern, k, eps, compute_eig_vecs, cp_config, nvmath_config
-    )
-
-    return eig_vals, eig_vecs
-
-
-def _cupy_eigsh_batch(
-    A_batched: Float[SparseDecoupledTensor, "r c"],
-    k: int,
-    eps: float | int,
-    compute_eig_vecs: bool,
-    cp_config_batched: CuPyEigshConfig,
-    nvmath_config: DirectSolverConfig,
-) -> tuple[Float[Tensor, "b k"], Float[Tensor, "c k"]]:
-    A_list = A_batched.unpack_block_diag()
-
-    cp_config_list = cp_config_batched.expand(n=len(A_list))
-
-    eig_val_list = []
-    eig_vec_list = []
-    for A, cp_config in zip(A_list, cp_config_list):
-        eig_val, eig_vec = _cupy_eigsh_no_batch(
-            A, k, eps, compute_eig_vecs, cp_config, nvmath_config
-        )
-        eig_val_list.append(eig_val)
-        eig_vec_list.append(eig_vec)
-
-    eig_vals = torch.vstack(eig_val_list)
-
-    if eig_vec_list[0] is None:
-        eig_vecs = None
-    else:
-        eig_vecs = torch.vstack(eig_vec_list)
-
-    return eig_vals, eig_vecs
-
-
-# TODO: relax nvmath requirement if not in shift-invert mode
-def cupy_eigsh(
-    A: Float[SparseDecoupledTensor, "r c"],
-    block_diag_batch: bool = False,
-    k: int = 6,
-    eps: float | int = 1e-6,
-    return_eigenvectors: bool = True,
-    cp_config: CuPyEigshConfig | None = None,
-    nvmath_config: DirectSolverConfig | None = None,
-) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "c k"] | None]:
-    """
-    Sparse eigensolver for symmetric square matrices using CuPy.
-
-    This function provides a differentiable wrapper for the GPU-based
-    `cupyx.scipy.sparse.linalg.eigsh()` method.
-
-    The API for `eigsh()` is almost reproduced one-to-one, with the following
-    exceptions:
-
-    * The arguments `which`, `v0`, `ncv`, `maxiter`, and `tol`, are collected in
-      a `CuPyEigshConfig` dataclass object, whilc the rest of the arguments are
-      exposed as direct arguments to this function.
-    * The `A` matrix must be a `SparseDecoupledTensor` object and will be converted to
-      CuPy CSR matrix. The `v0` argument can be a torch tensor, but will be converted
-      to a cupy array and copied. The use of CuPy `LinearOperator` objects for `A`
-      is not supported.
-    * The shift-invert mode requires that the sparse CSR index tensors of `A` be
-      downcast to int32 due to underlying sparse solver requirement. The standard
-      mode can support both int32 and int64 index dtypes, but will automatically
-      downcast to int32 if possible.
-    * The `eps` argument is used for Lorentzian broadening/regularization in the
-      gradient calculation to prevent gradient explosion when the eigenvalues are
-      (near) degenerate.
-
-    Note that the CuPy `eigsh()` and SciPy `eigsh()` differ in some major aspects.
-
-    * The CuPy `eigsh()` does not support generalized eigenvalue problems.
-    * The CuPy `eigsh()` does not natively support the shift-invert mode. Here,
-      the shift-invert mode is implemented by constructing a CuPy `LinearOperator`
-      object for the L = inv(A - σI) matrix; computing the matrix-vector multiplication
-      L@x = b is then equivalent to solving a sparse linear system with matrix
-      A - σI and vector x. This approach corresonds to the `mode='normal'` option
-      in SciPy `eigsh()`. Currently, the sparse solver is implemented using the
-      `DirectSolver()` class of `nvmath-python`; the behavior of this solver can
-      be changed via the `nvmath_config` argument.
-
-
-    Note on performance:
-
-    * If `A` requires gradient tracking, eigenvectors will be computed; in this
-      case, if `return_eigenvectors=False`, the computed eigenvectors are not
-      returned.
-    * The autograd through eigenvectors do not account for contributions from the
-      unresolved eigenvectors.
-    * The `eigsh()` function does not natively support batching. if
-      `block_diag_batch` is True, the `A` `SparseDecoupledTensor` will be split into
-      individual sparse matrices and solved sequentially. The resulting eigenvalue
-      tensor will contain a leading batch dimension, but the resulting eigenvector
-      tensor will respect the original concatenated/packed format. This requires
-      that `A` has a valid `BlockDiagConfig` for unpacking the block diagonal
-      batch structure.
-    """
-    if not (_HAS_CUPY and _HAS_NVMATH):
-        raise ImportError("cupy and nvmath-python backends required.")
-
-    from ...solvers import DirectSolverConfig
-
-    # Eigenvectors are required for backward().
-    compute_eig_vecs = return_eigenvectors
-    if A.requires_grad:
-        compute_eig_vecs = True
-
-    if cp_config is None:
-        cp_config = CuPyEigshConfig()
-    if nvmath_config is None:
-        nvmath_config = DirectSolverConfig()
-
-    if block_diag_batch:
-        eig_vals, eig_vecs = _cupy_eigsh_batch(
-            A, k, eps, compute_eig_vecs, cp_config, nvmath_config
-        )
-    else:
-        eig_vals, eig_vecs = _cupy_eigsh_no_batch(
-            A, k, eps, compute_eig_vecs, cp_config, nvmath_config
-        )
-
-    if return_eigenvectors:
-        return eig_vals, eig_vecs
-    else:
-        return eig_vals
+    def cupy_eigsh(*args, **kwargs):
+        raise ImportError("CuPy backend required.")

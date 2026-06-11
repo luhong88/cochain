@@ -1,20 +1,37 @@
+from __future__ import annotations
+
 __all__ = ["DirectSolverConfig"]
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import nvmath.sparse.advanced as nvmath_sp
 import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ....decoupled_tensor import SparsityPattern
 
-sp_literal_to_matrix_type = {
-    "general": nvmath_sp.DirectSolverMatrixType.GENERAL,
-    "symmetric": nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
-    "spd": nvmath_sp.DirectSolverMatrixType.SPD,
-}
+try:
+    import nvmath.sparse.advanced as nvmath_sp
+
+    _HAS_NVMATH = True
+
+except ImportError:
+    _HAS_NVMATH = False
+
+if TYPE_CHECKING:
+    import nvmath.sparse.advanced as nvmath_sp
+
+
+if _HAS_NVMATH:
+    sp_literal_to_matrix_type = {
+        "general": nvmath_sp.DirectSolverMatrixType.GENERAL,
+        "symmetric": nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
+        "spd": nvmath_sp.DirectSolverMatrixType.SPD,
+    }
+
+else:
+    sp_literal_to_matrix_type = {}
 
 
 @dataclass
@@ -55,6 +72,10 @@ class DirectSolverConfig:
     plan_kwargs: dict[str, Any] = field(default_factory=dict)
     factorization_kwargs: dict[str, Any] = field(default_factory=dict)
     solution_kwargs: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not _HAS_NVMATH:
+            raise ImportError("nvmath-python backend required.")
 
 
 def nvmath_adjoint_method(

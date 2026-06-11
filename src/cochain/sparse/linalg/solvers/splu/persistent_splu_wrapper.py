@@ -32,86 +32,6 @@ if TYPE_CHECKING:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
 
-class _PersistentCuPySuperLUAutogradFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(
-        a_val: Float[Tensor, " nz"],
-        a_pattern: Integer[SparsityPattern, "r c"],
-        b: Float[Tensor, " r *ch"],
-        solver: cp_sp_linalg.SuperLU,
-        trans: Literal["N", "T"],
-    ) -> Float[Tensor, " c *ch"]:
-        # The a_val and a_pattern are still required for gradient tracking
-        # purposes, even though they are not used in the forward pass.
-
-        # Force CuPy to use the current Pytorch stream.
-        stream = torch.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            b_cp = cp.from_dlpack(b.detach().contiguous())
-            x = torch.from_dlpack(solver.solve(b_cp, trans=trans))
-
-        return x
-
-    @staticmethod
-    def setup_context(ctx, inputs, output):
-        a_val, a_pattern, b, solver, trans = inputs
-
-        ctx.save_for_backward(output)
-        ctx.solver = solver
-        ctx.a_pattern = a_pattern
-        ctx.trans = trans
-
-    @staticmethod
-    @once_differentiable
-    def backward(
-        ctx, dLdx: Float[Tensor, " c *ch"]
-    ) -> tuple[
-        Float[Tensor, " nz"] | None,
-        None,
-        Float[Tensor, " r *ch"] | None,
-        None,
-        None,
-    ]:
-        needs_grad_a_val = ctx.needs_input_grad[0]
-        needs_grad_b = ctx.needs_input_grad[2]
-
-        if not (needs_grad_a_val or needs_grad_b):
-            return (None,) * 5
-
-        (x,) = ctx.saved_tensors
-        a_pattern: SparsityPattern = ctx.a_pattern
-        solver: cp_sp_linalg.SuperLU = ctx.solver
-
-        stream = torch.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            # If the forward pass is "N", then the backward requires "T" and
-            # vice versa.
-            lambda_cp: Float[Tensor, " r"] = solver.solve(
-                cp.from_dlpack(dLdx.detach().contiguous()),
-                trans="T" if ctx.trans == "N" else "N",
-            )
-            lambda_ = torch.from_dlpack(lambda_cp)
-
-        if needs_grad_b and not needs_grad_a_val:
-            return (None, None, lambda_, None, None)
-
-        # dLdA will have the same sparsity pattern as A.
-        i, j = a_pattern.idx_coo.unbind(0)
-        if lambda_.dim() > 1:
-            # If there is a channel dimension, sum over it.
-            # dLdA_ij = Σ_c[λ_ic * x_jc]
-            dLda_val = torch.sum(-lambda_[i] * x[j], dim=-1)
-        else:
-            # dLdA_ij = λ_i*x_j
-            dLda_val = -lambda_[i] * x[j]
-
-        if needs_grad_a_val and not needs_grad_b:
-            return (dLda_val, None, None, None, None)
-
-        if needs_grad_a_val and needs_grad_b:
-            return (dLda_val, None, lambda_, None, None)
-
-
 class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
@@ -187,6 +107,94 @@ class _PersistentSciPySuperLUAutogradFunction(torch.autograd.Function):
 
         if needs_grad_a_val and needs_grad_b:
             return (dLda_val, None, lambda_, None, None)
+
+
+if _HAS_CUPY:
+
+    class _PersistentCuPySuperLUAutogradFunction(torch.autograd.Function):
+        @staticmethod
+        def forward(
+            a_val: Float[Tensor, " nz"],
+            a_pattern: Integer[SparsityPattern, "r c"],
+            b: Float[Tensor, " r *ch"],
+            solver: cp_sp_linalg.SuperLU,
+            trans: Literal["N", "T"],
+        ) -> Float[Tensor, " c *ch"]:
+            # The a_val and a_pattern are still required for gradient tracking
+            # purposes, even though they are not used in the forward pass.
+
+            # Force CuPy to use the current Pytorch stream.
+            stream = torch.cuda.current_stream()
+            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+                b_cp = cp.from_dlpack(b.detach().contiguous())
+                x = torch.from_dlpack(solver.solve(b_cp, trans=trans))
+
+            return x
+
+        @staticmethod
+        def setup_context(ctx, inputs, output):
+            a_val, a_pattern, b, solver, trans = inputs
+
+            ctx.save_for_backward(output)
+            ctx.solver = solver
+            ctx.a_pattern = a_pattern
+            ctx.trans = trans
+
+        @staticmethod
+        @once_differentiable
+        def backward(
+            ctx, dLdx: Float[Tensor, " c *ch"]
+        ) -> tuple[
+            Float[Tensor, " nz"] | None,
+            None,
+            Float[Tensor, " r *ch"] | None,
+            None,
+            None,
+        ]:
+            needs_grad_a_val = ctx.needs_input_grad[0]
+            needs_grad_b = ctx.needs_input_grad[2]
+
+            if not (needs_grad_a_val or needs_grad_b):
+                return (None,) * 5
+
+            (x,) = ctx.saved_tensors
+            a_pattern: SparsityPattern = ctx.a_pattern
+            solver: cp_sp_linalg.SuperLU = ctx.solver
+
+            stream = torch.cuda.current_stream()
+            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+                # If the forward pass is "N", then the backward requires "T" and
+                # vice versa.
+                lambda_cp: Float[Tensor, " r"] = solver.solve(
+                    cp.from_dlpack(dLdx.detach().contiguous()),
+                    trans="T" if ctx.trans == "N" else "N",
+                )
+                lambda_ = torch.from_dlpack(lambda_cp)
+
+            if needs_grad_b and not needs_grad_a_val:
+                return (None, None, lambda_, None, None)
+
+            # dLdA will have the same sparsity pattern as A.
+            i, j = a_pattern.idx_coo.unbind(0)
+            if lambda_.dim() > 1:
+                # If there is a channel dimension, sum over it.
+                # dLdA_ij = Σ_c[λ_ic * x_jc]
+                dLda_val = torch.sum(-lambda_[i] * x[j], dim=-1)
+            else:
+                # dLdA_ij = λ_i*x_j
+                dLda_val = -lambda_[i] * x[j]
+
+            if needs_grad_a_val and not needs_grad_b:
+                return (dLda_val, None, None, None, None)
+
+            if needs_grad_a_val and needs_grad_b:
+                return (dLda_val, None, lambda_, None, None)
+
+else:
+
+    class _PersistentCuPySuperLUAutogradFunction:
+        def apply(*args, **kwargs):
+            raise ImportError("CuPy backend required.")
 
 
 class SuperLU(InvSparseOperator):

@@ -1,74 +1,109 @@
-import cupy as cp
-import nvmath.sparse.advanced as nvmath_sp
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ...solvers.nvmath.nvmath_wrapper import (
-    DirectSolverConfig,
-    sp_literal_to_matrix_type,
-)
+try:
+    import nvmath.sparse.advanced as nvmath_sp
+
+    from ...solvers.nvmath.nvmath_wrapper import (
+        DirectSolverConfig,
+        sp_literal_to_matrix_type,
+    )
+
+    _HAS_NVMATH = True
+
+except ImportError:
+    _HAS_NVMATH = False
+
+# CuPy is only used here for type hinting.
+try:
+    import cupy as cp
+except ImportError:
+    pass
+
+if TYPE_CHECKING:
+    import cupy as cp
+    import nvmath.sparse.advanced as nvmath_sp
+
+    from ...solvers.nvmath.nvmath_wrapper import (
+        DirectSolverConfig,
+        sp_literal_to_matrix_type,
+    )
 
 
-class BaseNVMathInvSymSpOp:
-    def __init__(
-        self,
-        a: Float[Tensor, " m m"],
-        b: Float[Tensor, "m n"],
-        config: DirectSolverConfig,
-        stream: torch.Stream | cp.cuda.Stream,
-    ):
-        self.dtype = a.dtype
-        self.shape = a.shape
+if _HAS_NVMATH:
 
-        # Prepare nvmath DirectSolver.
-        if config.options is None:
-            config.options = nvmath_sp.DirectSolverOptions(
-                sparse_system_type=sp_literal_to_matrix_type["symmetric"]
-            )
-        else:
-            config.options.sparse_system_type = sp_literal_to_matrix_type["symmetric"]
-
-        # Do not give DirectSolver constructor the current stream to prevent
-        # possible stream mismatch in subsequent solver calls; instead, pass the
-        # torch/cupy stream to individual methods to ensure sync.
-        self.solver = nvmath_sp.DirectSolver(
-            a, b, options=config.options, execution=config.execution
-        )
-
-        # force blocking operation to make it memory-safe to potentially call
-        # free() immediately after solve().
-        self.solver.options.blocking = True
-
-        # Amortize planning and factorization costs upfront in __init__()
-        for k, v in config.plan_kwargs.items():
-            setattr(self.solver.plan_config, k, v)
-        self.solver.plan(stream=stream)
-
-        for k, v in config.factorization_kwargs.items():
-            setattr(self.solver.factorization_config, k, v)
-        self.solver.factorize(stream=stream)
-
-        for k, v in config.solution_kwargs.items():
-            setattr(self.solver.solution_config, k, v)
-
-    def __del__(self):
-        # DirectSolver needs an explicit free() step to free up memory/resources.
-        if (
-            hasattr(self, "solver")
-            and (self.solver is not None)
-            and getattr(self.solver, "valid_state", False)
+    class BaseNVMathInvSymSpOp:
+        def __init__(
+            self,
+            a: Float[Tensor, " m m"],
+            b: Float[Tensor, "m n"],
+            config: DirectSolverConfig,
+            stream: torch.Stream | cp.cuda.Stream,
         ):
-            # Force device sync before gc.
-            try:
-                import torch
+            self.dtype = a.dtype
+            self.shape = a.shape
 
-                if torch.cuda.is_initialized():
-                    torch.cuda.synchronize(self.device)
+            # Prepare nvmath DirectSolver.
+            if config.options is None:
+                config.options = nvmath_sp.DirectSolverOptions(
+                    sparse_system_type=sp_literal_to_matrix_type["symmetric"]
+                )
+            else:
+                config.options.sparse_system_type = sp_literal_to_matrix_type[
+                    "symmetric"
+                ]
 
-            except Exception:
-                pass
+            # Do not give DirectSolver constructor the current stream to prevent
+            # possible stream mismatch in subsequent solver calls; instead, pass the
+            # torch/cupy stream to individual methods to ensure sync.
+            self.solver = nvmath_sp.DirectSolver(
+                a, b, options=config.options, execution=config.execution
+            )
 
-            if hasattr(self.solver, "free"):
-                self.solver.free()
-                self.solver = None
+            # force blocking operation to make it memory-safe to potentially call
+            # free() immediately after solve().
+            self.solver.options.blocking = True
+
+            # Amortize planning and factorization costs upfront in __init__()
+            for k, v in config.plan_kwargs.items():
+                setattr(self.solver.plan_config, k, v)
+            self.solver.plan(stream=stream)
+
+            for k, v in config.factorization_kwargs.items():
+                setattr(self.solver.factorization_config, k, v)
+            self.solver.factorize(stream=stream)
+
+            for k, v in config.solution_kwargs.items():
+                setattr(self.solver.solution_config, k, v)
+
+        def __del__(self):
+            # DirectSolver needs an explicit free() step to free up memory/resources.
+            if (
+                hasattr(self, "solver")
+                and (self.solver is not None)
+                and getattr(self.solver, "valid_state", False)
+            ):
+                # Force device sync before gc.
+                try:
+                    import torch
+
+                    if torch.cuda.is_initialized():
+                        torch.cuda.synchronize(self.device)
+
+                except Exception:
+                    pass
+
+                if hasattr(self.solver, "free"):
+                    self.solver.free()
+                    self.solver = None
+
+else:
+
+    class BaseNVMathInvSymSpOp:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("nvmath-python backend required.")

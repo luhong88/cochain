@@ -31,92 +31,6 @@ if TYPE_CHECKING:
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
 
-class _CuPySuperLUAutogradFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(
-        a_val: Float[Tensor, " nz"],
-        a_pattern: Integer[SparsityPattern, "r c"],
-        b: Float[Tensor, " r *ch"],
-        splu_kwargs: dict[str, Any],
-    ) -> tuple[Float[Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
-        # Force CuPy to use the current Pytorch stream.
-        stream = torch.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            A_cp: Float[cp_sp.csc_matrix, "r c"] = sdt_to_cupy_csc(a_val, a_pattern)
-            b_cp = cp.from_dlpack(b.detach().contiguous())
-
-            solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
-            x = torch.from_dlpack(solver.solve(b_cp, trans="N"))
-
-        return x, solver
-
-    @staticmethod
-    def setup_context(ctx, inputs, output):
-        a_val, a_pattern, b, splu_kwargs = inputs
-
-        x, solver = output
-
-        ctx.save_for_backward(x)
-        ctx.solver = solver
-        ctx.a_pattern = a_pattern
-
-    @staticmethod
-    @once_differentiable
-    def backward(
-        ctx, dLdx: Float[Tensor, " c *ch"], _
-    ) -> tuple[
-        Float[Tensor, " nz"] | None,
-        None,
-        Float[Tensor, " r *ch"] | None,
-        None,
-    ]:
-        needs_grad_A_val = ctx.needs_input_grad[0]
-        needs_grad_b = ctx.needs_input_grad[2]
-
-        if not (needs_grad_A_val or needs_grad_b):
-            return (None,) * 4
-
-        (x,) = ctx.saved_tensors
-        a_pattern: SparsityPattern = ctx.a_pattern
-
-        if ctx.solver is None:
-            raise RuntimeError(
-                "Solver was released. Calling backward() twice with retain_graph=True "
-                + "is currently not supported."
-            )
-        else:
-            solver: cp_sp_linalg.SuperLU = ctx.solver
-
-        stream = torch.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            lambda_cp: Float[Tensor, " r"] = solver.solve(
-                cp.from_dlpack(dLdx.detach().contiguous()), trans="T"
-            )
-            lambda_ = torch.from_dlpack(lambda_cp)
-
-        # Free up solver memory usage.
-        ctx.solver = None
-
-        if needs_grad_b and not needs_grad_A_val:
-            return (None, None, lambda_, None)
-
-        # dLdA will have the same sparsity pattern as A.
-        i, j = a_pattern.idx_coo.unbind(0)
-        if lambda_.dim() > 1:
-            # If there is a channel dimension, sum over it.
-            # dLdA_ij = Σ_c[λ_ic * x_jc]
-            dLdA_val = torch.sum(-lambda_[i] * x[j], dim=-1)
-        else:
-            # dLdA_ij = λ_i*x_j
-            dLdA_val = -lambda_[i] * x[j]
-
-        if needs_grad_A_val and not needs_grad_b:
-            return (dLdA_val, None, None, None)
-
-        if needs_grad_A_val and needs_grad_b:
-            return (dLdA_val, None, lambda_, None)
-
-
 class _SciPySuperLUAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
@@ -200,6 +114,100 @@ class _SciPySuperLUAutogradFunction(torch.autograd.Function):
 
         if needs_grad_A_val and needs_grad_b:
             return (dLdA_val, None, lambda_, None)
+
+
+if _HAS_CUPY:
+
+    class _CuPySuperLUAutogradFunction(torch.autograd.Function):
+        @staticmethod
+        def forward(
+            a_val: Float[Tensor, " nz"],
+            a_pattern: Integer[SparsityPattern, "r c"],
+            b: Float[Tensor, " r *ch"],
+            splu_kwargs: dict[str, Any],
+        ) -> tuple[Float[Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
+            # Force CuPy to use the current Pytorch stream.
+            stream = torch.cuda.current_stream()
+            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+                A_cp: Float[cp_sp.csc_matrix, "r c"] = sdt_to_cupy_csc(a_val, a_pattern)
+                b_cp = cp.from_dlpack(b.detach().contiguous())
+
+                solver = cp_sp_linalg.splu(A_cp, **splu_kwargs)
+                x = torch.from_dlpack(solver.solve(b_cp, trans="N"))
+
+            return x, solver
+
+        @staticmethod
+        def setup_context(ctx, inputs, output):
+            a_val, a_pattern, b, splu_kwargs = inputs
+
+            x, solver = output
+
+            ctx.save_for_backward(x)
+            ctx.solver = solver
+            ctx.a_pattern = a_pattern
+
+        @staticmethod
+        @once_differentiable
+        def backward(
+            ctx, dLdx: Float[Tensor, " c *ch"], _
+        ) -> tuple[
+            Float[Tensor, " nz"] | None,
+            None,
+            Float[Tensor, " r *ch"] | None,
+            None,
+        ]:
+            needs_grad_A_val = ctx.needs_input_grad[0]
+            needs_grad_b = ctx.needs_input_grad[2]
+
+            if not (needs_grad_A_val or needs_grad_b):
+                return (None,) * 4
+
+            (x,) = ctx.saved_tensors
+            a_pattern: SparsityPattern = ctx.a_pattern
+
+            if ctx.solver is None:
+                raise RuntimeError(
+                    "Solver was released. Calling backward() twice with retain_graph=True "
+                    + "is currently not supported."
+                )
+            else:
+                solver: cp_sp_linalg.SuperLU = ctx.solver
+
+            stream = torch.cuda.current_stream()
+            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+                lambda_cp: Float[Tensor, " r"] = solver.solve(
+                    cp.from_dlpack(dLdx.detach().contiguous()), trans="T"
+                )
+                lambda_ = torch.from_dlpack(lambda_cp)
+
+            # Free up solver memory usage.
+            ctx.solver = None
+
+            if needs_grad_b and not needs_grad_A_val:
+                return (None, None, lambda_, None)
+
+            # dLdA will have the same sparsity pattern as A.
+            i, j = a_pattern.idx_coo.unbind(0)
+            if lambda_.dim() > 1:
+                # If there is a channel dimension, sum over it.
+                # dLdA_ij = Σ_c[λ_ic * x_jc]
+                dLdA_val = torch.sum(-lambda_[i] * x[j], dim=-1)
+            else:
+                # dLdA_ij = λ_i*x_j
+                dLdA_val = -lambda_[i] * x[j]
+
+            if needs_grad_A_val and not needs_grad_b:
+                return (dLdA_val, None, None, None)
+
+            if needs_grad_A_val and needs_grad_b:
+                return (dLdA_val, None, lambda_, None)
+
+else:
+
+    class _CuPySuperLUAutogradFunction:
+        def apply(*args, **kwargs):
+            raise ImportError("CuPy backend required.")
 
 
 def splu(

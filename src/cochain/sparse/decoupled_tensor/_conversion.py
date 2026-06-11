@@ -84,3 +84,11 @@ if _HAS_CUPY:
             shape=tuple(pattern.shape),
         )
         return sdt_cupy
+
+else:
+
+    def sdt_to_cupy_csr(*args, **kwargs):
+        raise ImportError("CuPy backend required.")
+
+    def sdt_to_cupy_csc(*args, **kwargs):
+        raise ImportError("Cupy backend required.")

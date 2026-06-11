@@ -8,20 +8,18 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ...solvers import DirectSolverConfig
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
+from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 from ._lobpcg_routines import lobpcg_forward
 
 try:
-    import nvmath.sparse.advanced as nvmath_sp
+    import nvmath.sparse.advanced
 
     _HAS_NVMATH = True
 
 except ImportError:
     _HAS_NVMATH = False
-
-if TYPE_CHECKING:
-    from ...solvers import DirectSolverConfig
-    from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 
 
 @dataclass
@@ -203,7 +201,6 @@ def _lobpcg_batch(
     return eig_vals, eig_vecs
 
 
-# TODO: relax nvmath import if not doing shift invert mode
 def lobpcg(
     A: Float[SparseDecoupledTensor, "m m"],
     M: Float[SparseDecoupledTensor, "m m"] | None = None,
@@ -270,8 +267,12 @@ def lobpcg(
     * In all other cases, both `int32` and `int64` are supported, but `int32` is
       still preferred whenever possible.
     """
-    if not _HAS_NVMATH:
-        raise ImportError("nvmath-python backends required.")
+    if (
+        (lobpcg_config is not None)
+        and (lobpcg_config.sigma is not None)
+        and (not _HAS_NVMATH)
+    ):
+        raise ImportError("nvmath-python backend required.")
 
     from ...solvers import DirectSolverConfig
     from ._lobpcg_preconditioners import LOBPCGPrecondConfig
