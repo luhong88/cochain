@@ -10,6 +10,9 @@ import torch
 from jaxtyping import Int64, Integer
 from torch import Tensor
 
+from ...utils.parsing import to_np
+from ...utils.stream import cupy_in_torch_stream
+
 try:
     import cupy as cp
     import cupyx.scipy.sparse as cp_sp
@@ -18,9 +21,6 @@ try:
 
 except ImportError:
     _HAS_CUPY = False
-
-
-from ...utils.parsing import to_np
 
 
 @dataclass
@@ -663,8 +663,7 @@ def discover_matmul_pattern(
         a_val_dummy = torch.ones_like(a_idx_col, dtype=torch.float32)
         b_val_dummy = torch.ones_like(b_idx_col, dtype=torch.float32)
 
-        stream = torch.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+        with cupy_in_torch_stream():
             a_csr_cp = cp_sp.csr_matrix(
                 (
                     cp.from_dlpack(a_val_dummy),

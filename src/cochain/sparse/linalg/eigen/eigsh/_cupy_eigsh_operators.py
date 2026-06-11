@@ -4,6 +4,7 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
+from .....utils.stream import cupy_in_torch_stream
 from ....decoupled_tensor import SparsityPattern
 from ....decoupled_tensor._conversion import sdt_to_cupy_csr
 from ...solvers import DirectSolverConfig
@@ -55,10 +56,8 @@ if _HAS_NVMATH and _HAS_CUPY:
                     "cast to int32 dtype."
                 )
 
-            t_stream = torch.cuda.current_stream()
-
             # Prepare Cupy arrays.
-            with cp.cuda.ExternalStream(t_stream.cuda_stream, t_stream.device_index):
+            with cupy_in_torch_stream():
                 A_cp = sdt_to_cupy_csr(a_val, a_pattern)
 
                 diag_cp = sigma * cp_sp.identity(
@@ -87,7 +86,7 @@ if _HAS_NVMATH and _HAS_CUPY:
             can also be written as x = (A - σI)@b, or solve(A - σI, x).
             """
             cp_stream = cp.cuda.get_current_stream()
-            Device(cp_stream.device_id).set_current()
+            Device(x.device.id).set_current()
 
             self.solver.reset_operands(b=x, stream=cp_stream)
             b = self.solver.solve(stream=cp_stream)

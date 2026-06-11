@@ -12,6 +12,7 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 
 from .....utils.parsing import to_np
+from .....utils.stream import cupy_in_torch_stream
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ....decoupled_tensor._conversion import sdt_to_cupy_csc, sdt_to_scipy_csc
 
@@ -122,8 +123,7 @@ if _HAS_CUPY:
             splu_kwargs: dict[str, Any],
         ) -> tuple[Float[Tensor, " c *ch"], cp_sp_linalg.SuperLU]:
             # Force CuPy to use the current Pytorch stream.
-            stream = torch.cuda.current_stream()
-            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+            with cupy_in_torch_stream():
                 A_cp: Float[cp_sp.csc_matrix, "r c"] = sdt_to_cupy_csc(a_val, a_pattern)
                 b_cp = cp.from_dlpack(b.detach().contiguous())
 
@@ -169,8 +169,7 @@ if _HAS_CUPY:
             else:
                 solver: cp_sp_linalg.SuperLU = ctx.solver
 
-            stream = torch.cuda.current_stream()
-            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+            with cupy_in_torch_stream():
                 lambda_cp: Float[Tensor, " r"] = solver.solve(
                     cp.from_dlpack(dLdx.detach().contiguous()), trans="T"
                 )

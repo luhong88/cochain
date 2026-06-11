@@ -12,6 +12,7 @@ from torch import Tensor
 from torch.autograd.function import once_differentiable
 
 from .....utils.parsing import to_np
+from .....utils.stream import cupy_in_torch_stream
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ....decoupled_tensor._conversion import sdt_to_cupy_csc, sdt_to_scipy_csc
 from .._inv_sparse_operator import InvSparseOperator
@@ -119,8 +120,7 @@ if _HAS_CUPY:
             # purposes, even though they are not used in the forward pass.
 
             # Force CuPy to use the current Pytorch stream.
-            stream = torch.cuda.current_stream()
-            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+            with cupy_in_torch_stream():
                 b_cp = cp.from_dlpack(b.detach().contiguous())
                 x = torch.from_dlpack(solver.solve(b_cp, trans=trans))
 
@@ -156,8 +156,7 @@ if _HAS_CUPY:
             a_pattern: SparsityPattern = ctx.a_pattern
             solver: cp_sp_linalg.SuperLU = ctx.solver
 
-            stream = torch.cuda.current_stream()
-            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+            with cupy_in_torch_stream():
                 # If the forward pass is "N", then the backward requires "T" and
                 # vice versa.
                 lambda_cp: Float[Tensor, " r"] = solver.solve(
@@ -258,8 +257,7 @@ class SuperLU(InvSparseOperator):
         match self.backend:
             case "cupy":
                 # Force CuPy to use the current Pytorch stream.
-                stream = torch.cuda.current_stream()
-                with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+                with cupy_in_torch_stream():
                     A_cp: Float[cp_sp.csc_matrix, "r c"] = sdt_to_cupy_csc(
                         self.a_val, self.a_pattern
                     )

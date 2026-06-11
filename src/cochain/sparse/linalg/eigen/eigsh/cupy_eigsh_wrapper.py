@@ -8,6 +8,7 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
+from .....utils.stream import cupy_in_torch_stream
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ....decoupled_tensor._conversion import sdt_to_cupy_csr
 from ...solvers import DirectSolverConfig
@@ -90,8 +91,7 @@ if _HAS_CUPY:
             nvmath_config: DirectSolverConfig,
         ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"] | None]:
             # Force CuPy to use the current Pytorch stream.
-            stream = torch.cuda.current_stream()
-            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+            with cupy_in_torch_stream():
                 if cp_config.sigma is None:
                     # cupy supports CSR matrices with int64 indices.
                     A_cp = sdt_to_cupy_csr(a_val, a_pattern)

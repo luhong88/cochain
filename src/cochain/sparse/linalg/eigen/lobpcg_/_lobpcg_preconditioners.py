@@ -6,6 +6,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from .....utils.stream import cupy_in_torch_stream
 from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ...solvers import DirectSolverConfig
 from ..base._inv_operator import BaseNVMathInvSymSpOp
@@ -132,8 +133,7 @@ if _HAS_CUPY:
 
                 op = op_sdt.to_sparse_csc()
 
-            stream = torch.cuda.current_stream()
-            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+            with cupy_in_torch_stream():
                 op_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
                     (
                         cp.from_dlpack(op.values()),
@@ -149,8 +149,7 @@ if _HAS_CUPY:
                 self.solver = cp_sp_linalg.spilu(A=op_cp, **spilu_config)
 
         def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
-            stream = torch.cuda.current_stream()
-            with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+            with cupy_in_torch_stream():
                 res_cp = cp.from_dlpack(res.detach().contiguous())
                 sol = torch.from_dlpack(self.solver.solve(res_cp, trans="N"))
 
