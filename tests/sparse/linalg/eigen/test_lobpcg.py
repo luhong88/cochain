@@ -14,6 +14,9 @@ from cochain.sparse.linalg.eigen import (
 # TODO: test handling of degenerate eigenvalues
 # TODO: test handling of batching
 
+# TODO: clear up cupy/nvmath dependencies
+pytest.importorskip("nvmath")
+
 
 def dense_gep(
     A: Float[Tensor, "m m"], M: Float[Tensor, "m m"]

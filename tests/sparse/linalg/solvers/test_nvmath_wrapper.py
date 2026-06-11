@@ -4,6 +4,8 @@ import torch
 from cochain.sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from cochain.sparse.linalg.solvers import NVMathDirectSolver, nvmath_direct_solver
 
+pytest.importorskip("nvmath")
+
 
 @pytest.mark.gpu_only
 def test_direct_solver_forward(a, device):

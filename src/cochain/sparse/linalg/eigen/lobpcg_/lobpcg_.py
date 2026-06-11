@@ -201,6 +201,7 @@ def _lobpcg_batch(
     return eig_vals, eig_vecs
 
 
+# TODO: clear up nvmath/cupy dependencies
 def lobpcg(
     A: Float[SparseDecoupledTensor, "m m"],
     M: Float[SparseDecoupledTensor, "m m"] | None = None,

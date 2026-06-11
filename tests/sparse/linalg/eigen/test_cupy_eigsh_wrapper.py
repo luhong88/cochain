@@ -10,6 +10,8 @@ from cochain.sparse.linalg.eigen import (
     cupy_eigsh,
 )
 
+pytest.importorskip("cupy")
+
 # TODO: test handling of degenerate eigenvalues
 
 

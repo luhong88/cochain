@@ -8,7 +8,7 @@ itemize_backend = pytest.mark.parametrize(
     "backend",
     [
         pytest.param("scipy", marks=[]),
-        pytest.param("cupy", marks=[pytest.mark.gpu_only]),
+        pytest.param("cupy", marks=[pytest.mark.gpu_only, pytest.mark.requires_cupy]),
     ],
 )
 
