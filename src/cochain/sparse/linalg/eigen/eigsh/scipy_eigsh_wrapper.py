@@ -19,6 +19,32 @@ from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 
 @dataclass
 class SciPyEigshConfig:
+    """
+    A dataclass encapsulating SciPy `eigsh()` optional parameters.
+
+    Parameters
+    ----------
+    sigma
+        Whether to find eigenvalues near sigma using shift-invert mode.
+    which
+        Which $k$ eigenvalues and eigenvectors to find.
+    v0
+        Starting vectors for iteration. If the input matrix is batch-diagonal,
+        then `v0` should be a sequence of arrays, one for each batch element.
+    nvc
+        The number of Lanczos vectors generated.
+    maxiter
+        Maximum number of Arnoldi update iterations allowed.
+    tol
+        Relative accuracy for eigenvalues (stopping criterion).
+    mode
+        Specify strategy to use for shift-invert mode.
+
+    Notes
+    -----
+    The `Minv` and `OPinv` arguments to SciPy `eigsh()` are not supported.
+    """
+
     sigma: float | None = None
     which: Literal["LM", "SM", "LA", "SA", "BE"] = "LM"
     v0: (
@@ -46,6 +72,20 @@ class SciPyEigshConfig:
                 self.v0 = v0_list
 
     def expand(self, n: int) -> list[SciPyEigshConfig]:
+        """
+        Duplicate self for batched processing.
+
+        Parameters
+        ----------
+        n
+            How many times to duplicate self. If `v0` is a list of arrays, then
+            `n` must be equal to the length of `v0`.
+
+        Returns
+        -------
+            A list of `SciPyEigshConfig` duplicated from self. If `v0` is a list
+            of arrays, then each duplicate is assigned one element from `v0`.
+        """
         config_list = []
         if isinstance(self.v0, list):
             config_list.append(replace(self, v0=v0) for v0 in self.v0)
@@ -129,7 +169,7 @@ class SciPyEigshStandardAutogradFunction(torch.autograd.Function):
         return dLdA_val, None, None, None, None, None
 
 
-class _SciPyEigshGEPAutogradFunction(torch.autograd.Function):
+class SciPyEigshGEPAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " A_nz"],
@@ -221,12 +261,13 @@ def _scipy_eigsh_no_batch(
     compute_eig_vecs: bool,
     config: SciPyEigshConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
+    """Dispatch the autograd functions whn there is no diagonal batching."""
     if m is None:
         eig_vals, eig_vecs = SciPyEigshStandardAutogradFunction.apply(
             a.values, a.pattern, k, eps, compute_eig_vecs, config
         )
     else:
-        eig_vals, eig_vecs = _SciPyEigshGEPAutogradFunction.apply(
+        eig_vals, eig_vecs = SciPyEigshGEPAutogradFunction.apply(
             a.values, a.pattern, m.values, m.pattern, k, eps, compute_eig_vecs, config
         )
 
@@ -241,6 +282,7 @@ def _scipy_eigsh_batch(
     compute_eig_vecs: bool,
     config_batched: SciPyEigshConfig,
 ) -> tuple[Float[Tensor, "b k"], Float[Tensor, "c k"]]:
+    """Dispatch the autograd functions when there is diagonal batching."""
     # Unpack the A, M (if not None), and v0 (if not None) for looping
     a_list = a_batched.unpack_block_diag()
     if m_batched is None:
@@ -278,51 +320,65 @@ def scipy_eigsh(
     eps: float | int = 1e-6,
     return_eigenvectors: bool = True,
     config: SciPyEigshConfig | None = None,
-) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "c k"] | None]:
+) -> Float[Tensor, "*b k"] | tuple[Float[Tensor, "*b k"], Float[Tensor, "coord k"]]:
     """
     Sparse eigensolver for symmetric square matrices using SciPy.
 
     This function provides a differentiable wrapper for the CPU-based
     `scipy.sparse.linalg.eigsh()` method.
 
-    The API for `eigsh()` is almost reproduced one-to-one, with the following
-    exceptions:
+    Parameters
+    ----------
+    a : [r, c]
+        A real symmetric square sparse matrix.
+    m : [r, c]
+        A real symmetric square sparse matrix that induces an inner product
+        on the column space of `a`. If `m` is provided, solve a generalized
+        eigenvalue problem.
+    block_diag_batch
+        Whether the input `a` matrix (and `m` if not `None`) is block diagonal.
+        If `a` and `m` are block-diagonal, then they must both have valid and
+        matching `block_diag_config`, in which case each block/batch element
+        will be solved sequentially.
+    k
+        The number of eigenvalues/eigenvectors to find.
+    eps
+        The strength of Lorentzian broadening/regularization, which removes
+        singularities in backward gradient calculation when some of the
+        eigenvalues are (near) degenerate. Set to integer 0 to disable regularization.
+    return_eigenvectors
+        Whether to compute and return the eigenvectors in addition to the eigenvalues.
+        Note that, if `a` and/or `m` requires gradient tracking, the eigenvectors
+        will be computed regardless of this argument.
+    config
+        Additional optional arguments for `eigsh()`.
 
-    * The arguments `sigma`, `which`, `v0`, `ncv`, `maxiter`, `tol`, and `mode`
-      are collected in a `ScipyEigshConfig` dataclass object, whilc the rest of
-      the arguments are exposed as direct arguments to this function.
-    * The `A` and `M` matrices must be `SparseDecoupledTensor` objects and will be
-      converted to SciPy CSR/CSC arrays and copied to CPU. The `v0` argument
-      can be a torch tensor, but will be converted to a numpy array and copied
-      to CPU. The use of SciPy `LinearOperator` objects for `A` and `M` is not
-      supported.
-    * The `Minv` and `OPinv` arguments are not supported.
-    * The `eps` argument is used for Lorentzian broadening/regularization in the
-      gradient calculation to prevent gradient explosion when the eigenvalues are
-      (near) degenerate.
+    Returns
+    -------
+    eig_vals : [*b, k]
+        A tensor of `k` eigenvalues. If `block_diag_batch` is `True`, then the
+        tensor also has a leading batch dimension corresponding to the blocks
+        in the input `a` matrix.
+    eig_vecs : [coord, k]
+        A tensor of `k` M-orthonormal eigenvectors. If `block_diag_batch` is `False`,
+        then each column represents an eigenvector; if `block_diag_batch` is `True`,
+        then the eigenvectors for each block are stacked along the first dimension.
 
-    Note on performance:
+    Notes
+    -----
+    The autograd through eigenvectors do not account for contributions from the
+    unresolved eigenvectors.
 
-    * If either `A` or `M` requires gradient tracking, eigenvectors will be
-      computed; in this case, if `return_eigenvectors=False`, the computed
-      eigenvectors are not returned.
-    * The autograd through eigenvectors do not account for contributions from the
-      unresolved eigenvectors.
-    * The sparse CSR/CSC index tensors of `A` and `M` can be either in int32 or
-      int64 dtype, but will be automatically downcast to int32 if possible.
-    * The `eigsh()` function does not natively support batching. if
-      `block_diag_batch` is True, the `A` `SparseDecoupledTensor` (and `M` if not `None`)
-      will be split into individual sparse matrices and solved sequentially. The
-      resulting eigenvalue tensor will contain a leading batch dimension, but the
-      resulting eigenvector tensor will respect the original concatenated/packed
-      format. This requires that `A` (and `M` if not `None`) has a valid
-      `BlockDiagConfig` for unpacking the block diagonal batch structure.
+    The `a` and `m` matrices must be `SparseDecoupledTensor` objects and will be
+    converted to SciPy CSR/CSC arrays and copied to CPU. The sparse CSR/CSC index
+    tensors of `a` and `m` can be either in `int32` or `int64` dtype, but will be
+    automatically downcast to `int32` if possible. The use of SciPy `LinearOperator`
+    objects for `a` and `m` is not supported.
 
-    Note on shift-invert mode: for finding the lowest non-zero eigenvalues of a
-    positive semi-definite matrix, one can either use `which='SM'` or `which='LM'`
-    with a `sigma` close to zero. While the latter approach typically lead to
-    faster convergence, it has higher memory requirement due to the need to factorize
-    the matrix.
+    for finding the lowest non-zero eigenvalues of a positive semi-definite matrix,
+    one can either use `which='SM'` or `which='LM'` with a `sigma` close to zero.
+    While the latter approach typically lead to faster convergence, it has higher
+    memory requirement due to the need to factorize the matrix.
     """
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors
