@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = ["DirectSolverConfig"]
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -72,7 +73,10 @@ class DirectSolverConfig:
 
     def __post_init__(self):
         if not _HAS_NVMATH:
-            raise ImportError("nvmath-python backend required.")
+            warnings.warn(
+                "A DirectSolverConfig is defined but the nvmath-python backend is not detected.",
+                UserWarning,
+            )
 
 
 def nvmath_adjoint_method(

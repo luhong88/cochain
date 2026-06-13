@@ -38,14 +38,11 @@ if _HAS_NVMATH:
 if _HAS_NVMATH and _HAS_CUPY:
 
     class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
-        """
-        A CuPy LinearOperator object used to solve an eigenvalue problem in the
-        shift inverse mode.
-        """
+        """A CuPy `LinearOperator` for shift-invert mode eigenvalue problem."""
 
         def __init__(
             self,
-            a_val: Float[Tensor, " nnz"],
+            a_val: Float[Tensor, " nz"],
             a_pattern: Integer[SparsityPattern, "r c"],
             sigma: float,
             config: DirectSolverConfig,
@@ -58,32 +55,34 @@ if _HAS_NVMATH and _HAS_CUPY:
 
             # Prepare Cupy arrays.
             with cupy_in_torch_stream():
-                A_cp = sdt_to_cupy_csr(a_val, a_pattern)
+                a_cp = sdt_to_cupy_csr(a_val, a_pattern)
 
                 diag_cp = sigma * cp_sp.identity(
-                    A_cp.shape[0], dtype=A_cp.dtype, format="csr"
+                    a_cp.shape[0], dtype=a_cp.dtype, format="csr"
                 )
 
-                A_shift_inv_cp = A_cp - diag_cp
+                a_shift_inv_cp = a_cp - diag_cp
 
-                b_dummy = cp.zeros(A_cp.shape[0], dtype=A_cp.dtype)
+                b_dummy = cp.zeros(a_cp.shape[0], dtype=a_cp.dtype)
 
                 BaseNVMathInvSymSpOp.__init__(
                     self,
-                    a=A_shift_inv_cp,
+                    a=a_shift_inv_cp,
                     b=b_dummy,
                     config=config,
                     stream=cp.cuda.get_current_stream(),
                 )
 
             cp_sp_linalg.LinearOperator.__init__(
-                self, dtype=A_cp.dtype, shape=A_cp.shape
+                self, dtype=a_cp.dtype, shape=a_cp.shape
             )
 
         def _matvec(self, x: Float[cp.ndarray, " c"]):
-            """
-            For the operator L = inv(A - σI), the matrix-vector multiplication L@x = b
-            can also be written as x = (A - σI)@b, or solve(A - σI, x).
+            r"""
+            Compute inverse sparse matrix-vector product.
+
+            For the operator $L = (A - \sigma I)^{-1}$, the matrix-vector
+            multiplication $L x = b$ can also be written as $(A - \sigma I) b = x$;
             """
             cp_stream = cp.cuda.get_current_stream()
             Device(x.device.id).set_current()

@@ -29,7 +29,7 @@ class SciPyEigshConfig:
     which
         Which $k$ eigenvalues and eigenvectors to find.
     v0
-        Starting vectors for iteration. If the input matrix is batch-diagonal,
+        Starting vectors for iteration. If the input matrix is block-diagonal,
         then `v0` should be a sequence of arrays, one for each batch element.
     nvc
         The number of Lanczos vectors generated.
@@ -261,7 +261,7 @@ def _scipy_eigsh_no_batch(
     compute_eig_vecs: bool,
     config: SciPyEigshConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
-    """Dispatch the autograd functions whn there is no diagonal batching."""
+    """Dispatch the autograd functions whn there is no block-diagonal batching."""
     if m is None:
         eig_vals, eig_vecs = SciPyEigshStandardAutogradFunction.apply(
             a.values, a.pattern, k, eps, compute_eig_vecs, config
@@ -282,7 +282,7 @@ def _scipy_eigsh_batch(
     compute_eig_vecs: bool,
     config_batched: SciPyEigshConfig,
 ) -> tuple[Float[Tensor, "b k"], Float[Tensor, "c k"]]:
-    """Dispatch the autograd functions when there is diagonal batching."""
+    """Dispatch the autograd functions when there is block-diagonal batching."""
     # Unpack the A, M (if not None), and v0 (if not None) for looping
     a_list = a_batched.unpack_block_diag()
     if m_batched is None:
@@ -336,10 +336,11 @@ def scipy_eigsh(
         on the column space of `a`. If `m` is provided, solve a generalized
         eigenvalue problem.
     block_diag_batch
-        Whether the input `a` matrix (and `m` if not `None`) is block diagonal.
+        Whether the input `a` matrix (and `m` if not `None`) is block-diagonal.
         If `a` and `m` are block-diagonal, then they must both have valid and
         matching `block_diag_config`, in which case each block/batch element
-        will be solved sequentially.
+        will be solved sequentially. Note that the `eigsh()` function does not
+        natively support batching.
     k
         The number of eigenvalues/eigenvectors to find.
     eps
@@ -363,19 +364,19 @@ def scipy_eigsh(
         A tensor of `k` M-orthonormal eigenvectors. If `block_diag_batch` is `False`,
         then each column represents an eigenvector; if `block_diag_batch` is `True`,
         then the eigenvectors for each block are stacked along the first dimension.
+        If `return_eigenvectors` is False, then this tensor is not returned.
 
     Notes
     -----
     The autograd through eigenvectors do not account for contributions from the
     unresolved eigenvectors.
 
-    The `a` and `m` matrices must be `SparseDecoupledTensor` objects and will be
-    converted to SciPy CSR/CSC arrays and copied to CPU. The sparse CSR/CSC index
-    tensors of `a` and `m` can be either in `int32` or `int64` dtype, but will be
-    automatically downcast to `int32` if possible. The use of SciPy `LinearOperator`
-    objects for `a` and `m` is not supported.
+    The `a` and `m` matrices will be converted to SciPy CSR/CSC arrays and copied
+    to CPU. The sparse CSR/CSC index tensors of `a` and `m` can be either in `int32`
+    or `int64` dtype, but will be automatically downcast to `int32` if possible.
+    The use of SciPy `LinearOperator` objects for `a` and `m` is not supported.
 
-    for finding the lowest non-zero eigenvalues of a positive semi-definite matrix,
+    For finding the lowest non-zero eigenvalues of a positive semi-definite matrix,
     one can either use `which='SM'` or `which='LM'` with a `sigma` close to zero.
     While the latter approach typically lead to faster convergence, it has higher
     memory requirement due to the need to factorize the matrix.
