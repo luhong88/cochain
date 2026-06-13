@@ -25,7 +25,7 @@ def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     k = 2
 
     # Test both the LM and SA modes
-    eig_vals, eig_vecs = cupy_eigsh(A=A_op, k=k, cp_config=CuPyEigshConfig(which="LM"))
+    eig_vals, eig_vecs = cupy_eigsh(A_op, k=k, cp_config=CuPyEigshConfig(which="LM"))
 
     # Both eigsolver returns eigenvalues in ascending orders
     torch.testing.assert_close(eig_vals, eig_vals_true[-k:])
@@ -34,7 +34,7 @@ def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
         canonicalize_eig_vec_signs(eig_vecs_true[:, -k:]),
     )
 
-    eig_vals, eig_vecs = cupy_eigsh(A=A_op, k=k, cp_config=CuPyEigshConfig(which="SA"))
+    eig_vals, eig_vecs = cupy_eigsh(A_op, k=k, cp_config=CuPyEigshConfig(which="SA"))
 
     torch.testing.assert_close(eig_vals, eig_vals_true[:k])
     torch.testing.assert_close(
@@ -62,7 +62,7 @@ def test_batched_standard_forward(
     A_op = SparseDecoupledTensor.pack_block_diag((A1_op, A2_op))
 
     eig_vals, eig_vecs = cupy_eigsh(
-        A=A_op, block_diag_batch=True, k=k, cp_config=CuPyEigshConfig(which="LM")
+        A_op, block_diag_batch=True, k=k, cp_config=CuPyEigshConfig(which="LM")
     )
 
     eig_vals_1, eig_vals_2 = eig_vals.unbind(0)
@@ -96,7 +96,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     eig_vals_true = eig_vals_true_all[-k:]
 
     eig_vals, eig_vecs = cupy_eigsh(
-        A=A_op, k=k, eps=0, cp_config=CuPyEigshConfig(which="LM")
+        A_op, k=k, eps=0, cp_config=CuPyEigshConfig(which="LM")
     )
 
     # Compare eigenvalue gradient
@@ -134,7 +134,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     # the custom backward (which ignores the unresolved eigenvectors) should agree
     # with the lobpcg backward (which accounts for the unresolved eigenvectors).
     eig_vals, eig_vecs = cupy_eigsh(
-        A=A_op, k=k, eps=0, cp_config=CuPyEigshConfig(which="LM")
+        A_op, k=k, eps=0, cp_config=CuPyEigshConfig(which="LM")
     )
 
     # Compare eigenvector gradient; here, we compute the Frobenius matrix inner
@@ -171,7 +171,7 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     subspace_projector = eig_vecs_true @ eig_vecs_true.T
 
     eig_vals, eig_vecs = cupy_eigsh(
-        A=A_op, k=k, eps=0, cp_config=CuPyEigshConfig(which="LM")
+        A_op, k=k, eps=0, cp_config=CuPyEigshConfig(which="LM")
     )
 
     eig_vals_rand = torch.randn_like(eig_vals_true)
@@ -213,7 +213,7 @@ def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     eig_vec_true = eig_vecs_true[:, target_idx]
 
     eig_val, eig_vec = cupy_eigsh(
-        A=A_op, k=k, cp_config=CuPyEigshConfig(sigma=target_eig_val, which="LM")
+        A_op, k=k, cp_config=CuPyEigshConfig(sigma=target_eig_val, which="LM")
     )
 
     torch.testing.assert_close(eig_val, eig_val_true)
