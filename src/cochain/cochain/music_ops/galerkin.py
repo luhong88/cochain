@@ -13,7 +13,7 @@ from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     SparseDecoupledTensor,
 )
-from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
+from ...sparse.linalg.solvers._sparse_solver import InvSparseOperator
 from . import _galerkin_element, _galerkin_vertex
 
 

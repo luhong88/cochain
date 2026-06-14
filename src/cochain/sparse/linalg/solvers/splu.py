@@ -15,7 +15,11 @@ from ....utils.parsing import to_np
 from ....utils.stream import cupy_in_torch_stream
 from ...decoupled_tensor import SparseDecoupledTensor
 from ...decoupled_tensor._conversion import sdt_to_cupy_csc, sdt_to_scipy_csc
-from ._sparse_solver import SparseSolver, SparseSolverAutogradFunction
+from ._sparse_solver import (
+    BaseSparseSolver,
+    InvSparseOperator,
+    SparseSolverAutogradFunction,
+)
 
 try:
     import cupy as cp
@@ -28,7 +32,7 @@ except ImportError:
     _HAS_CUPY = False
 
 
-class _SuperLUSparseSolver(SparseSolver):
+class _SuperLUSparseSolver(BaseSparseSolver):
     def __init__(
         self,
         a: Float[SparseDecoupledTensor, "r c"],
@@ -237,7 +241,7 @@ def splu(
     return x
 
 
-class SuperLU:
+class SuperLU(InvSparseOperator):
     """
     "Stateful" differentiable wrapper for SuperLU.
 
@@ -279,6 +283,10 @@ class SuperLU:
         backend: Literal["cupy", "scipy"],
         **splu_kwargs,
     ):
+        self.dtype = a.dtype
+        self.shape = a.shape
+        self.device = a.device
+
         self.solver = _SuperLUSparseSolver(
             a, matrix_type="general", backend=backend, **splu_kwargs
         )

@@ -9,7 +9,7 @@ from torch.autograd.function import once_differentiable
 from ...decoupled_tensor import SparsityPattern
 
 
-class SparseSolver(ABC):
+class BaseSparseSolver(ABC):
     matrix_type: Literal["general", "symmetric", "spd"]
     dtype: torch.dtype
     device: torch.device
@@ -28,13 +28,49 @@ class SparseSolver(ABC):
     def free(self): ...
 
 
+class InvSparseOperator(ABC):
+    """
+    An ABC for "stateful" sparse linear solver classes.
+
+    This class provides an abstraction to solving the sparse linear system `A@x=b`
+    for `x`. The tensor `A` is assumed to have shape `(r, c)`, and the tensor `b` is
+    assumed to have shape `(r, *ch)`, and the output `x` tensor is assumed to have
+    shape `(c, *ch)`; no explicit leading batch dimensions are allowed.
+
+    Parameters
+    ----------
+    dtype
+        The dtype of the tensor `A`.
+    device
+        The device of the tensor `A`.
+    shape
+        The shape of the tensor `A`.
+    """
+
+    dtype: torch.dtype
+    device: torch.device
+    shape: torch.Size
+    solver: BaseSparseSolver
+
+    def size(self, dim: int | None = None) -> int | torch.Size:
+        if dim is None:
+            return self.shape
+        else:
+            return self.shape[dim]
+
+    @abstractmethod
+    def __call__(
+        self, b: Float[Tensor, " r *ch"], *args, **kwargs
+    ) -> Float[Tensor, " c *ch"]: ...
+
+
 class SparseSolverAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " nz"],
         a_pattern: Integer[SparsityPattern, "*b r c"],
         b: Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"],
-        solver: SparseSolver,
+        solver: BaseSparseSolver,
         trans: Literal["N", "T"],
         persistent: bool,
     ) -> Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"]:
@@ -73,7 +109,7 @@ class SparseSolverAutogradFunction(torch.autograd.Function):
         if ctx.solver is None:
             raise RuntimeError("Solver was released.")
         else:
-            solver: SparseSolver = ctx.solver
+            solver: BaseSparseSolver = ctx.solver
 
         (x,) = ctx.saved_tensors
         a_pattern: SparsityPattern = ctx.a_pattern
@@ -122,5 +158,6 @@ class SparseSolverAutogradFunction(torch.autograd.Function):
         # Free solver memory if not persistent.
         if not ctx.persistent:
             solver.free()
+            ctx.solver = None
 
         return (dLda_val, None, dLdb, None, None, None)

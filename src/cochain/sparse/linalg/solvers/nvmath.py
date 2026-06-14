@@ -12,7 +12,11 @@ from torch import Tensor
 
 from ....utils.parsing import to_col_major
 from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ._sparse_solver import SparseSolver, SparseSolverAutogradFunction
+from ._sparse_solver import (
+    BaseSparseSolver,
+    InvSparseOperator,
+    SparseSolverAutogradFunction,
+)
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
@@ -83,7 +87,7 @@ if _HAS_NVMATH:
         "spd": nvmath_sp.DirectSolverMatrixType.SPD,
     }
 
-    class _NVMathSparseSolver(SparseSolver):
+    class _NVMathSparseSolver(BaseSparseSolver):
         def __init__(
             self,
             a: Float[SparseDecoupledTensor, "*b r c"],
@@ -158,6 +162,7 @@ if _HAS_NVMATH:
             self.solver = solver
 
             self._last_b_ref = weakref.ref(b_flat)
+            self._last_b_version = b_flat._version
             self._last_trans = "N"
 
         @staticmethod
@@ -226,7 +231,9 @@ if _HAS_NVMATH:
             # If the input b_flat is the same object as the previous b_flat,
             # then b does not need to be reset.
             last_b_flat = getattr(self, "_last_b_ref", lambda: None)()
-            reset_b = last_b_flat is not b_flat
+            reset_b = not (
+                (last_b_flat is b_flat) and (self._last_b_version == b_flat._version)
+            )
 
             if reset_a:
                 match trans:
@@ -420,7 +427,7 @@ if _HAS_NVMATH:
 
         return x
 
-    class NVMathDirectSolver:
+    class NVMathDirectSolver(InvSparseOperator):
         """
         "Stateful" differentiable wrapper for `nvmath.sparse.advanced.DirectSolver`.
 
@@ -466,6 +473,10 @@ if _HAS_NVMATH:
             sparse_system_type: Literal["symmetric", "spd"] = "symmetric",
             config: DirectSolverConfig | None = None,
         ):
+            self.dtype = a.dtype
+            self.shape = a.shape
+            self.device = a.device
+
             b_flat = _NVMathSparseSolver._flatten_b(b, a.pattern)
 
             self.solver = _NVMathSparseSolver(

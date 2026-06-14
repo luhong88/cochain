@@ -11,7 +11,7 @@ from ...sparse.decoupled_tensor import (
     DiagDecoupledTensor,
     SparseDecoupledTensor,
 )
-from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
+from ...sparse.linalg.solvers._sparse_solver import InvSparseOperator
 from ...utils.faces import enumerate_local_faces
 
 
