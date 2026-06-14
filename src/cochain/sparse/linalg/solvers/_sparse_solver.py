@@ -44,9 +44,8 @@ class SparseSolverAutogradFunction(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         a_val, a_pattern, b, solver, trans, persistent = inputs
-        (x,) = output
 
-        ctx.save_for_backward(x)
+        ctx.save_for_backward(output)  # x
         ctx.a_pattern = a_pattern
         ctx.solver = solver
         ctx.trans = trans
@@ -57,18 +56,19 @@ class SparseSolverAutogradFunction(torch.autograd.Function):
     def backward(
         ctx,
         dLdx: Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"],
-        _,
     ) -> tuple[
         Float[Tensor, " nz"] | None,
         None,
         Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"] | None,
+        None,
+        None,
         None,
     ]:
         needs_grad_a_val = ctx.needs_input_grad[0]
         needs_grad_b = ctx.needs_input_grad[2]
 
         if not (needs_grad_a_val or needs_grad_b):
-            return (None,) * 4
+            return (None,) * 6
 
         if ctx.solver is None:
             raise RuntimeError("Solver was released.")
@@ -83,6 +83,8 @@ class SparseSolverAutogradFunction(torch.autograd.Function):
 
         if needs_grad_b or needs_grad_a_val:
             # lambda_ has the same shape as b.
+            # For splu(), b has shape [r, *ch]
+            # For nvmath DirectSolver(), b has shape [r, *ch] or [b, r, *ch]
             lambda_ = solver.solve(dLdx, trans="T" if ctx.trans == "N" else "N")
 
         if needs_grad_b:
@@ -121,4 +123,4 @@ class SparseSolverAutogradFunction(torch.autograd.Function):
         if not ctx.persistent:
             solver.free()
 
-        return (dLda_val, None, dLdb, None)
+        return (dLda_val, None, dLdb, None, None, None)
