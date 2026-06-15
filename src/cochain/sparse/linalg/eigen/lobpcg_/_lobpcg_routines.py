@@ -242,7 +242,7 @@ def _dispatch_operators(
         case (M_op, sigma):
             # A_op and M_op need to be int32-safe.
             T_op = ShiftInvSymGEPSpOp(
-                A_op=A_op, M_op=M_op, sigma=sigma, n=n, config=nvmath_config
+                a_sdt=A_op, m_sdt=M_op, sigma=sigma, n=n, config=nvmath_config
             )
             B_op = IdentityOperator()
             M_op = M_op

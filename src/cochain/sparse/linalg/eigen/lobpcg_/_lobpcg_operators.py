@@ -98,7 +98,7 @@ if _HAS_NVMATH:
 
             return b[:, :k]
 
-    class ShiftInvSymGEPSpOp(BaseNVMathInvSymSpOp):
+    class ShiftInvSymGEPSpOp:
         """
         A linear operator used to solve a generalized eigenvalue problem in the
         shift-invert mode.
@@ -111,67 +111,49 @@ if _HAS_NVMATH:
 
         def __init__(
             self,
-            A_op: Float[SparseDecoupledTensor, "m m"],
-            M_op: Float[SparseDecoupledTensor, "m m"],
+            a_sdt: Float[SparseDecoupledTensor, "m m"],
+            m_sdt: Float[SparseDecoupledTensor, "m m"],
             sigma: float,
             n: int,
             config: DirectSolverConfig,
         ):
-            if not A_op.pattern._is_int32_safe:
-                raise ValueError(
-                    "The sparse indices of the input tensor 'A' cannot be safely "
-                    "cast to int32 dtype."
-                )
-
-            if not M_op.pattern._is_int32_safe:
-                raise ValueError(
-                    "The sparse indices of the input tensor 'M' cannot be safely "
-                    "cast to int32 dtype."
-                )
-
             self.n = n
+            self.m_sdt = m_sdt
 
-            # Pytorch currently does not support operations like A - M on sparse CSR
-            # tensors.
-            A_shift_inv = SparseDecoupledTensor.assemble(
-                A_op, -sigma * M_op
-            ).to_sparse_csr()
-            self.M_csr = M_op.to_sparse_csr()
+            a_shift_inv = SparseDecoupledTensor.assemble(a_sdt, -sigma * m_sdt)
 
-            # Solve a linear system with at most 3n channel dims
-            b_dummy = (
+            # Solve a linear system with a channel dim of at most 3n size.
+            b_dummy = to_col_major(
                 torch.zeros(
-                    (self.M_csr.size(-1), 3 * n),
-                    dtype=self.M_csr.dtype,
-                    device=self.M_csr.device,
-                )
-                .transpose(-1, -2)
-                .contiguous()
-                .transpose(-1, -2)
+                    (self.m_sdt.size(-1), 3 * n),
+                    dtype=m_sdt.dtype,
+                    device=m_sdt.device,
+                ),
+                batch_first=False,
             )
 
-            super().__init__(A_shift_inv, b_dummy, config, torch.cuda.current_stream())
+            self.solver = _NVMathSparseSolver(
+                a_shift_inv.values,
+                a_shift_inv.pattern,
+                b_dummy,
+                matrix_type=nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
+                config=config,
+            )
 
         def __matmul__(self, x: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
-            stream = torch.cuda.current_stream()
-            torch.cuda.set_device(x.device)
-            Device(x.device.index).set_current()
-
-            Mx = self.M_csr @ x
+            m_x = self.m_sdt @ x
 
             # Pad up to 3n channel dims
-            k = Mx.size(-1)
+            k = m_x.size(-1)
             pad = 3 * self.n - k
 
-            Mx_padded_col_major = (
-                torch.nn.functional.pad(Mx, (0, pad, 0, 0))
-                .transpose(-1, -2)
-                .contiguous()
-                .transpose(-1, -2)
+            m_x_padded_col_major = to_col_major(
+                torch.nn.functional.pad(m_x, (0, pad, 0, 0)), batch_first=False
             )
 
-            self.solver.reset_operands(b=Mx_padded_col_major, stream=stream)
-            b = self.solver.solve(stream=stream)
+            # Note that there is no need to "unflatten" b since there is only one
+            # channel dimension.
+            b = self.solver.solve(m_x_padded_col_major)
 
             return b[:, :k]
 
