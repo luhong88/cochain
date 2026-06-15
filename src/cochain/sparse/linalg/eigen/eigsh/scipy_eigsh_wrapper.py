@@ -83,6 +83,7 @@ class SciPyEigshConfig:
 
         Returns
         -------
+        config_list
             A list of `SciPyEigshConfig` duplicated from self. If `v0` is a list
             of arrays, then each duplicate is assigned one element from `v0`.
         """

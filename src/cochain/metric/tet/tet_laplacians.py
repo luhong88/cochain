@@ -362,7 +362,7 @@ class MixedWeakLaplacianBlocks:
 
         Returns
         -------
-        [km1_splx, *ch]
+        b : [km1_splx, *ch]
             The vector $b$ in $S_k x = b$.
         """
         if self.down_only:
@@ -400,7 +400,7 @@ def weak_laplacian_0(
 
     Returns
     -------
-    [vert, vert]
+    weak_laplacian_0 : [vert, vert]
         The weak Laplacian operator.
 
     Notes
@@ -447,7 +447,7 @@ def weak_laplacian_1_grad_div(
 
     Returns
     -------
-    [edge, edge]
+    weak_laplacian_1_grad_div : [edge, edge]
         The weak, hybrid Laplacian operator.
     """
     d0 = tet_mesh.cbd[0]
@@ -478,7 +478,7 @@ def weak_laplacian_1_curl_curl(
 
     Returns
     -------
-    [edge, edge]
+    weak_laplacian_1_curl_curl : [edge, edge]
         The weak Laplacian operator.
     """
     d1 = tet_mesh.cbd[1]
@@ -509,7 +509,7 @@ def weak_laplacian_1(
 
     Returns
     -------
-    [edge, edge]
+    weak_laplacian_1 : [edge, edge]
         The weak, hybrid Laplacian operator.
 
     Notes
@@ -559,7 +559,7 @@ def weak_laplacian_2_curl_curl(
 
     Returns
     -------
-    [tri, tri]
+    weak_laplacian_2_curl_curl : [tri, tri]
         The weak Laplacian operator.
     """
     d1 = tet_mesh.cbd[1]
@@ -611,7 +611,7 @@ def weak_laplacian_2_grad_div(
 
     Returns
     -------
-    [tri, tri]
+    weak_laplacian_2_grad_div : [tri, tri]
         The weak Laplacian operator.
     """
     d2 = tet_mesh.cbd[2]
@@ -653,7 +653,7 @@ def weak_laplacian_2(
 
     Returns
     -------
-    [tri, tri]
+    weak_laplacian_2 : [tri, tri]
         The weak Laplacian operator.
 
     Notes
@@ -727,7 +727,7 @@ def weak_laplacian_3(
 
     Returns
     -------
-    [tet, tet]
+    weak_laplacian_3 : [tet, tet]
         The weak Laplacian operator.
 
     Notes

@@ -26,7 +26,7 @@ def mass_0(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "vert vert"
 
     Returns
     -------
-    [vert, vert]
+    mass_0 : [vert, vert]
         The mass matrix.
 
     Notes
@@ -85,7 +85,7 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
     Returns
     -------
-    [edge, edge]
+    mass_1 : [edge, edge]
         The mass matrix.
 
     Notes
@@ -208,7 +208,7 @@ def mass_2(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
 
     Returns
     -------
-    [tri, tri]
+    mass_2 : [tri, tri]
         The mass matrix.
 
     Notes

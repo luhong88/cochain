@@ -130,6 +130,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        sdt
             A `SparseDecoupledTensor` representation of the input tensor.
         """
         coalesced_tensor = tensor.to_sparse_coo().coalesce()
@@ -163,6 +164,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        sdt
             A block-diagonal `SparseDecoupledTensor`.
         """
         # Convert all input elements to SparseDecoupledTensor.
@@ -207,10 +209,11 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
-           A list of constituent `SparseDecoupledTensor`s. Note that this function
-           always unpacks the block-diagonal structure into `SparseDecoupledTensor`,
-           regardless of the representation of the original tensors used to
-           construct the block-diagonal matrix.
+        sdt_list
+            A list of constituent `SparseDecoupledTensor`s. Note that this function
+            always unpacks the block-diagonal structure into `SparseDecoupledTensor`,
+            regardless of the representation of the original tensors used to
+            construct the block-diagonal matrix.
 
         Notes
         -----
@@ -256,7 +259,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
-           A list of constituent `SparseDecoupledTensor`s.
+        sdt_list
+            A list of constituent `SparseDecoupledTensor`s.
 
         Notes
         -----
@@ -354,7 +358,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Parameters
         ----------
-        blocks:
+        blocks
             A list of list of tensors, `DiagDecoupledTensor`s, and/or
             `SparseDecoupledTensors`. None is allowed to represent empty/zero
             blocks. Rows/columns with all `None` or degenerate blocks are also
@@ -362,6 +366,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        sdt
             A block `SparseDecoupledTensor`.
 
         Notes
@@ -443,6 +448,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        sdt
             A `SparseDecoupledTensor` submatrix.
 
         Notes
@@ -478,6 +484,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        sdt
             A constrained sparse tensor.
 
         Notes
@@ -554,6 +561,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        sdt
             A new `SparseDecoupedTensor` with transformed values but the same
             sparsity pattern.
         """
@@ -580,6 +588,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        diag : [*b, min(r, c), *d]
             If self has the shape (r, c, *d), then this function returns a dense
             diagonal values tensor of shape (min(r, c), *d); if self has the shape
             (b, r, c, *d), then this function returns a sparse COO diagonal
@@ -655,6 +664,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        sdt
             The upper triangular part of the sparse matrix.
 
         Notes
@@ -708,6 +718,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
+        sdt
             A summed `SparseDecoupledTensor`.
 
         Notes

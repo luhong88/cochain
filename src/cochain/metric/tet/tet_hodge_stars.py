@@ -32,7 +32,7 @@ def star_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
 
     Returns
     -------
-    [tet, tet]
+    star_3 : [tet, tet]
         The Hodge 3-star matrix.
     """
     return mass_3(tet_mesh)
@@ -55,7 +55,7 @@ def star_2(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
 
     Returns
     -------
-    [tri, tri]
+    star_2 : [tri, tri]
         The Hodge 2-star matrix.
     """
     tet_vert_coords: Float[Tensor, "tet 4 3"] = tet_mesh.vert_coords[tet_mesh.tets]
@@ -113,7 +113,7 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
 
     Returns
     -------
-    [edge, edge]
+    star_1 : [edge, edge]
         The Hodge 1-star matrix.
     """
     tet_vert_coords: Float[Tensor, "tet 4 3"] = tet_mesh.vert_coords[tet_mesh.tets]
@@ -225,7 +225,7 @@ def star_0(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "vert vert"]:
 
     Returns
     -------
-    [vert, vert]
+    star_0 : [vert, vert]
         The Hodge 0-star matrix.
     """
     tet_vol = torch.abs(compute_tet_signed_vols(tet_mesh.vert_coords, tet_mesh.tets))

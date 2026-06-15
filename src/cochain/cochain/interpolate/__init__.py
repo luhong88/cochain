@@ -43,7 +43,7 @@ def _bary_embed(
 
     Returns
     -------
-    [m_splx, k_face, pt, m_vert]
+    bary_coords_embedded : [m_splx, k_face, pt, m_vert]
         The embedded barycentric coordinates.
 
     Notes

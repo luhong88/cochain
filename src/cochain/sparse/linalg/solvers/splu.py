@@ -129,7 +129,7 @@ class _SuperLUSparseSolver(BaseSparseSolver):
 
         Returns
         -------
-        [c, *ch]
+        x : [c, *ch]
             The unknown vector `x` with channel dimensions matching those of `b`.
         """
         match self.backend:
@@ -204,7 +204,7 @@ def splu(
 
     Returns
     -------
-    [c, *ch]
+    x : [c, *ch]
         The unknown vector `x` with channel dimensions matching those of `b`.
 
     Notes
@@ -313,7 +313,7 @@ class SuperLU(InvSparseOperator):
 
         Returns
         -------
-        [c, *ch]
+        x : [c, *ch]
             The unknown vector `x` with channel dimensions matching those of `b`.
         """
         b_flat = _SuperLUSparseSolver._flatten_b(b)

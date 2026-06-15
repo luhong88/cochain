@@ -165,12 +165,13 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
 
         Returns
         -------
-        [m_splx, *ch_out]
-            The cup product between the k-cochain and the l-cochain. If `pairing`
-            is "scalar", then `*ch_out` matches the input `*ch_in`; if `pairing`
-            is "dot", then `*ch_out` is trivial; if `pairing` is "cross", then
-            `*ch_out` matches the single `ch_in` dimension; if `pairing` is
-            "outer", then `*ch_out` matches to `(ch_in, ch_in)`.
+        load : [m_splx, *ch_out]
+            The load vector that can be used to compute the wedge product between
+            the k-cochain and the l-cochain. If `pairing` is "scalar", then `*ch_out`
+            matches the input `*ch_in`; if `pairing` is "dot", then `*ch_out` is
+            trivial; if `pairing` is "cross", then `*ch_out` matches the single
+            `ch_in` dimension; if `pairing` is "outer", then `*ch_out` matches
+            to `(ch_in, ch_in)`.
         """
         k_cochain_at_k_face = torch.einsum(
             "tf,tf...->tf...", self.k_face_parity, k_cochain[self.k_face_idx]

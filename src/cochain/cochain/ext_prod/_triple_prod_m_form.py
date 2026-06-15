@@ -29,7 +29,7 @@ def _compute_inv_metric_det(
 
     Returns
     -------
-    [splx, *d_lambda]
+    d_bc_wedge_dot : [splx, *d_lambda]
         The output inner product tensor. The `splx` dimension refers to the top-level
         simplices, and the `*d_lambda` dimension(s) refer to the barycentric
         differentials. If the `form_deg` is $k$ and the dimension of the top-level
@@ -144,7 +144,7 @@ def compute_triple_prod_tensor(
 
     Returns
     -------
-    [top_splx, k_face, l_face, m_face]
+    triple_prod : [top_splx, k_face, l_face, m_face]
         The triple product tensor.
 
     Notes

@@ -54,7 +54,7 @@ def codifferential_1(
 
     Returns
     -------
-    [vert, edge]
+    codifferential_1 : [vert, edge]
         The codifferential operator.
 
     Notes
@@ -97,7 +97,7 @@ def codifferential_2(
 
     Returns
     -------
-    [edge, tri]
+    codifferential_2 : [edge, tri]
         The codifferential operator.
 
     Notes
@@ -153,7 +153,7 @@ def laplacian_0(
 
     Returns
     -------
-    [vert, vert]
+    laplacian_0 : [vert, vert]
         The Laplacian operator.
 
     Notes
@@ -205,7 +205,7 @@ def laplacian_1_grad_div(
 
     Returns
     -------
-    [edge, edge]
+    laplacian_1_grad_div : [edge, edge]
         The Laplacian operator.
     """
     d0 = tri_mesh.cbd[0]
@@ -245,7 +245,7 @@ def laplacian_1_curl_curl(
 
     Returns
     -------
-    [edge, edge]
+    laplacian_1_curl_curl : [edge, edge]
         The Laplacian operator.
     """
     d1 = tri_mesh.cbd[1]
@@ -289,7 +289,7 @@ def laplacian_1(
 
     Returns
     -------
-    [edge, edge]
+    laplacian_1 : [edge, edge]
         The Laplacian operator.
 
     Notes
@@ -336,7 +336,7 @@ def laplacian_2(
 
     Returns
     -------
-    [tri, tri]
+    laplacian_2 : [tri, tri]
         The Laplacian operator.
 
     Notes

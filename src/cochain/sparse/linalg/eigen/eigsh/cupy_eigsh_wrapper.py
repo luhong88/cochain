@@ -97,6 +97,7 @@ class CuPyEigshConfig:
 
         Returns
         -------
+        config_list
             A list of `CuPyEigshConfig` duplicated from self. If `v0` is a list
             of arrays, then each duplicate is assigned one element from `v0`.
         """

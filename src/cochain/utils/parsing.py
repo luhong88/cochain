@@ -48,6 +48,7 @@ def to_col_major(tensor: Tensor, *, batch_first: bool = False) -> Tensor:
 
     Returns
     -------
+    strided_tensor
         The input tensor transformed to a column-major memory layout.
     """
     if tensor.ndim < 2:

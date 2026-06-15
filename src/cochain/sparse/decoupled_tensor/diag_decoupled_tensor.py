@@ -107,7 +107,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
-        [diag, diag]
+        ddt : [diag, diag]
             A `DiagDecoupledTensor` object.
         """
         return cls(tensor)
@@ -130,7 +130,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
-        [*b, sub_r, sub_c]
+        submatrix : [*b, sub_r, sub_c]
             The extracted submatrix. If the `row_mask` and `col_mask` are identical,
             then the submatrix is still a `DiagDecoupledTensor`; otherwise the
             submatrix is represented as a `SparseDecoupledTensor`.

@@ -357,7 +357,7 @@ def nvmath_direct_solver(
 
     Returns
     -------
-    [*b, c, *ch]
+    x : [*b, c, *ch]
         The unknwon vector `x` in column-major memory layout; the batch and channel
         dimensions, if there is any, match those of the input `b`.
 
@@ -522,7 +522,7 @@ class NVMathDirectSolver(InvSparseOperator):
 
         Returns
         -------
-        [c, *ch]
+        x : [c, *ch]
             The unknown vector `x` with channel dimensions matching those of `b`.
         """
         b_flat = _NVMathSparseSolver._flatten_b(b, self.solver.a_pattern)

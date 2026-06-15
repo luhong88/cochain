@@ -35,7 +35,7 @@ def m_orthonormalize(
 
     Returns
     -------
-    [m, l]
+    v_ortho : [m, l]
         A dense 2D matrix whose columns form an $M$-orthonormal basis for the column
         space of V. The number of column vectors `l` should be between `n_min` and
         `n`, depending on the number of linearly independent column vectors in $V$.
@@ -277,7 +277,7 @@ def canonicalize_eig_vec_signs(
 
     Returns
     -------
-    [m, k]
+    canon_eig_vecs : [m, k]
         The canonicalized eigenvector matrix.
     """
     max_idx = eig_vecs.abs().max(dim=0, keepdim=True).indices
@@ -312,7 +312,7 @@ def grassmann_proj_dists(
 
     Returns
     -------
-    [*k]
+    dist : [*k]
         The Grassmann projection distance. If `mode` is `"pairwise"`, then
         `k` distances are calculated, one for each pair of `pred` and `true`
         eigenvectors. If `mode` is `"subspace"`, then a single distance is

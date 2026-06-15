@@ -53,7 +53,7 @@ def galerkin_contract(
 
     Returns
     -------
-    [km1_splx, *ch]
+    cochain_km1 : [km1_splx, *ch]
         The $(k-1)$-cochain $\xi$.
 
     Notes
