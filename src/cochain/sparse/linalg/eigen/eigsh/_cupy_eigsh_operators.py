@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from .....utils.stream import cupy_in_torch_stream
-from ....decoupled_tensor import SparsityPattern
-from ....decoupled_tensor._conversion import sdt_to_cupy_csr
+from ....decoupled_tensor import (
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
 from ...solvers import DirectSolverConfig
-from ..base._inv_operator import BaseNVMathInvSymSpOp
+from ...solvers.nvmath import _NVMathSparseSolver
 
 try:
     import cupy as cp
-    import cupyx.scipy.sparse as cp_sp
     import cupyx.scipy.sparse.linalg as cp_sp_linalg
 
     _HAS_CUPY = True
@@ -20,23 +22,17 @@ except ImportError:
     _HAS_CUPY = False
 
 try:
-    import nvmath.sparse.advanced
+    import nvmath.sparse.advanced as nvmath_sp
 
     _HAS_NVMATH = True
 
 except ImportError:
     _HAS_NVMATH = False
 
-if _HAS_NVMATH:
-    try:
-        from cuda.core import Device
-    except ImportError:
-        from cuda.core.experimental import Device
-
 
 if _HAS_NVMATH and _HAS_CUPY:
 
-    class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
+    class CuPyShiftInvSymOp(cp_sp_linalg.LinearOperator):
         """A CuPy `LinearOperator` for shift-invert mode eigenvalue problem."""
 
         def __init__(
@@ -46,34 +42,28 @@ if _HAS_NVMATH and _HAS_CUPY:
             sigma: float,
             config: DirectSolverConfig,
         ):
-            if not a_pattern._is_int32_safe:
-                raise ValueError(
-                    "The sparse indices of the input tensor 'A' cannot be safely "
-                    "cast to int32 dtype."
-                )
+            a_sdt = SparseDecoupledTensor(a_pattern, a_val)
+            diag = -sigma * DiagDecoupledTensor.eye(
+                a_pattern.shape[0], dtype=a_val.dtype, device=a_val.device
+            )
+            shifted_sdt = SparseDecoupledTensor.assemble(a_sdt, diag)
 
-            # Prepare Cupy arrays.
-            with cupy_in_torch_stream():
-                a_cp = sdt_to_cupy_csr(a_val, a_pattern)
+            b_dummy = torch.zeros(
+                a_pattern.shape[0], dtype=a_val.dtype, device=a_val.device
+            )
 
-                diag_cp = sigma * cp_sp.identity(
-                    a_cp.shape[0], dtype=a_cp.dtype, format="csr"
-                )
-
-                a_shift_inv_cp = a_cp - diag_cp
-
-                b_dummy = cp.zeros(a_cp.shape[0], dtype=a_cp.dtype)
-
-                BaseNVMathInvSymSpOp.__init__(
-                    self,
-                    a=a_shift_inv_cp,
-                    b=b_dummy,
-                    config=config,
-                    stream=cp.cuda.get_current_stream(),
-                )
+            self.solver = _NVMathSparseSolver(
+                shifted_sdt.values,
+                shifted_sdt.pattern,
+                b_dummy,
+                matrix_type=nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
+                config=config,
+            )
 
             cp_sp_linalg.LinearOperator.__init__(
-                self, dtype=a_cp.dtype, shape=a_cp.shape
+                self,
+                dtype=cp.dtype(str(a_val.dtype).split(".")[-1]),
+                shape=tuple(a_pattern.shape),
             )
 
         def _matvec(self, x: Float[cp.ndarray, " c"]):
@@ -83,11 +73,21 @@ if _HAS_NVMATH and _HAS_CUPY:
             For the operator $L = (A - \sigma I)^{-1}$, the matrix-vector
             multiplication $L x = b$ can also be written as $(A - \sigma I) b = x$;
             """
+            # Get the current active CuPy stream and its representation in PyTorch.
             cp_stream = cp.cuda.get_current_stream()
-            Device(x.device.id).set_current()
+            torch_stream = torch.cuda.ExternalStream(cp_stream.ptr)
 
-            self.solver.reset_operands(b=x, stream=cp_stream)
-            b = self.solver.solve(stream=cp_stream)
+            # Force PyTorch to use the current CuPy stream as its current active stream
+            with torch.cuda.stream(torch_stream):
+                x_torch = torch.from_dlpack(x)
+                # Note that there is no need to "unflatten" b since there are no
+                # channel dimensions.
+                b_torch = self.solver.solve(x_torch)
+
+            # Force the CPU to wait for safety.
+            cp_stream.synchronize()
+
+            b = cp.from_dlpack(b_torch.detach().contiguous())
 
             return b
 
@@ -98,6 +98,7 @@ if _HAS_NVMATH and _HAS_CUPY:
         def _adjoint(self):
             # The adjoint operator is self since self is symmetric.
             return self
+
 
 else:
 
