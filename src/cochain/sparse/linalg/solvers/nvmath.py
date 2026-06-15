@@ -90,16 +90,20 @@ if _HAS_NVMATH:
     class _NVMathSparseSolver(BaseSparseSolver):
         def __init__(
             self,
-            a: Float[SparseDecoupledTensor, "*b r c"],
+            a_val: Float[Tensor, " nz"],
+            a_pattern: Integer[SparseDecoupledTensor, "*b r c"],
             b_flat: Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"],
             *,
-            matrix_type: Literal["general", "symmetric", "spd"] = "general",
+            matrix_type: nvmath_sp.DirectSolverMatrixType = nvmath_sp.DirectSolverMatrixType.GENERAL,
             config: DirectSolverConfig | None = None,
         ):
-            if a.n_dense_dim > 0:
+            if a_val.ndim > 1:
                 raise ValueError("Dense dimension in 'a' is not supported.")
 
-            if not a.pattern._is_int32_safe:
+            if not (a_val.is_cuda and b_flat.is_cuda):
+                raise RuntimeError("Both a and b must be on the CUDA device.")
+
+            if not a_pattern._is_int32_safe:
                 warnings.warn(
                     "The sparse indices of the input tensor 'A' cannot be "
                     "safely cast to int32 dtype.",
@@ -107,10 +111,13 @@ if _HAS_NVMATH:
                 )
 
             # Register the type, shape, dtype, and device of the input matrix.
+            self.a_val = a_val
+            self.a_pattern = a_pattern
+
             self.matrix_type = matrix_type
-            self.dtype = a.dtype
-            self.device = a.device
-            self.shape = a.shape
+            self.dtype = a_val.dtype
+            self.device = a_val.device
+            self.shape = a_pattern.shape
 
             # Adjust solver config.
             if config is None:
@@ -118,19 +125,14 @@ if _HAS_NVMATH:
 
             if config.options is None:
                 config.options = nvmath_sp.DirectSolverOptions(
-                    sparse_system_type=sp_literal_to_matrix_type[self.matrix_type]
+                    sparse_system_type=self.matrix_type
                 )
             else:
-                config.options.sparse_system_type = sp_literal_to_matrix_type[
-                    self.matrix_type
-                ]
+                config.options.sparse_system_type = self.matrix_type
 
             self.config = config
 
             # Configure the matrix and vector inputs to the solver.
-            self.a_val = a.values
-            self.a_pattern = a.pattern
-
             a_csr = SparseDecoupledTensor(self.a_pattern, self.a_val).to_sparse_csr()
 
             b_ready = to_col_major(
@@ -169,7 +171,7 @@ if _HAS_NVMATH:
         def _flatten_b(
             b: Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"],
             a_pattern: Integer[SparsityPattern, "*b r c"],
-        ) -> Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"]:
+        ) -> Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"]:
             # Get the number of batch and non-channel dimensions in b and x.
             n_batch_dim = a_pattern.n_batch_dim
             n_non_ch_dims = n_batch_dim + 1
@@ -193,7 +195,7 @@ if _HAS_NVMATH:
             x_flat: Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"],
             a_pattern: Integer[SparsityPattern, "*b r c"],
             b: Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"],
-        ) -> Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"]:
+        ) -> Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"]:
             # Restore the channel dims in the output. Get the expected non-channel
             # dimension shapes from x_flat itself, and get the expected channel dimension
             # shapes from b.
@@ -204,26 +206,33 @@ if _HAS_NVMATH:
 
         def solve(
             self,
-            b_flat: Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"],
+            b_flat: Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"],
+            *,
             trans: Literal["N", "T"] = "N",
-        ) -> Float[Tensor, " c *ch"] | Float[Tensor, "b c *ch"]:
+        ) -> Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"]:
+            if not b_flat.is_cuda:
+                raise RuntimeError("The input b must be on the CUDA device.")
+
             # Torch may call solve() on a separate thread where nvmath's internal
             # cuda state is uninitialized. We must explicitly call Device(id).set_current()
             # to bind the active CUDA context to this thread's local state, ensuring
             # nvmath operations recognize the device.
-            if b_flat.is_cuda:
-                torch.cuda.set_device(b_flat.device)
-                Device(b_flat.device.index).set_current()
+            Device(b_flat.device.index).set_current()
 
             # Determine whether a and/or b need to be reset with reset_operand()
 
             # For general matrices, if the trans argument is the same as the
             # previous, then a does not need to be reset.
-            if (self.matrix_type == "general") and (trans == self._last_trans):
+            if (self.matrix_type == nvmath_sp.DirectSolverMatrixType.GENERAL) and (
+                trans == self._last_trans
+            ):
                 reset_a = False
             # Symmetric matrices do not need to be reset, regardless of the
             # trans argument.
-            elif self.matrix_type in ["symmetric", "spd"]:
+            elif self.matrix_type in [
+                nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
+                nvmath_sp.DirectSolverMatrixType.SPD,
+            ]:
                 reset_a = False
             else:
                 reset_a = True
@@ -414,9 +423,10 @@ if _HAS_NVMATH:
         b_flat = _NVMathSparseSolver._flatten_b(b, a.pattern)
 
         solver = _NVMathSparseSolver(
-            a,
+            a.values,
+            a.pattern,
             b_flat,
-            matrix_type=sparse_system_type,
+            matrix_type=sp_literal_to_matrix_type[sparse_system_type],
             config=config,
         )
 
@@ -480,9 +490,10 @@ if _HAS_NVMATH:
             b_flat = _NVMathSparseSolver._flatten_b(b, a.pattern)
 
             self.solver = _NVMathSparseSolver(
-                a,
+                a.values,
+                a.pattern,
                 b_flat,
-                matrix_type=sparse_system_type,
+                matrix_type=sp_literal_to_matrix_type[sparse_system_type],
                 config=config,
             )
 
