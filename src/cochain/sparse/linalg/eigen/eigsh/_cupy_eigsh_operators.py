@@ -43,18 +43,18 @@ if _HAS_NVMATH and _HAS_CUPY:
             config: DirectSolverConfig,
         ):
             a_sdt = SparseDecoupledTensor(a_pattern, a_val)
-            diag = -sigma * DiagDecoupledTensor.eye(
-                a_pattern.shape[0], dtype=a_val.dtype, device=a_val.device
+            eye = DiagDecoupledTensor.eye(
+                a_pattern.size(-1), dtype=a_val.dtype, device=a_val.device
             )
-            shifted_sdt = SparseDecoupledTensor.assemble(a_sdt, diag)
+            a_shift_inv = SparseDecoupledTensor.assemble(a_sdt, -sigma * eye)
 
             b_dummy = torch.zeros(
-                a_pattern.shape[0], dtype=a_val.dtype, device=a_val.device
+                a_pattern.size(-1), dtype=a_val.dtype, device=a_val.device
             )
 
             self.solver = _NVMathSparseSolver(
-                shifted_sdt.values,
-                shifted_sdt.pattern,
+                a_shift_inv.values,
+                a_shift_inv.pattern,
                 b_dummy,
                 matrix_type=nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
                 config=config,

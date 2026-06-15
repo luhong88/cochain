@@ -234,7 +234,7 @@ def _dispatch_operators(
 
         case (None, sigma):
             # A_op needs to be int32-safe.
-            T_op = ShiftInvSymSpOp(A_op=A_op, sigma=sigma, n=n, config=nvmath_config)
+            T_op = ShiftInvSymSpOp(a_sdt=A_op, sigma=sigma, n=n, config=nvmath_config)
             B_op = IdentityOperator()
             M_op = IdentityOperator()
             S_op = IdentityOperator()
