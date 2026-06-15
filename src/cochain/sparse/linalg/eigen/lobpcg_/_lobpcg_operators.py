@@ -8,7 +8,6 @@ from .....utils.parsing import to_col_major
 from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ...solvers import DirectSolverConfig
 from ...solvers.nvmath import _NVMathSparseSolver
-from ..base._inv_operator import BaseNVMathInvSymSpOp
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
@@ -84,7 +83,7 @@ if _HAS_NVMATH:
             )
 
         def __matmul__(self, x: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
-            # Pad up to 3n channel dims
+            # Pad channel dim up to size 3n.
             k = x.size(-1)
             pad = 3 * self.n - k
 
@@ -143,7 +142,7 @@ if _HAS_NVMATH:
         def __matmul__(self, x: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
             m_x = self.m_sdt @ x
 
-            # Pad up to 3n channel dims
+            # Pad channel dim up to size 3n.
             k = m_x.size(-1)
             pad = 3 * self.n - k
 

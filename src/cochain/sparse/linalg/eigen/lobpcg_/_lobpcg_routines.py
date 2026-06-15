@@ -204,14 +204,14 @@ def _dispatch_operators(
             case "ilu":
                 # A_op is required to be int32-safe.
                 precond = ILUPrecond(
-                    A_op=A_op,
+                    a_sdt=A_op,
                     diag_damp=precond_config.diag_damp,
                     spilu_kwargs=precond_config.spilu_kwargs,
                 )
             case "cholesky":
                 # A_op is required to be int32-safe.
                 precond = ChoPrecond(
-                    A_op=A_op,
+                    a_sdt=A_op,
                     n=n,
                     diag_damp=precond_config.diag_damp,
                     nvmath_config=precond_config.nvmath_config,

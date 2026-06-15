@@ -6,10 +6,12 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from .....utils.parsing import to_col_major
 from .....utils.stream import cupy_in_torch_stream
 from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
+from ....decoupled_tensor._conversion import sdt_to_cupy_csc
 from ...solvers import DirectSolverConfig
-from ..base._inv_operator import BaseNVMathInvSymSpOp
+from ...solvers.nvmath import _NVMathSparseSolver
 from ._lobpcg_operators import IdentityOperator
 
 try:
@@ -23,7 +25,7 @@ except ImportError:
     _HAS_CUPY = False
 
 try:
-    import nvmath.sparse.advanced
+    import nvmath.sparse.advanced as nvmath_sp
 
     _HAS_NVMATH = True
 
@@ -99,48 +101,28 @@ if _HAS_CUPY:
 
         def __init__(
             self,
-            A_op: Float[SparseDecoupledTensor, "m m"],
+            a_sdt: Float[SparseDecoupledTensor, "m m"],
             diag_damp: float | int | None,
             spilu_kwargs: dict[str, Any],
         ):
-            if not A_op.pattern._is_int32_safe:
-                raise ValueError(
-                    "The sparse indices of the input tensor 'A' cannot be safely "
-                    "cast to int32 dtype."
-                )
-
             if diag_damp == 0:
-                op = A_op.to_sparse_csc()
+                op_sdt = a_sdt
+
             else:
                 if diag_damp is None:
-                    eps = 1e-4 * A_op.tr / A_op.size(0)
+                    eps = 1e-4 * a_sdt.tr / a_sdt.size(0)
                 else:
                     eps = diag_damp
 
-                # Pytorch currently does not support operations like A - I on sparse
-                # CSC tensors.
                 eye = DiagDecoupledTensor.eye(
-                    A_op.size(-1), dtype=A_op.dtype, device=A_op.device
+                    a_sdt.size(-1), dtype=a_sdt.dtype, device=a_sdt.device
                 )
 
-                op_sdt = SparseDecoupledTensor.assemble(A_op, eps * eye)
-
-                if not op_sdt.pattern._is_int32_safe:
-                    raise ValueError(
-                        "The sparse indices of the tensor A + ϵI cannot be safely "
-                        "cast to int32 dtype."
-                    )
-
-                op = op_sdt.to_sparse_csc()
+                op_sdt = SparseDecoupledTensor.assemble(a_sdt, eps * eye)
 
             with cupy_in_torch_stream():
-                op_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
-                    (
-                        cp.from_dlpack(op.values()),
-                        cp.from_dlpack(op.row_indices()),
-                        cp.from_dlpack(op.ccol_indices()),
-                    ),
-                    shape=tuple(op.shape),
+                op_cp: Float[cp_sp.csc_matrix, "r c"] = sdt_to_cupy_csc(
+                    op_sdt.values, op_sdt.pattern
                 )
 
                 spilu_default = {"fill_factor": 1}
@@ -151,7 +133,7 @@ if _HAS_CUPY:
         def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
             with cupy_in_torch_stream():
                 res_cp = cp.from_dlpack(res.detach().contiguous())
-                sol = torch.from_dlpack(self.solver.solve(res_cp, trans="N"))
+                sol = torch.from_dlpack(self.solver.solve(res_cp))
 
             return sol
 
@@ -164,7 +146,7 @@ else:
 
 if _HAS_NVMATH:
 
-    class ChoPrecond(BaseNVMathInvSymSpOp):
+    class ChoPrecond:
         """
         Diagonally damped Cholesky preconditioner for LOBPCG.
 
@@ -179,72 +161,56 @@ if _HAS_NVMATH:
 
         def __init__(
             self,
-            A_op: Float[SparseDecoupledTensor, "m m"],
+            a_sdt: Float[SparseDecoupledTensor, "m m"],
             n: int,
             diag_damp: float | int | None,
             nvmath_config: DirectSolverConfig,
         ):
-            if not A_op.pattern._is_int32_safe:
-                raise ValueError(
-                    "The sparse indices of the input tensor 'A' cannot be safely "
-                    "cast to int32 dtype."
-                )
-
             self.n = n
 
-            # Solve a linear system with at most 3n channel dims
-            b_dummy = (
+            # Solve a linear system with a channel dim of at most 3n size.
+            b_dummy = to_col_major(
                 torch.zeros(
-                    (A_op.size(-1), 3 * n), dtype=A_op.dtype, device=A_op.device
-                )
-                .transpose(-1, -2)
-                .contiguous()
-                .transpose(-1, -2)
+                    (a_sdt.size(-1), 3 * n), dtype=a_sdt.dtype, device=a_sdt.device
+                ),
+                batch_first=False,
             )
 
             if diag_damp == 0:
-                op = A_op.to_sparse_csr()
+                op_sdt = a_sdt
+
             else:
                 if diag_damp is None:
-                    eps = 1e-4 * A_op.tr / A_op.size(0)
+                    eps = 1e-4 * a_sdt.tr / a_sdt.size(0)
                 else:
                     eps = diag_damp
 
-                # Pytorch currently does not support operations like A - I on sparse
-                # CSR tensors.
                 eye = DiagDecoupledTensor.eye(
-                    A_op.size(-1), dtype=A_op.dtype, device=A_op.device
+                    a_sdt.size(-1), dtype=a_sdt.dtype, device=a_sdt.device
                 )
 
-                op_sdt = SparseDecoupledTensor.assemble(A_op, eps * eye)
+                op_sdt = SparseDecoupledTensor.assemble(a_sdt, eps * eye)
 
-                if not op_sdt.pattern._is_int32_safe:
-                    raise ValueError(
-                        "The sparse indices of the tensor A + ϵI cannot be safely "
-                        "cast to int32 dtype."
-                    )
-
-                op = op_sdt.to_sparse_csr()
-
-            super().__init__(op, b_dummy, nvmath_config, torch.cuda.current_stream())
+            self.solver = _NVMathSparseSolver(
+                op_sdt.values,
+                op_sdt.pattern,
+                b_dummy,
+                matrix_type=nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
+                config=nvmath_config,
+            )
 
         def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
-            stream = torch.cuda.current_stream()
-            Device(res.device.index).set_current()
-
             # Pad up to 3n channel dims
             k = res.size(-1)
             pad = 3 * self.n - k
 
-            res_padded_col_major = (
-                torch.nn.functional.pad(res, (0, pad, 0, 0))
-                .transpose(-1, -2)
-                .contiguous()
-                .transpose(-1, -2)
+            res_padded_col_major = to_col_major(
+                torch.nn.functional.pad(res, (0, pad, 0, 0)), batch_first=False
             )
 
-            self.solver.reset_operands(b=res_padded_col_major, stream=stream)
-            sol = self.solver.solve(stream=stream)
+            # Note that there is no need to "unflatten" b since there is only one
+            # channel dimension.
+            sol = self.solver.solve(res_padded_col_major)
 
             return sol[:, :k]
 
