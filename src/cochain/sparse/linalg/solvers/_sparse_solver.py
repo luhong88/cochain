@@ -77,7 +77,7 @@ class InvSparseOperator(ABC):
 
     @abstractmethod
     def __call__(
-        self, b: Float[Tensor, " r *ch"], *args, **kwargs
+        self, b: Float[Tensor, " r *ch"], trans: Literal["N", "T"], *args, **kwargs
     ) -> Float[Tensor, " c *ch"]: ...
 
 

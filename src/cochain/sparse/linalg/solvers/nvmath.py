@@ -92,6 +92,8 @@ else:
 
 
 class _NVMathSparseSolver(BaseSparseSolver):
+    """A wrapper for the nvmath-python DirectSolver() sparse linear solver."""
+
     def __init__(
         self,
         a_val: Float[Tensor, " nz"],
@@ -112,21 +114,20 @@ class _NVMathSparseSolver(BaseSparseSolver):
 
         if not a_pattern._is_int32_safe:
             warnings.warn(
-                "The sparse indices of the input tensor 'A' cannot be "
+                "The sparse indices of the input tensor 'a' cannot be "
                 "safely cast to int32 dtype.",
                 UserWarning,
             )
 
-        # Register the type, shape, dtype, and device of the input matrix.
+        self.matrix_type = matrix_type
         self.a_val = a_val
         self.a_pattern = a_pattern
 
-        self.matrix_type = matrix_type
         self.dtype = a_val.dtype
         self.device = a_val.device
         self.shape = a_pattern.shape
 
-        # Adjust solver config.
+        # Adjust solver config based on matrix_type.
         if config is None:
             config = DirectSolverConfig()
 
@@ -139,7 +140,7 @@ class _NVMathSparseSolver(BaseSparseSolver):
 
         self.config = config
 
-        # Configure the matrix and vector inputs to the solver.
+        # Prepare the matrix and vector inputs to the solver.
         a_csr = SparseDecoupledTensor(self.a_pattern, self.a_val).to_sparse_csr()
 
         b_ready = to_col_major(
@@ -168,8 +169,15 @@ class _NVMathSparseSolver(BaseSparseSolver):
 
         for k, v in config.solution_kwargs.items():
             setattr(solver.solution_config, k, v)
+
         self.solver = solver
 
+        # Keep track of the RHS vector and the trans argument from the last
+        # time plan() and factorize() was called; so that these steps can be
+        # skipped if the same RHS vector/trans argument are given again to the
+        # solver. Note that, we track the RHS vector both through a weakref
+        # as well as through its pytorch tensor version (this is to detect if
+        # the tensor has been modified in-place).
         self._last_b_ref = weakref.ref(b_flat)
         self._last_b_version = b_flat._version
         self._last_trans = "N"
@@ -179,6 +187,7 @@ class _NVMathSparseSolver(BaseSparseSolver):
         b: Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"],
         a_pattern: Integer[SparsityPattern, "*b r c"],
     ) -> Float[Tensor, " r *ch_flat"] | Float[Tensor, "b r *ch_flat"]:
+        """Flatten the channel dimensions of b, if there are any."""
         # Get the number of batch and non-channel dimensions in b and x.
         n_batch_dim = a_pattern.n_batch_dim
         n_non_ch_dims = n_batch_dim + 1
@@ -203,11 +212,11 @@ class _NVMathSparseSolver(BaseSparseSolver):
         a_pattern: Integer[SparsityPattern, "*b r c"],
         b: Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"],
     ) -> Float[Tensor, " r *ch"] | Float[Tensor, "b r *ch"]:
-        # Restore the channel dims in the output. Get the expected non-channel
-        # dimension shapes from x_flat itself, and get the expected channel dimension
-        # shapes from b.
+        """Unflatten the channel dimensions of x, if there are any."""
+        # Get the expected non-channel dimension shapes from x_flat itself, and
+        # get the expected channel dimension shapes from b.
         n_non_ch_dims = a_pattern.n_batch_dim + 1
-        x = x_flat.reshape(*x_flat.shape[:n_non_ch_dims], *b.shape[n_non_ch_dims:])
+        x = x_flat.view(*x_flat.shape[:n_non_ch_dims], *b.shape[n_non_ch_dims:])
 
         return x
 
@@ -217,6 +226,7 @@ class _NVMathSparseSolver(BaseSparseSolver):
         *,
         trans: Literal["N", "T"] = "N",
     ) -> Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"]:
+        """Solve a sparse linear system with the given RHS vector using `DirectSolver()`."""
         if not b_flat.is_cuda:
             raise RuntimeError("The input b must be on the CUDA device.")
 
@@ -226,7 +236,7 @@ class _NVMathSparseSolver(BaseSparseSolver):
         # nvmath operations recognize the device.
         Device(b_flat.device.index).set_current()
 
-        # Determine whether a and/or b need to be reset with reset_operand()
+        # Determine whether a and/or b need to be reset with reset_operand().
 
         # For general matrices, if the trans argument is the same as the
         # previous, then a does not need to be reset.
@@ -293,12 +303,15 @@ class _NVMathSparseSolver(BaseSparseSolver):
 
         x_flat = self.solver.solve(stream=stream)
 
+        # Update the RHS/trans argument tracking.
         self._last_b_ref = weakref.ref(b_flat)
+        self._last_b_version = b_flat._version
         self._last_trans = trans
 
         return x_flat
 
     def free(self):
+        """Garbage collect the solver object."""
         if hasattr(self, "solver") and self.solver is not None:
             if getattr(self.solver, "valid_state", False) and hasattr(
                 self.solver, "free"
@@ -359,7 +372,7 @@ def nvmath_direct_solver(
     -------
     x : [*b, c, *ch]
         The unknwon vector `x` in column-major memory layout; the batch and channel
-        dimensions, if there is any, match those of the input `b`.
+        dimensions, if there are any, match those of the input `b`.
 
     Notes
     -----
@@ -399,15 +412,15 @@ def nvmath_direct_solver(
     ordering.
 
     Note that `DirectSolver` also returns an `x` tensor in a similar column-major
-    memory layout as `b`. This function returns a view of `x` that matches the
-    shape of the input `b`, if possible.
+    memory layout as `b`. This function returns a view of `x` that conforms to the
+    shape of the input `b`.
 
-    If either `A` or `b` requires gradient, then a `DirectSolver` object will be
+    If either `a` or `b` requires gradient, then a `DirectSolver` object will be
     cached in memory to accelerate the backward pass; this memory will not be
     cleaned up until one of the following conditions is met:
 
     1) a backward() call with `retain_graph=False` has been made through the
-    computation graph containing `A` or `b`, or
+    computation graph containing `a` or `b`, or
     2) all references to the output tensor (and its `grad_fn` and `ctx` attributes)
     from this function (and any derived tensors thereof) has gone out of scope/been
     detached from the computation graph.
@@ -450,24 +463,26 @@ class NVMathDirectSolver(InvSparseOperator):
     """
     "Stateful" differentiable wrapper for `nvmath.sparse.advanced.DirectSolver`.
 
-    Given a sparse 2D matrix `a` and a vector `b`, this class computes and caches
-    the LU factorization of `a` for the purpose of solving the linear system
-    `a @ x = b` for `x`.
+    Given a (batch of) sparse 2D matrix `a` and a (batch of) vector `b`, this class
+    computes and caches the LU factorization of `a` for the purpose of solving
+    the linear system `a @ x = b` for `x`.
 
     Parameters
     ----------
-    a : [r, c]
-        A sparse 2D matrix represented as a `SparseDecoupledTensor`; no batch
-        dimension is allowed.
-    b : [r, *ch]
-        A dummy RHS vector; no batch dimension is allowed but `b` can have arbitrary
+    a : [*b, r, c]
+        A sparse 2D matrix represented as a `SparseDecoupledTensor`; at most
+        one batch dimenion is supported.
+    b : [*b, r, *ch]
+        A dummy RHS vector; b` can have at most one batch dimension but arbitrary
         channel dimensions. This argument is required for the purpose of setting
         the size of the RHS vector; all subsequent calls to the solver must use
         RHS with the same shape as this tensor.
     sparse_system_type
-        Whether the matrix `a` is symmetric or symmetric positive definite; note that
-        this class does not support general 2D matrices. This argument will override
-        the `options.sparse_system_type` attribute in the `config`.
+        Whether the matrix `a` is symmetric, symmetric positive definite, or
+        a general 2D matrix. It is recommended to specify the `sparse_system_type`
+        argument to exploit the symmetry and spectral properties of `a`. Note that,
+        `sparse_system_type` will override the `options.sparse_system_type`
+        attribute in the `config`.
     config
         Additional config arguments to the `DirectSolver`; see the `DirectSolverConfig`
         class for more information.
@@ -489,7 +504,7 @@ class NVMathDirectSolver(InvSparseOperator):
         a: Float[SparseDecoupledTensor, "r c"],
         b: Float[Tensor, " r *ch"],
         *,
-        sparse_system_type: Literal["symmetric", "spd"] = "symmetric",
+        sparse_system_type: Literal["general", "symmetric", "spd"] = "general",
         config: DirectSolverConfig | None = None,
     ):
         self.dtype = a.dtype
@@ -506,7 +521,9 @@ class NVMathDirectSolver(InvSparseOperator):
             config=config,
         )
 
-    def __call__(self, b: Float[Tensor, " r *ch"]) -> Float[Tensor, " c *ch"]:
+    def __call__(
+        self, b: Float[Tensor, " r *ch"], trans: Literal["N", "T"] = "N"
+    ) -> Float[Tensor, " c *ch"]:
         """
         Solve a sparse linear system with the given RHS vector using `DirectSolver`.
 
@@ -527,7 +544,7 @@ class NVMathDirectSolver(InvSparseOperator):
         """
         b_flat = _NVMathSparseSolver._flatten_b(b, self.solver.a_pattern)
         x_flat = SparseSolverAutogradFunction.apply(
-            self.solver.a_val, self.solver.a_pattern, b_flat, self.solver, "N", True
+            self.solver.a_val, self.solver.a_pattern, b_flat, self.solver, trans, True
         )
         x = _NVMathSparseSolver._unflatten_x(x_flat, self.solver.a_pattern, b)
 

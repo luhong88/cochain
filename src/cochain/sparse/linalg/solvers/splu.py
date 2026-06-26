@@ -33,6 +33,8 @@ except ImportError:
 
 
 class _SuperLUSparseSolver(BaseSparseSolver):
+    """A wrapper for the SciPy/CuPy splu() sparse linear solver."""
+
     def __init__(
         self,
         a: Float[SparseDecoupledTensor, "r c"],
@@ -87,9 +89,10 @@ class _SuperLUSparseSolver(BaseSparseSolver):
 
     @staticmethod
     def _flatten_b(b: Float[Tensor, " r *ch"]) -> Float[Tensor, " r *ch_flat"]:
+        """Flatten the channel dimensions of b, if there are any."""
         if b.ndim > 2:
-            # Flatten multiple channel dims, (r, *ch) -> (r, ch_flat)
-            b_flat = b.reshape(b.size(0), -1)
+            # (r, *ch) -> (r, ch_flat)
+            b_flat = b.view(b.size(0), -1)
         else:
             b_flat = b
 
@@ -99,11 +102,12 @@ class _SuperLUSparseSolver(BaseSparseSolver):
     def _unflatten_x(
         x_flat: Float[Tensor, " c *ch_flat"], b: Float[Tensor, " r *ch"]
     ) -> Float[Tensor, " c *ch"]:
+        """Unflatten the channel dimensions of x, if there are any."""
         if x_flat.ndim == 1:
             x = x_flat
         else:
             # (c, ch_flat) -> (c, *ch)
-            x = x_flat.reshape(-1, *b.shape[1:])
+            x = x_flat.view(-1, *b.shape[1:])
 
         return x
 
@@ -113,25 +117,7 @@ class _SuperLUSparseSolver(BaseSparseSolver):
         *,
         trans: Literal["N", "T"] = "N",
     ) -> Float[Tensor, " c *ch_flat"]:
-        """
-        Solve a sparse linear system with the given RHS vector using `SuperLU`.
-
-        Parameters
-        ----------
-        b : [r, *ch]
-            The RHS vector as a dense tensor with arbitrary channel dimensions.
-            Internally, the solver expects `b` to be a contiguous tensor of shape
-            `[r,]` or `[r, ch]`; if the input tensor `b` does not conform to this
-            requirement, a reshaped copy will be created.
-        trans
-            If "N", solve the normal system `a @ x = b`; if "T", solve the transposed
-            system `a.T @ x = b`.
-
-        Returns
-        -------
-        x : [c, *ch]
-            The unknown vector `x` with channel dimensions matching those of `b`.
-        """
+        """Solve a sparse linear system with the given RHS vector using `SuperLU`."""
         match self.backend:
             case "cupy":
                 # Force CuPy to use the current Pytorch stream.
@@ -148,6 +134,7 @@ class _SuperLUSparseSolver(BaseSparseSolver):
         return x_flat
 
     def free(self):
+        """Garbage collect the solver object."""
         if (
             (self.backend == "cupy")
             and hasattr(self, "solver")

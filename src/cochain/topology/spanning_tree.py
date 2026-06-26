@@ -280,7 +280,7 @@ def _cbd_to_coface(
     # next to each other, which can then be reshaped to generate the coface list.
     idx_coo_subset = idx_coo[:, shared_face_mask]
     sort_idx = torch.sort(idx_coo_subset[-1], stable=True).indices
-    coface_idx = idx_coo_subset[-2][sort_idx].reshape(-1, degree)
+    coface_idx = idx_coo_subset[-2][sort_idx].view(-1, degree)
 
     unique_face_idx = idx_coo_subset[-1, sort_idx][::degree]
 
