@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["SciPyEigshConfig", "scipy_eigsh"]
+
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from typing import Literal

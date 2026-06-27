@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ["CuPyEigshConfig", "cupy_eigsh"]
+
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from typing import Literal
