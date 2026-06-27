@@ -9,7 +9,12 @@ pytest.importorskip("nvmath")
 
 @pytest.mark.gpu_only
 @pytest.mark.parametrize(
-    "matrix, matrix_type", [("a", "general"), ("a_sym", "symmetric"), ("a_spd", "spd")]
+    "matrix, matrix_type",
+    [
+        ("a", "general"),
+        ("a_sym", "symmetric"),
+        ("a_spd", "spd"),
+    ],
 )
 @pytest.mark.parametrize("trans", ["N", "T"])
 def test_persistent_direct_solver_forward(matrix, matrix_type, trans, request, device):
@@ -34,10 +39,16 @@ def test_persistent_direct_solver_forward(matrix, matrix_type, trans, request, d
 
 @pytest.mark.gpu_only
 @pytest.mark.parametrize(
-    "matrix, matrix_type", [("a", "general"), ("a_sym", "symmetric"), ("a_spd", "spd")]
+    "matrix, matrix_type",
+    [
+        ("a", "general"),
+        ("a_sym", "symmetric"),
+        ("a_spd", "spd"),
+    ],
 )
+@pytest.mark.parametrize("trans", ["N", "T"])
 def test_persistent_direct_solver_with_channel_dim(
-    matrix, matrix_type, request, device
+    matrix, matrix_type, trans, request, device
 ):
     a = request.getfixturevalue(matrix)
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
@@ -46,40 +57,16 @@ def test_persistent_direct_solver_with_channel_dim(
     n_dim = a_sdt.size(0)
     n_ch = 2
 
-    x1_true = torch.randn(n_dim, n_ch).to(device)
-    x2_true = torch.randn(n_dim, n_ch).to(device)
+    x_true = torch.randn(n_dim, n_ch).to(device)
 
-    b1 = a_dense @ x1_true
-    b2 = a_dense @ x2_true
-
-    solver = NVMathDirectSolver(a_sdt, b1, sparse_system_type=matrix_type)
-
-    x1 = solver(b1)
-    x2 = solver(b2)
-
-    torch.testing.assert_close(x1, x1_true)
-    torch.testing.assert_close(x2, x2_true)
-
-
-@pytest.mark.gpu_only
-@pytest.mark.parametrize(
-    "matrix, matrix_type", [("a", "general"), ("a_sym", "symmetric"), ("a_spd", "spd")]
-)
-def test_persistent_direct_solver_transposed_forward(
-    matrix, matrix_type, request, device
-):
-    a = request.getfixturevalue(matrix)
-    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
-    a_dense = a_sdt.to_dense()
-
-    n_dim = a_sdt.size(0)
-    x_true = torch.randn(n_dim).to(device)
-
-    # Target the transposed system: A.T @ x = b
-    b = a_dense.T @ x_true
+    match trans:
+        case "N":
+            b = a_dense @ x_true
+        case "T":
+            b = a_dense.T @ x_true
 
     solver = NVMathDirectSolver(a_sdt, b, sparse_system_type=matrix_type)
-    x = solver(b, trans="T")
+    x = solver(b, trans=trans)
 
     torch.testing.assert_close(x, x_true)
 
@@ -90,34 +77,117 @@ def test_persistent_direct_solver_transposed_forward(
     [(2, 3), (2, 1), (1, 2)],
 )
 @pytest.mark.parametrize(
-    "matrix, matrix_type", [("a", "general"), ("a_sym", "symmetric"), ("a_spd", "spd")]
+    "matrix, matrix_type",
+    [
+        ("a", "general"),
+        ("a_sym", "symmetric"),
+        ("a_spd", "spd"),
+    ],
 )
-def test_persistent_direct_solver_forward_with_complex_channel_dim(
-    matrix, matrix_type, n_ch1, n_ch2, request, device
+@pytest.mark.parametrize("trans", ["N", "T"])
+def test_persistent_direct_solver_with_complex_channel_dim(
+    matrix, matrix_type, trans, n_ch1, n_ch2, request, device
 ):
     a = request.getfixturevalue(matrix)
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     a_dense = a_sdt.to_dense()
 
     n_dim = a_sdt.size(0)
+    x_true = torch.randn(n_dim, n_ch1, n_ch2).to(device)
 
-    x1_true = torch.randn(n_dim, n_ch1, n_ch2).to(device)
-    x2_true = torch.randn(n_dim, n_ch1, n_ch2).to(device)
+    match trans:
+        case "N":
+            b = torch.einsum("ij,jkl->ikl", a_dense, x_true)
+        case "T":
+            b = torch.einsum("ji,jkl->ikl", a_dense, x_true)
 
-    b1 = torch.einsum("ij,jkl->ikl", a_dense, x1_true)
-    b2 = torch.einsum("ij,jkl->ikl", a_dense, x2_true)
+    solver = NVMathDirectSolver(a_sdt, b, sparse_system_type=matrix_type)
+    x = solver(b, trans=trans)
 
-    solver = NVMathDirectSolver(a_sdt, b1, sparse_system_type=matrix_type)
-
-    x1 = solver(b1)
-    x2 = solver(b2)
-
-    torch.testing.assert_close(x1, x1_true)
-    torch.testing.assert_close(x2, x2_true)
+    torch.testing.assert_close(x, x_true)
 
 
 @pytest.mark.gpu_only
-def test_persistent_direct_solver_sequential_backward_pattern_1(a, device):
+@pytest.mark.parametrize(
+    "matrix, matrix_type",
+    [
+        ("a_with_batch", "general"),
+        ("a_sym_with_batch", "symmetric"),
+        ("a_spd_with_batch", "spd"),
+    ],
+)
+@pytest.mark.parametrize("trans", ["N", "T"])
+def test_direct_solver_with_batch_dim(matrix, matrix_type, trans, request, device):
+    a_with_batch = request.getfixturevalue(matrix)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_with_batch).to(device)
+    a_dense = a_sdt.to_dense()
+
+    n_dim = a_sdt.size(-1)
+    n_batch = a_sdt.size(0)
+
+    x_true = torch.randn(n_batch, n_dim).to(device)
+
+    match trans:
+        case "N":
+            b = torch.einsum("bij,bj->bi", a_dense, x_true)
+        case "T":
+            b = torch.einsum("bji,bj->bi", a_dense, x_true)
+
+    solver = NVMathDirectSolver(a_sdt, b, sparse_system_type=matrix_type)
+    x = solver(b, trans=trans)
+
+    torch.testing.assert_close(x, x_true)
+
+
+@pytest.mark.gpu_only
+@pytest.mark.parametrize(
+    "matrix, matrix_type",
+    [
+        ("a_with_batch", "general"),
+        ("a_sym_with_batch", "symmetric"),
+        ("a_spd_with_batch", "spd"),
+    ],
+)
+@pytest.mark.parametrize("trans", ["N", "T"])
+def test_direct_solver_with_batch_channel_dim(
+    matrix, matrix_type, trans, request, device
+):
+    a_with_batch = request.getfixturevalue(matrix)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_with_batch).to(device)
+    a_dense = a_sdt.to_dense()
+
+    n_dim = a_sdt.size(-1)
+    n_batch = a_sdt.size(0)
+    n_ch = 2
+
+    x_true = torch.randn(n_batch, n_dim, n_ch).to(device)
+
+    match trans:
+        case "N":
+            b = torch.einsum("bij,bjc->bic", a_dense, x_true)
+        case "T":
+            b = torch.einsum("bji,bjc->bic", a_dense, x_true)
+
+    solver = NVMathDirectSolver(a_sdt, b, sparse_system_type=matrix_type)
+    x = solver(b, trans=trans)
+
+    torch.testing.assert_close(x, x_true)
+
+
+@pytest.mark.gpu_only
+@pytest.mark.parametrize(
+    "matrix, matrix_type",
+    [
+        ("a", "general"),
+        ("a_sym", "symmetric"),
+        ("a_spd", "spd"),
+    ],
+)
+@pytest.mark.parametrize("trans1", ["N", "T"])
+@pytest.mark.parametrize("trans2", ["N", "T"])
+def test_persistent_direct_solver_sequential_backward_pattern_1(
+    matrix, matrix_type, trans1, trans2, request, device
+):
     """
     Test persistent solver sequential backward passes.
 
@@ -125,8 +195,8 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(a, device):
     applied sequentially to two RHS vectors, and the gradient is cleared in between
     the two applications.
     """
-    a_sym = a + a.T
-    a_sdt = SparseDecoupledTensor.from_tensor(a_sym).to(device)
+    a = request.getfixturevalue(matrix)
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     n_dim = a_sdt.size(0)
 
     a_dense = a_sdt.to_dense()
@@ -138,11 +208,11 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(a, device):
 
     # Define solver
     a_sdt.requires_grad_()
-    solver = NVMathDirectSolver(a_sdt, b1)
+    solver = NVMathDirectSolver(a_sdt, b1, sparse_system_type=matrix_type)
 
     # Compute the dLdA and dLdb gradients via the adjoint method.
     b1.requires_grad_()
-    x1_via_sp = solver(b1)
+    x1_via_sp = solver(b1, trans=trans1)
     loss1 = torch.sum(x1_via_sp * v1)
     loss1.backward()
 
@@ -156,7 +226,7 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(a, device):
     v2 = torch.randn(n_dim).to(device)
 
     b2.requires_grad_()
-    x2_via_sp = solver(b2)
+    x2_via_sp = solver(b2, trans=trans2)
     loss2 = torch.sum(x2_via_sp * v2)
     loss2.backward()
 
@@ -165,7 +235,13 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(a, device):
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
     b1.grad = None  # clear the existing gradient on b1
-    x1_via_dense = torch.linalg.solve(a_dense, b1)
+
+    match trans1:
+        case "N":
+            x1_via_dense = torch.linalg.solve(a_dense, b1)
+        case "T":
+            x1_via_dense = torch.linalg.solve(a_dense.T, b1)
+
     loss1 = torch.sum(x1_via_dense * v1)
     loss1.backward()
 
@@ -185,7 +261,12 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(a, device):
     b2.grad = None
     a_dense.grad = None
 
-    x2_via_dense = torch.linalg.solve(a_dense, b2)
+    match trans2:
+        case "N":
+            x2_via_dense = torch.linalg.solve(a_dense, b2)
+        case "T":
+            x2_via_dense = torch.linalg.solve(a_dense.T, b2)
+
     loss2 = torch.sum(x2_via_dense * v2)
     loss2.backward()
 
@@ -201,7 +282,19 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(a, device):
 
 
 @pytest.mark.gpu_only
-def test_persistent_direct_solver_sequential_backward_pattern_2(a, device):
+@pytest.mark.parametrize(
+    "matrix, matrix_type",
+    [
+        ("a", "general"),
+        ("a_sym", "symmetric"),
+        ("a_spd", "spd"),
+    ],
+)
+@pytest.mark.parametrize("trans1", ["N", "T"])
+@pytest.mark.parametrize("trans2", ["N", "T"])
+def test_persistent_direct_solver_sequential_backward_pattern_2(
+    matrix, matrix_type, trans1, trans2, request, device
+):
     """
     Test persistent solver sequential backward passes.
 
@@ -209,8 +302,8 @@ def test_persistent_direct_solver_sequential_backward_pattern_2(a, device):
     applied sequentially to two RHS vectors, and a single loss is computed using
     the results from both operations.
     """
-    a_sym = a + a.T
-    a_sdt = SparseDecoupledTensor.from_tensor(a_sym).to(device)
+    a = request.getfixturevalue(matrix)
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     n_dim = a_sdt.size(0)
 
     a_dense = a_sdt.to_dense()
@@ -222,14 +315,14 @@ def test_persistent_direct_solver_sequential_backward_pattern_2(a, device):
 
     # Define solver
     a_sdt.requires_grad_()
-    solver = NVMathDirectSolver(a_sdt, b1)
+    solver = NVMathDirectSolver(a_sdt, b1, sparse_system_type=matrix_type)
 
     # Compute the dLdA and dLdb gradients via the adjoint method.
     b1.requires_grad_()
     b2.requires_grad_()
 
-    x1_via_sp = solver(b1)
-    x2_via_sp = solver(b2)
+    x1_via_sp = solver(b1, trans=trans1)
+    x2_via_sp = solver(b2, trans=trans2)
 
     loss = torch.sum(x1_via_sp * x2_via_sp)
     loss.backward()
@@ -241,8 +334,19 @@ def test_persistent_direct_solver_sequential_backward_pattern_2(a, device):
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
     b1.grad = None  # clear the existing gradient on b1
     b2.grad = None
-    x1_via_dense = torch.linalg.solve(a_dense, b1)
-    x2_via_dense = torch.linalg.solve(a_dense, b2)
+
+    match trans1:
+        case "N":
+            x1_via_dense = torch.linalg.solve(a_dense, b1)
+        case "T":
+            x1_via_dense = torch.linalg.solve(a_dense.T, b1)
+
+    match trans2:
+        case "N":
+            x2_via_dense = torch.linalg.solve(a_dense, b2)
+        case "T":
+            x2_via_dense = torch.linalg.solve(a_dense.T, b2)
+
     loss = torch.sum(x1_via_dense * x2_via_dense)
     loss.backward()
 
@@ -262,80 +366,65 @@ def test_persistent_direct_solver_sequential_backward_pattern_2(a, device):
 
 
 @pytest.mark.gpu_only
-def test_persistent_direct_solver_backward_with_channel_dim(a, device):
-    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+@pytest.mark.parametrize(
+    "matrix, matrix_type",
+    [
+        ("a_with_batch", "general"),
+        ("a_sym_with_batch", "symmetric"),
+        ("a_spd_with_batch", "spd"),
+    ],
+)
+@pytest.mark.parametrize("trans", ["N", "T"])
+def test_persistent_direct_solver_backward_with_batch_and_channel_dim(
+    matrix, matrix_type, trans, request, device
+):
+    a_with_batch = request.getfixturevalue(matrix)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_with_batch).to(device)
     a_dense = a_sdt.to_dense()
-    n_dim = a_sdt.size(0)
-    n_ch = 3
 
-    # Compute b and v with channel dimensions.
-    b = torch.randn(n_dim, n_ch).to(device)
-    v = torch.randn(n_dim, n_ch).to(device)
+    n_batch = a_sdt.size(0)
+    n_dim = a_sdt.size(-1)
+    n_ch = 2
 
-    # Define solver and compute gradients via adjoint method.
+    # Compute b and v with both batch and channel dimensions.
+    b = torch.randn(n_batch, n_dim, n_ch).to(device)
+    v = torch.randn(n_batch, n_dim, n_ch).to(device)
+
+    # Compute the dLdA and dLdb gradients via the adjoint method.
     a_sdt.requires_grad_()
     b.requires_grad_()
 
-    solver = NVMathDirectSolver(a_sdt, b, sparse_system_type="general")
-    x_via_sp = solver(b)
+    solver = NVMathDirectSolver(a_sdt, b, sparse_system_type=matrix_type)
+    x_via_sp = solver(b, trans=trans)
+
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
     a_sp_grad = a_sdt.values.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
-    # Compute dense autograd baseline.
+    # Compute gradients via dense autograd (torch.linalg.solve supports batched A and b).
     a_dense.requires_grad_()
     b.grad = None
-    x_via_dense = torch.linalg.solve(a_dense, b)
+
+    match trans:
+        case "N":
+            x_via_dense = torch.linalg.solve(a_dense, b)
+        case "T":
+            x_via_dense = torch.linalg.solve(a_dense.transpose(-1, -2), b)
+
     loss = torch.sum(x_via_dense * v)
     loss.backward()
 
-    a_dense_grad = (
-        a_dense.grad[a_sdt.pattern.idx_coo[0], a_sdt.pattern.idx_coo[1]]
-        .detach()
-        .clone()
-    )
+    # Extract the nonzero elements of dLdA computed using a dense A.
+    # idx_coo has shape (sp, nnz) where sp = len(*b) + 2.
+    b_idx = a_sdt.pattern.idx_coo[0]
+    r_idx = a_sdt.pattern.idx_coo[1]
+    c_idx = a_sdt.pattern.idx_coo[2]
+    a_dense_grad = a_dense.grad[b_idx, r_idx, c_idx].detach().clone()
+
     b_dense_grad = b.grad.detach().clone()
 
     # Assert that the adjoint method gradients agree with autograd.
-    torch.testing.assert_close(a_sp_grad, a_dense_grad)
-    torch.testing.assert_close(b_sp_grad, b_dense_grad)
-
-
-@pytest.mark.gpu_only
-def test_persistent_direct_solver_transposed_backward(a, device):
-    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
-    a_dense = a_sdt.to_dense()
-    n_dim = a_sdt.size(0)
-
-    b = torch.randn(n_dim).to(device)
-    v = torch.randn(n_dim).to(device)
-
-    a_sdt.requires_grad_()
-    b.requires_grad_()
-
-    solver = NVMathDirectSolver(a_sdt, b, sparse_system_type="general")
-    x_via_sp = solver(b, trans="T")
-    loss = torch.sum(x_via_sp * v)
-    loss.backward()
-
-    a_sp_grad = a_sdt.values.grad.detach().clone()
-    b_sp_grad = b.grad.detach().clone()
-
-    # Compute dense autograd baseline using A.T
-    a_dense.requires_grad_()
-    b.grad = None
-    x_via_dense = torch.linalg.solve(a_dense.T, b)
-    loss = torch.sum(x_via_dense * v)
-    loss.backward()
-
-    a_dense_grad = (
-        a_dense.grad[a_sdt.pattern.idx_coo[0], a_sdt.pattern.idx_coo[1]]
-        .detach()
-        .clone()
-    )
-    b_dense_grad = b.grad.detach().clone()
-
     torch.testing.assert_close(a_sp_grad, a_dense_grad)
     torch.testing.assert_close(b_sp_grad, b_dense_grad)
