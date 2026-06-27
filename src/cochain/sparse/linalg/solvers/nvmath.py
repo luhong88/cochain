@@ -60,7 +60,7 @@ class DirectSolverConfig:
 
     Notes
     -----
-    THe `DirectSolver` constructor allows for direct control of the CUDA execution
+    The `DirectSolver` constructor allows for direct control of the CUDA execution
     stream, which is not allowed here to prevent potential stream mismatch during
     backward passes.
     """
@@ -284,6 +284,8 @@ class _NVMathSparseSolver(BaseSparseSolver):
 
         stream = torch.cuda.current_stream()
 
+        # Whenever a is reset, needs to retrigger plan() and factorize(), which
+        # is expensive.
         match (reset_a, reset_b):
             case (True, True):
                 self.solver.reset_operands(a=new_a, b=b_ready, stream=stream)
@@ -465,7 +467,8 @@ class NVMathDirectSolver(InvSparseOperator):
 
     Given a (batch of) sparse 2D matrix `a` and a (batch of) vector `b`, this class
     computes and caches the LU factorization of `a` for the purpose of solving
-    the linear system `a @ x = b` for `x`.
+    the linear system `a @ x = b` for `x`. Once initialized, call the class
+    instance to with a (new) RHS `b` to perform the linear solve.
 
     Parameters
     ----------

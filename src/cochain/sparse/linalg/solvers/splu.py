@@ -58,6 +58,7 @@ class _SuperLUSparseSolver(BaseSparseSolver):
         if (backend == "cupy") and not _HAS_CUPY:
             raise ImportError("CuPy backend required.")
 
+        # The splu wrappers here don't actually make use of this argument.
         self.matrix_type = matrix_type
         self.a_val = a.values
         self.a_pattern = a.pattern
@@ -232,9 +233,9 @@ class SuperLU(InvSparseOperator):
     """
     "Stateful" differentiable wrapper for SuperLU.
 
-    Given a sparse 2D matrix `a` and a vector `b`, this class computes and caches
-    the LU factorization of `a` for the purpose of solving the linear system
-    `a @ x = b` for `x`.
+    Given a sparse 2D matrix `a`, this class computes and caches the LU factorization
+    of `a`. Once initialized, call the class instance with a RHS vector `b` to
+    solve the linear system `a @ x = b` for `x`.
 
     Parameters
     ----------

@@ -48,11 +48,6 @@ class InvSparseOperator(ABC):
     """
     An ABC for "stateful" differentiable sparse linear solver classes.
 
-    This class provides an abstraction to solving the sparse linear system `a @ x = b`
-    for `x`. The tensor `a` is assumed to have shape `(r, c)`, and the tensor `b` is
-    assumed to have shape `(r, *ch)`, and the output `x` tensor is assumed to have
-    shape `(c, *ch)`; no explicit leading batch dimensions are allowed.
-
     Parameters
     ----------
     dtype
