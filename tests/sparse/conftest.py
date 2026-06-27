@@ -162,6 +162,29 @@ def a_sym_with_batch() -> Float[Tensor, "2 4 4"]:
 
 
 @pytest.fixture
+def a_spd_with_batch(a_with_batch) -> Float[Tensor, "2 4 4"]:
+    """Construct a batched SPD matrix from batched A via A @ A.T + ϵI."""
+    n_batch, n_dim, _ = a_with_batch.shape
+
+    tensor_list = []
+    for i in range(n_batch):
+        # Extract the 2D sparse tensor for the current batch item.
+        a_i = a_with_batch[i]
+
+        # Construct the sparse identity matrix
+        eye = torch.eye(n_dim, dtype=a_i.dtype, device=a_i.device).to_sparse_coo()
+
+        # Calculate A @ A.T + ϵI
+        a_spd_i = a_i @ a_i.T + 0.1 * eye
+        tensor_list.append(a_spd_i)
+
+    # Stack the 2D tensors back into a 3D batched sparse tensor and coalesce.
+    tensor = torch.stack(tensor_list).to_sparse_coo().coalesce()
+
+    return tensor
+
+
+@pytest.fixture
 def a_with_dense() -> Float[Tensor, "4 4 3"]:
     n_row = 4
     n_dense = 3

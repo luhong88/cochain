@@ -76,7 +76,11 @@ def test_direct_solver_with_complex_channel_dim(
 @pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
-    [("a_with_batch", "general"), ("a_sym_with_batch", "symmetric")],
+    [
+        ("a_with_batch", "general"),
+        ("a_sym_with_batch", "symmetric"),
+        ("a_spd_with_batch", "spd"),
+    ],
 )
 def test_direct_solver_with_batch_dim(matrix, matrix_type, request, device):
     a_with_batch = request.getfixturevalue(matrix)
@@ -97,7 +101,11 @@ def test_direct_solver_with_batch_dim(matrix, matrix_type, request, device):
 @pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
-    [("a_with_batch", "general"), ("a_sym_with_batch", "symmetric")],
+    [
+        ("a_with_batch", "general"),
+        ("a_sym_with_batch", "symmetric"),
+        ("a_spd_with_batch", "spd"),
+    ],
 )
 def test_direct_solver_with_batch_channel_dim(matrix, matrix_type, request, device):
     a_with_batch = request.getfixturevalue(matrix)
@@ -170,7 +178,11 @@ def test_direct_solver_backward(matrix, matrix_type, request, device):
 @pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
-    [("a_with_batch", "general"), ("a_sym_with_batch", "symmetric")],
+    [
+        ("a_with_batch", "general"),
+        ("a_sym_with_batch", "symmetric"),
+        ("a_spd_with_batch", "spd"),
+    ],
 )
 def test_direct_solver_backward_with_batch_and_channel_dim(
     matrix, matrix_type, request, device
