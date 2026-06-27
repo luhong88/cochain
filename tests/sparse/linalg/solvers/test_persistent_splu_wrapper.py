@@ -14,26 +14,27 @@ itemize_backend = pytest.mark.parametrize(
 
 
 @itemize_backend
-def test_persistent_splu_forward(a, backend, device):
+@pytest.mark.parametrize("trans", ["N", "T"])
+def test_persistent_splu_forward(a, trans, backend, device):
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     a_dense = a_sdt.to_dense()
 
     n_dim = a_sdt.size(0)
     n_ch = 2
 
-    x1_true = torch.randn(n_dim, n_ch).to(device)
-    x2_true = torch.randn(n_dim, n_ch).to(device)
+    x_true = torch.randn(n_dim, n_ch).to(device)
 
-    b1 = a_dense @ x1_true
-    b2 = a_dense @ x2_true
+    match trans:
+        case "N":
+            b = a_dense @ x_true
+        case "T":
+            b = a_dense.T @ x_true
 
     solver = SuperLU(a_sdt, backend=backend)
 
-    x1 = solver(b1)
-    x2 = solver(b2)
+    x = solver(b, trans=trans)
 
-    torch.testing.assert_close(x1, x1_true)
-    torch.testing.assert_close(x2, x2_true)
+    torch.testing.assert_close(x, x_true)
 
 
 @itemize_backend
@@ -41,31 +42,36 @@ def test_persistent_splu_forward(a, backend, device):
     "n_ch1, n_ch2",
     [(2, 3), (2, 1), (1, 2)],
 )
+@pytest.mark.parametrize("trans", ["N", "T"])
 def test_persistent_splu_forward_with_complex_channel_dim(
-    a, n_ch1, n_ch2, backend, device
+    a, n_ch1, n_ch2, trans, backend, device
 ):
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     a_dense = a_sdt.to_dense()
 
     n_dim = a_sdt.size(0)
 
-    x1_true = torch.randn(n_dim, n_ch1, n_ch2).to(device)
-    x2_true = torch.randn(n_dim, n_ch1, n_ch2).to(device)
+    x_true = torch.randn(n_dim, n_ch1, n_ch2).to(device)
 
-    b1 = torch.einsum("ij,jkl->ikl", a_dense, x1_true)
-    b2 = torch.einsum("ij,jkl->ikl", a_dense, x2_true)
+    match trans:
+        case "N":
+            b = torch.einsum("ij,jkl->ikl", a_dense, x_true)
+        case "T":
+            b = torch.einsum("ji,jkl->ikl", a_dense, x_true)
 
     solver = SuperLU(a_sdt, backend=backend)
 
-    x1 = solver(b1)
-    x2 = solver(b2)
+    x = solver(b, trans=trans)
 
-    torch.testing.assert_close(x1, x1_true)
-    torch.testing.assert_close(x2, x2_true)
+    torch.testing.assert_close(x, x_true)
 
 
 @itemize_backend
-def test_persistent_splu_sequential_backward_pattern_1(a, backend, device):
+@pytest.mark.parametrize("trans1", ["N", "T"])
+@pytest.mark.parametrize("trans2", ["N", "T"])
+def test_persistent_splu_sequential_backward_pattern_1(
+    a, trans1, trans2, backend, device
+):
     """
     Test persistent solver sequential backward passes.
 
@@ -89,7 +95,7 @@ def test_persistent_splu_sequential_backward_pattern_1(a, backend, device):
 
     # Compute the dLdA and dLdb gradients via the adjoint method.
     b1.requires_grad_()
-    x1_via_sp = solver(b1)
+    x1_via_sp = solver(b1, trans=trans1)
     loss1 = torch.sum(x1_via_sp * v1)
     loss1.backward()
 
@@ -103,7 +109,7 @@ def test_persistent_splu_sequential_backward_pattern_1(a, backend, device):
     v2 = torch.randn(n_dim).to(device)
 
     b2.requires_grad_()
-    x2_via_sp = solver(b2)
+    x2_via_sp = solver(b2, trans=trans2)
     loss2 = torch.sum(x2_via_sp * v2)
     loss2.backward()
 
@@ -112,7 +118,12 @@ def test_persistent_splu_sequential_backward_pattern_1(a, backend, device):
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
     b1.grad = None  # clear the existing gradient on b1
-    x1_via_dense = torch.linalg.solve(a_dense, b1)
+    match trans1:
+        case "N":
+            x1_via_dense = torch.linalg.solve(a_dense, b1)
+        case "T":
+            x1_via_dense = torch.linalg.solve(a_dense.T, b1)
+
     loss1 = torch.sum(x1_via_dense * v1)
     loss1.backward()
 
@@ -132,7 +143,12 @@ def test_persistent_splu_sequential_backward_pattern_1(a, backend, device):
     b2.grad = None
     a_dense.grad = None
 
-    x2_via_dense = torch.linalg.solve(a_dense, b2)
+    match trans2:
+        case "N":
+            x2_via_dense = torch.linalg.solve(a_dense, b2)
+        case "T":
+            x2_via_dense = torch.linalg.solve(a_dense.T, b2)
+
     loss2 = torch.sum(x2_via_dense * v2)
     loss2.backward()
 
@@ -148,7 +164,11 @@ def test_persistent_splu_sequential_backward_pattern_1(a, backend, device):
 
 
 @itemize_backend
-def test_persistent_splu_sequential_backward_pattern_2(a_sym, backend, device):
+@pytest.mark.parametrize("trans1", ["N", "T"])
+@pytest.mark.parametrize("trans2", ["N", "T"])
+def test_persistent_splu_sequential_backward_pattern_2(
+    a, trans1, trans2, backend, device
+):
     """
     Test persistent solver sequential backward passes.
 
@@ -156,7 +176,7 @@ def test_persistent_splu_sequential_backward_pattern_2(a_sym, backend, device):
     applied sequentially to two RHS vectors, and a single loss is computed using
     the results from both operations.
     """
-    a_sdt = SparseDecoupledTensor.from_tensor(a_sym).to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     n_dim = a_sdt.size(0)
 
     a_dense = a_sdt.to_dense()
@@ -174,8 +194,8 @@ def test_persistent_splu_sequential_backward_pattern_2(a_sym, backend, device):
     b1.requires_grad_()
     b2.requires_grad_()
 
-    x1_via_sp = solver(b1)
-    x2_via_sp = solver(b2)
+    x1_via_sp = solver(b1, trans=trans1)
+    x2_via_sp = solver(b2, trans=trans2)
 
     loss = torch.sum(x1_via_sp * x2_via_sp)
     loss.backward()
@@ -187,8 +207,19 @@ def test_persistent_splu_sequential_backward_pattern_2(a_sym, backend, device):
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
     b1.grad = None  # clear the existing gradient on b1
     b2.grad = None
-    x1_via_dense = torch.linalg.solve(a_dense, b1)
-    x2_via_dense = torch.linalg.solve(a_dense, b2)
+
+    match trans1:
+        case "N":
+            x1_via_dense = torch.linalg.solve(a_dense, b1)
+        case "T":
+            x1_via_dense = torch.linalg.solve(a_dense.T, b1)
+
+    match trans2:
+        case "N":
+            x2_via_dense = torch.linalg.solve(a_dense, b2)
+        case "T":
+            x2_via_dense = torch.linalg.solve(a_dense.T, b2)
+
     loss = torch.sum(x1_via_dense * x2_via_dense)
     loss.backward()
 
@@ -208,7 +239,8 @@ def test_persistent_splu_sequential_backward_pattern_2(a_sym, backend, device):
 
 
 @itemize_backend
-def test_persistent_splu_backward_with_channel_dim(a, backend, device):
+@pytest.mark.parametrize("trans", ["N", "T"])
+def test_persistent_splu_backward_with_channel_dim(a, trans, backend, device):
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     a_dense = a_sdt.to_dense()
     n_dim = a_sdt.size(0)
@@ -222,7 +254,7 @@ def test_persistent_splu_backward_with_channel_dim(a, backend, device):
     a_sdt.requires_grad_()
     b.requires_grad_()
     solver = SuperLU(a_sdt, backend=backend)
-    x_via_sp = solver(b)
+    x_via_sp = solver(b, trans=trans)
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
@@ -232,7 +264,13 @@ def test_persistent_splu_backward_with_channel_dim(a, backend, device):
     # Compute dense autograd baseline.
     a_dense.requires_grad_()
     b.grad = None
-    x_via_dense = torch.linalg.solve(a_dense, b)
+
+    match trans:
+        case "N":
+            x_via_dense = torch.linalg.solve(a_dense, b)
+        case "T":
+            x_via_dense = torch.linalg.solve(a_dense.T, b)
+
     loss = torch.sum(x_via_dense * v)
     loss.backward()
 
