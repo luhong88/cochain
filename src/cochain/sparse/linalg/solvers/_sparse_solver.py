@@ -168,18 +168,25 @@ class SparseSolverAutogradFunction(torch.autograd.Function):
 
             a_nz_idx = a_pattern.idx_coo.unbind(dim=0)
 
+            # If the forward pass was transposed, the outer product is -x @ λ^T
+            # instead of -λ @ x^T. We handle this by swapping row and col indices.
+            if ctx.trans == "T":
+                r_idx, c_idx = a_nz_idx[-1], a_nz_idx[-2]  # (c, r)
+            else:
+                r_idx, c_idx = a_nz_idx[-2], a_nz_idx[-1]  # (r, c)
+
             match (b_has_ch_dim, a_has_batch_dim):
                 case (True, True):
-                    b, r, c = a_nz_idx
-                    dLda_val = -torch.sum(lambda_[b, r] * x_flat[b, c], dim=-1)
+                    batch_idx = a_nz_idx[0]
+                    dLda_val = -torch.sum(
+                        lambda_[batch_idx, r_idx] * x_flat[batch_idx, c_idx], dim=-1
+                    )
 
                 case (True, False):
-                    r, c = a_nz_idx
-                    dLda_val = -torch.sum(lambda_[r] * x_flat[c], dim=-1)
+                    dLda_val = -torch.sum(lambda_[r_idx] * x_flat[c_idx], dim=-1)
 
                 case (False, False):
-                    r, c = a_nz_idx
-                    dLda_val = -lambda_[r] * x_flat[c]
+                    dLda_val = -lambda_[r_idx] * x_flat[c_idx]
 
                 case (False, True):
                     raise NotImplementedError()
