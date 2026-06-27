@@ -28,6 +28,17 @@ def a_sym(a) -> Float[Tensor, "4 4"]:
 
 
 @pytest.fixture
+def a_spd(a):
+    """Construct an SPD matrix from A via A @ A.T + ϵI."""
+    n_dim = a.size(-1)
+
+    eye = torch.eye(n_dim, dtype=a.dtype, device=a.device).to_sparse_coo()
+    a_spd = a @ a.T + 0.1 * eye
+
+    return a_spd
+
+
+@pytest.fixture
 def b() -> Float[Tensor, "4 5"]:
     n_row = 4
     n_col = 5
