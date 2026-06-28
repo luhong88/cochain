@@ -18,7 +18,9 @@ except ImportError:
     _HAS_NVMATH = False
 
 
-class IdentityOperator:
+class IdOp:
+    """An identity operator."""
+
     def __init__(self):
         pass
 
@@ -33,13 +35,17 @@ class IdentityOperator:
 
 
 class ShiftInvSymSpOp:
-    """
+    r"""
     A linear operator used to solve an eigenvalue problem in the shift-invert mode.
 
-    For the shift-inverted eigenvalue problem inv(A - σI)@x = (λ - σ)^(-1)*x,
-    this class represents the operator inv(A - σI) and implements __matmul__().
-    Performing the matrix-vector multiplication inv(A - σI)@x = y is equal to
-    solving the sparse linear system (A - σI)@y = x.
+    For the shift-inverted eigenvalue problem
+
+    $$(A - \sigma I)^{-1} x = (\lambda - \sigma)^{-1} x$$
+
+    this class represents the operator $(A - \sigma I)^{-1}$ and implements
+    `__matmul__()`. Performing the matrix-vector multiplication
+    $(A - \sigma I)^{-1} x = y$ for $y$ is equal to solving the sparse linear system
+    $(A - \sigma I) y = x$ for $y$.
     """
 
     def __init__(
@@ -94,14 +100,17 @@ class ShiftInvSymSpOp:
 
 
 class ShiftInvSymGEPSpOp:
-    """
-    A linear operator used to solve a generalized eigenvalue problem in the
-    shift-invert mode.
+    r"""
+    A linear operator used to solve a generalized eigenvalue problem in the shift-invert mode.
 
     For the shift-inverted generalized eigenvalue problem
-    inv(A - σM)@M@x = (λ - σ)^(-1)*x, this class represents the operator inv(A - σM)@M
-    and implements __matmul__(). Performing the matrix-vector multiplication
-    inv(A - σM)@M@x = y is equal to solving the sparse linear system (A - σM)@y = M@x.
+
+    $$(A - \sigma M)^{-1} M x = (\lambda - \sigma)^{-1} x$$
+
+    this class represents the operator $(A - \sigma M)^{-1} M$ and implements
+    `__matmul__()`. Performing the matrix-vector multiplication
+    $(A - \sigma M)^{-1} M x = y$ for $y$ is equal to solving the sparse linear
+    system $(A - \sigma M) y = M x$ for $y$.
     """
 
     def __init__(

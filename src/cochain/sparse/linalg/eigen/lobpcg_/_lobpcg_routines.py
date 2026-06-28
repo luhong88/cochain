@@ -8,7 +8,7 @@ from ....decoupled_tensor import SparseDecoupledTensor
 from ...solvers import DirectSolverConfig
 from ..base.utils import m_orthonormalize
 from ._lobpcg_operators import (
-    IdentityOperator,
+    IdOp,
     ShiftInvSymGEPSpOp,
     ShiftInvSymSpOp,
 )
@@ -21,7 +21,7 @@ from ._lobpcg_preconditioners import (
 )
 
 type SparseDecoupledTensorLike = (
-    IdentityOperator
+    IdOp
     | Float[SparseDecoupledTensor, "m m"]
     | Float[ShiftInvSymSpOp, "m m"]
     | Float[ShiftInvSymGEPSpOp, "m m"]
@@ -32,8 +32,8 @@ type LOBPCGPreconditioner = IdentityPrecond | JacobiPrecond | ILUPrecond | ChoPr
 
 def _lobpcg_one_iter(
     T_op: SparseDecoupledTensorLike,
-    M_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
-    S_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
+    M_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
+    S_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
     R: Float[Tensor, "m n"],
     X_current: Float[Tensor, "m n"],
     X_prev: Float[Tensor, "m n"],
@@ -110,9 +110,9 @@ def _lobpcg_one_iter(
 
 def _lobpcg_loop(
     T_op: SparseDecoupledTensorLike,
-    B_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
-    M_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
-    S_op: Float[SparseDecoupledTensor, "m m"] | IdentityOperator,
+    B_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
+    M_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
+    S_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
     X_0: Float[Tensor, "m n"],
     precond: LOBPCGPreconditioner,
     largest: bool,
@@ -200,7 +200,7 @@ def _dispatch_operators(
                 precond = IdentityPrecond()
             case "jacobi":
                 # A_op is not required to be int32-safe.
-                precond = JacobiPrecond(A_op=A_op)
+                precond = JacobiPrecond(a_sdt=A_op)
             case "ilu":
                 # A_op is required to be int32-safe.
                 precond = ILUPrecond(
@@ -222,29 +222,29 @@ def _dispatch_operators(
     match (M_op, sigma):
         case (None, None):
             T_op = A_op
-            B_op = IdentityOperator()
-            M_op = IdentityOperator()
-            S_op = IdentityOperator()
+            B_op = IdOp()
+            M_op = IdOp()
+            S_op = IdOp()
 
         case (M_op, None):
             T_op = A_op
             B_op = M_op
             M_op = M_op
-            S_op = IdentityOperator()
+            S_op = IdOp()
 
         case (None, sigma):
             # A_op needs to be int32-safe.
             T_op = ShiftInvSymSpOp(a_sdt=A_op, sigma=sigma, n=n, config=nvmath_config)
-            B_op = IdentityOperator()
-            M_op = IdentityOperator()
-            S_op = IdentityOperator()
+            B_op = IdOp()
+            M_op = IdOp()
+            S_op = IdOp()
 
         case (M_op, sigma):
             # A_op and M_op need to be int32-safe.
             T_op = ShiftInvSymGEPSpOp(
                 a_sdt=A_op, m_sdt=M_op, sigma=sigma, n=n, config=nvmath_config
             )
-            B_op = IdentityOperator()
+            B_op = IdOp()
             M_op = M_op
             S_op = M_op
 

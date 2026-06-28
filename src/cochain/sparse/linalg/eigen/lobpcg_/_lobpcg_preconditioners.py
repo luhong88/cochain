@@ -12,7 +12,7 @@ from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ....decoupled_tensor._conversion import sdt_to_cupy_csc
 from ...solvers import DirectSolverConfig
 from ...solvers.nvmath import _NVMathSparseSolver
-from ._lobpcg_operators import IdentityOperator
+from ._lobpcg_operators import IdOp
 
 try:
     import cupy as cp
@@ -32,14 +32,29 @@ try:
 except ImportError:
     _HAS_NVMATH = False
 
+# A machine eps scaling factor for controlling the strength of diagonal damping.
+ALPHA = 1e3
 
-# TODO: relax import check?
+
 @dataclass
 class LOBPCGPrecondConfig:
     """
-    diag_damp only applicable if method is ilu or cholesky.
-    nvmath_config only applicable if method is cholesky.
-    spilu_kwargs only applicable if method is ilu.
+    A dataclass encapsulating LOBPCG preconditioner configuration.
+
+    Parameters
+    ----------
+    method
+        The preconditioning method; set to "identity" to disable preconditioning.
+    diag_damp
+        The strength of diagonal damping/Tikhonov regularization. This parameter
+        is only applicable if `method` is 'ilu' or 'cholesky'; set to integer 0
+        to disable diagonal damping.
+    nvmath_config
+        Optional configurations for the `nvmath-python` `DirectSolver()`; only
+        applicable if `method` is 'cholesky'.
+    spilu_kwargs
+        Optional configurations for the `CuPy` `spilu()`; only applicable if
+        `method` is 'ilu'.
     """
 
     method: Literal["identity", "jacobi", "ilu", "cholesky"] = "cholesky"
@@ -48,46 +63,68 @@ class LOBPCGPrecondConfig:
     spilu_kwargs: dict[str, Any] | None = None
 
     def __post_init__(self):
-        if not _HAS_NVMATH:
-            raise ImportError("nvmath-python backend required.")
-
         if self.spilu_kwargs is None:
             self.spilu_kwargs = {}
         if self.nvmath_config is None:
             self.nvmath_config = DirectSolverConfig()
 
 
-IdentityPrecond = IdentityOperator
+IdentityPrecond = IdOp
 
 
 class JacobiPrecond:
-    """
+    r"""
     Jacobi preconditioner for LOBPCG.
+
+    Consider the standard eigenvalue problem $A x = \lambda x$. Let
+    $r = A x - \lambda M x$ be the residual vector. The Jacobi preconditioner
+    approximates the inverse of $A$ as
+
+    $$P = \text{diag}(A)^{-1}$$
+
+    to solve for the search direction $w = P r$.
+
+    For the generalized eigenvalue problem $A x = \lambda M x$, this $P$ is still
+    a good approximation for the inverse of the shifted operator
+    $(A - \lambda M)^{-1}$ when the target eigenvalues are small.
 
     While the Jacobi preconditioner is computationally much cheaper than the ILU
     and Cholesky preconditioner, it is only recommended when the initial guess
     is already very good.
+
+    This preconditioner does not require `CuPy` or `nvmath-python`.
     """
 
-    def __init__(self, A_op: Float[SparseDecoupledTensor, "m m"]):
-        eps = 1e-4 * A_op.tr / A_op.size(0)
-        self.ddt = DiagDecoupledTensor(1 / (A_op.diagonal() + eps))
+    def __init__(self, a_sdt: Float[SparseDecoupledTensor, "m m"]):
+        # Add a small eps to prevent division by zero.
+        eps = ALPHA * torch.finfo(a_sdt.dtype).eps * a_sdt.tr / a_sdt.size(0)
+        self.ddt = DiagDecoupledTensor(1 / (a_sdt.diagonal() + eps))
 
     def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
         return self.ddt @ res
 
 
 class ILUPrecond:
-    """
+    r"""
     Diagonally damped incomplete LU preconditioner for LOBPCG.
 
-    For the standard eigenvalue problem A@x = λ*x and the generalized eigenvalue
-    problem A@x = λ*M@x, if r is a residual vector, applying the preconditioner
-    to r is equivalent to solving a sparse linear system (A + ϵI)@w = r for w
-    using incomplete LU factorization.
+    Consider the standard eigenvalue problem $A x = \lambda x$. Let
+    $r = A x - \lambda M x$ be the residual vector. This preconditioner computes
+    the incomplete LU factorization of the diagonally damped $A$; i.e.,
 
-    This preconditioner uses CuPy to perform the incomplete LU factorization.
-    By default, it uses the cusparse backend to perform the factorization with
+    $$A + \epsilon I \approx L U$$
+
+    which is used to approximate the inverse of $A$ and compute the search direction
+    $w$ as the solution to $L U w = r$. The diagonal damping provided by $\epsilon I$
+    is important to increase the diagonal dominance of $A$ to ensure that the ILU
+    is successful and well-conditioned.
+
+    For the generalized eigenvalue problem $A x = \lambda M x$, this $P = (L U)^{-1}$
+    is still a good approximation for the inverse of the shifted operator
+    $(A - \lambda M)^{-1}$ when the target eigenvalues are small.
+
+    This preconditioner uses `CuPy` to perform the incomplete LU factorization.
+    By default, it uses the `cusparse` backend to perform the factorization with
     zero fill-in and no pivoting. This default config tends to result in smaller
     memory usage than the Cholesky preconditioner.
     """
@@ -106,7 +143,9 @@ class ILUPrecond:
 
         else:
             if diag_damp is None:
-                eps = 1e-4 * a_sdt.tr / a_sdt.size(0)
+                # If no eps is given, set eps to be proportional to the average
+                # diagonal entry size, scaled by the dtype machine eps.
+                eps = ALPHA * torch.finfo(a_sdt.dtype).eps * a_sdt.tr / a_sdt.size(0)
             else:
                 eps = diag_damp
 
@@ -135,15 +174,25 @@ class ILUPrecond:
 
 
 class ChoPrecond:
-    """
+    r"""
     Diagonally damped Cholesky preconditioner for LOBPCG.
 
-    For the standard eigenvalue problem A@x = λ*x and the generalized eigenvalue
-    problem A@x = λ*M@x, if r is a residual vector, applying the preconditioner
-    to r is equivalent to solving a sparse linear system (A + ϵI)@w = r for w
-    using Cholesky factorization.
+    Consider the standard eigenvalue problem $A x = \lambda x$. Let
+    $r = A x - \lambda M x$ be the residual vector. This preconditioner computes
+    the exact Cholesky factorization of the diagonally damped $A$; i.e.,
 
-    This preconditioner uses `nvmath-python` DirectSolver to perform Cholesky
+    $$A + \epsilon I = L L^T$$
+
+    which is used to compute the inverse of $A$ and the search direction $w$ as
+    the solution to $L L^T w = r$. The diagonal damping provided by $\epsilon I$
+    is important to increase the diagonal dominance of $A$ to ensure that the
+    matrix is strictly symmetric positive definite.
+
+    For the generalized eigenvalue problem $A x = \lambda M x$, this $P = (L L^T)^{-1}$
+    is still a good approximation for the inverse of the shifted operator
+    $(A - \lambda M)^{-1}$ when the target eigenvalues are small.
+
+    This preconditioner uses `nvmath-python` `DirectSolver` to perform Cholesky
     factorization.
     """
 
@@ -172,7 +221,9 @@ class ChoPrecond:
 
         else:
             if diag_damp is None:
-                eps = 1e-4 * a_sdt.tr / a_sdt.size(0)
+                # If no eps is given, set eps to be proportional to the average
+                # diagonal entry size, scaled by the dtype machine eps.
+                eps = ALPHA * torch.finfo(a_sdt.dtype).eps * a_sdt.tr / a_sdt.size(0)
             else:
                 eps = diag_damp
 
