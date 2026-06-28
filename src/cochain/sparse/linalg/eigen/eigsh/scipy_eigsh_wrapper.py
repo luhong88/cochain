@@ -323,7 +323,7 @@ def scipy_eigsh(
     eps: float | int = 1e-6,
     return_eigenvectors: bool = True,
     config: SciPyEigshConfig | None = None,
-) -> Float[Tensor, "*b k"] | tuple[Float[Tensor, "*b k"], Float[Tensor, "coord k"]]:
+) -> Float[Tensor, "*b k"] | tuple[Float[Tensor, "*b k"], Float[Tensor, "r k"]]:
     """
     Sparse eigensolver for symmetric square matrices using SciPy.
 
@@ -363,7 +363,7 @@ def scipy_eigsh(
         A tensor of `k` eigenvalues. If `block_diag_batch` is `True`, then the
         tensor also has a leading batch dimension corresponding to the blocks
         in the input `a` matrix.
-    eig_vecs : [coord, k]
+    eig_vecs : [r, k]
         A tensor of `k` M-orthonormal eigenvectors. If `block_diag_batch` is `False`,
         then each column represents an eigenvector; if `block_diag_batch` is `True`,
         then the eigenvectors for each block are stacked along the first dimension.

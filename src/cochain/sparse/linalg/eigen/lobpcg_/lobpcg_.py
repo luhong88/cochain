@@ -15,16 +15,17 @@ from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 from ._lobpcg_routines import lobpcg_forward
 
-try:
-    import nvmath.sparse.advanced
 
-    _HAS_NVMATH = True
+def _matrix_inf_norm(sdt: Float[SparseDecoupledTensor, "m m"] | None) -> float:
+    """Compute the matrix infinity norm."""
+    if sdt is None:
+        return 1.0
+    else:
+        ones = torch.ones(sdt.size(0), dtype=sdt.dtype, device=sdt.device)
+        row_sum = sdt.abs() @ ones
+        return row_sum.max().item()
 
-except ImportError:
-    _HAS_NVMATH = False
 
-
-# TODO: elaborate on atol and rtol meanings.
 @dataclass
 class LOBPCGConfig:
     """
@@ -42,10 +43,9 @@ class LOBPCGConfig:
     largest
         When `True`, solve for the largest eigenvalues; otherwise, solve for the
         smallest eigenvalues.
-    atol
-        Absolute accuracy for eigenvalues (stopping criterion).
-    rtol
-        Relative accuracy for eigenvalues (stopping criterion).
+    tol
+        Residual tolerance for stopping criterion; by default this is set to
+        the square root of the machine epsilon at runtime.
     maxiter
         Maximum number of LOBPCG iterations allowed.
     generator
@@ -55,8 +55,7 @@ class LOBPCGConfig:
     sigma: float | int | None = None
     v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "coord n"] | None] | None = None
     largest: bool = True
-    atol: float | None = None
-    rtol: float | None = None
+    tol: float | None = None
     maxiter: int | None = 1000
     generator: torch.Generator | None = None
 
@@ -95,6 +94,8 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
         m_pattern: Integer[SparsityPattern, "m m"] | None,
         k: int,
         eps: float | int,
+        a_norm: float,
+        m_norm: float,
         lobpcg_config: LOBPCGConfig,
         precond_config: LOBPCGPrecondConfig,
         nvmath_config: DirectSolverConfig,
@@ -111,6 +112,8 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
         eig_vals, eig_vecs = lobpcg_forward(
             a_op=a_op,
             m_op=m_op,
+            a_norm=a_norm,
+            m_norm=m_norm,
             nvmath_config=nvmath_config,
             precond_config=precond_config,
             **asdict(lobpcg_config),
@@ -133,6 +136,8 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
             m_pattern,
             k,
             eps,
+            a_norm,
+            m_norm,
             lobpcg_config,
             precond_config,
             nvmath_config,
@@ -157,6 +162,8 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
         None,
         None,
         None,
+        None,
+        None,
     ]:
         needs_grad_A_val = ctx.needs_input_grad[0]
         needs_grad_M_val = ctx.needs_input_grad[2]
@@ -169,7 +176,7 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
                 ctx, dLdl, dLdv, needs_grad_A_val, needs_grad_M_val
             )
 
-        return dLdA_val, None, dLdM_val, None, None, None, None, None, None
+        return dLdA_val, None, dLdM_val, None, None, None, None, None, None, None, None
 
 
 def _lobpcg_no_batch(
@@ -177,34 +184,25 @@ def _lobpcg_no_batch(
     m: Float[SparseDecoupledTensor, "m m"] | None,
     k: int,
     eps: float | int,
+    a_norm: float,
+    m_norm: float,
     lobpcg_config: LOBPCGConfig,
     precond_config: LOBPCGPrecondConfig,
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
-    if m is None:
-        eig_vals, eig_vecs = LOBPCGAutogradFunction.apply(
-            a.values,
-            a.pattern,
-            None,
-            None,
-            k,
-            eps,
-            lobpcg_config,
-            precond_config,
-            nvmath_config,
-        )
-    else:
-        eig_vals, eig_vecs = LOBPCGAutogradFunction.apply(
-            a.values,
-            a.pattern,
-            m.values,
-            m.pattern,
-            k,
-            eps,
-            lobpcg_config,
-            precond_config,
-            nvmath_config,
-        )
+    eig_vals, eig_vecs = LOBPCGAutogradFunction.apply(
+        a.values,
+        a.pattern,
+        None if m is None else m.values,
+        None if m is None else m.pattern,
+        k,
+        eps,
+        a_norm,
+        m_norm,
+        lobpcg_config,
+        precond_config,
+        nvmath_config,
+    )
 
     return eig_vals, eig_vecs
 
@@ -228,9 +226,21 @@ def _lobpcg_batch(
     eig_val_list = []
     eig_vec_list = []
     for a, m, lobpcg_config in zip(a_list, m_list, lobpcg_config_list, strict=True):
+        a_norm = _matrix_inf_norm(a)
+        m_norm = _matrix_inf_norm(m)
+
         eig_val, eig_vec = _lobpcg_no_batch(
-            a, m, k, eps, lobpcg_config, precond_config, nvmath_config
+            a,
+            m,
+            k,
+            eps,
+            a_norm,
+            m_norm,
+            lobpcg_config,
+            precond_config,
+            nvmath_config,
         )
+
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
 
@@ -259,8 +269,9 @@ def lobpcg(
     Sparse differentiable eigensolver for SPD matrices using LOBPCG.
 
     This function implements a version of LOBPCG that's roughly equivalent to
-    `torch.lobpcg(method='ortho')`;  shift-invert mode for both standard and
-    generalized eigenvalue problems is supported.
+    `torch.lobpcg(method='ortho')`; however, shift-invert mode for both standard
+    and generalized eigenvalue problems is supported, and the function is differentiable
+    with respect to the nonzero values of both `a` and `m`.
 
     Note that this function requires `nvmath-python` for the shift-invert mode.
     In addition, some preconditioners have `nvmath-python` or `CuPy` dependencies.
@@ -292,7 +303,9 @@ def lobpcg(
         convergence of the `k` desired eigenvalues faster and to account for
         possible degenerate eigenvalues.
     k
-        The number of eigenvalues/eigenvectors to find.
+        The number of eigenvalues/eigenvectors to find. Note that, by default,
+        this function finds the `k` largest eigenvalues of `a`; this behavior
+        can be changed in `lobpcg_config`.
     eps
         The strength of Lorentzian broadening/regularization, which removes
         singularities in backward gradient calculation when some of the
@@ -301,9 +314,12 @@ def lobpcg(
         Additional optional LOBPCG configurations.
     nvmath_config
         Additional optional arguments for nvmath `DirectSolver()`; only relevant
-        for the shift-invert mode.
+        for the shift-invert mode. The config passed to this argument is
+        independent of the `nvmath_config` attribute of the `LOBPCGPrecondConfig`
+        class.
     precond_config
-        Additional optional arguments for LOBPCG preconditioners.
+        Additional optional arguments for LOBPCG preconditioners. Note that the
+        preconditioner config is ignored in the shift-invert mode.
 
     Returns
     -------
@@ -380,16 +396,13 @@ def lobpcg(
     else:
         v0 = lobpcg_config.v0
 
-    atol = (
-        torch.finfo(a.dtype).eps if lobpcg_config.rtol is None else lobpcg_config.rtol
-    )
-    rtol = (
+    tol = (
         torch.finfo(a.dtype).eps ** 0.5
-        if lobpcg_config.rtol is None
-        else lobpcg_config.rtol
+        if lobpcg_config.tol is None
+        else lobpcg_config.tol
     )
 
-    processed_lobpcg_config = replace(lobpcg_config, v0=v0, atol=atol, rtol=rtol)
+    processed_lobpcg_config = replace(lobpcg_config, v0=v0, tol=tol)
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(
@@ -402,11 +415,16 @@ def lobpcg(
             nvmath_config,
         )
     else:
+        a_norm = _matrix_inf_norm(a)
+        m_norm = _matrix_inf_norm(m)
+
         eig_vals, eig_vecs = _lobpcg_no_batch(
             a,
             m,
             k,
             eps,
+            a_norm,
+            m_norm,
             processed_lobpcg_config,
             precond_config,
             nvmath_config,
