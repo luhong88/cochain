@@ -69,7 +69,7 @@ def _lobpcg_one_iter(
     # the subspace basis vectors.
     v = torch.hstack((x_current, search_dir, conj_dir))
 
-    v_ortho = m_orthonormalize(v, m_op, n_min=n, generator=generator, max_iter=3)
+    v_ortho = m_orthonormalize(v, m_op, n_min=n, generator=generator, max_iter=1)
     tv_ortho = t_op @ v_ortho
 
     # Perform the Rayleigh-Ritz projection.
@@ -81,8 +81,7 @@ def _lobpcg_one_iter(
     # with respect to the inner product induced by S, i.e., <V, T@V@C - B@V@C@Λ>_S = 0.
     # In most cases, S = I and B = M; therefore, this is equivalent to solving a
     # "reduced" generalized eigenvalue problem T'@C = B'@C@Λ, where T' = V.T@T@V
-    # and B' = V.T@B@V. Since is M-orthonormal, B' should be close to the identity
-    # matrix and this reduces to a standard eigenvalue problem for T'.
+    # and B' = V.T@B@V.
     #
     # Note that, for a GEP in the shift-invert mode where B = I, the definition
     # B' = V.T@B@V = V.T@V does not actually reduce to I, since V is M-orthonormal.
@@ -91,9 +90,34 @@ def _lobpcg_one_iter(
     # T' = V.T@M@T@V and B' = V.T@M@B@V = I. Note that, for regular GEP, since
     # B = M, using the inner product induced by M would have resulted in "double
     # counting" of M in B' (which is why S = I above).
-    t_reduced = v_ortho.T @ (s_op @ tv_ortho)
+    #
+    # If V is perfectly M-orthonormal, B' is identical to I and this reduces to
+    # a standard eigenvalue problem for T'. This can be achieved (up to the limit
+    # of floating point precision) by recycling the m_orthonormalize() function
+    # a few times. However, a cheaper approach is to just accept that B' is not
+    # an identity matrix and solve the reduced GEP. Since eigh() does not support
+    # GEP, we achieve the same thing by "whitening" the GEP. Let B' = L@L.T be the
+    # Cholesky decomposition of B', and write the reduced GEP as
+    #
+    # inv(L)@T'@(inv(L).T@L.T) = inv(L)(L@L.T)@C@Λ
+    #
+    # Then, the operator T'' = inv(L)@T'@inv(L).T satisfies a standard eigenvalue
+    # problem T''@Y = Y@Λ and Y = L.T@C.
+    b_reduced = v_ortho.T @ (m_op @ v_ortho)
+    b_lower = torch.linalg.cholesky(b_reduced, upper=False)
+    # Applying solve_triangular() to L with I as the RHS is equivalent to finding
+    # the inverse of L.
+    b_lower_inv = torch.linalg.solve_triangular(
+        b_lower,
+        torch.eye(v_ortho.size(-1), dtype=b_lower.dtype, device=b_lower.device),
+        upper=False,
+    )
 
-    lambda_next_all, x_next_reduced_all = torch.linalg.eigh(t_reduced)
+    t_reduced = v_ortho.T @ (s_op @ tv_ortho)
+    t_sym = b_lower_inv @ t_reduced @ b_lower_inv.T
+
+    lambda_next_all, y_next_reduced_all = torch.linalg.eigh(t_sym)
+    x_next_reduced_all = b_lower_inv.T @ y_next_reduced_all
 
     # Extract the n largest (or smallest) eigenvalue-eigenvector pairs.
     # Note that torch.linalg.eigh() returns eigenvalues in ascending order.
