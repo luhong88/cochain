@@ -24,10 +24,36 @@ except ImportError:
     _HAS_NVMATH = False
 
 
+# TODO: elaborate on atol and rtol meanings.
 @dataclass
 class LOBPCGConfig:
+    """
+    A dataclass encapsulating optional LOBPCG configuration parameters.
+
+    Parameters
+    ----------
+    sigma
+        Whether to find eigenvalues near sigma using shift-invert mode.
+    v0
+        Starting vectors for iteration. If the input matrix is block-diagonal,
+        then `v0` should be a sequence of tensors, one for each batch element.
+        In either case, the number of starting vectors need to match the `n`
+        argument to `lobpcg()`.
+    largest
+        When `True`, solve for the largest eigenvalues; otherwise, solve for the
+        smallest eigenvalues.
+    atol
+        Absolute accuracy for eigenvalues (stopping criterion).
+    rtol
+        Relative accuracy for eigenvalues (stopping criterion).
+    maxiter
+        Maximum number of LOBPCG iterations allowed.
+    generator
+        A Pytorch random number generator.
+    """
+
     sigma: float | int | None = None
-    v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "m c"] | None] | None = None
+    v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "coord n"] | None] | None = None
     largest: bool = True
     atol: float | None = None
     rtol: float | None = None
@@ -35,6 +61,21 @@ class LOBPCGConfig:
     generator: torch.Generator | None = None
 
     def expand(self, n: int) -> list[LOBPCGConfig]:
+        """
+        Duplicate self for batched processing.
+
+        Parameters
+        ----------
+        n
+            How many times to duplicate self. If `v0` is a list of tensors, then
+            `n` must be equal to the length of `v0`.
+
+        Returns
+        -------
+        config_list
+            A list of `LOBPCGConfig` duplicated from self. If `v0` is a list
+            of tensors, then each duplicate is assigned one element from `v0`.
+        """
         if isinstance(self.v0, Sequence):
             config_list = [replace(self, v0=v0) for v0 in self.v0]
             if len(config_list) != n:
@@ -48,9 +89,9 @@ class LOBPCGConfig:
 class LOBPCGAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        a_val: Float[Tensor, " A_nnz"],
+        a_val: Float[Tensor, " a_nz"],
         a_pattern: Integer[SparsityPattern, "m m"],
-        m_val: Float[Tensor, " M_nnz"] | None,
+        m_val: Float[Tensor, " m_nz"] | None,
         m_pattern: Integer[SparsityPattern, "m m"] | None,
         k: int,
         eps: float | int,
@@ -107,9 +148,9 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
     def backward(
         ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "m k"] | None
     ) -> tuple[
-        Float[Tensor, " A_nnz"] | None,
+        Float[Tensor, " a_nz"] | None,
         None,
-        Float[Tensor, " A_nnz"] | None,
+        Float[Tensor, " a_nz"] | None,
         None,
         None,
         None,
@@ -139,7 +180,7 @@ def _lobpcg_no_batch(
     lobpcg_config: LOBPCGConfig,
     precond_config: LOBPCGPrecondConfig,
     nvmath_config: DirectSolverConfig,
-) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
+) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
     if m is None:
         eig_vals, eig_vecs = LOBPCGAutogradFunction.apply(
             a.values,
@@ -203,7 +244,6 @@ def _lobpcg_batch(
     return eig_vals, eig_vecs
 
 
-# TODO: clear up nvmath/cupy dependencies
 def lobpcg(
     a: Float[SparseDecoupledTensor, "m m"],
     m: Float[SparseDecoupledTensor, "m m"] | None = None,
@@ -216,69 +256,90 @@ def lobpcg(
     precond_config: LOBPCGPrecondConfig | None = None,
 ) -> tuple[Float[Tensor, "*b k"], Float[Tensor, "m k"]]:
     """
-    Sparse eigensolver for SPD matrices using LOBPCG.
-
-    Note that this function requires `nvmath-python` for the shift-invert mode.
-    In addition, some preconditioners have `nvmath-python` or `cupy` dependencies.
+    Sparse differentiable eigensolver for SPD matrices using LOBPCG.
 
     This function implements a version of LOBPCG that's roughly equivalent to
-    `torch.lobpcg(method='ortho')`, but with the following key differences:
+    `torch.lobpcg(method='ortho')`;  shift-invert mode for both standard and
+    generalized eigenvalue problems is supported.
 
-    * This implementation is differentiable with respect to the `SparseDecoupledTensor`s
-      `A` and `M`. The `eps` argument is used for Lorentzian broadening/regularization
-      in the gradient calculation to prevent gradient explosion when the eigenvalues
-      are (near) degenerate.
-    * The autograd through eigenvectors do not account for contributions from the
-      unresolved eigenvectors.
-    * This implementation supports shift-invert mode for both standard and
-      generalized eigenvalue problems.
-    * This implementation accepts specific preconditioners, including: identity,
-      Jacobi, incomplete LU, and Cholesky; the latter two support diagonal dampling.
-      The preconditioner can be configured using LOBPCGPrecondConfig and will be
-      generated internally.
-    * This implementation does not support explicit batch dimensions in `A` or `M`.
-      If `block_diag_batch=True`, `A` and `M` will be split into individual sparse
-      matrices and solved sequentially. This requires that `A` (and `M` if not `None`)
-      has a valid `BlockDiagConfig` for unpacking the block diagonal batch structure.
-      While it is possible to solve the entire block diagonal system in parallel
-      without resorting to sequential processing, to do so robustly requires careful
-      handling of the batch orthonormalization step that's currently not implemented.
-      For use cases where a batched solver is preferred (e.g., for small meshes
-      that have the same size), please refer to `torch.lobpcg()`.
+    Note that this function requires `nvmath-python` for the shift-invert mode.
+    In addition, some preconditioners have `nvmath-python` or `CuPy` dependencies.
+    In such cases, the input `a` (and `m` in the shift-invert GEP mode) matrices
+    will be converted to CSR/CSC matrices with `int32` index dtypes when possible.
 
-    Notes on the `k` and `n` arguments:
-    * in general, it is recommended to set the `n` argument somewhat higher than
-      `k`, to make the convergence of the `k` desired eigenvalues faster and to
-      account for possible degenerate eigenvalues.
-    * This implementation employs a rank-adaptive, iterative, canonical/PCA
-      orthonormalization strategy with soft-restart for constructing the trial subspace.
-      Unlike the standard PyTorch implementation, this allows the solver to handle
-      cases where the size of A (`m`) is smaller than 3x the block size `n`. However,
-      if the dimension of the trial subspace (which is <= 3n) is equal to or larger
-      than `m`, the Rayleigh-Ritz projection becomes a full similarity transformation.
-      In this limit, the algorithm effectively performs an exact diagonalization
-      similar to `torch.linalg.eigh()`, but less efficiently due to the subspace
-      construction and projection steps.
+    Parameters
+    ----------
+    a : [m, m]
+        A real, symmetric positive definite square matrix.
+    m : [m, m]
+        A real, symmetric positive definite square matrix that induces an inner
+        product on the column space of `a`. If `m` is provided, solve a generalized
+        eigenvalue problem.
+    block_diag_batch
+        Whether the input `a` matrix (and `m` if not `None`) is block-diagonal.
+        If `a` and `m` are block-diagonal, then they must both have valid and
+        matching `block_diag_config`, in which case each block/batch element
+        will be solved sequentially. While it is possible to solve the entire block
+        diagonal system in parallel without resorting to sequential processing,
+        to do so robustly requires careful handling of the batch orthonormalization
+        step that's currently not implemented. For use cases where a batched solver
+        is preferred (e.g., for small meshes that have the same size), please refer
+        to `torch.lobpcg()`.
+    n
+        The number of approximated eigenvalues/eigenvectors ("block size"), which
+        should be in the range [`k`, `m`] (default value: `k`). In general, it is
+        recommended to set the `n` argument somewhat higher than `k`, to make the
+        convergence of the `k` desired eigenvalues faster and to account for
+        possible degenerate eigenvalues.
+    k
+        The number of eigenvalues/eigenvectors to find.
+    eps
+        The strength of Lorentzian broadening/regularization, which removes
+        singularities in backward gradient calculation when some of the
+        eigenvalues are (near) degenerate. Set to integer 0 to disable regularization.
+    lobpcg_config
+        Additional optional LOBPCG configurations.
+    nvmath_config
+        Additional optional arguments for nvmath `DirectSolver()`; only relevant
+        for the shift-invert mode.
+    precond_config
+        Additional optional arguments for LOBPCG preconditioners.
 
-    Notes on sparse index tensor dtype requirements:
-    * If using the `ilu` and `cholesky` preconditioners, the sparse CSC/CSR index
-      tensors of `A` will be downcast to `int32`.
-    * For the shift-invert mode, the sparse CSC/CSR index tensors of `A` will be
-      downcast to `int32`.
-    * For the shift-invert GEP mode, the sparse CSC/CSR index tensors of both `A`
-      and `M` will be downcast to `int32`.
-    * In all other cases, both `int32` and `int64` are supported, but `int32` is
-      still preferred whenever possible.
+    Returns
+    -------
+    eig_vals : [*b, k]
+        A tensor of `k` eigenvalues. If `block_diag_batch` is `True`, then the tensor
+        also has a leading batch dimension corresponding to the blocks in the
+        input `a` matrix.
+    eig_vecs : [m, k]
+        A tensor of `k` orthonormal eigenvectors. If `block_diag_batch` is
+        `False`, then each column represents an eigenvector; if `block_diag_batch`
+        is `True`, then the eigenvectors for each block are stacked along
+        the first dimension.
+
+    Notes
+    -----
+    The autograd through eigenvectors do not account for contributions from the
+    unresolved eigenvectors.
+
+    This implementation accepts specific preconditioners, including: identity,
+    Jacobi, incomplete LU, and Cholesky; the latter two support diagonal dampling.
+    The preconditioner can be configured using a `LOBPCGPrecondConfig` and will be
+    generated internally.
+
+    This implementation employs a rank-adaptive, iterative, canonical/PCA
+    orthonormalization strategy with soft-restart for constructing the trial subspace.
+    Unlike the standard PyTorch LOBPCG implementation, this allows the solver to
+    handle cases where the size of A (`m`) is smaller than 3x the block size `n`.
+    However, if the dimension of the trial subspace (which is <= 3n) is equal to
+    or larger than `m`, the Rayleigh-Ritz projection becomes a full similarity
+    transformation. In this limit, the algorithm effectively performs an exact
+    diagonalization similar to `torch.linalg.eigh()`, but less efficiently due
+    to the subspace construction and projection steps.
     """
-    if (
-        (lobpcg_config is not None)
-        and (lobpcg_config.sigma is not None)
-        and (not _HAS_NVMATH)
-    ):
-        raise ImportError("nvmath-python backend required.")
-
-    from ...solvers import DirectSolverConfig
-    from ._lobpcg_preconditioners import LOBPCGPrecondConfig
+    # Note that we delegate the CuPy and nvmath-python dependency checks to
+    # the operator and preconditioner constructors, rather than performing a
+    # top-level check.
 
     if lobpcg_config is None:
         lobpcg_config = LOBPCGConfig()
@@ -288,7 +349,7 @@ def lobpcg(
         nvmath_config = DirectSolverConfig()
 
     if block_diag_batch:
-        A_list = a.unpack_block_diag()
+        a_list = a.unpack_block_diag()
 
     # Process raw LOBPCG config.
     if lobpcg_config.v0 is None:
@@ -306,7 +367,7 @@ def lobpcg(
                     dtype=a.dtype,
                     device=a.device,
                 )
-                for a in A_list
+                for a in a_list
             ]
         else:
             v0 = torch.randn(
@@ -332,11 +393,23 @@ def lobpcg(
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(
-            A_list, m, k, eps, processed_lobpcg_config, precond_config, nvmath_config
+            a_list,
+            m,
+            k,
+            eps,
+            processed_lobpcg_config,
+            precond_config,
+            nvmath_config,
         )
     else:
         eig_vals, eig_vecs = _lobpcg_no_batch(
-            a, m, k, eps, processed_lobpcg_config, precond_config, nvmath_config
+            a,
+            m,
+            k,
+            eps,
+            processed_lobpcg_config,
+            precond_config,
+            nvmath_config,
         )
 
     return eig_vals, eig_vecs

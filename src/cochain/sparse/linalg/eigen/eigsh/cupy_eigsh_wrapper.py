@@ -249,7 +249,7 @@ def cupy_eigsh(
     return_eigenvectors: bool = True,
     cp_config: CuPyEigshConfig | None = None,
     nvmath_config: DirectSolverConfig | None = None,
-) -> Float[Tensor, "*b k"] | tuple[Float[Tensor, "*b k"], Float[Tensor, "coord k"]]:
+) -> Float[Tensor, "*b k"] | tuple[Float[Tensor, "*b k"], Float[Tensor, "r k"]]:
     r"""
     Sparse eigensolver for symmetric square matrices using CuPy.
 
@@ -288,7 +288,7 @@ def cupy_eigsh(
         A tensor of `k` eigenvalues. If `block_diag_batch` is `True`,
         then the tensor also has a leading batch dimension corresponding
         to the blocks in the input `a` matrix.
-    eig_vecs : [coord, k]
+    eig_vecs : [r, k]
         A tensor of `k` orthonormal eigenvectors. If `block_diag_batch` is
         `False`, then each column represents an eigenvector; if `block_diag_batch`
         is `True`, then the eigenvectors for each block are stacked along
