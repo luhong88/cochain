@@ -43,7 +43,7 @@ def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
 
     # Test both largest=True and largest=False
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op, M=None, k=k, lobpcg_config=LOBPCGConfig(largest=True)
+        a=A_op, m=None, k=k, lobpcg_config=LOBPCGConfig(largest=True)
     )
     eig_vals = torch.flip(eig_vals_rev, dims=(0,))
     eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
@@ -56,7 +56,7 @@ def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     )
 
     eig_vals, eig_vecs = lobpcg(
-        A=A_op, M=None, k=k, lobpcg_config=LOBPCGConfig(largest=False)
+        a=A_op, m=None, k=k, lobpcg_config=LOBPCGConfig(largest=False)
     )
 
     torch.testing.assert_close(eig_vals, eig_vals_true[:k])
@@ -82,8 +82,8 @@ def test_standard_forward_preconditioners(
     k = 2
 
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op,
-        M=None,
+        a=A_op,
+        m=None,
         k=k,
         lobpcg_config=LOBPCGConfig(largest=True),
         precond_config=LOBPCGPrecondConfig(method=preconditioner),
@@ -118,8 +118,8 @@ def test_batched_standard_forward(
     A_op = SparseDecoupledTensor.pack_block_diag((A1_op, A2_op))
 
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op,
-        M=None,
+        a=A_op,
+        m=None,
         block_diag_batch=True,
         k=k,
         lobpcg_config=LOBPCGConfig(largest=True),
@@ -158,7 +158,7 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     eig_vals_true = eig_vals_true_all[-k:]
 
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op, M=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
+        a=A_op, m=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
     eig_vals = torch.flip(eig_vals_rev, dims=(0,))
 
@@ -197,7 +197,7 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     # the custom backward (which ignores the unresolved eigenvectors) should agree
     # with the lobpcg backward (which accounts for the unresolved eigenvectors).
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op, M=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
+        a=A_op, m=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
     eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
@@ -235,7 +235,7 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     subspace_projector = eig_vecs_true @ eig_vecs_true.T
 
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op, M=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
+        a=A_op, m=None, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
     eig_vals = torch.flip(eig_vals_rev, dims=(0,))
     eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
@@ -278,7 +278,7 @@ def test_gep_forward(rand_sp_gep_6x6: Float[Tensor, "6 6"], device):
 
     # Test both largest=True and largest=False
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op, M=M_op, k=k, lobpcg_config=LOBPCGConfig(largest=True)
+        a=A_op, m=M_op, k=k, lobpcg_config=LOBPCGConfig(largest=True)
     )
     eig_vals = torch.flip(eig_vals_rev, dims=(0,))
     eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
@@ -291,7 +291,7 @@ def test_gep_forward(rand_sp_gep_6x6: Float[Tensor, "6 6"], device):
     )
 
     eig_vals, eig_vecs = lobpcg(
-        A=A_op, M=M_op, k=k, lobpcg_config=LOBPCGConfig(largest=False)
+        a=A_op, m=M_op, k=k, lobpcg_config=LOBPCGConfig(largest=False)
     )
 
     torch.testing.assert_close(eig_vals, eig_vals_true[:k])
@@ -323,7 +323,7 @@ def test_gep_eig_vals_backward(rand_sp_gep_9x9: Float[Tensor, "9 9"], device):
     M_op.requires_grad_()
 
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op, M=M_op, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
+        a=A_op, m=M_op, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
     eig_vals = torch.flip(eig_vals_rev, dims=(0,))
 
@@ -368,7 +368,7 @@ def test_gep_eig_vecs_backward(rand_sp_gep_9x9: Float[Tensor, "9 9"], device):
     M_op.requires_grad_()
 
     eig_vals_rev, eig_vecs_rev = lobpcg(
-        A=A_op, M=M_op, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
+        a=A_op, m=M_op, k=k, eps=0, lobpcg_config=LOBPCGConfig(largest=True)
     )
     eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
 
@@ -414,8 +414,8 @@ def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     # because the large condition number of the shift-inverted matrix causes the
     # sparse solver to lose precision.
     eig_val, eig_vec = lobpcg(
-        A=A_op,
-        M=None,
+        a=A_op,
+        m=None,
         k=k,
         lobpcg_config=LOBPCGConfig(sigma=target_eig_val, largest=True, maxiter=10),
     )
@@ -450,8 +450,8 @@ def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
     # because the large condition number of the shift-inverted matrix causes the
     # sparse solver to lose precision.
     eig_val, eig_vec = lobpcg(
-        A=A_op,
-        M=M_op,
+        a=A_op,
+        m=M_op,
         k=k,
         lobpcg_config=LOBPCGConfig(sigma=target_eig_val, largest=True, maxiter=10),
     )

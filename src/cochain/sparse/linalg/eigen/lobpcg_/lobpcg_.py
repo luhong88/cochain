@@ -58,18 +58,18 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
         precond_config: LOBPCGPrecondConfig,
         nvmath_config: DirectSolverConfig,
     ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
-        A_op = SparseDecoupledTensor(a_pattern, a_val)
+        a_op = SparseDecoupledTensor(a_pattern, a_val)
 
         if (m_val is None) and (m_pattern is None):
-            M_op = None
+            m_op = None
         elif (m_val is not None) and (m_pattern is not None):
-            M_op = SparseDecoupledTensor(m_pattern, m_val)
+            m_op = SparseDecoupledTensor(m_pattern, m_val)
         else:
             raise ValueError()
 
         eig_vals, eig_vecs = lobpcg_forward(
-            A_op=A_op,
-            M_op=M_op,
+            a_op=a_op,
+            m_op=m_op,
             nvmath_config=nvmath_config,
             precond_config=precond_config,
             **asdict(lobpcg_config),
@@ -132,18 +132,18 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
 
 
 def _lobpcg_no_batch(
-    A: Float[SparseDecoupledTensor, "m m"],
-    M: Float[SparseDecoupledTensor, "m m"] | None,
+    a: Float[SparseDecoupledTensor, "m m"],
+    m: Float[SparseDecoupledTensor, "m m"] | None,
     k: int,
     eps: float | int,
     lobpcg_config: LOBPCGConfig,
     precond_config: LOBPCGPrecondConfig,
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "c k"]]:
-    if M is None:
+    if m is None:
         eig_vals, eig_vecs = LOBPCGAutogradFunction.apply(
-            A.values,
-            A.pattern,
+            a.values,
+            a.pattern,
             None,
             None,
             k,
@@ -154,10 +154,10 @@ def _lobpcg_no_batch(
         )
     else:
         eig_vals, eig_vecs = LOBPCGAutogradFunction.apply(
-            A.values,
-            A.pattern,
-            M.values,
-            M.pattern,
+            a.values,
+            a.pattern,
+            m.values,
+            m.pattern,
             k,
             eps,
             lobpcg_config,
@@ -169,26 +169,26 @@ def _lobpcg_no_batch(
 
 
 def _lobpcg_batch(
-    A_list: list[Float[SparseDecoupledTensor, "m m"]],
-    M_batched: Float[SparseDecoupledTensor, "m m"] | None,
+    a_list: list[Float[SparseDecoupledTensor, "m m"]],
+    m_batched: Float[SparseDecoupledTensor, "m m"] | None,
     k: int,
     eps: float | int,
     lobpcg_config_batched: LOBPCGConfig,
     precond_config: LOBPCGPrecondConfig,
     nvmath_config: DirectSolverConfig,
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
-    if M_batched is None:
-        M_list = [None] * len(A_list)
+    if m_batched is None:
+        m_list = [None] * len(a_list)
     else:
-        M_list = M_batched.unpack_block_diag()
+        m_list = m_batched.unpack_block_diag()
 
-    lobpcg_config_list = lobpcg_config_batched.expand(n=len(A_list))
+    lobpcg_config_list = lobpcg_config_batched.expand(n=len(a_list))
 
     eig_val_list = []
     eig_vec_list = []
-    for A, M, lobpcg_config in zip(A_list, M_list, lobpcg_config_list, strict=True):
+    for a, m, lobpcg_config in zip(a_list, m_list, lobpcg_config_list, strict=True):
         eig_val, eig_vec = _lobpcg_no_batch(
-            A, M, k, eps, lobpcg_config, precond_config, nvmath_config
+            a, m, k, eps, lobpcg_config, precond_config, nvmath_config
         )
         eig_val_list.append(eig_val)
         eig_vec_list.append(eig_vec)
@@ -205,8 +205,8 @@ def _lobpcg_batch(
 
 # TODO: clear up nvmath/cupy dependencies
 def lobpcg(
-    A: Float[SparseDecoupledTensor, "m m"],
-    M: Float[SparseDecoupledTensor, "m m"] | None = None,
+    a: Float[SparseDecoupledTensor, "m m"],
+    m: Float[SparseDecoupledTensor, "m m"] | None = None,
     block_diag_batch: bool = False,
     n: int | None = None,
     k: int = 6,
@@ -288,14 +288,14 @@ def lobpcg(
         nvmath_config = DirectSolverConfig()
 
     if block_diag_batch:
-        A_list = A.unpack_block_diag()
+        A_list = a.unpack_block_diag()
 
     # Process raw LOBPCG config.
     if lobpcg_config.v0 is None:
         if n is None:
             n = k
         else:
-            if n < k or n > A.size(-1):
+            if n < k or n > a.size(-1):
                 raise ValueError("n must be in the range [k, m].")
 
         if block_diag_batch:
@@ -303,27 +303,27 @@ def lobpcg(
                 torch.randn(
                     (a.size(0), n),
                     generator=lobpcg_config.generator,
-                    dtype=A.dtype,
-                    device=A.device,
+                    dtype=a.dtype,
+                    device=a.device,
                 )
                 for a in A_list
             ]
         else:
             v0 = torch.randn(
-                (A.size(0), n),
+                (a.size(0), n),
                 generator=lobpcg_config.generator,
-                dtype=A.dtype,
-                device=A.device,
+                dtype=a.dtype,
+                device=a.device,
             )
 
     else:
         v0 = lobpcg_config.v0
 
     atol = (
-        torch.finfo(A.dtype).eps if lobpcg_config.rtol is None else lobpcg_config.rtol
+        torch.finfo(a.dtype).eps if lobpcg_config.rtol is None else lobpcg_config.rtol
     )
     rtol = (
-        torch.finfo(A.dtype).eps ** 0.5
+        torch.finfo(a.dtype).eps ** 0.5
         if lobpcg_config.rtol is None
         else lobpcg_config.rtol
     )
@@ -332,11 +332,11 @@ def lobpcg(
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(
-            A_list, M, k, eps, processed_lobpcg_config, precond_config, nvmath_config
+            A_list, m, k, eps, processed_lobpcg_config, precond_config, nvmath_config
         )
     else:
         eig_vals, eig_vecs = _lobpcg_no_batch(
-            A, M, k, eps, processed_lobpcg_config, precond_config, nvmath_config
+            a, m, k, eps, processed_lobpcg_config, precond_config, nvmath_config
         )
 
     return eig_vals, eig_vecs
