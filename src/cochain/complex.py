@@ -104,7 +104,7 @@ class SimplicialMesh:
 
     Notes
     -----
-    In this class, we adopt the following convention on the definition of canonical
+    In this package, we adopt the following convention on the definition of canonical
     k-simplices (as stored in `splx[k]`, e.g.). If k is the dimension of the mesh,
     then there is no restrictions on the ordering of the k-simplices or the ordering
     of vertices within a k-simplex (which can be used to carry information on
@@ -672,12 +672,24 @@ class SimplicialMesh:
 @dataclass
 class MeshBatch(SimplicialMesh):
     """
-    A batch of SimplicialMesh, represented as a single, disconnected complex.
+    A batch of `SimplicialMesh`, represented as a single, disconnected complex.
+
+    This class is a subclass of the `SimplicialMesh` class, and enables
+    block-diagonal batching of meshes, so called because the operators derived
+    from a `MeshBatch` tend to have a block-diagonal structure, where each
+    block represents one mesh in the batch.
+
+    Parameters
+    ----------
+    n_meshes
+        The number of meshes in the batch.
+    ptrs
+        A tuple of pointer tensors; specifically, `ptrs[k][i] = [j]` indicates
+        that the `i`th simplex in the batched list of canonical `k`-simplices
+        come from the `j`th mesh in the batch. This is useful for unpacking
+        the block-diagonal batching.
     """
 
-    # the "ptr" tensor for each dimension maps a simplex back to the original
-    # simplicial complex; i.e., edges_ptr[i] = k indicates that the i-th edge
-    # in the batch comes from the k-th simplicial complex.
     n_meshs: int
     ptrs: tuple[
         Integer[Tensor, " vert"],
@@ -689,10 +701,18 @@ class MeshBatch(SimplicialMesh):
 
 def collate_fn(mesh_batch: Sequence[SimplicialMesh]) -> MeshBatch:
     """
-    This function takes in a list of `SimplicialMesh` objects and collate them
-    into a single batched complex.
+    Collate a list of `SimplicialMesh` bojects into a `MeshBatch` object.
 
-    Note that this function allows batching of meshes with different dimensions.
+    Parameters
+    ----------
+    mesh_batch
+        A list of `SimplicialMesh` objects. Note that this function allows batching
+        of meshes with different dimensions.
+
+    Outputs
+    -------
+    batched_mesh
+        A `MeshBatch` object representing the batch of meshes.
     """
     # Assume that all simplices and their tensors are on the same device and
     # all float tensors have the same dtype.
