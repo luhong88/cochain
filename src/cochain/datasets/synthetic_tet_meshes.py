@@ -1,9 +1,25 @@
+from __future__ import annotations
+
 import numpy as np
-import pytetwild
-import pyvista as pv
 import torch
 
 from ..complex import SimplicialMesh
+
+try:
+    import pytetwild
+
+    _HAS_PYTETWILD = True
+
+except ImportError:
+    _HAS_PYTETWILD = False
+
+try:
+    import pyvista as pv
+
+    _HAS_PYVISTA = True
+
+except ImportError:
+    _HAS_PYVISTA = False
 
 
 def load_regular_tet_mesh() -> SimplicialMesh:
@@ -59,6 +75,9 @@ def load_sc_mesh(dim: int = 5) -> SimplicialMesh:
     mesh
         A `SimplicialMesh` object representing the BCC mesh.
     """
+    if not _HAS_PYVISTA:
+        raise ImportError("PyVista backend required.")
+
     x = np.linspace(-1, 1, dim)
     y = np.linspace(-1, 1, dim)
     z = np.linspace(-1, 1, dim)
@@ -102,6 +121,9 @@ def load_solid_torus(
     mesh
         A `SimplicialMesh` object representing the solid torus mesh.
     """
+    if not (_HAS_PYVISTA and _HAS_PYTETWILD):
+        raise ImportError("PyVista and PyTetWild backends required.")
+
     # Generate the torus surface mesh, triangulate and clean with pyvista.
     surface = pv.ParametricTorus(
         ringradius=major_r, crosssectionradius=minor_r, u_res=u_res, v_res=v_res
@@ -154,6 +176,9 @@ def load_spherical_shell(
     mesh
         A `SimplicialMesh` object representing the spherical shell mesh.
     """
+    if not (_HAS_PYVISTA and _HAS_PYTETWILD):
+        raise ImportError("PyVista and PyTetWild backends required.")
+
     # Generate the outer bounding surface.
     outer_sphere = pv.Sphere(
         radius=outer_r, theta_resolution=theta_res, phi_resolution=phi_res

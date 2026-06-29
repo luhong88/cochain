@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 from collections import ChainMap
 from typing import Any
 
 import numpy as np
-import polyscope as ps
 import torch
 from einops import rearrange
 from jaxtyping import Float, Integer, Real
@@ -10,6 +11,14 @@ from torch import Tensor
 
 from ..complex import SimplicialMesh
 from ..utils.parsing import to_np
+
+try:
+    import polyscope as ps
+
+    _HAS_POLYSCOPE = True
+
+except ImportError:
+    _HAS_POLYSCOPE = False
 
 
 class PolyscopeViewer:
@@ -44,6 +53,9 @@ class PolyscopeViewer:
     """
 
     def __init__(self, name: str, mesh: SimplicialMesh, **kwargs):
+        if not _HAS_POLYSCOPE:
+            raise ImportError("Polyscope backend required.")
+
         self.name = name
         self.mesh = mesh
         self._tri_edge_perm_map = to_np(self._compute_ps_edge_map(dim=2))
