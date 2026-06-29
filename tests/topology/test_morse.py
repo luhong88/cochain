@@ -28,7 +28,7 @@ def test_morse_cbd_exactness_on_tri_mesh(mesh, request, device):
     "mesh",
     [
         "two_tets_mesh",
-        "simple_bcc_mesh",
+        "simple_sc_mesh",
         "solid_torus_mesh",
     ],
 )

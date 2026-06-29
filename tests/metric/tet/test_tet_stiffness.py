@@ -26,7 +26,7 @@ def test_stiffness_with_igl(two_tets_mesh: SimplicialMesh, device):
     torch.testing.assert_close(igl_cotan_laplacian, cochain_cotan_laplacian)
 
 
-def test_stiffness_kernel(simple_bcc_mesh: SimplicialMesh, device):
+def test_stiffness_kernel(simple_sc_mesh: SimplicialMesh, device):
     """
     Check that constant vectors are in the kernel of the stiffness matrix.
 
@@ -34,46 +34,46 @@ def test_stiffness_kernel(simple_bcc_mesh: SimplicialMesh, device):
     return the zero vector. This can be checked by comparing the row sum of the
     matrix with the zero vector.
     """
-    mesh = simple_bcc_mesh.to(device)
+    mesh = simple_sc_mesh.to(device)
 
-    bcc_S = stiffness_matrix(mesh)
-    row_sum = bcc_S.to_dense().sum(dim=-1)
+    sc_S = stiffness_matrix(mesh)
+    row_sum = sc_S.to_dense().sum(dim=-1)
 
     torch.testing.assert_close(row_sum, torch.zeros_like(row_sum))
 
 
-def test_stiffness_symmetry(simple_bcc_mesh: SimplicialMesh, device):
+def test_stiffness_symmetry(simple_sc_mesh: SimplicialMesh, device):
     """Check that the stifness matrix is symmetric."""
-    mesh = simple_bcc_mesh.to(device)
+    mesh = simple_sc_mesh.to(device)
 
-    bcc_S = stiffness_matrix(mesh)
-    bcc_S_T = bcc_S.T
+    sc_S = stiffness_matrix(mesh)
+    sc_S_T = sc_S.T
 
-    torch.testing.assert_close(bcc_S.to_dense(), bcc_S_T.to_dense())
+    torch.testing.assert_close(sc_S.to_dense(), sc_S_T.to_dense())
 
 
-def test_stiffness_PSD(simple_bcc_mesh: SimplicialMesh, device):
+def test_stiffness_PSD(simple_sc_mesh: SimplicialMesh, device):
     """Check that the stiffness matrix is positive semi-definite."""
-    mesh = simple_bcc_mesh.to(device)
+    mesh = simple_sc_mesh.to(device)
 
-    bcc_S = stiffness_matrix(mesh)
-    bcc_S_dense = bcc_S.to_dense()
-    eigs = torch.linalg.eigvalsh(bcc_S_dense)
+    sc_S = stiffness_matrix(mesh)
+    scc_S_dense = sc_S.to_dense()
+    eigs = torch.linalg.eigvalsh(scc_S_dense)
 
     assert eigs.min() >= -1e-6
 
 
-def test_stiffness_linear_precision(simple_bcc_mesh: SimplicialMesh, device):
+def test_stiffness_linear_precision(simple_sc_mesh: SimplicialMesh, device):
     """
     Check stiffness matrix linear precision.
 
     The stiffness matrix acting on the interior of a 3D mesh vertex coordinates
     should result in zero.
     """
-    mesh = simple_bcc_mesh.to(device)
+    mesh = simple_sc_mesh.to(device)
 
-    bcc_S = stiffness_matrix(mesh).to_dense()
-    zero_tensor = bcc_S @ mesh.vert_coords
+    sc_S = stiffness_matrix(mesh).to_dense()
+    zero_tensor = sc_S @ mesh.vert_coords
 
     bd_mask = mesh.bd_vert_mask
 
@@ -82,8 +82,8 @@ def test_stiffness_linear_precision(simple_bcc_mesh: SimplicialMesh, device):
     )
 
 
-def test_stiffness_matrix_backward(simple_bcc_mesh: SimplicialMesh, device):
-    mesh = simple_bcc_mesh.to(device)
+def test_stiffness_matrix_backward(simple_sc_mesh: SimplicialMesh, device):
+    mesh = simple_sc_mesh.to(device)
     mesh.requires_grad_()
 
     stiff = stiffness_matrix(mesh)
@@ -94,14 +94,14 @@ def test_stiffness_matrix_backward(simple_bcc_mesh: SimplicialMesh, device):
     assert torch.isfinite(mesh.grad).all()
 
 
-def test_stiffness_matrix_gradcheck(simple_bcc_mesh: SimplicialMesh, device):
-    vert_coords = simple_bcc_mesh.vert_coords.clone().to(
+def test_stiffness_matrix_gradcheck(simple_sc_mesh: SimplicialMesh, device):
+    vert_coords = simple_sc_mesh.vert_coords.clone().to(
         dtype=torch.float64, device=device
     )
     vert_coords.requires_grad_()
 
     def stiffness_fxn(test_vert_coords):
-        mesh = simple_bcc_mesh.to(device=device, dtype=torch.float64)
+        mesh = simple_sc_mesh.to(device=device, dtype=torch.float64)
         mesh.vert_coords = test_vert_coords
         s = stiffness_matrix(mesh)
         return s.values.sum()

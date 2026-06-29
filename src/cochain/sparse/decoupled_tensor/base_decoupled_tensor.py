@@ -196,6 +196,7 @@ class BaseDecoupledTensor(ABC):
 
     @property
     def grad(self) -> Tensor | None:
+        """The gradient computed for the `values` tensor."""
         return self.values.grad
 
     @grad.setter
