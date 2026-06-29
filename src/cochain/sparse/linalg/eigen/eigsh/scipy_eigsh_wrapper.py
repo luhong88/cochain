@@ -373,6 +373,9 @@ def scipy_eigsh(
     The autograd through eigenvectors do not account for contributions from the
     unresolved eigenvectors.
 
+    The algorithm used by the SciPy `eigsh()` often underestimates the multiplicity
+    of degenerate eigenvalues; consider using the `lobpcg()` solver instead.
+
     The `a` and `m` matrices will be converted to SciPy CSR/CSC arrays and copied
     to CPU. The sparse CSR/CSC index tensors of `a` and `m` can be either in `int32`
     or `int64` dtype, but will be automatically downcast to `int32` if possible.

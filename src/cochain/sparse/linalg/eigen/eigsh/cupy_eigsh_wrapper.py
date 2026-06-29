@@ -297,6 +297,9 @@ def cupy_eigsh(
     The autograd through eigenvectors do not account for contributions from the
     unresolved eigenvectors.
 
+    The algorithm used by the CuPy `eigsh()` often underestimates the multiplicity
+    of degenerate eigenvalues; consider using the `lobpcg()` solver instead.
+
     For a standard eigenvalue problem, the `a` matrix will be converted to
     a CuPy CSR matrix; both `int32` and `int64` index dtypes are supported, but
     the matrix will automatically be downcast to `int32` if possible.

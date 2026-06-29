@@ -11,8 +11,8 @@ from cochain.sparse.linalg.eigen import (
     lobpcg,
 )
 
-# TODO: clear up cupy/nvmath dependencies
-pytest.importorskip("nvmath")
+# TODO: clear up cupy/nvmath dependencies and skips
+# TODO: relax GPU only marks
 
 
 def dense_gep(
@@ -27,26 +27,6 @@ def dense_gep(
     eig_vecs_true = m_cho_inv.T @ eig_vecs_whitened
 
     return eig_vals_true, eig_vecs_true
-
-
-@pytest.mark.gpu_only
-def test_lorentzian_regularization_smoke(
-    rand_sp_spd_degenerate_9x9: Float[Tensor, "9 9"], device
-):
-    k = 5
-    a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_degenerate_9x9).to(device)
-    a_sdt.requires_grad_()
-
-    eig_vals, eig_vecs = lobpcg(
-        a=a_sdt, m=None, k=k, eps=1e-3, lobpcg_config=LOBPCGConfig(largest=True)
-    )
-
-    loss = eig_vals.sum() + eig_vecs.sum()
-    loss.backward()
-
-    assert a_sdt.grad is not None
-    assert not torch.isnan(a_sdt.grad).any()
-    assert not torch.all(a_sdt.grad == 0)
 
 
 @pytest.mark.gpu_only
@@ -669,3 +649,119 @@ def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
         canonicalize_eig_vec_signs(eig_vec),
         canonicalize_eig_vec_signs(eig_vec_true),
     )
+
+
+@pytest.mark.gpu_only
+def test_lorentzian_regularization_smoke(
+    rand_sp_spd_degenerate_9x9: Float[Tensor, "9 9"], device
+):
+    k = 5
+    a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_degenerate_9x9).to(device)
+    a_sdt.requires_grad_()
+
+    eig_vals, eig_vecs = lobpcg(
+        a=a_sdt, m=None, k=k, eps=1e-3, lobpcg_config=LOBPCGConfig(largest=True)
+    )
+
+    loss = eig_vals.sum() + eig_vecs.sum()
+    loss.backward()
+
+    assert a_sdt.grad is not None
+    assert not torch.isnan(a_sdt.grad).any()
+    assert not torch.all(a_sdt.grad == 0)
+
+
+@pytest.mark.gpu_only
+def test_lorentzian_eig_vals_backward_exactness(
+    rand_sp_spd_degenerate_9x9: Float[Tensor, "9 9"], device
+):
+    """Eigenvalue gradients should not be affected by Lorentzian regularization."""
+    k = 5
+
+    a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_degenerate_9x9).to(device)
+    a_sdt.requires_grad_()
+
+    a_dense = rand_sp_spd_degenerate_9x9.to_dense().to(device)
+    a_dense.requires_grad_()
+
+    eig_vals_true_all, _ = torch.linalg.eigh(a_dense)
+    eig_vals_true = eig_vals_true_all[-k:]
+
+    # Run sparse solver with regularization.
+    eig_vals_rev, _ = lobpcg(
+        a=a_sdt, m=None, k=k, eps=1e-6, lobpcg_config=LOBPCGConfig(largest=True)
+    )
+    eig_vals = torch.flip(eig_vals_rev, dims=(0,))
+
+    # Compute loss on the eigenvalues. Note that we cannot just dot the eigenvalues
+    # with a random tensor of the same shape here, because some of the resolved
+    # eigenvalues are degenerate. As such, the basis eigenvectors chosen for
+    # computing the gradient may be different between eigh() and lobpcg(). Therefore,
+    # the coefficient on the degenerate eigenvalues must be identical.
+    eig_vals_loss_true = torch.sum(eig_vals_true)
+    eig_vals_loss = torch.sum(eig_vals)
+
+    eig_vals_loss_true.backward()
+    eig_vals_loss.backward()
+
+    a_grad_true = a_dense.grad[torch.unbind(a_sdt.pattern.idx_coo, dim=0)]
+
+    torch.testing.assert_close(eig_vals, eig_vals_true)
+    torch.testing.assert_close(a_sdt.grad, a_grad_true)
+
+
+@pytest.mark.gpu_only
+def test_lorentzian_isolated_eig_vec_exactness(
+    rand_sp_spd_degenerate_9x9: Float[Tensor, "9 9"], device
+):
+    """
+    Test that the Lorentzian regularization effect is small for large spectral gaps.
+
+    For an eigenvector separated by a large spectral gap, the Lorentzian broadening
+    term ϵ is dwarfed by (Δλ)^2. The gradient should asymptotically approach the
+    exact dense gradient.
+    """
+    k = 5
+
+    a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_degenerate_9x9).to(device)
+    a_sdt.requires_grad_()
+
+    a_dense = rand_sp_spd_degenerate_9x9.to_dense().to(device)
+    a_dense.requires_grad_()
+
+    # Get ground truth.
+    _, eig_vecs_true_all = torch.linalg.eigh(a_dense)
+    eig_vecs_true_k = eig_vecs_true_all[:, -k:]
+
+    # The top eigenvector 45.0 is isolated from 41.95.
+    eig_vec_isolated_true = eig_vecs_true_k[:, -1:]
+
+    # Subspace projector for the k resolved modes.
+    subspace_projector = eig_vecs_true_k @ eig_vecs_true_k.T
+
+    # Run sparse solver with regularization.
+    _, eig_vecs_rev = lobpcg(
+        a=a_sdt, m=None, k=k, eps=1e-6, lobpcg_config=LOBPCGConfig(largest=True)
+    )
+    eig_vecs = torch.flip(eig_vecs_rev, dims=(-1,))
+    eig_vec_isolated = eig_vecs[:, -1:]
+
+    # Compute loss on the isolated eigenvector.
+    eig_vec_rand = torch.randn_like(eig_vec_isolated_true)
+    eig_vec_loss_true = (
+        torch.sum(eig_vec_rand * eig_vec_isolated_true, dim=0).abs().sum()
+    )
+    eig_vec_loss = torch.sum(eig_vec_rand * eig_vec_isolated, dim=0).abs().sum()
+
+    eig_vec_loss_true.backward()
+    eig_vec_loss.backward()
+
+    # Project the dense gradient onto the k-dimensional subspace.
+    a_grad_true = (subspace_projector @ a_dense.grad @ subspace_projector)[
+        torch.unbind(a_sdt.pattern.idx_coo, dim=0)
+    ]
+
+    # We expect a tiny divergence caused by eps, so we relax atol/rtol slightly.
+    # If eps=1e-6 and the gap is ~3.0, the perturbation is roughly on the
+    # order of eps / gap^2 ≈ 1e-7.
+    torch.testing.assert_close(a_sdt.grad, a_grad_true, rtol=1e-6, atol=1e-6)

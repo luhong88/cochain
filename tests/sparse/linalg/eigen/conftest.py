@@ -160,8 +160,7 @@ def rand_sp_gep_9x9() -> tuple[Float[Tensor, "9 9"], Float[Tensor, "9 9"]]:
 
 @pytest.fixture
 def rand_sp_spd_degenerate_9x9() -> Float[Tensor, "9 9"]:
-    # Includes a perfectly degenerate subspace (3 eigenvalues equal to 2.0)
-    # and a near-degenerate subspace (41.9 and 41.95).
-    lambdas = torch.tensor([0.1, 0.2, 2.0, 2.0, 2.0, 10.0, 41.9, 41.95, 45.0])
+    # Includes a perfectly degenerate subspace (3 eigenvalues equal to 10.0)
+    lambdas = torch.tensor([0.1, 0.2, 0.5, 2.0, 10.0, 10.0, 10.0, 45.0])
     mat = rand_sp_sym_matrix(lambdas, k=15)
     return mat

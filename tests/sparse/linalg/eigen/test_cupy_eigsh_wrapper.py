@@ -18,6 +18,9 @@ pytest.importorskip("cupy")
 def test_lorentzian_regularization_smoke(
     rand_sp_spd_degenerate_9x9: Float[Tensor, "9 9"], device
 ):
+    # Note that the CuPy eigsh() function can sometimes have difficulty
+    # resolving the multiplicity of degenerate eigenvalues; therefore, we will
+    # only perform a smoke test on the degenerate SPD matrix.
     k = 5
     a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_degenerate_9x9).to(device)
     a_sdt.requires_grad_()
