@@ -13,7 +13,7 @@ try:
 
     _HAS_CUPY = True
 
-except:
+except ImportError:
     _HAS_CUPY = False
 
 
@@ -27,9 +27,7 @@ except ImportError:
 
 
 def pytest_addoption(parser):
-    """
-    Add a commandline option to specify a global RNG seed.
-    """
+    """Add a commandline option to specify a global RNG seed."""
     parser.addoption(
         "--rng-seed",
         action="store",
@@ -41,9 +39,7 @@ def pytest_addoption(parser):
 
 @pytest.fixture(scope="session")
 def session_seed(request):
-    """
-    Determines the RNG seed for the entire session.
-    """
+    """Determine the RNG seed for the entire session."""
     seed_arg = request.config.getoption("--rng-seed")
 
     if seed_arg == -1:
@@ -58,8 +54,9 @@ def session_seed(request):
 @pytest.fixture(scope="function", autouse=True)
 def set_rng(session_seed):
     """
-    Resets the RNG state before each test function using the sesion seed. Note that
-    'autouse=True' means this runs automatically for every test.
+    Reset the RNG state before each test function using the sesion seed.
+
+    Note that 'autouse=True' means this runs automatically for every test.
     """
     torch.manual_seed(session_seed)
     np.random.seed(session_seed)
@@ -73,8 +70,9 @@ def set_rng(session_seed):
 
 def pytest_configure(config):
     """
-    Add custom 'cpu_only' and 'gpu_only' markers to mark a test as running
-    exclusively on CPU or GPU.
+    Add custom 'cpu_only' and 'gpu_only' markers.
+
+    These markers mark a test as running exclusively on CPU or GPU.
     """
     config.addinivalue_line("markers", "cpu_only: mark test to run only on cpu.")
     config.addinivalue_line("markers", "gpu_only: mark test to run only on gpu.")
@@ -87,10 +85,7 @@ def pytest_configure(config):
 
 
 def pytest_runtest_setup(item):
-    """
-    This hook runs before every test. We can check for markers here
-    and skip the test dynamically.
-    """
+    """Define a hook that check for markers and skip the test dynamically."""
     if item.get_closest_marker("requires_cupy"):
         if not _HAS_CUPY:
             pytest.skip("Skipping: CuPy is not installed.")
@@ -103,8 +98,9 @@ def pytest_runtest_setup(item):
 @pytest.fixture(params=["cpu", "cuda"])
 def device(request) -> torch.device:
     """
-    Set up a device fixture, such that
+    Set up a device fixture.
 
+    This fixture is setup such that
     * Tests accepting this fixutre will be run on both CPU and GPU (when available),
     * Tests accepting this fixture but marked as 'cpu_only' will only run on CPU.
     * Tests accepting this fixture but marked as 'gpu_only' will only run on GPU.
