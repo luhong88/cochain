@@ -54,7 +54,7 @@ class LOBPCGConfig:
 
     sigma: float | int | None = None
     v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "coord n"] | None] | None = None
-    largest: bool = True
+    largest: bool = False
     tol: float | None = None
     maxiter: int | None = 1000
     generator: torch.Generator | None = None
@@ -304,7 +304,7 @@ def lobpcg(
         possible degenerate eigenvalues.
     k
         The number of eigenvalues/eigenvectors to find. Note that, by default,
-        this function finds the `k` largest eigenvalues of `a`; this behavior
+        this function finds the `k` smallest eigenvalues of `a`; this behavior
         can be changed in `lobpcg_config`.
     eps
         The strength of Lorentzian broadening/regularization, which removes
@@ -339,14 +339,19 @@ def lobpcg(
     unresolved eigenvectors.
 
     This implementation accepts specific preconditioners, including: identity,
-    Jacobi, incomplete LU, and Cholesky; the latter two support diagonal dampling.
-    The preconditioner can be configured using a `LOBPCGPrecondConfig` and will be
-    generated internally.
+    Jacobi, incomplete LU, and Cholesky; the latter two support diagonal dampling/
+    Tikhonov regularization. The preconditioner can be configured using a
+    `LOBPCGPrecondConfig` and will be generated internally. Note that the Jacobi,
+    incomplete LU, and Cholesky preconditioners are defined soly in terms of `a`.
+    For generalized eigenvalue problems, this works reasonably well when searching
+    for the smallest eigenvalues, which suppresses the effect of `m`, but performance
+    will degrade for the largest  eigenvalues; the shift-invert mode does not take
+    preconditioners.
 
     This implementation employs a rank-adaptive, iterative, canonical/PCA
     orthonormalization strategy with soft-restart for constructing the trial subspace.
     Unlike the standard PyTorch LOBPCG implementation, this allows the solver to
-    handle cases where the size of A (`m`) is smaller than 3x the block size `n`.
+    handle cases where the size of `a` (`m`) is smaller than 3x the block size `n`.
     However, if the dimension of the trial subspace (which is <= 3n) is equal to
     or larger than `m`, the Rayleigh-Ritz projection becomes a full similarity
     transformation. In this limit, the algorithm effectively performs an exact
