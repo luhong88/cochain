@@ -1,12 +1,17 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
 
 [project]
 name = "cochain"
 version = "0.1.0"
 description = "Differentiable operators for computational topology and DEC."
+authors = [
+  {name = "Lu Hong", email = "honglu88@gmail.com"},
+]
 readme = "README.md"
+license = "MIT"
+license-files = ["LICEN[CS]E.*"]
 requires-python = ">=3.13"
 dependencies = [
     "einops>=0.8.2",
@@ -61,3 +66,6 @@ extend-ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[project.urls]
+Repository = "https://github.com/luhong88/cochain.git"
