@@ -161,7 +161,7 @@ class PolyscopeViewer:
 
         Returns
         -------
-        [edge,]
+        ps_perm : [edge,]
             A tensor where the i-th element is the canonical edge index corresponding
             to Polyscope's i-th dynamically generated edge.
         """

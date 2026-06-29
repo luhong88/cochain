@@ -34,7 +34,7 @@ def compute_whitney_router(
 
     Returns
     -------
-    [face, lambda, *d_lambda]
+    router : [face, lambda, *d_lambda]
         A coefficient matrix, such that contraction over the `lambda` dimension
         with barycentric weights and contraction over the `*d_lambda` dimension
         with barycentric differentials construct the appropriate Whitney basis

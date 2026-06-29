@@ -40,7 +40,7 @@ def local_flat(
 
     Returns
     -------
-    [edge,]
+    cochain_1 : [edge,]
         A 1-cochain representing the flat of the input vector field.
 
     Notes
@@ -107,7 +107,7 @@ def local_sharp(
 
     Returns
     -------
-    [splx, coord]
+    vec_field : [splx, coord]
         The sharp of the input 1-cochain. The first `splx` dimension can refer
         to either the top-level simplices or the vertices of the mesh, depending
         on the `mode` argument.

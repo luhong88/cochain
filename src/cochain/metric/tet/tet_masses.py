@@ -25,7 +25,7 @@ def mass_0(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "vert vert"
 
     Returns
     -------
-    [vert, vert]
+    mass_0 : [vert, vert]
         The mass matrix.
 
     Notes
@@ -89,7 +89,7 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
 
     Returns
     -------
-    [edge, edge]
+    mass_1 : [edge, edge]
         The mass matrix.
 
     Notes
@@ -223,7 +223,7 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
 
     Returns
     -------
-    [tri, tri]
+    mass_2 : [tri, tri]
         The mass matrix.
 
     Notes
@@ -374,7 +374,7 @@ def mass_3(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tet tet"]:
 
     Returns
     -------
-    [tet, tet]
+    mass_3 : [tet, tet]
         The mass matrix.
 
     Notes

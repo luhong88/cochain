@@ -1,16 +1,18 @@
 from collections import ChainMap
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import torch
-from cuda.core.experimental import Device
 from jaxtyping import Float
 from torch import Tensor
 
+from .....utils.parsing import to_col_major
+from .....utils.stream import cupy_in_torch_stream
 from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
+from ....decoupled_tensor._conversion import sdt_to_cupy_csc
 from ...solvers import DirectSolverConfig
-from ..base._inv_operator import BaseNVMathInvSymSpOp
-from ._lobpcg_operators import IdentityOperator
+from ...solvers.nvmath import _NVMathSparseSolver
+from ._lobpcg_operators import IdOp
 
 try:
     import cupy as cp
@@ -22,18 +24,37 @@ try:
 except ImportError:
     _HAS_CUPY = False
 
-if TYPE_CHECKING:
-    import cupy as cp
-    import cupyx.scipy.sparse as cp_sp
-    import cupyx.scipy.sparse.linalg as cp_sp_linalg
+try:
+    import nvmath.sparse.advanced as nvmath_sp
+
+    _HAS_NVMATH = True
+
+except ImportError:
+    _HAS_NVMATH = False
+
+# A machine eps scaling factor for controlling the strength of diagonal damping.
+ALPHA = 1e3
 
 
 @dataclass
 class LOBPCGPrecondConfig:
     """
-    diag_damp only applicable if method is ilu or cholesky.
-    nvmath_config only applicable if method is cholesky.
-    spilu_kwargs only applicable if method is ilu.
+    A dataclass encapsulating LOBPCG preconditioner configuration.
+
+    Parameters
+    ----------
+    method
+        The preconditioning method; set to "identity" to disable preconditioning.
+    diag_damp
+        The strength of diagonal damping/Tikhonov regularization. This parameter
+        is only applicable if `method` is 'ilu' or 'cholesky'; set to integer 0
+        to disable diagonal damping.
+    nvmath_config
+        Optional configurations for the `nvmath-python` `DirectSolver()`; only
+        applicable if `method` is 'cholesky'.
+    spilu_kwargs
+        Optional configurations for the `CuPy` `spilu()`; only applicable if
+        `method` is 'ilu'.
     """
 
     method: Literal["identity", "jacobi", "ilu", "cholesky"] = "cholesky"
@@ -48,89 +69,95 @@ class LOBPCGPrecondConfig:
             self.nvmath_config = DirectSolverConfig()
 
 
-IdentityPrecond = IdentityOperator
+IdentityPrecond = IdOp
 
 
 class JacobiPrecond:
-    """
+    r"""
     Jacobi preconditioner for LOBPCG.
+
+    Consider the standard eigenvalue problem $A x = \lambda x$. Let
+    $r = A x - \lambda M x$ be the residual vector. The Jacobi preconditioner
+    approximates the inverse of $A$ as
+
+    $$P = \text{diag}(A)^{-1}$$
+
+    to solve for the search direction $w = P r$.
+
+    For the generalized eigenvalue problem $A x = \lambda M x$, this $P$ is still
+    a good approximation for the inverse of the shifted operator
+    $(A - \lambda M)^{-1}$ when the target eigenvalues are small.
 
     While the Jacobi preconditioner is computationally much cheaper than the ILU
     and Cholesky preconditioner, it is only recommended when the initial guess
     is already very good.
+
+    This preconditioner does not require `CuPy` or `nvmath-python`.
     """
 
-    def __init__(self, A_op: Float[SparseDecoupledTensor, "m m"]):
-        eps = 1e-4 * A_op.tr / A_op.size(0)
-        self.ddt = DiagDecoupledTensor(1 / (A_op.diagonal() + eps))
+    def __init__(self, a_sdt: Float[SparseDecoupledTensor, "m m"]):
+        # Add a small eps to prevent division by zero.
+        eps = ALPHA * torch.finfo(a_sdt.dtype).eps * a_sdt.tr / a_sdt.size(0)
+        self.ddt = DiagDecoupledTensor(1 / (a_sdt.diagonal() + eps))
 
     def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
         return self.ddt @ res
 
 
 class ILUPrecond:
-    """
+    r"""
     Diagonally damped incomplete LU preconditioner for LOBPCG.
 
-    For the standard eigenvalue problem A@x = λ*x and the generalized eigenvalue
-    problem A@x = λ*M@x, if r is a residual vector, applying the preconditioner
-    to r is equivalent to solving a sparse linear system (A + ϵI)@w = r for w
-    using incomplete LU factorization.
+    Consider the standard eigenvalue problem $A x = \lambda x$. Let
+    $r = A x - \lambda M x$ be the residual vector. This preconditioner computes
+    the incomplete LU factorization of the diagonally damped $A$; i.e.,
 
-    This preconditioner uses CuPy to perform the incomplete LU factorization.
-    By default, it uses the cusparse backend to perform the factorization with
+    $$A + \epsilon I \approx L U$$
+
+    which is used to approximate the inverse of $A$ and compute the search direction
+    $w$ as the solution to $L U w = r$. The diagonal damping provided by $\epsilon I$
+    is important to increase the diagonal dominance of $A$ to ensure that the ILU
+    is successful and well-conditioned.
+
+    For the generalized eigenvalue problem $A x = \lambda M x$, this $P = (L U)^{-1}$
+    is still a good approximation for the inverse of the shifted operator
+    $(A - \lambda M)^{-1}$ when the target eigenvalues are small.
+
+    This preconditioner uses `CuPy` to perform the incomplete LU factorization.
+    By default, it uses the `cusparse` backend to perform the factorization with
     zero fill-in and no pivoting. This default config tends to result in smaller
     memory usage than the Cholesky preconditioner.
     """
 
     def __init__(
         self,
-        A_op: Float[SparseDecoupledTensor, "m m"],
+        a_sdt: Float[SparseDecoupledTensor, "m m"],
         diag_damp: float | int | None,
         spilu_kwargs: dict[str, Any],
     ):
         if not _HAS_CUPY:
-            raise ImportError("cupy backend required.")
-
-        if not A_op.pattern._is_int32_safe:
-            raise ValueError(
-                "The sparse indices of the input tensor 'A' cannot be safely "
-                "cast to int32 dtype."
-            )
+            raise ImportError("CuPy backend required.")
 
         if diag_damp == 0:
-            op = A_op.to_sparse_csc()
+            op_sdt = a_sdt
+
         else:
             if diag_damp is None:
-                eps = 1e-4 * A_op.tr / A_op.size(0)
+                # If no eps is given, set eps to be proportional to the average
+                # diagonal entry size, scaled by the dtype machine eps.
+                eps = ALPHA * torch.finfo(a_sdt.dtype).eps * a_sdt.tr / a_sdt.size(0)
             else:
                 eps = diag_damp
 
-            # Pytorch currently does not support operations like A - I on sparse
-            # CSC tensors.
             eye = DiagDecoupledTensor.eye(
-                A_op.size(-1), dtype=A_op.dtype, device=A_op.device
+                a_sdt.size(-1), dtype=a_sdt.dtype, device=a_sdt.device
             )
 
-            op_sdt = SparseDecoupledTensor.assemble(A_op, eps * eye)
+            op_sdt = SparseDecoupledTensor.assemble(a_sdt, eps * eye)
 
-            if not op_sdt.pattern._is_int32_safe:
-                raise ValueError(
-                    "The sparse indices of the tensor A + ϵI cannot be safely "
-                    "cast to int32 dtype."
-                )
-
-            op = op_sdt.to_sparse_csc()
-
-        stream = torch.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
-            op_cp: Float[cp_sp.csc_matrix, "r c"] = cp_sp.csc_matrix(
-                (
-                    cp.from_dlpack(op.values()),
-                    cp.from_dlpack(op.row_indices()),
-                    cp.from_dlpack(op.ccol_indices()),
-                ),
-                shape=tuple(op.shape),
+        with cupy_in_torch_stream():
+            op_cp: Float[cp_sp.csc_matrix, "r c"] = sdt_to_cupy_csc(
+                op_sdt.values, op_sdt.pattern
             )
 
             spilu_default = {"fill_factor": 1}
@@ -139,92 +166,92 @@ class ILUPrecond:
             self.solver = cp_sp_linalg.spilu(A=op_cp, **spilu_config)
 
     def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
-        stream = torch.cuda.current_stream()
-        with cp.cuda.ExternalStream(stream.cuda_stream, stream.device_index):
+        with cupy_in_torch_stream():
             res_cp = cp.from_dlpack(res.detach().contiguous())
-            sol = torch.from_dlpack(self.solver.solve(res_cp, trans="N"))
+            sol = torch.from_dlpack(self.solver.solve(res_cp))
 
         return sol
 
 
-class ChoPrecond(BaseNVMathInvSymSpOp):
-    """
+class ChoPrecond:
+    r"""
     Diagonally damped Cholesky preconditioner for LOBPCG.
 
-    For the standard eigenvalue problem A@x = λ*x and the generalized eigenvalue
-    problem A@x = λ*M@x, if r is a residual vector, applying the preconditioner
-    to r is equivalent to solving a sparse linear system (A + ϵI)@w = r for w
-    using Cholesky factorization.
+    Consider the standard eigenvalue problem $A x = \lambda x$. Let
+    $r = A x - \lambda M x$ be the residual vector. This preconditioner computes
+    the exact Cholesky factorization of the diagonally damped $A$; i.e.,
 
-    This preconditioner uses `nvmath-python` DirectSolver to perform Cholesky
+    $$A + \epsilon I = L L^T$$
+
+    which is used to compute the inverse of $A$ and the search direction $w$ as
+    the solution to $L L^T w = r$. The diagonal damping provided by $\epsilon I$
+    is important to increase the diagonal dominance of $A$ to ensure that the
+    matrix is strictly symmetric positive definite.
+
+    For the generalized eigenvalue problem $A x = \lambda M x$, this $P = (L L^T)^{-1}$
+    is still a good approximation for the inverse of the shifted operator
+    $(A - \lambda M)^{-1}$ when the target eigenvalues are small.
+
+    This preconditioner uses `nvmath-python` `DirectSolver` to perform Cholesky
     factorization.
     """
 
     def __init__(
         self,
-        A_op: Float[SparseDecoupledTensor, "m m"],
+        a_sdt: Float[SparseDecoupledTensor, "m m"],
         n: int,
         diag_damp: float | int | None,
         nvmath_config: DirectSolverConfig,
     ):
-        if not A_op.pattern._is_int32_safe:
-            raise ValueError(
-                "The sparse indices of the input tensor 'A' cannot be safely "
-                "cast to int32 dtype."
-            )
+        if not _HAS_NVMATH:
+            raise ImportError("nvmath-python backend required.")
 
         self.n = n
 
-        # Solve a linear system with at most 3n channel dims
-        b_dummy = (
-            torch.zeros((A_op.size(-1), 3 * n), dtype=A_op.dtype, device=A_op.device)
-            .transpose(-1, -2)
-            .contiguous()
-            .transpose(-1, -2)
+        # Solve a linear system with a channel dim of at most 3n size.
+        b_dummy = to_col_major(
+            torch.zeros(
+                (a_sdt.size(-1), 3 * n), dtype=a_sdt.dtype, device=a_sdt.device
+            ),
+            batch_first=False,
         )
 
         if diag_damp == 0:
-            op = A_op.to_sparse_csr()
+            op_sdt = a_sdt
+
         else:
             if diag_damp is None:
-                eps = 1e-4 * A_op.tr / A_op.size(0)
+                # If no eps is given, set eps to be proportional to the average
+                # diagonal entry size, scaled by the dtype machine eps.
+                eps = ALPHA * torch.finfo(a_sdt.dtype).eps * a_sdt.tr / a_sdt.size(0)
             else:
                 eps = diag_damp
 
-            # Pytorch currently does not support operations like A - I on sparse
-            # CSR tensors.
             eye = DiagDecoupledTensor.eye(
-                A_op.size(-1), dtype=A_op.dtype, device=A_op.device
+                a_sdt.size(-1), dtype=a_sdt.dtype, device=a_sdt.device
             )
 
-            op_sdt = SparseDecoupledTensor.assemble(A_op, eps * eye)
+            op_sdt = SparseDecoupledTensor.assemble(a_sdt, eps * eye)
 
-            if not op_sdt.pattern._is_int32_safe:
-                raise ValueError(
-                    "The sparse indices of the tensor A + ϵI cannot be safely "
-                    "cast to int32 dtype."
-                )
-
-            op = op_sdt.to_sparse_csr()
-
-        super().__init__(op, b_dummy, nvmath_config, torch.cuda.current_stream())
+        self.solver = _NVMathSparseSolver(
+            op_sdt.values,
+            op_sdt.pattern,
+            b_dummy,
+            matrix_type=nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
+            config=nvmath_config,
+        )
 
     def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
-        stream = torch.cuda.current_stream()
-        Device(res.device.index).set_current()
-
         # Pad up to 3n channel dims
         k = res.size(-1)
         pad = 3 * self.n - k
 
-        res_padded_col_major = (
-            torch.nn.functional.pad(res, (0, pad, 0, 0))
-            .transpose(-1, -2)
-            .contiguous()
-            .transpose(-1, -2)
+        res_padded_col_major = to_col_major(
+            torch.nn.functional.pad(res, (0, pad, 0, 0)), batch_first=False
         )
 
-        self.solver.reset_operands(b=res_padded_col_major, stream=stream)
-        sol = self.solver.solve(stream=stream)
+        # Note that there is no need to "unflatten" b since there is only one
+        # channel dimension.
+        sol = self.solver.solve(res_padded_col_major)
 
         return sol[:, :k]

@@ -225,7 +225,7 @@ def splx_search(
 
     Returns
     -------
-    [*b, query_splx]
+    splx_idx : [*b, query_splx]
         The indices of the query simplices in the key simplex set.
     """
     if query_splx.size(-2) == 0:

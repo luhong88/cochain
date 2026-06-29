@@ -48,7 +48,7 @@ def _minimum_spanning_tree(
 
     Returns
     -------
-    [2, mst_node]
+    tree_edges : [2, mst_node]
         The computed minimum spanning forest; each column in the tensor represents
         the indices of a graph node pair that is connected by an edge in the forest.
 
@@ -172,7 +172,7 @@ def compute_tree_mask(
 
     Returns
     -------
-    [global_edge,]
+    tree_mask : [global_edge,]
         A boolean mask that mark edges that belong to the spanning forest.
     """
     # Compute the vertex adjacency matrix from the (topological) 0-Laplacian
@@ -280,7 +280,7 @@ def _cbd_to_coface(
     # next to each other, which can then be reshaped to generate the coface list.
     idx_coo_subset = idx_coo[:, shared_face_mask]
     sort_idx = torch.sort(idx_coo_subset[-1], stable=True).indices
-    coface_idx = idx_coo_subset[-2][sort_idx].reshape(-1, degree)
+    coface_idx = idx_coo_subset[-2][sort_idx].view(-1, degree)
 
     unique_face_idx = idx_coo_subset[-1, sort_idx][::degree]
 
@@ -317,7 +317,7 @@ def compute_cotree_mask(
 
     Returns
     -------
-    [edge,]
+    cotree_mask : [edge,]
         A boolean mask that mark edges that belong to the dual spanning forest.
 
     Notes

@@ -13,7 +13,7 @@ from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
     SparseDecoupledTensor,
 )
-from ...sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
+from ...sparse.linalg.solvers._sparse_solver import InvSparseOperator
 from . import _galerkin_element, _galerkin_vertex
 
 
@@ -40,7 +40,7 @@ def mixed_mass(
 
     Returns
     -------
-    [splx*coord, edge]
+    mixed_mass : [splx*coord, edge]
         The mixed/cross mass matrix. If `mode` is "element", then `splx` refers
         to the number of top-level simplices; if `mode` is "vertex", then `splx`
         refers to the number of vertices. In either case, `coord` is 3.
@@ -175,7 +175,7 @@ def vector_mass(
 
     Returns
     -------
-    [splx*coord, splx*coord]
+    vector_mass : [splx*coord, splx*coord]
         The vector mass matrix. If `mode` is "element", then `splx` refers to
         the number of top-level simplices; if `mode` is "vertex", then `splx`
         refers to the number of vertices. In either case, `coord` is 3.
@@ -325,7 +325,7 @@ def galerkin_flat(
 
     Returns
     -------
-    [edge,]
+    cochain_1 : [edge,]
         A 1-cochain representing the flat of the input vector field.
 
     Notes
@@ -426,7 +426,7 @@ def galerkin_sharp(
 
     Returns
     -------
-    [splx, coord]
+    vec_field : [splx, coord]
         A vector field representing the sharp of the input 1-cochain. If `mode`
         is "element", then `splx` refers to the number of top-level simplices;
         if `mode` is "vertex", then `splx` refers to the number of vertices.

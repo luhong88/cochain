@@ -30,14 +30,14 @@ def detect_mesh_boundaries(
 
     Returns
     -------
-    vert_bd_mask : (vert,)
+    vert_bd_mask : [vert,]
         A boolean mask for the mesh verts where `True` marks the boundary verts.
-    edge_bd_mask : (vert,)
+    edge_bd_mask : [vert,]
         A boolean mask for the mesh edges where `True` marks the boundary edges.
-    tri_bd_mask : (vert,)
+    tri_bd_mask : [vert,]
         A boolean mask for the mesh tris where `True` marks the boundary tris.
         For a tri mesh, this mask contains `False` only.
-    tet_bd_mask : (vert,)
+    tet_bd_mask : [vert,]
         A boolean mask for the mesh tets where `True` marks the boundary tets.
         For a tri mesh, this is an empty Tensor; for a tet mesh, this mask contains
         `False` only.

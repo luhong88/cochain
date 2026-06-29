@@ -7,7 +7,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
-from ..sparse.linalg.solvers._inv_sparse_operator import InvSparseOperator
+from ..sparse.linalg.solvers._sparse_solver import InvSparseOperator
 from .ext_prod.whitney import WhitneyWedgeL2Projector
 
 
@@ -53,7 +53,7 @@ def galerkin_contract(
 
     Returns
     -------
-    [km1_splx, *ch]
+    cochain_km1 : [km1_splx, *ch]
         The $(k-1)$-cochain $\xi$.
 
     Notes

@@ -1,83 +1,96 @@
-import cupy as cp
-import cupyx.scipy.sparse as cp_sp
-import cupyx.scipy.sparse.linalg as cp_sp_linalg
+from __future__ import annotations
+
 import torch
-from cuda.core.experimental import Device
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ....decoupled_tensor import SparsityPattern
+from ....decoupled_tensor import (
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
 from ...solvers import DirectSolverConfig
-from ..base._inv_operator import BaseNVMathInvSymSpOp
+from ...solvers.nvmath import _NVMathSparseSolver
+
+try:
+    import cupy as cp
+    import cupyx.scipy.sparse.linalg as cp_sp_linalg
+
+    _HAS_CUPY = True
+
+except ImportError:
+    _HAS_CUPY = False
+
+try:
+    import nvmath.sparse.advanced as nvmath_sp
+
+    _HAS_NVMATH = True
+
+except ImportError:
+    _HAS_NVMATH = False
 
 
-def sp_op_comps_to_cp_csr(
-    A_val: Float[Tensor, " nnz"],
-    A_pattern: Integer[SparsityPattern, "r c"],
-) -> Float[cp_sp.csr_matrix, "r c"]:
-    return cp_sp.csr_matrix(
-        (
-            cp.from_dlpack(A_val.detach().contiguous()),
-            cp.from_dlpack(A_pattern.idx_col.detach().contiguous()),
-            cp.from_dlpack(A_pattern.idx_crow.detach().contiguous()),
-        ),
-        shape=tuple(A_pattern.shape),
-    )
-
-
-class CuPyShiftInvSymOp(BaseNVMathInvSymSpOp, cp_sp_linalg.LinearOperator):
-    """
-    A CuPy LinearOperator object used to solve an eigenvalue problem in the
-    shift inverse mode.
-    """
+class CuPyShiftInvSymOp(cp_sp_linalg.LinearOperator):
+    """A CuPy `LinearOperator` for shift-invert mode eigenvalue problem."""
 
     def __init__(
         self,
-        A_val: Float[Tensor, " nnz"],
-        A_pattern: Integer[SparsityPattern, "r c"],
+        a_val: Float[Tensor, " nz"],
+        a_pattern: Integer[SparsityPattern, "r c"],
         sigma: float,
         config: DirectSolverConfig,
     ):
-        if not A_pattern._is_int32_safe:
-            raise ValueError(
-                "The sparse indices of the input tensor 'A' cannot be safely "
-                "cast to int32 dtype."
-            )
+        if not _HAS_NVMATH:
+            raise ImportError("nvmath-python backend is required.")
+        if not _HAS_CUPY:
+            raise ImportError("CuPy backend required.")
 
-        t_stream = torch.cuda.current_stream()
+        a_sdt = SparseDecoupledTensor(a_pattern, a_val)
+        eye = DiagDecoupledTensor.eye(
+            a_pattern.size(-1), dtype=a_val.dtype, device=a_val.device
+        )
+        a_shift_inv = SparseDecoupledTensor.assemble(a_sdt, -sigma * eye)
 
-        # Prepare Cupy arrays.
-        with cp.cuda.ExternalStream(t_stream.cuda_stream, t_stream.device_index):
-            A_cp = sp_op_comps_to_cp_csr(A_val, A_pattern)
+        b_dummy = torch.zeros(
+            a_pattern.size(-1), dtype=a_val.dtype, device=a_val.device
+        )
 
-            diag_cp = sigma * cp_sp.identity(
-                A_cp.shape[0], dtype=A_cp.dtype, format="csr"
-            )
+        self.solver = _NVMathSparseSolver(
+            a_shift_inv.values,
+            a_shift_inv.pattern,
+            b_dummy,
+            matrix_type=nvmath_sp.DirectSolverMatrixType.SYMMETRIC,
+            config=config,
+        )
 
-            A_shift_inv_cp = A_cp - diag_cp
-
-            b_dummy = cp.zeros(A_cp.shape[0], dtype=A_cp.dtype)
-
-            BaseNVMathInvSymSpOp.__init__(
-                self,
-                a=A_shift_inv_cp,
-                b=b_dummy,
-                config=config,
-                stream=cp.cuda.get_current_stream(),
-            )
-
-        cp_sp_linalg.LinearOperator.__init__(self, dtype=A_cp.dtype, shape=A_cp.shape)
+        cp_sp_linalg.LinearOperator.__init__(
+            self,
+            dtype=cp.dtype(str(a_val.dtype).split(".")[-1]),
+            shape=tuple(a_pattern.shape),
+        )
 
     def _matvec(self, x: Float[cp.ndarray, " c"]):
-        """
-        For the operator L = inv(A - σI), the matrix-vector multiplication L@x = b
-        can also be written as x = (A - σI)@b, or solve(A - σI, x).
-        """
-        cp_stream = cp.cuda.get_current_stream()
-        Device(cp_stream.device_id).set_current()
+        r"""
+        Compute inverse sparse matrix-vector product.
 
-        self.solver.reset_operands(b=x, stream=cp_stream)
-        b = self.solver.solve(stream=cp_stream)
+        For the operator $L = (A - \sigma I)^{-1}$, the matrix-vector
+        multiplication $L x = b$ can also be written as $(A - \sigma I) b = x$;
+        """
+        # Get the current active CuPy stream and its representation in PyTorch.
+        cp_stream = cp.cuda.get_current_stream()
+        torch_stream = torch.cuda.ExternalStream(cp_stream.ptr)
+
+        # Force PyTorch to use the current CuPy stream as its current active stream
+        with torch.cuda.stream(torch_stream):
+            x_torch = torch.from_dlpack(x)
+            # Note that there is no need to "unflatten" b since there are no
+            # channel dimensions.
+            b_torch = self.solver.solve(x_torch)
+
+        # Force the CPU to wait for safety.
+        cp_stream.synchronize()
+
+        b = cp.from_dlpack(b_torch.detach().contiguous())
 
         return b
 

@@ -89,7 +89,7 @@ class DeRhamMap:
 
         Returns
         -------
-        [k_splx, pt, coord=3]
+        sampled_points : [k_splx, pt, coord=3]
             The spatial points on each k-simplex over which to sample the k-form.
         """
         if not hasattr(self, "bary_coords"):
@@ -125,8 +125,8 @@ class DeRhamMap:
 
         Returns
         -------
-        [k_splx, *ch]
-            The discretized k-cochain associated with the k-simplices.
+        k_cochains : [k_splx, *ch]
+            The discretized k-cochains associated with the k-simplices.
 
         Notes
         -----

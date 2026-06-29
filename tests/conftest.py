@@ -3,13 +3,27 @@ import random
 
 import numpy as np
 import pytest
-import pyvista as pv
 import torch
 
 from cochain.complex import SimplicialMesh
 from cochain.datasets import synthetic_tet_meshes, synthetic_tri_meshes
 
-# TODO: update all tests to run on both GPU and CPU
+try:
+    import cupy
+
+    _HAS_CUPY = True
+
+except:
+    _HAS_CUPY = False
+
+
+try:
+    import nvmath.sparse.advanced
+
+    _HAS_NVMATH = True
+
+except ImportError:
+    _HAS_NVMATH = False
 
 
 def pytest_addoption(parser):
@@ -64,6 +78,26 @@ def pytest_configure(config):
     """
     config.addinivalue_line("markers", "cpu_only: mark test to run only on cpu.")
     config.addinivalue_line("markers", "gpu_only: mark test to run only on gpu.")
+    config.addinivalue_line(
+        "markers", "requires_cupy: skip test if cupy is not installed."
+    )
+    config.addinivalue_line(
+        "markers", "requires_nvmath: skip test if nvmath-python is not installed."
+    )
+
+
+def pytest_runtest_setup(item):
+    """
+    This hook runs before every test. We can check for markers here
+    and skip the test dynamically.
+    """
+    if item.get_closest_marker("requires_cupy"):
+        if not _HAS_CUPY:
+            pytest.skip("Skipping: CuPy is not installed.")
+
+    if item.get_closest_marker("requires_nvmath"):
+        if not _HAS_NVMATH:
+            pytest.skip("Skipping: nvmath-python is not installed.")
 
 
 @pytest.fixture(params=["cpu", "cuda"])

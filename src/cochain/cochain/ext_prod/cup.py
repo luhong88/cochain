@@ -169,7 +169,7 @@ class CupProduct(torch.nn.Module):
 
         Returns
         -------
-        [m_splx, *ch_out]
+        cup_prod : [m_splx, *ch_out]
             The cup product between the k-cochain and the l-cochain. If `pairing`
             is "scalar", then `*ch_out` matches the input `*ch_in`; if `pairing`
             is "dot", then `*ch_out` is trivial; if `pairing` is "cross", then
@@ -367,7 +367,7 @@ class AntisymmetricCupProduct(torch.nn.Module):
 
         Returns
         -------
-        [m_splx, *ch_out]
+        cup_prod : [m_splx, *ch_out]
             The cup product between the k-cochain and the l-cochain. If `pairing`
             is "scalar", then `*ch_out` matches the input `*ch_in`; if `pairing`
             is "dot", then `*ch_out` is trivial; if `pairing` is "cross", then

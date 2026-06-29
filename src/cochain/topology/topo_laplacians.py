@@ -40,7 +40,7 @@ def laplacian_k(
 
     Returns
     -------
-    [k_splx, k_splx]
+    laplacian_k : [k_splx, k_splx]
         The $K$-Laplacian.
 
     Notes

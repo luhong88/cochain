@@ -6,7 +6,7 @@ from ._spgemm_plan import SpSpMMPlan
 from .pattern import SparsityPattern
 
 
-class FixedTopoSpDenseMM(torch.autograd.Function):
+class FixedTopoSpDenseMMAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " nz"],
@@ -71,7 +71,7 @@ class FixedTopoSpDenseMM(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdB)
 
 
-class FixedTopoDenseSpMM(torch.autograd.Function):
+class FixedTopoDenseSpMMAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " nz"],
@@ -138,7 +138,7 @@ class FixedTopoDenseSpMM(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdB)
 
 
-class FixedTopoSpSpMM(torch.autograd.Function):
+class FixedTopoSpSpMMAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " a_nz"],
@@ -224,7 +224,7 @@ class FixedTopoSpSpMM(torch.autograd.Function):
         return dLdA_val, dLdB_val, d_plan
 
 
-class FixedTopoSpMV(torch.autograd.Function):
+class FixedTopoSpMVAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " nz"],
@@ -284,7 +284,7 @@ class FixedTopoSpMV(torch.autograd.Function):
         return (dLdA_val, dLdA_pattern, dLdb)
 
 
-class FixedTopoSpVM(torch.autograd.Function):
+class FixedTopoSpVMAutogradFunction(torch.autograd.Function):
     @staticmethod
     def forward(
         a_val: Float[Tensor, " nz"],
@@ -350,7 +350,7 @@ def sp_dense_mm(
     b_dense: Float[Tensor, "j k"],
 ) -> Float[Tensor, "i k"]:
     """Sparse-dense 2D matrix multiplication with fixed sparsity autograd."""
-    return FixedTopoSpDenseMM.apply(a_val, a_pattern, b_dense)
+    return FixedTopoSpDenseMMAutogradFunction.apply(a_val, a_pattern, b_dense)
 
 
 def dense_sp_mm(
@@ -359,7 +359,7 @@ def dense_sp_mm(
     a_pattern: Integer[SparsityPattern, "j k"],
 ) -> Float[Tensor, "i k"]:
     """Dense-sparse 2D matrix multiplication with fixed sparsity autograd."""
-    return FixedTopoDenseSpMM.apply(a_val, a_pattern, b_dense)
+    return FixedTopoDenseSpMMAutogradFunction.apply(a_val, a_pattern, b_dense)
 
 
 def sp_sp_mm(
@@ -371,7 +371,7 @@ def sp_sp_mm(
     Integer[Tensor, "2 c_nz"],
 ]:
     """Sparse-Sparse 2D matrix multiplication with fixed sparsity autograd."""
-    return FixedTopoSpSpMM.apply(a_val, b_val, spsp_mm_plan)
+    return FixedTopoSpSpMMAutogradFunction.apply(a_val, b_val, spsp_mm_plan)
 
 
 def sp_mv(
@@ -380,7 +380,7 @@ def sp_mv(
     b_dense: Float[Tensor, " j"],
 ) -> Float[Tensor, " i"]:
     """Sparse 2D matrix-vector multiplication with fixed sparsity autograd."""
-    return FixedTopoSpMV.apply(a_val, a_pattern, b_dense)
+    return FixedTopoSpMVAutogradFunction.apply(a_val, a_pattern, b_dense)
 
 
 def sp_vm(
@@ -394,7 +394,7 @@ def sp_vm(
     The vector argument (b_dense) is interpreted as a row vector multiplying
     the matrix from the left.
     """
-    return FixedTopoSpVM.apply(a_val, a_pattern, b_dense)
+    return FixedTopoSpVMAutogradFunction.apply(a_val, a_pattern, b_dense)
 
 
 # Specialized functions for diagonal operators that do not require custom backward()

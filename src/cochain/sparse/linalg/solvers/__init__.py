@@ -1,8 +1,5 @@
-from .nvmath.nvmath_utils import DirectSolverConfig
-from .nvmath.nvmath_wrapper import nvmath_direct_solver
-from .nvmath.persistent_nvmath_wrapper import NVMathDirectSolver
-from .splu.persistent_splu_wrapper import SuperLU
-from .splu.splu_wrapper import splu
+from .nvmath import DirectSolverConfig, NVMathDirectSolver, nvmath_direct_solver
+from .splu import SuperLU, splu
 
 __all__ = [
     "DirectSolverConfig",
