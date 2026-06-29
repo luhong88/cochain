@@ -37,7 +37,7 @@ def test_lorentzian_regularization_smoke(
     a_sdt.requires_grad_()
 
     eig_vals, eig_vecs = scipy_eigsh(
-        a=a_sdt, m=None, k=k, eps=1e-3, config=SciPyEigshConfig(which="SM")
+        a=a_sdt, m=None, k=k, eps="auto", config=SciPyEigshConfig(which="SM")
     )
 
     loss = eig_vals.sum() + eig_vecs.sum()

@@ -3,7 +3,7 @@ from __future__ import annotations
 __all__ = ["LOBPCGPrecondConfig", "LOBPCGConfig", "lobpcg"]
 
 from dataclasses import asdict, dataclass, replace
-from typing import Sequence
+from typing import Literal, Sequence
 
 import torch
 from jaxtyping import Float, Integer
@@ -12,18 +12,9 @@ from torch import Tensor
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ...solvers import DirectSolverConfig
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
+from ..base.utils import compute_lorentzian_eps, matrix_inf_norm
 from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 from ._lobpcg_routines import lobpcg_forward
-
-
-def _matrix_inf_norm(sdt: Float[SparseDecoupledTensor, "m m"] | None) -> float:
-    """Compute the matrix infinity norm."""
-    if sdt is None:
-        return 1.0
-    else:
-        ones = torch.ones(sdt.size(0), dtype=sdt.dtype, device=sdt.device)
-        row_sum = sdt.abs() @ ones
-        return row_sum.max().item()
 
 
 @dataclass
@@ -226,8 +217,8 @@ def _lobpcg_batch(
     eig_val_list = []
     eig_vec_list = []
     for a, m, lobpcg_config in zip(a_list, m_list, lobpcg_config_list, strict=True):
-        a_norm = _matrix_inf_norm(a)
-        m_norm = _matrix_inf_norm(m)
+        a_norm = matrix_inf_norm(a)
+        m_norm = matrix_inf_norm(m)
 
         eig_val, eig_vec = _lobpcg_no_batch(
             a,
@@ -260,7 +251,7 @@ def lobpcg(
     block_diag_batch: bool = False,
     n: int | None = None,
     k: int = 6,
-    eps: float | int = 1e-6,
+    eps: float | int | Literal["auto"] = "auto",
     lobpcg_config: LOBPCGConfig | None = None,
     nvmath_config: DirectSolverConfig | None = None,
     precond_config: LOBPCGPrecondConfig | None = None,
@@ -309,7 +300,10 @@ def lobpcg(
     eps
         The strength of Lorentzian broadening/regularization, which removes
         singularities in backward gradient calculation when some of the
-        eigenvalues are (near) degenerate. Set to integer 0 to disable regularization.
+        eigenvalues are (near) degenerate. As a heuristic, the regularization starts
+        to dominate the gradient calculation as the spectral gap approaches the
+        square root of `eps`. Set to integer 0 to disable regularization; set to
+        "auto" to select `eps` based on the input dtype and matrix inf-norm.
     lobpcg_config
         Additional optional LOBPCG configurations.
     nvmath_config
@@ -409,6 +403,9 @@ def lobpcg(
 
     processed_lobpcg_config = replace(lobpcg_config, v0=v0, tol=tol)
 
+    if eps == "auto":
+        eps = compute_lorentzian_eps(a, m)
+
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(
             a_list,
@@ -420,8 +417,8 @@ def lobpcg(
             nvmath_config,
         )
     else:
-        a_norm = _matrix_inf_norm(a)
-        m_norm = _matrix_inf_norm(m)
+        a_norm = matrix_inf_norm(a)
+        m_norm = matrix_inf_norm(m)
 
         eig_vals, eig_vecs = _lobpcg_no_batch(
             a,

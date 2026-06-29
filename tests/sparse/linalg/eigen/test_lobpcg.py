@@ -660,7 +660,7 @@ def test_lorentzian_regularization_smoke(
     a_sdt.requires_grad_()
 
     eig_vals, eig_vecs = lobpcg(
-        a=a_sdt, m=None, k=k, eps=1e-3, lobpcg_config=LOBPCGConfig(largest=True)
+        a=a_sdt, m=None, k=k, eps="auto", lobpcg_config=LOBPCGConfig(largest=True)
     )
 
     loss = eig_vals.sum() + eig_vecs.sum()

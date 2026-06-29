@@ -396,3 +396,47 @@ def grassmann_proj_dists(
             raise ValueError(f"Unknown mode argument '{mode}'.")
 
     return dist
+
+
+def matrix_inf_norm(sdt: Float[SparseDecoupledTensor, "m m"] | None) -> float:
+    """Compute the matrix infinity norm."""
+    if sdt is None:
+        return 1.0
+    else:
+        ones = torch.ones(sdt.size(0), dtype=sdt.dtype, device=sdt.device)
+        row_sum = sdt.abs() @ ones
+        return row_sum.max().item()
+
+
+def compute_lorentzian_eps(
+    a: Float[SparseDecoupledTensor, "m m"],
+    m: Float[SparseDecoupledTensor, "m m"] | None,
+) -> float:
+    """
+    Automatically select the strength of Lorentzian broadening/regularization.
+
+    The parameter `eps` should be small enough to allow accurate gradients through
+    the eigenvectors of near-degenerate eigenvalues, but large enough to stabilize
+    the backward pass for true degeneracies. In addition, `eps` should scale with
+    the square of the spectral radius so that the regularization floor adapts to
+    the physical scale of the operators.
+
+    To avoid computing the exact spectral radius ahead of time, we scale `eps`
+    using the matrix infinity norm (recall that |λ_max| <= ||A||_∞). For GEP, the
+    spectral radius roughly scales with the ratio ||A||_∞ / ||M||_∞.
+
+    For shift-invert mode, the backward pass still differentiates through the
+    original operators using the original unshifted eigenvalues, so this scaling
+    heuristic remains mathematically consistent without further adjustment.
+    """
+    machine_eps = torch.finfo(a.dtype).eps
+
+    a_norm = matrix_inf_norm(a)
+    m_norm = matrix_inf_norm(m)
+
+    # Prevent division by zero if M is severely ill-scaled.
+    safe_m_norm = max(m_norm, machine_eps)
+
+    lorentz_eps = 10.0 * machine_eps * max(1.0, (a_norm / safe_m_norm) ** 2.0)
+
+    return lorentz_eps

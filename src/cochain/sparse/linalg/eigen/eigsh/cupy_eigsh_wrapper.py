@@ -15,6 +15,7 @@ from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ....decoupled_tensor._conversion import sdt_to_cupy_csr
 from ...solvers import DirectSolverConfig
 from ..base._backward import dLdA_backward
+from ..base.utils import compute_lorentzian_eps
 from ._cupy_eigsh_operators import CuPyShiftInvSymOp
 
 try:
@@ -242,7 +243,7 @@ def cupy_eigsh(
     *,
     block_diag_batch: bool = False,
     k: int = 6,
-    eps: float | int = 1e-6,
+    eps: float | int | Literal["auto"] = "auto",
     return_eigenvectors: bool = True,
     cp_config: CuPyEigshConfig | None = None,
     nvmath_config: DirectSolverConfig | None = None,
@@ -267,8 +268,10 @@ def cupy_eigsh(
     eps
         The strength of Lorentzian broadening/regularization, which removes
         singularities in backward gradient calculation when some of the
-        eigenvalues are (near) degenerate. Set to integer 0 to disable
-        regularization.
+        eigenvalues are (near) degenerate. As a heuristic, the regularization starts
+        to dominate the gradient calculation as the spectral gap approaches the
+        square root of `eps`. Set to integer 0 to disable regularization; set to
+        "auto" to select `eps` based on the input dtype and matrix inf-norm.
     return_eigenvectors
         Whether to compute and return the eigenvectors in addition to the
         eigenvalues. Note that, if `a` requires gradient tracking, the
@@ -335,6 +338,9 @@ def cupy_eigsh(
 
     if shift_invert and (nvmath_config is None):
         nvmath_config = DirectSolverConfig()
+
+    if eps == "auto":
+        eps = compute_lorentzian_eps(a, None)
 
     if block_diag_batch:
         eig_vals, eig_vecs = _cupy_eigsh_batch(

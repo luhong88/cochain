@@ -17,6 +17,7 @@ from .....utils.parsing import to_np
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ....decoupled_tensor._conversion import sdt_to_scipy_csc, sdt_to_scipy_csr
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
+from ..base.utils import compute_lorentzian_eps
 
 
 @dataclass
@@ -319,7 +320,7 @@ def scipy_eigsh(
     *,
     block_diag_batch: bool = False,
     k: int = 6,
-    eps: float | int = 1e-6,
+    eps: float | int | Literal["auto"] = "auto",
     return_eigenvectors: bool = True,
     config: SciPyEigshConfig | None = None,
 ) -> Float[Tensor, "*b k"] | tuple[Float[Tensor, "*b k"], Float[Tensor, "r k"]]:
@@ -348,7 +349,10 @@ def scipy_eigsh(
     eps
         The strength of Lorentzian broadening/regularization, which removes
         singularities in backward gradient calculation when some of the
-        eigenvalues are (near) degenerate. Set to integer 0 to disable regularization.
+        eigenvalues are (near) degenerate. As a heuristic, the regularization starts
+        to dominate the gradient calculation as the spectral gap approaches the
+        square root of `eps`. Set to integer 0 to disable regularization; set to
+        "auto" to select `eps` based on the input dtype and matrix inf-norm.
     return_eigenvectors
         Whether to compute and return the eigenvectors in addition to the eigenvalues.
         Note that, if `a` and/or `m` requires gradient tracking, the eigenvectors
@@ -395,6 +399,9 @@ def scipy_eigsh(
 
     if config is None:
         config = SciPyEigshConfig()
+
+    if eps == "auto":
+        eps = compute_lorentzian_eps(a, m)
 
     if block_diag_batch:
         eig_vals, eig_vecs = _scipy_eigsh_batch(a, m, k, eps, compute_eig_vecs, config)
