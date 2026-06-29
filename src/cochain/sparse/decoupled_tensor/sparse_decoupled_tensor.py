@@ -49,7 +49,6 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
     `scatter_add()` indices required to perform (masked) general sparse matrix-matrix
     multiplications using a weakref cache system attached to its `SparsityPattern`.
 
-
     Parameters
     ----------
     pattern : [*b, r, c]

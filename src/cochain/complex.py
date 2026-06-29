@@ -26,19 +26,91 @@ def _is_tensor_like(obj: Any) -> bool:
 @dataclass
 class SimplicialMesh:
     """
-    A dataclass containing the topology and vertex coordinates of a mesh.
+    A dataclass containing the topology and vertex coordinates of a simplicial mesh.
 
-    A valid mesh satisfies the following requirements:
+    A valid simplicial mesh satisfies the following requirements:
 
-    * The mesh is a pure simplicial $k$-complex (i.e., every $l$-simplex in the
-      mesh for $l < k$ must be the face/subset of a $k$-simplex).
+    * The mesh is a pure simplicial k-complex (i.e., every l-simplex in the mesh
+      for l < k must be the face/subset of a k-simplex).
     * The mesh vertices are 0-indexed and the indices are strictly consecutive.
     * The mesh is an immersion in the 3D Euclidean space; Specifically, this
       means that all vertex coordinates must be three-dimensional, and degenerate
       edges, triangles, or tetrahedra with zero length/area/volume are not allowed;
-      however, self-intersection is allowed.
+      however, self-intersection is allowed. However, no assumptions are made on
+      whether the mesh is manifold or orientable.
 
-    In general, no assumptions are made on whether the mesh is manifold or orientable.
+    Parameters
+    ----------
+    cbd
+        A tuple of the first three coboundary operators/discrete exterior derivatives
+        for the mesh.
+    splx
+        A tuple of connectivity tensors specifying the canonical 1-, 2-, and 3-simplices.
+        This parameter is modified post initialization to also include the 0-simplices,
+        such that `splx[k]` returns the tensor of canonical k-simplices in the mesh.
+    vert_coords : [vert, coord=3]
+        The vertex coordinates of the mesh.
+
+    Attributes
+    ----------
+    dtype
+        The dtype of `vert_coords`.
+    device
+        The device of `vert_coords`.
+    requires_grad
+        Whether gradients need to be computed for `vert_coords`.
+    grad
+        The gradient computed for `vert_coords`.
+    verts : [vert, 1]
+        The connectivity tensor for the 0-simplices/vertices.
+    edges : [edge, 2]
+        The connectivity tensor for the canonical 1-simplices/edges.
+    tris : [tri, 3]
+        The connectivity tensor for the canonical 2-simplices/triangles.
+    tets : [tet, 4]
+        The connectivity tensor for the canonical 3-simplices/tetrahedra.
+    n_verts
+        The number of vertices.
+    n_edges
+        The number of canonical edges.
+    n_tris
+        The number of canonical triangles.
+    n_tets
+        The number of canonical tetrahedra.
+    n_splx
+        A tuple where `n_splx[k]` is the number of canonical k-simplices.
+    dim
+        The dimension of the mesh.
+    vert_faces
+        A `NamedTuple` describing the 0-faces of the top-level simplices.
+    edge_faces
+        A `NamedTuple` describing the 1-faces of the top-level simplices.
+    tri_faces
+        A `NamedTuple` describing the 2-faces of the top-level simplices.
+    tet_faces
+        A `NamedTuple` describing the 3-faces of the top-level simplices.
+    dual_cbd
+        A tuple of the first three dual coboundary operators for the mesh.
+    bd_mask
+        A tuple of boundary masks for the mesh.
+    bd_vert_mask
+        A boolean mask marking the boundary 0-simplices among the canonical 0-simplices.
+    bd_edge_mask
+        A boolean mask marking the boundary 1-simplices among the canonical 1-simplices.
+    bd_tri_mask
+        A boolean mask marking the boundary 2-simplices among the canonical 2-simplices.
+    bd_tet_mask
+        A boolean mask marking the boundary 3-simplices among the canonical 3-simplices.
+
+    Notes
+    -----
+    In this class, we adopt the following convention on the definition of canonical
+    k-simplices (as stored in `splx[k]`, e.g.). If k is the dimension of the mesh,
+    then there is no restrictions on the ordering of the k-simplices or the ordering
+    of vertices within a k-simplex (which can be used to carry information on
+    the geometric orientation of the top-level simplices). For all other k, both
+    the k-simplices and the ordering of vertices within the k-simplices must follow
+    the lexicographic ordering (i.e., the "lex order").
     """
 
     cbd: tuple[
@@ -51,7 +123,7 @@ class SimplicialMesh:
         Integer[Tensor, "tri 3"],
         Integer[Tensor, "tet 4"],
     ]
-    vert_coords: Float[Tensor, "vert 3"] | None
+    vert_coords: Float[Tensor, "vert coord=3"] | None
 
     # TODO: add a check for empty input mesh.
     def __post_init__(self):
@@ -84,7 +156,7 @@ class SimplicialMesh:
 
         # A cache of sparsity patterns for computing/coalescing sparse operators
         # whose sparsity pattern is dictated by mesh topology.
-        self.coalesced_patterns: dict[str, SparsityPattern] = {}
+        self._coalesced_patterns: dict[str, SparsityPattern] = {}
 
     def _apply(self, func):
         """Apply a function (recursively) to all tensor-like attributes."""
@@ -110,17 +182,21 @@ class SimplicialMesh:
     # TODO: also implement .cuda() and .cpu()
     def to(self, *args, **kwargs) -> "SimplicialMesh":
         """
-        Move and/or casts the tensor-like attributes in the mesh.
+        Move and/or casts the tensor-like attributes of the mesh.
 
-        Note that device casts apply to all tensors, but dtype casts follows a
-        more specific set of rules:
-        * If casting to int dtypes, only integer tensors get typecasted. In particular,
+        This function accepts the same arguments as `torch.Tensor.to()`.
+
+        Notes
+        -----
+        Note that device casts apply to all tensors, but dtype casts follows a more
+        specific set of rules:
+        * If casting to `int` dtypes, only integer tensors get typecasted. In particular,
           it is not possible to modify the sparsity pattern indices of a
           `SparseDecoupledTensor` this way.
-        * If casting to float dtypes, only float tensors and the value of the
+        * If casting to `float` dtypes, only float tensors and the value of the
           `SparseDecoupledTensor` get typecasted.
-        * Casting to bool dtype has no effect.
-        * Casting to complex dtypes is not permitted.
+        * Casting to `bool` dtype has no effect.
+        * Casting to `complex` dtypes is not permitted.
         """
         # Parse input arguments.
         input_device, input_dtype, copy_flag, non_blocking, memory_format = parse_to(
@@ -184,29 +260,34 @@ class SimplicialMesh:
         new_mesh._apply(custom_cast)
 
         # 3. Handle the coalesced_patterns cache dict.
-        new_mesh.coalesced_patterns = {}
-        for k, v in self.coalesced_patterns.items():
-            new_mesh.coalesced_patterns[k] = v.to(*args, **kwargs)
+        new_mesh._coalesced_patterns = {}
+        for k, v in self._coalesced_patterns.items():
+            new_mesh._coalesced_patterns[k] = v.to(*args, **kwargs)
 
         return new_mesh
 
     @property
     def dtype(self) -> torch.dtype:
+        """The dtype of `vert_coords`."""
         return self.vert_coords.dtype
 
     @property
     def device(self) -> torch.device:
+        """The device of `vert_coords`."""
         return self.vert_coords.device
 
     @property
     def requires_grad(self) -> bool:
+        """Whether gradients need to be computed for `vert_coords`."""
         return self.vert_coords.requires_grad
 
     def requires_grad_(self, mode: bool = True):
+        """Change if autograd should record operations on `vert_coords`."""
         self.vert_coords.requires_grad_(mode)
 
     @property
     def grad(self) -> Tensor | None:
+        """The gradient computed for `vert_coords`."""
         return self.vert_coords.grad
 
     @grad.setter
@@ -215,48 +296,75 @@ class SimplicialMesh:
 
     @property
     def verts(self) -> Integer[Tensor, "vert 1"]:
+        """
+        The connectivity tensor for the 0-simplices/vertices.
+
+        This tensor simply consists of a list of integers from 0 to `n_verts`-1.
+        """
         return self.splx[0]
 
     @property
     def edges(self) -> Integer[Tensor, "edge 2"]:
+        """The connectivity tensor for the canonical 1-simplices/edges."""
         return self.splx[1]
 
     @property
     def tris(self) -> Integer[Tensor, "tri 3"]:
+        """The connectivity tensor for the canonical 2-simplices/triangles."""
         return self.splx[2]
 
     @property
     def tets(self) -> Integer[Tensor, "tet 4"]:
+        """The connectivity tensor for the canonical 3-simplices/tetrahedra."""
         return self.splx[3]
 
     @property
     def n_verts(self) -> int:
+        """The number of vertices."""
         return self.cbd[0].shape[1]
 
     @property
     def n_edges(self) -> int:
+        """The number of canonical edges."""
         return self.cbd[0].shape[0]
 
     @property
     def n_tris(self) -> int:
+        """The number of canonical triangles."""
         return self.cbd[1].shape[0]
 
     @property
     def n_tets(self) -> int:
+        """The number of canonical tetrahedra."""
         return self.cbd[2].shape[0]
 
     @property
     def n_splx(self) -> tuple[int, int, int, int]:
+        """A tuple where `n_splx[k]` is the number of canonical k-simplices."""
         return (self.n_verts, self.n_edges, self.n_tris, self.n_tets)
 
     @property
     def dim(self) -> int:
+        """The dimension of the mesh."""
         return max(
             1 * (self.n_edges != 0), 2 * (self.n_tris != 0), 3 * (self.n_tets != 0)
         )
 
     @cached_property
     def vert_faces(self) -> GlobalFaces:
+        """
+        A `NamedTuple` describing the 0-faces of the top-level simplices.
+
+        The `GlobalFaces` named tuple contains the following attributes:
+
+        idx : [top_splx, 0_face]
+            The indices of the 0-faces of the top-level simplices on the list of
+            canonical 0-simplices; note that identity between a 0-face and canonical
+            0-simplex is determined up to vertex permutation.
+        parity : [top_splx, 0_face]
+            The permutation sign/parity of the 0-faces relative to the canonical
+            0-simplices.
+        """
         return enumerate_global_faces(
             self.splx[self.dim],
             self.verts,
@@ -266,6 +374,19 @@ class SimplicialMesh:
 
     @cached_property
     def edge_faces(self) -> GlobalFaces:
+        """
+        A `NamedTuple` describing the 1-faces of the top-level simplices.
+
+        The `GlobalFaces` named tuple contains the following attributes:
+
+        idx : [top_splx, 1_face]
+            The indices of the 1-faces of the top-level simplices on the list of
+            canonical 1-simplices; note that identity between a 1-face and canonical
+            1-simplex is determined up to vertex permutation.
+        parity : [top_splx, 1_face]
+            The permutation sign/parity of the 1-faces relative to the canonical
+            1-simplices.
+        """
         return enumerate_global_faces(
             self.splx[self.dim],
             self.edges,
@@ -275,6 +396,19 @@ class SimplicialMesh:
 
     @cached_property
     def tri_faces(self) -> GlobalFaces:
+        """
+        A `NamedTuple` describing the 2-faces of the top-level simplices.
+
+        The `GlobalFaces` named tuple contains the following attributes:
+
+        idx : [top_splx, 2_face]
+            The indices of the 2-faces of the top-level simplices on the list of
+            canonical 2-simplices; note that identity between a 2-face and canonical
+            2-simplex is determined up to vertex permutation.
+        parity : [top_splx, 2_face]
+            The permutation sign/parity of the 2-faces relative to the canonical
+            2-simplices.
+        """
         return enumerate_global_faces(
             self.splx[self.dim],
             self.tris,
@@ -284,6 +418,19 @@ class SimplicialMesh:
 
     @cached_property
     def tet_faces(self) -> GlobalFaces:
+        """
+        A `NamedTuple` describing the 3-faces of the top-level simplices.
+
+        The `GlobalFaces` named tuple contains the following attributes:
+
+        idx : [top_splx, 3_face]
+            The indices of the 3-faces of the top-level simplices on the list of
+            canonical 3-simplices; note that identity between a 3-face and canonical
+            3-simplex is determined up to vertex permutation.
+        parity : [top_splx, 3_face]
+            The permutation sign/parity of the 3-faces relative to the canonical
+            3-simplices.
+        """
         return enumerate_global_faces(
             self.splx[self.dim],
             self.tets,
@@ -292,6 +439,22 @@ class SimplicialMesh:
         )
 
     def faces(self, face_dim: int) -> GlobalFaces:
+        """
+        Get the k-faces of the top-level simplices.
+
+        This is a convenience function for accessing the `vert_faces`, `edge_faces`,
+        `tri_faces`, and `tet_faces` attributes of the mesh using the face dimension.
+
+        Parameters
+        ----------
+        face_dim
+            The dimension of the faces.
+
+        Returns
+        -------
+        k_faces
+            A `NamedTuple` describing the k-faces of the top-level simplices.
+        """
         match face_dim:
             case 0:
                 return self.vert_faces
@@ -302,7 +465,7 @@ class SimplicialMesh:
             case 3:
                 return self.tet_faces
             case _:
-                raise ValueError(f"Invalid fac_dim {face_dim}.")
+                raise ValueError(f"Invalid face_dim {face_dim}.")
 
     @property
     def dual_cbd(
@@ -312,6 +475,7 @@ class SimplicialMesh:
         Float[SparseDecoupledTensor, "dual_tri dual_edge"],
         Float[SparseDecoupledTensor, "dual_tet dual_tri"],
     ]:
+        """A tuple of the first three dual coboundary operators for the mesh."""
         # the k-th coboundary operator d_k* on the dual complex is given by
         # (-1)^k * d_{n-k-1}.T, where n is the dimension of the simplicial complex.
         return tuple(self.cbd[self.dim - k - 1].T * ((-1.0) ** k) for k in range(3))
@@ -325,54 +489,54 @@ class SimplicialMesh:
         Bool[Tensor, " tri"],
         Bool[Tensor, " tet"],
     ]:
+        """
+        A tuple of boundary masks for the mesh.
+
+        `bd_mask[k]` returns a boolean mask marking the boundary k-simplices
+        among the canonical k-simplices.
+        """
         return boundaries.detect_mesh_boundaries(self.cbd)
 
     @property
     def bd_vert_mask(self) -> Bool[Tensor, " vert"]:
+        """A boolean mask marking the boundary 0-simplices among the canonical 0-simplices."""
         return self.bd_mask[0]
 
     @property
     def bd_edge_mask(self) -> Bool[Tensor, " edge"]:
+        """A boolean mask marking the boundary 1-simplices among the canonical 1-simplices."""
         return self.bd_mask[1]
 
     @property
     def bd_tri_mask(self) -> Bool[Tensor, " tri"]:
+        """A boolean mask marking the boundary 2-simplices among the canonical 2-simplices."""
         return self.bd_mask[2]
 
     @property
     def bd_tet_mask(self) -> Bool[Tensor, " tet"]:
+        """A boolean mask marking the boundary 3-simplices among the canonical 3-simplices."""
         return self.bd_mask[3]
 
-    # TODO: write test for this method
-    def is_pure(self) -> bool:
-        # A simplicial complex is pure if every k-simplex is a face of at least
-        # one (k+1)-simplex, unless k is the top level.
-        cbd_ops = [self.cbd[dim].to_sparse_coo() for dim in [2, 1, 0]]
-
-        for cbd in cbd_ops:
-            if cbd._nnz() == 0:
-                continue
-            else:
-                face_relation_count = cbd.abs().sum(dim=0)
-                if face_relation_count._nnz() > face_relation_count.size(-1):
-                    return False
-
-        return True
-
-    # TODO: check for immersion
     @classmethod
     def from_tri_mesh(
         cls,
-        vert_coords: Float[Tensor, "vert 3"],
+        vert_coords: Float[Tensor, "vert coord=3"],
         tris: Integer[Tensor, "tri 3"],
     ):
         """
-        Construct a special geometric simplicial 2-complex as a t riangulated 2D
-        mesh immersed in 3D Euclidean space; note that this function does not assume
-        that the complex is a 2-manifold.
+        Construct a simplicial 2-mesh from the 2-simplex connectivity tensor.
 
-        Since no orientation is assigned to the edges using this constructor, we
-        will assign a "canonical" orientation to each edge ij such that i < j.
+        Parameters
+        ----------
+        vert_coords : [vert, coord=3]
+            The vertex coordinates of the mesh.
+        tris : [tri, 3]
+            The connectivity tensor for the canonical 2-simplices/triangles.
+
+        Returns
+        -------
+        tri_mesh
+            A `SimplicialMesh` object representing the simplicial 2-mesh.
         """
         tris = tris.long()
 
@@ -404,13 +568,19 @@ class SimplicialMesh:
         tets: Integer[Tensor, "tet 4"],
     ):
         """
-        Construct a special geometric simplicial 3-complex as a triangulated 3D
-        mesh immersed in 3D Euclidean space.
+        Construct a simplicial 3-mesh from the 3-simplex connectivity tensor.
 
-        Since no orientation is assigned to the triangles and edges using this
-        constructor, we will assign a "canonical" orientation to each edge ij such
-        that i < j and a "canonical" orientation to edge triangle ijk such that
-        i < j < k.
+        Parameters
+        ----------
+        vert_coords : [vert, coord=3]
+            The vertex coordinates of the mesh.
+        tets : [tet, 4]
+            The connectivity tensor for the canonical 3-simplices/triangles.
+
+        Returns
+        -------
+        tet_mesh
+            A `SimplicialMesh` object representing the simplicial 3-mesh.
         """
         tets = tets.long()
 
@@ -456,7 +626,7 @@ class SimplicialMesh:
         operator and computes the local-to-global index mapping, which is used
         to perform a much faster 1D scatter-add for subsequent operator constructions.
         """
-        pattern = self.coalesced_patterns.get(operator, None)
+        pattern = self._coalesced_patterns.get(operator, None)
 
         if pattern is None:
             # If the sparsity pattern for an operator has not been cached yet,
@@ -482,7 +652,7 @@ class SimplicialMesh:
             )
 
             object.__setattr__(sdt.pattern, "_coalesce_idx_map", coalesce_idx_map)
-            self.coalesced_patterns[operator] = sdt.pattern
+            self._coalesced_patterns[operator] = sdt.pattern
 
             return sdt
 
