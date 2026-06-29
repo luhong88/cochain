@@ -9,9 +9,6 @@ from cochain.sparse.linalg.eigen import (
     scipy_eigsh,
 )
 
-# TODO: test handling of degenerate eigenvalues
-# TODO: test handling of batching
-
 
 def dense_gep(
     A: Float[Tensor, "m m"], M: Float[Tensor, "m m"]
@@ -55,44 +52,6 @@ def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     torch.testing.assert_close(
         canonicalize_eig_vec_signs(eig_vecs),
         canonicalize_eig_vec_signs(eig_vecs_true[:, :k]),
-    )
-
-
-def test_batched_standard_forward(
-    rand_sp_spd_6x6: Float[Tensor, "6 6"],
-    rand_sp_spd_9x9: Float[Tensor, "9 9"],
-    device,
-):
-    A1_dense = rand_sp_spd_6x6.to_dense().to(device)
-    eig_vals_1_true, eig_vecs_1_true = torch.linalg.eigh(A1_dense)
-
-    A2_dense = rand_sp_spd_9x9.to_dense().to(device)
-    eig_vals_2_true, eig_vecs_2_true = torch.linalg.eigh(A2_dense)
-
-    k = 2
-
-    A1_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
-    A2_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
-    A_op = SparseDecoupledTensor.pack_block_diag((A1_op, A2_op))
-
-    eig_vals, eig_vecs = scipy_eigsh(
-        a=A_op, block_diag_batch=True, k=k, config=SciPyEigshConfig(which="LM")
-    )
-
-    eig_vals_1, eig_vals_2 = eig_vals.unbind(0)
-    eig_vecs_1 = eig_vecs[:6]
-    eig_vecs_2 = eig_vecs[6:]
-
-    torch.testing.assert_close(eig_vals_1, eig_vals_1_true[-k:])
-    torch.testing.assert_close(eig_vals_2, eig_vals_2_true[-k:])
-
-    torch.testing.assert_close(
-        canonicalize_eig_vec_signs(eig_vecs_1),
-        canonicalize_eig_vec_signs(eig_vecs_1_true[:, -k:]),
-    )
-    torch.testing.assert_close(
-        canonicalize_eig_vec_signs(eig_vecs_2),
-        canonicalize_eig_vec_signs(eig_vecs_2_true[:, -k:]),
     )
 
 
@@ -205,6 +164,44 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     combined_grad = A_op.values.grad
 
     torch.testing.assert_close(combined_grad, combined_grad_true)
+
+
+def test_batched_standard_forward(
+    rand_sp_spd_6x6: Float[Tensor, "6 6"],
+    rand_sp_spd_9x9: Float[Tensor, "9 9"],
+    device,
+):
+    A1_dense = rand_sp_spd_6x6.to_dense().to(device)
+    eig_vals_1_true, eig_vecs_1_true = torch.linalg.eigh(A1_dense)
+
+    A2_dense = rand_sp_spd_9x9.to_dense().to(device)
+    eig_vals_2_true, eig_vecs_2_true = torch.linalg.eigh(A2_dense)
+
+    k = 2
+
+    A1_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
+    A2_op = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
+    A_op = SparseDecoupledTensor.pack_block_diag((A1_op, A2_op))
+
+    eig_vals, eig_vecs = scipy_eigsh(
+        a=A_op, block_diag_batch=True, k=k, config=SciPyEigshConfig(which="LM")
+    )
+
+    eig_vals_1, eig_vals_2 = eig_vals.unbind(0)
+    eig_vecs_1 = eig_vecs[:6]
+    eig_vecs_2 = eig_vecs[6:]
+
+    torch.testing.assert_close(eig_vals_1, eig_vals_1_true[-k:])
+    torch.testing.assert_close(eig_vals_2, eig_vals_2_true[-k:])
+
+    torch.testing.assert_close(
+        canonicalize_eig_vec_signs(eig_vecs_1),
+        canonicalize_eig_vec_signs(eig_vecs_1_true[:, -k:]),
+    )
+    torch.testing.assert_close(
+        canonicalize_eig_vec_signs(eig_vecs_2),
+        canonicalize_eig_vec_signs(eig_vecs_2_true[:, -k:]),
+    )
 
 
 def test_gep_forward(rand_sp_gep_6x6: Float[Tensor, "6 6"], device):
