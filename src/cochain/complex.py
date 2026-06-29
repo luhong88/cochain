@@ -709,7 +709,7 @@ def collate_fn(mesh_batch: Sequence[SimplicialMesh]) -> MeshBatch:
         A list of `SimplicialMesh` objects. Note that this function allows batching
         of meshes with different dimensions.
 
-    Outputs
+    Returns
     -------
     batched_mesh
         A `MeshBatch` object representing the batch of meshes.

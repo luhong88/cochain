@@ -181,8 +181,8 @@ def two_tets_mesh() -> SimplicialMesh:
 
 
 @pytest.fixture
-def simple_bcc_mesh() -> SimplicialMesh:
-    return synthetic_tet_meshes.load_bcc_mesh(dim=3)
+def simple_sc_mesh() -> SimplicialMesh:
+    return synthetic_tet_meshes.load_sc_mesh(dim=3)
 
 
 @pytest.fixture

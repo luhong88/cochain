@@ -7,6 +7,15 @@ from ..complex import SimplicialMesh
 
 
 def load_regular_tet_mesh() -> SimplicialMesh:
+    """
+    Generate a regular tet from alternating vertices of a standard cube.
+
+    A regular tet is one that satisfies the following four criteria:
+    * All 6 edges have the same length.
+    * All 4 tris are equilateral with the same area.
+    * The internal dihedral angle between any two adjoining tris is exactly arccos(1/3).
+    * The solid angles at all four vertices are identical.
+    """
     return SimplicialMesh.from_tet_mesh(
         vert_coords=torch.tensor(
             [[1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0]]
@@ -16,9 +25,7 @@ def load_regular_tet_mesh() -> SimplicialMesh:
 
 
 def load_two_tets_mesh() -> SimplicialMesh:
-    """
-    A simple 3D mesh embedded composed of two tetrahedra sharing one triangle.
-    """
+    """Generate a simple tet mesh composed of two tets sharing one triangle."""
     return SimplicialMesh.from_tet_mesh(
         vert_coords=torch.tensor(
             [
@@ -33,9 +40,24 @@ def load_two_tets_mesh() -> SimplicialMesh:
     )
 
 
-def load_bcc_mesh(dim: int = 5) -> SimplicialMesh:
+def load_sc_mesh(dim: int = 5) -> SimplicialMesh:
     """
-    Generates a block of tets based on a BCC lattice.
+    Generate a tetrahedral mesh block based on a regular rectilinear grid.
+
+    This function generates vertices in a simple cubic (SC) lattice bounded between
+    [-1, 1] on all three axes. The hexahedral grid cells are subdivided using an
+    alternating 5 tet pattern.
+
+    Parameters
+    ----------
+    dim
+        The number of vertices along each axis (x, y, and z) of the bounding
+        cube. The total number of generated vertices will be `dim**3`.
+
+    Returns
+    -------
+    mesh
+        A `SimplicialMesh` object representing the BCC mesh.
     """
     x = np.linspace(-1, 1, dim)
     y = np.linspace(-1, 1, dim)
@@ -59,7 +81,28 @@ def load_solid_torus(
     v_res: int,
     edge_length_frac: float,
 ) -> SimplicialMesh:
-    # Generate the torus surface mesh, triangulate and clean with pyvista
+    """
+    Generate a solid torus tet mesh.
+
+    Parameters
+    ----------
+    major_r
+        The major radius of the torus.
+    minor_r
+        The minor radius of the torus.
+    u_res
+        The resolution in the u direction.
+    v_res
+        The resolution in the v direction.
+    edge_length_frac
+        Tet edge length as a function of bounding box diagonal.
+
+    Returns
+    -------
+    mesh
+        A `SimplicialMesh` object representing the solid torus mesh.
+    """
+    # Generate the torus surface mesh, triangulate and clean with pyvista.
     surface = pv.ParametricTorus(
         ringradius=major_r, crosssectionradius=minor_r, u_res=u_res, v_res=v_res
     )
@@ -67,7 +110,7 @@ def load_solid_torus(
     surface = surface.triangulate()
     surface = surface.clean()
 
-    # Extract vertices and faces for tetrahedralization with pytetwild
+    # Extract vertices and faces for tetrahedralization with pytetwild.
     v_surf = surface.points
     f_surf = surface.faces.reshape(-1, 4)[:, 1:]
 
@@ -90,6 +133,27 @@ def load_spherical_shell(
     phi_res: int,
     edge_length_frac: float,
 ) -> SimplicialMesh:
+    """
+    Generate a spherical shell tet mesh.
+
+    Parameters
+    ----------
+    outer_r
+        The outer radius of the shell.
+    inner_r
+        The inner radius of the shell.
+    theta_res
+        The number of points in the azimuthal direction.
+    phi_res
+        the number of points in the polar direction.
+    edge_length_frac
+        Tet edge length as a function of bounding box diagonal.
+
+    Returns
+    -------
+    mesh
+        A `SimplicialMesh` object representing the spherical shell mesh.
+    """
     # Generate the outer bounding surface.
     outer_sphere = pv.Sphere(
         radius=outer_r, theta_resolution=theta_res, phi_resolution=phi_res
@@ -118,7 +182,7 @@ def load_spherical_shell(
         v_surf, f_surf, edge_length_fac=edge_length_frac
     )
 
-    # Wrap in mesh class
+    # Wrap in mesh class.
     mesh = SimplicialMesh.from_tet_mesh(
         vert_coords=torch.from_numpy(v_tet).to(dtype=torch.float32),
         tets=torch.from_numpy(t_tet).to(dtype=torch.int64),

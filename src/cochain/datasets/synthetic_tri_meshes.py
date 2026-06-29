@@ -7,9 +7,7 @@ from ..complex import SimplicialMesh
 
 
 def load_two_tris_mesh() -> SimplicialMesh:
-    """
-    A simple 2D mesh embedded in R^3 composed of two triangles sharing one edge.
-    """
+    """Generate a simple tri mesh composed of two tris sharing one edge."""
     return SimplicialMesh.from_tri_mesh(
         vert_coords=torch.tensor(
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
@@ -19,9 +17,7 @@ def load_two_tris_mesh() -> SimplicialMesh:
 
 
 def load_two_disjoint_tris_mesh() -> SimplicialMesh:
-    """
-    Similar to the two tris mesh, but the two triangles are disjoint.
-    """
+    """Generate a simple tri mesh composed of two disjoint tris."""
     return SimplicialMesh.from_tri_mesh(
         vert_coords=torch.tensor(
             [
@@ -38,9 +34,7 @@ def load_two_disjoint_tris_mesh() -> SimplicialMesh:
 
 
 def load_square_mesh() -> SimplicialMesh:
-    """
-    A simple triangulated square consisting of 4 triangles in the z = 0 plane.
-    """
+    """Generate a simple triangulated square consisting of 4 triangles in the z = 0 plane."""
     return SimplicialMesh.from_tri_mesh(
         vert_coords=torch.tensor(
             [
@@ -58,10 +52,7 @@ def load_square_mesh() -> SimplicialMesh:
 
 
 def load_tent_mesh() -> SimplicialMesh:
-    """
-    Similar to the square mesh, but the central vertex is elevated above the z=0
-    plane.
-    """
+    """Generate a simple triangulated square with the central vertex elevated above z=0."""
     return SimplicialMesh.from_tri_mesh(
         vert_coords=torch.tensor(
             [
@@ -79,9 +70,7 @@ def load_tent_mesh() -> SimplicialMesh:
 
 
 def load_hollow_tet_mesh() -> SimplicialMesh:
-    """
-    A simple 2D mesh for the boundary of a tetrahedron.
-    """
+    """Generate A simple 2D mesh for the boundary of an irregular tetrahedron."""
     return SimplicialMesh.from_tri_mesh(
         vert_coords=torch.tensor(
             [
@@ -104,8 +93,23 @@ def load_flat_annulus_mesh(
     n_segments_out: int = 10,
 ) -> SimplicialMesh:
     """
-    Generates a 2D annulus mesh using Delaunay triangulation. The mesh is created
-    from points on two concentric circles.
+    Generate a coarse annulus mesh from points on two concentric circles.
+
+    Parameters
+    ----------
+    r_in
+        The inner radius of the annulus.
+    r_out
+        The outer radius of the annulus.
+    n_segments_in
+        The number of points on the inner circle.
+    n_segments_out
+        The number of points on the outer circle.
+
+    Returns
+    -------
+    mesh
+        A `SimplicialMesh` object representing the annulus mesh.
     """
     if r_in >= r_out:
         raise ValueError("Inner radius (r_in) must be less than outer radius (r_out).")
@@ -115,7 +119,7 @@ def load_flat_annulus_mesh(
         raise ValueError("Number of segments must be at least 3.")
 
     # Calculate inner circle coordinates.
-    # Use endpoint=False to avoid duplicating the 0 and 2*pi point
+    # Use endpoint=False to avoid duplicating the 0 and 2*pi point.
     theta_in = np.linspace(0, 2 * np.pi, n_segments_in, endpoint=False)
     x_in = r_in * np.cos(theta_in)
     y_in = r_in * np.sin(theta_in)
@@ -127,7 +131,7 @@ def load_flat_annulus_mesh(
     y_out = r_out * np.sin(theta_out)
     points_out = np.vstack((x_out, y_out)).T
 
-    # Combine inner and outer points
+    # Combine inner and outer points.
     vert_coords = np.vstack((points_in, points_out))
     vert_coords_3d = np.hstack((vert_coords, np.zeros((vert_coords.shape[0], 1))))
 
@@ -156,8 +160,23 @@ def load_finer_flat_annulus_mesh(
     circum_res: int = 20,
 ):
     """
-    Compared to load_flat_annulus_mesh, this function creates a finer mesh with
-    interior triangles.
+    Generate a finer annulus mesh with interior triangles.
+
+    Parameters
+    ----------
+    r_in
+        The inner radius of the annulus.
+    r_out
+        The outer radius of the annulus.
+    radial_res
+        The number of cells in radial direction.
+    circum_res
+        The number of cells in circumferential direction.
+
+    Returns
+    -------
+    mesh
+        A `SimplicialMesh` object representing the annulus mesh.
     """
     pv_mesh = pv.Disc(
         center=(0.0, 0.0, 0.0),
@@ -177,6 +196,21 @@ def load_finer_flat_annulus_mesh(
 
 
 def load_icosphere_mesh(r: float = 1.0, n_sub: int = 1):
+    """
+    Generate an icosphere mesh.
+
+    Parameters
+    ----------
+    r
+        The radius of the icosphere.
+    n_sub
+        The number of times each triangle of the original icosahedron is subdivided.
+
+    Returns
+    -------
+    mesh
+        A `SimplicialMesh` object representing the icosphere mesh.
+    """
     pv_sphere = pv.Icosphere(radius=r, nsub=n_sub)
 
     vert_coords_np = np.asarray(pv_sphere.points)

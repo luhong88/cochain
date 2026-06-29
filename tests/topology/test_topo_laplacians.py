@@ -38,7 +38,7 @@ def _compute_graph_laplacian_scipy(mesh: SimplicialMesh):
         "hollow_tet_mesh",
         "finer_flat_annulus_mesh",
         "two_tets_mesh",
-        "simple_bcc_mesh",
+        "simple_sc_mesh",
         "solid_torus_mesh",
     ],
 )
