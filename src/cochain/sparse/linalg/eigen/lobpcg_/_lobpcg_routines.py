@@ -63,6 +63,11 @@ def _lobpcg_one_iter(
 
     # Compute the momentum/conjugate directions P. During the first iteration,
     # X_current = X_prev so P = 0. Perform the same soft locking on the momentum.
+    # Note that, as the algorithm converges, the difference between x_current
+    # and x_prev effectively approaches zero and the algorithm downgrades to
+    # gradient descent; this is likely acceptable since the loss of momentum
+    # only happens near the very end of the optimization when the solution is
+    # already close to the true values.
     conj_dir = (x_current - x_prev) * mask
 
     # Assemble the new trial subspace and enforce M-orthonormality condition on
