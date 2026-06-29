@@ -80,9 +80,7 @@ class CuPyEigshConfig:
                 for v0 in self.v0:
                     match v0:
                         case Tensor():
-                            v0_list.append(
-                                cp.from_dlpack(self.v0.detach().contiguous())
-                            )
+                            v0_list.append(cp.from_dlpack(v0.detach().contiguous()))
                         case _:
                             v0_list.append(v0)
                 self.v0 = v0_list

@@ -545,7 +545,7 @@ def test_shift_invert_backward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     )
 
     # Shift-Invert Mode.
-    target_sigma = eig_vals_std.item()  # Target the exact eigenvalue found above
+    target_sigma = eig_vals_std.item() - 0.1
     eig_vals_sft, eig_vecs_sft = scipy_eigsh(
         a=a_sft,
         m=None,
