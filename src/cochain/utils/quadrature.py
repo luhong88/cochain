@@ -9,6 +9,16 @@ from torch import Tensor
 
 @dataclass
 class GaussLegendre:
+    """
+    Look up table for the Gauss-Legendre quadrature rule on a reference edge.
+
+    In general, rule #k guarantees that the numerical integration of a polynomial
+    of degree up to k is exact. Currently, a polynomial degree of exactness up to
+    5 is supported.
+
+    Note that the weights returned sum up to 1.
+    """
+
     dtype: torch.dtype = torch.float64
     device: torch.device = torch.device("cpu")
 

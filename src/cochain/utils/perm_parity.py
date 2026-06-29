@@ -41,6 +41,25 @@ def _tet_perm_parity(
 def compute_lex_rel_orient(
     splx: Integer[Tensor, "*b splx vert"], dtype: torch.dtype = torch.float32
 ) -> Float[Tensor, "*b splx"]:
+    """
+    Compute the orientation/permutation parity of simplices.
+
+    For each input simplex, this function determines the parity of the permutation
+    required to rearrange its vertex indices into lex order. Degenerate simplices
+    with duplicate vertices will return a parity of 0.
+
+    Parameters
+    ----------
+    splx : [*b, splx, vert]
+        A list of simplices; arbitrary leading batch dimensions are allowed.
+    dtype
+        The dtype of the returned tensor.
+
+    Returns
+    -------
+    perm_parity : [*b, splx]
+        The orientation/permutation parity of the input simplices.
+    """
     if splx.size(-2) == 0:
         return splx[..., 0]
 
