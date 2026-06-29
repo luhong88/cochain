@@ -99,11 +99,11 @@ def test_persistent_splu_sequential_backward_pattern_1(
     loss1 = torch.sum(x1_via_sp * v1)
     loss1.backward()
 
-    a_sp_grad1 = a_sdt.values.grad.detach().clone()
+    a_sp_grad1 = a_sdt.grad.detach().clone()
     b1_sp_grad = b1.grad.detach().clone()
 
     # Repeat this process with a different b and v.
-    a_sdt.values.grad = None  # clear the existing gradient on A_op.
+    a_sdt.grad = None  # clear the existing gradient on A_op.
 
     b2 = torch.randn(n_dim).to(device)
     v2 = torch.randn(n_dim).to(device)
@@ -113,7 +113,7 @@ def test_persistent_splu_sequential_backward_pattern_1(
     loss2 = torch.sum(x2_via_sp * v2)
     loss2.backward()
 
-    a_sp_grad2 = a_sdt.values.grad.detach().clone()
+    a_sp_grad2 = a_sdt.grad.detach().clone()
     b2_sp_grad = b2.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -200,7 +200,7 @@ def test_persistent_splu_sequential_backward_pattern_2(
     loss = torch.sum(x1_via_sp * x2_via_sp)
     loss.backward()
 
-    a_sp_grad = a_sdt.values.grad.detach().clone()
+    a_sp_grad = a_sdt.grad.detach().clone()
     b1_sp_grad = b1.grad.detach().clone()
     b2_sp_grad = b2.grad.detach().clone()
 
@@ -258,7 +258,7 @@ def test_persistent_splu_backward_with_channel_dim(a, trans, backend, device):
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    a_sp_grad = a_sdt.values.grad.detach().clone()
+    a_sp_grad = a_sdt.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute dense autograd baseline.

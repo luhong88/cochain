@@ -103,9 +103,8 @@ class CuPyEigshConfig:
             A list of `CuPyEigshConfig` duplicated from self. If `v0` is a list
             of arrays, then each duplicate is assigned one element from `v0`.
         """
-        config_list = []
         if isinstance(self.v0, list):
-            config_list.append(replace(self, v0=v0) for v0 in self.v0)
+            config_list = [replace(self, v0=v0) for v0 in self.v0]
             if len(config_list) != n:
                 raise ValueError("Inconsistent v0 specification.")
         else:

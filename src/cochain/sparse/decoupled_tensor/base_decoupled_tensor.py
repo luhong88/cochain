@@ -196,11 +196,11 @@ class BaseDecoupledTensor(ABC):
 
     @property
     def grad(self) -> Tensor | None:
-        return self.vert_coords.grad
+        return self.values.grad
 
     @grad.setter
     def grad(self, value):
-        self.vert_coords.grad = value
+        self.values.grad = value
 
     @abstractmethod
     def to(self, *args, **kwargs) -> BaseDecoupledTensor: ...

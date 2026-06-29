@@ -87,7 +87,7 @@ def test_splu_backward(a, backend, device):
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    a_sp_grad = a_sdt.values.grad.detach().clone()
+    a_sp_grad = a_sdt.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -128,7 +128,7 @@ def test_splu_backward_with_channel_dim(a, backend, device):
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    a_sp_grad = a_sdt.values.grad.detach().clone()
+    a_sp_grad = a_sdt.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A
@@ -171,7 +171,7 @@ def test_splu_backward_with_complex_channel_dim(a, n_ch1, n_ch2, backend, device
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    a_sp_grad = a_sdt.values.grad.detach().clone()
+    a_sp_grad = a_sdt.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A

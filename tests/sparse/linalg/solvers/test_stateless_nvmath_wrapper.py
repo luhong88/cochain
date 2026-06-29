@@ -152,7 +152,7 @@ def test_direct_solver_backward(matrix, matrix_type, request, device):
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    a_sp_grad = a_sdt.values.grad.detach().clone()
+    a_sp_grad = a_sdt.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute the dLdA and dLdb gradients via autograd using a dense A.
@@ -206,7 +206,7 @@ def test_direct_solver_backward_with_batch_and_channel_dim(
     loss = torch.sum(x_via_sp * v)
     loss.backward()
 
-    a_sp_grad = a_sdt.values.grad.detach().clone()
+    a_sp_grad = a_sdt.grad.detach().clone()
     b_sp_grad = b.grad.detach().clone()
 
     # Compute gradients via dense autograd (torch.linalg.solve supports batched A and b).

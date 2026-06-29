@@ -51,10 +51,10 @@ def test_sp_dense_mm_backward(a, device, req_a, req_b):
         assert b_dense.grad is None
 
     if req_a:
-        a_grad = a_sdt.values.grad.detach().clone()
+        a_grad = a_sdt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_sdt.values.grad is None
+        assert a_sdt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -98,10 +98,10 @@ def test_dense_sp_mm_backward(a, device, req_a, req_b):
         assert b_dense.grad is None
 
     if req_a:
-        a_grad = a_sdt.values.grad.detach().clone()
+        a_grad = a_sdt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_sdt.values.grad is None
+        assert a_sdt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -141,16 +141,16 @@ def test_sp_sp_mm_backward(a, b, device, req_a, req_b):
     torch.testing.assert_close(c_sdt.to_dense(), c_dense_true)
 
     if req_b:
-        b_grad = b_sdt.values.grad.detach().clone()
+        b_grad = b_sdt.grad.detach().clone()
         torch.testing.assert_close(b_grad, b_grad_true)
     else:
-        assert b_sdt.values.grad is None
+        assert b_sdt.grad is None
 
     if req_a:
-        a_grad = a_sdt.values.grad.detach().clone()
+        a_grad = a_sdt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_sdt.values.grad is None
+        assert a_sdt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -193,10 +193,10 @@ def test_sp_mv_backward(a, device, req_a, req_b):
         assert b_dense.grad is None
 
     if req_a:
-        a_grad = a_sdt.values.grad.detach().clone()
+        a_grad = a_sdt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_sdt.values.grad is None
+        assert a_sdt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -239,10 +239,10 @@ def test_sp_vm_backward(a, device, req_a, req_b):
         assert b_dense.grad is None
 
     if req_a:
-        a_grad = a_sdt.values.grad.detach().clone()
+        a_grad = a_sdt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_sdt.values.grad is None
+        assert a_sdt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -283,16 +283,16 @@ def test_diag_sp_mm_backward(a, diag, device, req_a, req_b):
     torch.testing.assert_close(c_sdt.to_dense(), c_dense_true)
 
     if req_b:
-        b_grad = b_sdt.values.grad.detach().clone()
+        b_grad = b_sdt.grad.detach().clone()
         torch.testing.assert_close(b_grad, b_grad_true)
     else:
-        assert b_sdt.values.grad is None
+        assert b_sdt.grad is None
 
     if req_a:
-        a_grad = a_ddt.values.grad.detach().clone()
+        a_grad = a_ddt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_ddt.values.grad is None
+        assert a_ddt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -333,16 +333,16 @@ def test_sp_diag_mm_backward(a, diag, device, req_a, req_b):
     torch.testing.assert_close(c_sdt.to_dense(), c_dense_true)
 
     if req_b:
-        b_grad = b_ddt.values.grad.detach().clone()
+        b_grad = b_ddt.grad.detach().clone()
         torch.testing.assert_close(b_grad, b_grad_true)
     else:
-        assert b_ddt.values.grad is None
+        assert b_ddt.grad is None
 
     if req_a:
-        a_grad = a_sdt.values.grad.detach().clone()
+        a_grad = a_sdt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_sdt.values.grad is None
+        assert a_sdt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -385,10 +385,10 @@ def test_diag_dense_mm_backward(diag, device, req_a, req_b):
         assert b_dense.grad is None
 
     if req_a:
-        a_grad = a_ddt.values.grad.detach().clone()
+        a_grad = a_ddt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_ddt.values.grad is None
+        assert a_ddt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -431,10 +431,10 @@ def test_dense_diag_mm_backward(diag, device, req_a, req_b):
         assert b_dense.grad is None
 
     if req_a:
-        a_grad = a_ddt.values.grad.detach().clone()
+        a_grad = a_ddt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_ddt.values.grad is None
+        assert a_ddt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -475,16 +475,16 @@ def test_diag_diag_mm_backward(diag, device, req_a, req_b):
     torch.testing.assert_close(c_ddt.to_dense(), c_dense_true)
 
     if req_b:
-        b_grad = b_ddt.values.grad.detach().clone()
+        b_grad = b_ddt.grad.detach().clone()
         torch.testing.assert_close(b_grad, b_grad_true)
     else:
-        assert b_ddt.values.grad is None
+        assert b_ddt.grad is None
 
     if req_a:
-        a_grad = a_ddt.values.grad.detach().clone()
+        a_grad = a_ddt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_ddt.values.grad is None
+        assert a_ddt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -527,10 +527,10 @@ def test_diag_mv_backward(diag, device, req_a, req_b):
         assert b_dense.grad is None
 
     if req_a:
-        a_grad = a_ddt.values.grad.detach().clone()
+        a_grad = a_ddt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_ddt.values.grad is None
+        assert a_ddt.grad is None
 
 
 @pytest.mark.parametrize("req_a", [True, False])
@@ -573,7 +573,7 @@ def test_diag_vm_backward(diag, device, req_a, req_b):
         assert b_dense.grad is None
 
     if req_a:
-        a_grad = a_ddt.values.grad.detach().clone()
+        a_grad = a_ddt.grad.detach().clone()
         torch.testing.assert_close(a_grad, a_grad_true)
     else:
-        assert a_ddt.values.grad is None
+        assert a_ddt.grad is None
