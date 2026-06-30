@@ -24,8 +24,8 @@ Some sparse linear algebra routines require the following additional dependencie
 
 ### Optional dependencies
 
-* `vis`: Installs `Polyscope` for visualization of meshes and cochains.
-* `examples`: Installs meshing utilities `PyVista` and `PyTetWild`, which are required for generating some example meshes.
+* `vis`: installs `Polyscope` for visualization of meshes and cochains.
+* `examples`: installs meshing utilities `PyVista` and `PyTetWild`, which are required for generating some example meshes.
 
 These optional dependency groups can be installed using the standard "extras" bracket notation; e.g.,
 
