@@ -11,7 +11,7 @@ from .....utils.stream import cupy_in_torch_stream
 from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ....decoupled_tensor._conversion import sdt_to_cupy_csc
 from ...solvers import DirectSolverConfig
-from ...solvers.nvmath import _NVMathSparseSolver
+from ...solvers.nvmath_wrapper import _NVMathSparseSolver
 from ._lobpcg_operators import IdOp
 
 try:

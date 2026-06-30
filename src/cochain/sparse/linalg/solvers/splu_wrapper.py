@@ -137,7 +137,8 @@ class _SuperLUSparseSolver(BaseSparseSolver):
     def free(self):
         """Garbage collect the solver object."""
         if (
-            (self.backend == "cupy")
+            hasattr(self, "backend")
+            and (self.backend == "cupy")
             and hasattr(self, "solver")
             and (self.solver is not None)
         ):
