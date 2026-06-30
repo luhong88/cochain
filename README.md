@@ -4,9 +4,6 @@ Cochain is a collection of computational topology operators built on PyTorch, de
 
 ## Installation
 
-> [!NOTE]
-> `cochain` is currently in pre-release and is not yet available on PyPI. For now, please install it directly from GitHub.
-
 First, follow the [PyTorch installation guide](https://pytorch.org/get-started/locally/) to install the correct `PyTorch` version for your OS and compute platform. Then, install the base `cochain` package via `pip`:
 
 ```bash
