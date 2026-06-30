@@ -14,6 +14,18 @@ from cochain.sparse.linalg.eigen import (
 # TODO: clear up cupy/nvmath dependencies and skips
 # TODO: relax GPU only marks
 
+itemize_preconditioners = pytest.mark.parametrize(
+    "preconditioner",
+    [
+        pytest.param("identity", marks=[pytest.mark.gpu_only]),
+        pytest.param("jacobi", marks=[pytest.mark.gpu_only]),
+        pytest.param("ilu", marks=[pytest.mark.gpu_only, pytest.mark.requires_cupy]),
+        pytest.param(
+            "cholesky", marks=[pytest.mark.gpu_only, pytest.mark.requires_nvmath]
+        ),
+    ],
+)
+
 
 def dense_gep(
     a: Float[Tensor, "m m"], m: Float[Tensor, "m m"]
@@ -103,11 +115,7 @@ def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     )
 
 
-@pytest.mark.gpu_only
-@pytest.mark.parametrize(
-    "preconditioner",
-    ["identity", "jacobi", "ilu", "cholesky"],
-)
+@itemize_preconditioners
 def test_standard_forward_preconditioners(
     rand_sp_spd_6x6: Float[Tensor, "6 6"], preconditioner, device
 ):
@@ -535,6 +543,7 @@ def test_gep_eig_vecs_backward(
 
 
 @pytest.mark.gpu_only
+@pytest.mark.requires_nvmath
 def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     a_dense = rand_sp_spd_6x6.to_dense().to(device)
@@ -568,6 +577,7 @@ def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
 
 
 @pytest.mark.gpu_only
+@pytest.mark.requires_nvmath
 def test_shift_invert_backward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     k = 1
 
@@ -616,6 +626,7 @@ def test_shift_invert_backward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
 
 
 @pytest.mark.gpu_only
+@pytest.mark.requires_nvmath
 def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
     a, m = rand_sp_gep_6x6
 

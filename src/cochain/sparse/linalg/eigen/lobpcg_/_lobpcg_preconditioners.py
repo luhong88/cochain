@@ -57,7 +57,7 @@ class LOBPCGPrecondConfig:
         `method` is 'ilu'.
     """
 
-    method: Literal["identity", "jacobi", "ilu", "cholesky"] = "cholesky"
+    method: Literal["identity", "jacobi", "ilu", "cholesky"] = "identity"
     diag_damp: float | int | None = None
     nvmath_config: DirectSolverConfig | None = None
     spilu_kwargs: dict[str, Any] | None = None
