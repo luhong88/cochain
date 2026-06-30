@@ -12,6 +12,12 @@ authors = [
 readme = "README.md"
 license = "MIT"
 license-files = ["LICEN[CS]E.*"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Programming Language :: Python :: 3",
+]
 requires-python = ">=3.11"
 dependencies = [
     "einops>=0.7.0",
@@ -22,7 +28,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/luhong88/cochain.git"
+Repository = "https://github.com/luhong88/cochain"
 
 [project.optional-dependencies]
 vis = [
@@ -47,9 +53,6 @@ dev = [
     "cupy-cuda12x>=14.0.0",
     "nvmath-python[cu12]>=0.5.0",
 ]
-
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [tool.ruff.lint]
 extend-select = ["D"]
