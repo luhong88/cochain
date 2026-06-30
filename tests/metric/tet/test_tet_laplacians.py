@@ -26,7 +26,7 @@ from cochain.sparse.linalg.solvers import SuperLU
 def test_sphere_homology_group_dims(
     weak_laplacian, betti, two_tets_mesh: SimplicialMesh, device
 ):
-    mesh = two_tets_mesh.to(device)
+    mesh = two_tets_mesh.to(dtype=torch.float64, device=device)
 
     operator = weak_laplacian(mesh).to_dense()
     dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
@@ -49,7 +49,7 @@ def test_sphere_homology_group_dims(
 def test_torus_homology_group_dims(
     weak_laplacian, betti, solid_torus_mesh: SimplicialMesh, device
 ):
-    mesh = solid_torus_mesh.to(device)
+    mesh = solid_torus_mesh.to(dtype=torch.float64, device=device)
 
     operator = weak_laplacian(mesh).to_dense()
     dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
@@ -72,7 +72,7 @@ def test_torus_homology_group_dims(
 def test_spherical_shell_homology_group_dims(
     weak_laplacian, betti, solid_spherical_shell_mesh: SimplicialMesh, device
 ):
-    mesh = solid_spherical_shell_mesh.to(device)
+    mesh = solid_spherical_shell_mesh.to(dtype=torch.float64, device=device)
 
     operator = weak_laplacian(mesh).to_dense()
     dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
