@@ -11,9 +11,6 @@ from cochain.sparse.linalg.eigen import (
     lobpcg,
 )
 
-# TODO: clear up cupy/nvmath dependencies and skips
-# TODO: relax GPU only marks
-
 itemize_preconditioners = pytest.mark.parametrize(
     "preconditioner",
     [
