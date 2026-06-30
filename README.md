@@ -7,20 +7,20 @@ Cochain is a collection of computational topology operators built on PyTorch, de
 > [!NOTE]
 > `cochain` is currently in pre-release and is not yet available on PyPI. For now, please install it directly from GitHub.
 
-First, follow the [PyTorch installation guide](https://pytorch.org/get-started/locally/) to install the correct `PyTorch` version for your OS and compute platform. Then, install the base `cochain` package via pip:
+First, follow the [PyTorch installation guide](https://pytorch.org/get-started/locally/) to install the correct `PyTorch` version for your OS and compute platform. Then, install the base `cochain` package via `pip`:
 
 ```bash
 pip install cochain
 ```
 
-`cochain` is tested against `python>=3.11` and `torch>=2.4.0`, but it might work with older versions.
+`cochain` is tested against `python>=3.11` and `torch>=2.9.0`, but it will likely work with older versions of both.
 
 ### Hardware-accelerated dependencies
 
-Some sparse linear algebra routines require the following additional dependencies to enable CUDA-specific accelerations; currently, `cochain` is tested against `CUDA` 12.
+Some sparse linear algebra routines require the following additional dependencies to enable CUDA-specific accelerations; currently, `cochain` is tested against CUDA 12.
 
-* `CuPy`: see the [installation guide](https://docs.cupy.dev/en/stable/install.html).
-* `nvmath-python`: see the [installation guide](https://docs.nvidia.com/cuda/nvmath-python/latest/installation.html#). Note that version `>=0.5.0` is required because earlier versions lack the sparse linear solver utils.
+* `CuPy`: see the [installation guide](https://docs.cupy.dev/en/stable/install.html); version `>=14.0.0` is required for compatibility with `NumPy` 2.0.
+* `nvmath-python`: see the [installation guide](https://docs.nvidia.com/cuda/nvmath-python/latest/installation.html#); version `>=0.5.0` is required because earlier versions lack the sparse linear solver utils.
 
 ### Optional dependencies
 
