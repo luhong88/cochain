@@ -10,7 +10,7 @@ from ....decoupled_tensor import (
     SparsityPattern,
 )
 from ...solvers import DirectSolverConfig
-from ...solvers.nvmath import _NVMathSparseSolver
+from ...solvers.nvmath_wrapper import _NVMathSparseSolver
 
 try:
     import cupy as cp

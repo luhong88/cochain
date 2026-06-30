@@ -1,6 +1,8 @@
-import polyscope as ps
+import pytest
 
 from cochain.vis import PolyscopeViewer
+
+ps = pytest.importorskip("polyscope")
 
 
 def test_tri_mesh_vis_with_polyscope(icosphere_mesh, device):

@@ -7,7 +7,7 @@ from torch import Tensor
 from .....utils.parsing import to_col_major
 from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ...solvers import DirectSolverConfig
-from ...solvers.nvmath import _NVMathSparseSolver
+from ...solvers.nvmath_wrapper import _NVMathSparseSolver
 
 try:
     import nvmath.sparse.advanced as nvmath_sp
