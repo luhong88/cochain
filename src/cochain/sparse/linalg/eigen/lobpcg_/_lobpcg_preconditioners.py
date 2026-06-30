@@ -1,3 +1,4 @@
+import warnings
 from collections import ChainMap
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -127,6 +128,9 @@ class ILUPrecond:
     By default, it uses the `cusparse` backend to perform the factorization with
     zero fill-in and no pivoting. This default config tends to result in smaller
     memory usage than the Cholesky preconditioner.
+
+    Currently, the `CuPy` `spilu()` function requires `int32` dtype for the sparse
+    array indices.
     """
 
     def __init__(
@@ -137,6 +141,13 @@ class ILUPrecond:
     ):
         if not _HAS_CUPY:
             raise ImportError("CuPy backend required.")
+
+        if not a_sdt.pattern._is_int32_safe:
+            warnings.warn(
+                "The sparse indices of the input 'a_sdt' cannot be safely cast to "
+                "int32 dtype. This may cause downstream errors in CuPy.",
+                UserWarning,
+            )
 
         if diag_damp == 0:
             op_sdt = a_sdt

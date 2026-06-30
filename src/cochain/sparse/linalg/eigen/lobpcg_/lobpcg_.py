@@ -266,9 +266,11 @@ def lobpcg(
 
     Note that this function requires `nvmath-python` for the shift-invert mode.
     In addition, the incomplete LU preconditioner has `CuPy` dependency and the
-    Cholesky preconditioner has `nvmath-python` dependency. In these cases, the
-    input `a` (and `m` in the shift-invert GEP mode) matrix will be converted
-    to CSR/CSC matrices with `int32` index dtypes when possible.
+    Cholesky preconditioner has `nvmath-python` dependency. Currently, due to the
+    `nvmath-python` `DirectSolver` and `CuPy` `spilu()` limitations, the input
+    `a` (and `m` in the shift-invert GEP mode) matrix need to be converted to
+    CSR/CSC matrices with `int32` index dtype for the shift-invert mode and
+    for the use of the incomplete LU and Cholesky preconditioners.
 
     Parameters
     ----------

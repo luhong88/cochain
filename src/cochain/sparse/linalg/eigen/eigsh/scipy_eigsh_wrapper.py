@@ -382,8 +382,8 @@ def scipy_eigsh(
 
     The `a` and `m` matrices will be converted to SciPy CSR/CSC arrays and copied
     to CPU. The sparse CSR/CSC index tensors of `a` and `m` can be either in `int32`
-    or `int64` dtype, but will be automatically downcast to `int32` if possible.
-    The use of SciPy `LinearOperator` objects for `a` and `m` is not supported.
+    or `int64` dtype. The use of SciPy `LinearOperator` objects for `a` and `m`
+    is not supported.
 
     For finding the lowest non-zero eigenvalues of a positive semi-definite matrix,
     one can either use `which='SM'` or `which='LM'` with a `sigma` close to zero.
