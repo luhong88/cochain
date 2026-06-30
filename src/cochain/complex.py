@@ -266,6 +266,45 @@ class SimplicialMesh:
 
         return new_mesh
 
+    def clone(self) -> "SimplicialMesh":
+        """Return a copy of the mesh, cloning only float dtype tensors."""
+        new_mesh = copy.copy(self)
+
+        # Only clone floating-point tensors (like vert_coords and sparse values)
+        # Integer tensors (splx, cached faces) are passed by reference to save compute.
+        def _clone_floats(t):
+            if (
+                hasattr(t, "clone")
+                and getattr(t, "dtype", None)
+                and t.dtype.is_floating_point
+            ):
+                return t.clone()
+            return t
+
+        new_mesh._apply(_clone_floats)
+        return new_mesh
+
+    def detach(self) -> "SimplicialMesh":
+        """Return a copy of the mesh with detached float dtype tensors."""
+        new_mesh = copy.copy(self)
+
+        def _detach_floats(t):
+            if (
+                hasattr(t, "detach")
+                and getattr(t, "dtype", None)
+                and t.dtype.is_floating_point
+            ):
+                return t.detach()
+            return t
+
+        new_mesh._apply(_detach_floats)
+
+        # Explicitly wipe any residual gradients from the detached copy.
+        if getattr(new_mesh.vert_coords, "grad", None) is not None:
+            new_mesh.vert_coords.grad = None
+
+        return new_mesh
+
     @property
     def dtype(self) -> torch.dtype:
         """The dtype of `vert_coords`."""

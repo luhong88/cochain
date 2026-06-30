@@ -298,7 +298,7 @@ def test_mass_2_patch(two_tets_mesh: SimplicialMesh, device):
     [tet_masses.mass_0, tet_masses.mass_1, tet_masses.mass_2, tet_masses.mass_3],
 )
 def test_mass_matrix_backward(mass_matrix, two_tets_mesh: SimplicialMesh, device):
-    mesh = two_tets_mesh.to(device)
+    mesh = two_tets_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     mass = mass_matrix(mesh)

@@ -64,7 +64,7 @@ def test_star_0_on_two_tets(two_tets_mesh: SimplicialMesh, device):
     ],
 )
 def test_star_backward(star_op, two_tets_mesh: SimplicialMesh, device):
-    mesh = two_tets_mesh.to(device)
+    mesh = two_tets_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     star = star_op(mesh)

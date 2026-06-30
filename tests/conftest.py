@@ -119,44 +119,44 @@ def device(request) -> torch.device:
     return torch.device(mode)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def two_tris_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_two_tris_mesh()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def two_disjoint_tris_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_two_disjoint_tris_mesh()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def square_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_square_mesh()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def tent_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_tent_mesh()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def hollow_tet_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_hollow_tet_mesh()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def icosphere_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_icosphere_mesh(r=1.0, n_sub=1)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def flat_annulus_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_flat_annulus_mesh(
         r_in=0.5, r_out=1.0, n_segments_in=5, n_segments_out=10
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def finer_flat_annulus_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_finer_flat_annulus_mesh(
         r_in=0.5,
@@ -166,29 +166,29 @@ def finer_flat_annulus_mesh() -> SimplicialMesh:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def reg_tet_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_regular_tet_mesh()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def two_tets_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_two_tets_mesh()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def simple_sc_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_sc_mesh(dim=3)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def solid_torus_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_solid_torus(
         major_r=1.0, minor_r=0.5, u_res=5, v_res=5, edge_length_frac=1.0
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def solid_spherical_shell_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_spherical_shell(
         outer_r=2.0, inner_r=1.0, theta_res=6, phi_res=6, edge_length_frac=1.0

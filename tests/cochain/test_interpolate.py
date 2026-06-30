@@ -633,7 +633,7 @@ def test_2_form_normal_continuity_on_tet_mesh(two_tets_mesh, device):
     ],
 )
 def test_interpolate_backward(mesh, k, quad, device, request):
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     k_cochain = torch.randn(mesh.n_splx[k], dtype=mesh.dtype).to(device)

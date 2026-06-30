@@ -188,7 +188,7 @@ def test_mass_1_linear_potential_dirichlet_energy(
 
 @pytest.mark.parametrize("mass_matrix", [tri_masses.mass_0, tri_masses.mass_1])
 def test_mass_matrix_backward(mass_matrix, two_tris_mesh: SimplicialMesh, device):
-    mesh = two_tris_mesh.to(device)
+    mesh = two_tris_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     mass = mass_matrix(mesh)

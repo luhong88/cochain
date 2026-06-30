@@ -217,7 +217,7 @@ def _prepare_inputs(
     )
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _process_lower_stars(
     ordered_verts: npt.NDArray,
     vert_ranks: npt.NDArray,
@@ -389,7 +389,7 @@ def _find_critical_splx(
 
 
 # TODO: option to save the gradient paths
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _construct_morse_cbds(
     codim1_face_indices: tuple[npt.NDArray, ...],
     codim1_face_offset: tuple[npt.NDArray, ...],

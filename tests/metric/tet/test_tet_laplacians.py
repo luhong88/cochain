@@ -423,7 +423,7 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialMesh, device):
     ],
 )
 def test_laplacian_backward(laplacian, method, two_tets_mesh: SimplicialMesh, device):
-    mesh = two_tets_mesh.to(device)
+    mesh = two_tets_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     if method is None:

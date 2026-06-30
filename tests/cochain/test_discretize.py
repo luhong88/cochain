@@ -613,7 +613,7 @@ def test_3_form_polynomial_deg_2_exact_integration(two_tets_mesh, device):
 @pytest.mark.parametrize("k", [1, 2, 3])
 @pytest.mark.parametrize("degree", [1, 2, 3, 4, 5])
 def test_discretize_backward_two_leaf_tensors(k, degree, two_tets_mesh, device):
-    mesh = two_tets_mesh.to(device)
+    mesh = two_tets_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     de_rham = DeRhamMap(k=k, quad_degree=degree, mesh=mesh)
@@ -641,7 +641,7 @@ def test_discretize_backward_two_leaf_tensors(k, degree, two_tets_mesh, device):
 @pytest.mark.parametrize("k", [1, 2, 3])
 @pytest.mark.parametrize("degree", [1, 2, 3, 4, 5])
 def test_discretize_backward_one_leaf_tensor(k, degree, two_tets_mesh, device):
-    mesh = two_tets_mesh.to(device)
+    mesh = two_tets_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     de_rham = DeRhamMap(k=k, quad_degree=degree, mesh=mesh)
