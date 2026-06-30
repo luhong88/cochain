@@ -367,6 +367,7 @@ def test_batched_combined_backward(
     torch.testing.assert_close(grad_2_batched, grad_2_true)
 
 
+@pytest.mark.requires_nvmath
 @pytest.mark.gpu_only
 def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
@@ -394,6 +395,7 @@ def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     )
 
 
+@pytest.mark.requires_nvmath
 @pytest.mark.gpu_only
 def test_shift_invert_backward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     k = 1
