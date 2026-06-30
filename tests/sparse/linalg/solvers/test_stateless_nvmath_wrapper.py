@@ -7,6 +7,7 @@ from cochain.sparse.linalg.solvers import nvmath_direct_solver
 pytest.importorskip("nvmath")
 
 
+@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type", [("a", "general"), ("a_sym", "symmetric"), ("a_spd", "spd")]
 )
@@ -26,6 +27,7 @@ def test_direct_solver_forward(matrix, matrix_type, request, device):
     torch.testing.assert_close(x, x_true)
 
 
+@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type", [("a", "general"), ("a_sym", "symmetric"), ("a_spd", "spd")]
 )
@@ -46,6 +48,7 @@ def test_direct_solver_with_channel_dim(matrix, matrix_type, request, device):
     torch.testing.assert_close(x, x_true)
 
 
+@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "n_ch1, n_ch2",
     [(2, 3), (2, 1), (1, 2)],
@@ -70,6 +73,7 @@ def test_direct_solver_with_complex_channel_dim(
     torch.testing.assert_close(x, x_true)
 
 
+@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
@@ -94,6 +98,7 @@ def test_direct_solver_with_batch_dim(matrix, matrix_type, request, device):
     torch.testing.assert_close(x, x_true)
 
 
+@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
@@ -119,6 +124,7 @@ def test_direct_solver_with_batch_channel_dim(matrix, matrix_type, request, devi
     torch.testing.assert_close(x, x_true)
 
 
+@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type", [("a", "general"), ("a_sym", "symmetric"), ("a_spd", "spd")]
 )
@@ -169,6 +175,7 @@ def test_direct_solver_backward(matrix, matrix_type, request, device):
     torch.testing.assert_close(b_sp_grad, b_dense_grad)
 
 
+@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [

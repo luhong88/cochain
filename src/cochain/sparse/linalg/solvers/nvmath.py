@@ -109,6 +109,9 @@ class _NVMathSparseSolver(BaseSparseSolver):
         if a_val.ndim > 1:
             raise ValueError("Dense dimension in 'a' is not supported.")
 
+        if not (a_val.is_cuda and b_flat.is_cuda):
+            raise RuntimeError("Both a and b must be on the CUDA device.")
+
         if not a_pattern._is_int32_safe:
             warnings.warn(
                 "The sparse indices of the input tensor 'a' cannot be "
@@ -224,6 +227,9 @@ class _NVMathSparseSolver(BaseSparseSolver):
         trans: Literal["N", "T"] = "N",
     ) -> Float[Tensor, " c *ch_flat"] | Float[Tensor, "b c *ch_flat"]:
         """Solve a sparse linear system with the given RHS vector using `DirectSolver()`."""
+        if not b_flat.is_cuda:
+            raise RuntimeError("The input b must be on the CUDA device.")
+
         # Torch may call solve() on a separate thread where nvmath's internal
         # cuda state is uninitialized. We must explicitly call Device(id).set_current()
         # to bind the active CUDA context to this thread's local state, ensuring
