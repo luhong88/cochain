@@ -1,8 +1,37 @@
 # Cochain: differentiable operators for computational topology and DEC
 
-**Status**: Pre-alpha, in early development.
-
 Cochain is a collection of computational topology operators built on PyTorch, designed to facilitate the analysis of discrete topological objects—specifically, simplicial meshes immersed in $\mathbb R^3$ and their associated discrete cochains—within the context of discrete exterior calculus (DEC) and cohomology theory; the underlying chain complexes are defined over $\mathbb{R}$.
+
+## Installation
+
+> [!NOTE]
+> `cochain` is currently in pre-release and is not yet available on PyPI. For now, please install it directly from GitHub.
+
+First, follow the [PyTorch installation guide](https://pytorch.org/get-started/locally/) to install the correct `PyTorch` version for your OS and compute platform. Then, install the base `cochain` package via pip:
+
+```bash
+pip install cochain
+```
+
+`cochain` is tested against `python>=3.11` and `torch>=2.4.0`, but it might work with older versions.
+
+### Hardware-accelerated dependencies
+
+Some sparse linear algebra routines require the following additional dependencies to enable CUDA-specific accelerations; currently, `cochain` is tested against `CUDA` 12.
+
+* `CuPy`: see the [installation guide](https://docs.cupy.dev/en/stable/install.html).
+* `nvmath-python`: see the [installation guide](https://docs.nvidia.com/cuda/nvmath-python/latest/installation.html#). Note that version `>=0.5.0` is required because earlier versions lack the sparse linear solver utils.
+
+### Optional dependencies
+
+* `vis`: Installs `Polyscope` for visualization of meshes and cochains.
+* `examples`: Installs meshing utilities `PyVista` and `PyTetWild`, which are required for generating some example meshes.
+
+These optional dependency groups can be installed using the standard "extras" bracket notation; e.g.,
+
+```bash
+pip install cochain[vis,examples]
+```
 
 ## Features
 
