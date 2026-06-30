@@ -11,8 +11,17 @@ from cochain.sparse.linalg.eigen import (
     lobpcg,
 )
 
-# TODO: clear up cupy/nvmath dependencies and skips
-# TODO: relax GPU only marks
+itemize_preconditioners = pytest.mark.parametrize(
+    "preconditioner",
+    [
+        pytest.param("identity", marks=[]),
+        pytest.param("jacobi", marks=[]),
+        pytest.param("ilu", marks=[pytest.mark.gpu_only, pytest.mark.requires_cupy]),
+        pytest.param(
+            "cholesky", marks=[pytest.mark.gpu_only, pytest.mark.requires_nvmath]
+        ),
+    ],
+)
 
 
 def dense_gep(
@@ -29,7 +38,6 @@ def dense_gep(
     return eig_vals_true, eig_vecs_true
 
 
-@pytest.mark.gpu_only
 def test_lobpcg_config_v0_expansion_and_batched_forward(
     rand_sp_spd_6x6: Float[Tensor, "6 6"],
     rand_sp_spd_9x9: Float[Tensor, "9 9"],
@@ -69,7 +77,6 @@ def test_lobpcg_config_v0_expansion_and_batched_forward(
     assert eig_vecs.size() == (15, k)  # 6 + 9 = 15 total nodes.
 
 
-@pytest.mark.gpu_only
 def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     a_dense = rand_sp_spd_6x6.to_dense().to(device)
@@ -103,11 +110,7 @@ def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     )
 
 
-@pytest.mark.gpu_only
-@pytest.mark.parametrize(
-    "preconditioner",
-    ["identity", "jacobi", "ilu", "cholesky"],
-)
+@itemize_preconditioners
 def test_standard_forward_preconditioners(
     rand_sp_spd_6x6: Float[Tensor, "6 6"], preconditioner, device
 ):
@@ -136,7 +139,6 @@ def test_standard_forward_preconditioners(
     )
 
 
-@pytest.mark.gpu_only
 def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], device):
     k = 3
 
@@ -168,7 +170,6 @@ def test_standard_eig_vals_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     torch.testing.assert_close(eig_vals_grad, eig_vals_grad_true)
 
 
-@pytest.mark.gpu_only
 def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], device):
     k = 3
 
@@ -211,7 +212,6 @@ def test_standard_eig_vecs_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     torch.testing.assert_close(eig_vecs_grad, eig_vecs_grad_true)
 
 
-@pytest.mark.gpu_only
 def test_standard_combined_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], device):
     k = 3
 
@@ -254,7 +254,6 @@ def test_standard_combined_backward(rand_sp_spd_9x9: Float[Tensor, "9 9"], devic
     torch.testing.assert_close(combined_grad, combined_grad_true)
 
 
-@pytest.mark.gpu_only
 def test_batched_standard_forward(
     rand_sp_spd_6x6: Float[Tensor, "6 6"],
     rand_sp_spd_9x9: Float[Tensor, "9 9"],
@@ -299,7 +298,6 @@ def test_batched_standard_forward(
     )
 
 
-@pytest.mark.gpu_only
 def test_batched_standard_backward(
     rand_sp_spd_6x6: Float[Tensor, "6 6"],
     rand_sp_spd_9x9: Float[Tensor, "9 9"],
@@ -396,7 +394,6 @@ def test_batched_standard_backward(
     torch.testing.assert_close(grad_2_batched, grad_2_true)
 
 
-@pytest.mark.gpu_only
 def test_gep_forward(
     rand_sp_gep_6x6: tuple[Float[Tensor, "6 6"], Float[Tensor, "6 6"]], device
 ):
@@ -437,7 +434,6 @@ def test_gep_forward(
     )
 
 
-@pytest.mark.gpu_only
 def test_gep_eig_vals_backward(
     rand_sp_gep_9x9: tuple[Float[Tensor, "9 9"], Float[Tensor, "9 9"]], device
 ):
@@ -483,7 +479,6 @@ def test_gep_eig_vals_backward(
     torch.testing.assert_close(m_grad, m_grad_true)
 
 
-@pytest.mark.gpu_only
 def test_gep_eig_vecs_backward(
     rand_sp_gep_9x9: tuple[Float[Tensor, "9 9"], Float[Tensor, "9 9"]], device
 ):
@@ -535,6 +530,7 @@ def test_gep_eig_vecs_backward(
 
 
 @pytest.mark.gpu_only
+@pytest.mark.requires_nvmath
 def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     a_dense = rand_sp_spd_6x6.to_dense().to(device)
@@ -568,6 +564,7 @@ def test_shift_invert_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
 
 
 @pytest.mark.gpu_only
+@pytest.mark.requires_nvmath
 def test_shift_invert_backward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     k = 1
 
@@ -616,6 +613,7 @@ def test_shift_invert_backward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
 
 
 @pytest.mark.gpu_only
+@pytest.mark.requires_nvmath
 def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
     a, m = rand_sp_gep_6x6
 
@@ -651,7 +649,6 @@ def test_gep_shift_invert_forward(rand_sp_gep_6x6, device):
     )
 
 
-@pytest.mark.gpu_only
 def test_lorentzian_regularization_smoke(
     rand_sp_spd_degenerate_9x9: Float[Tensor, "9 9"], device
 ):
@@ -671,7 +668,6 @@ def test_lorentzian_regularization_smoke(
     assert not torch.all(a_sdt.grad == 0)
 
 
-@pytest.mark.gpu_only
 def test_lorentzian_eig_vals_backward_exactness(
     rand_sp_spd_degenerate_9x9: Float[Tensor, "9 9"], device
 ):
@@ -710,7 +706,6 @@ def test_lorentzian_eig_vals_backward_exactness(
     torch.testing.assert_close(a_sdt.grad, a_grad_true)
 
 
-@pytest.mark.gpu_only
 def test_lorentzian_isolated_eig_vec_exactness(
     rand_sp_spd_degenerate_9x9: Float[Tensor, "9 9"], device
 ):

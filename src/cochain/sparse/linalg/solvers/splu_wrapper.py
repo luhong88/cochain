@@ -50,8 +50,8 @@ class _SuperLUSparseSolver(BaseSparseSolver):
 
         if not a.pattern._is_int32_safe:
             warnings.warn(
-                "The sparse indices of the input tensor 'A' cannot be safely "
-                "cast to int32 dtype.",
+                "The sparse indices of the input tensor 'A' cannot be safely cast "
+                "to int32 dtype. This may cause downstream errors with older CuPy/CUDA versions.",
                 UserWarning,
             )
 
@@ -137,7 +137,8 @@ class _SuperLUSparseSolver(BaseSparseSolver):
     def free(self):
         """Garbage collect the solver object."""
         if (
-            (self.backend == "cupy")
+            hasattr(self, "backend")
+            and (self.backend == "cupy")
             and hasattr(self, "solver")
             and (self.solver is not None)
         ):
@@ -198,7 +199,8 @@ def splu(
     Notes
     -----
     If the linear system `a @ x = b` does not have a unique solution, then both
-    the forward pass and backward gradient will fail.
+    the forward pass and backward gradient will fail. Currently, double backward
+    through this function is not supported.
 
     If either `a` or `b` requires gradient, then a `SuperLU` solver object will be
     cached in memory to accelerate the backward pass; this memory will not be
@@ -209,12 +211,6 @@ def splu(
     * all references to the output tensor (and its `grad_fn` and `ctx` attributes)
     from this function (and any derived tensors thereof) has gone out of scope/been
     detached from the computation graph.
-
-    In addition, note that this function has the following limitations:
-
-    * Currently, double backward through this function is not supported.
-    * The sparse indices of `a` must be of datatype `int32` for compatibility with
-    the solver.
     """
     solver = _SuperLUSparseSolver(
         a, matrix_type="general", backend=backend, **splu_kwargs

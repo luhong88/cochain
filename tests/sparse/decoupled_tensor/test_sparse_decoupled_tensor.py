@@ -186,6 +186,34 @@ def test_matmul_with_dense_dim(a, device):
         a_sdt @ hybrid_sdt
 
 
+@pytest.mark.gpu_only
+def test_discover_matmul_pattern(a, b, device, monkeypatch):
+    """
+    Check discover_matmul_pattern() execution paths.
+
+    The discover_matmul_pattern() function gets triggered when two SDT undergoes
+    sparse-sparse matrix multiplication for the first time. The function has
+    three execution paths: cpu-only, gpu-only, and gpu+cupy. Here, we specifically
+    check that the gpu-only path gives the correct result.
+    """
+    from cochain.sparse.decoupled_tensor import _spgemm_plan
+
+    monkeypatch.setattr(_spgemm_plan, "_HAS_CUPY", False)
+
+    a_coo = a.to(device)
+    a_dense = a_coo.to_dense()
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo).detach().clone()
+
+    b_coo = b.to(device)
+    b_dense = b_coo.to_dense()
+    b_sdt = SparseDecoupledTensor.from_tensor(b_dense).detach().clone()
+
+    c_dense_true = a_dense @ b_dense
+    c_sdt = a_sdt @ b_sdt
+
+    torch.testing.assert_close(c_sdt.to_dense(), c_dense_true)
+
+
 def test_spsp_matmul_caching_fwd_plan(a, b, device):
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)

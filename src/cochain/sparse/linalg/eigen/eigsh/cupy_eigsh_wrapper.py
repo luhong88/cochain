@@ -304,8 +304,7 @@ def cupy_eigsh(
     of degenerate eigenvalues; consider using the `lobpcg()` solver instead.
 
     For a standard eigenvalue problem, the `a` matrix will be converted to
-    a CuPy CSR matrix; both `int32` and `int64` index dtypes are supported, but
-    the matrix will automatically be downcast to `int32` if possible.
+    a CuPy CSR matrix; both `int32` and `int64` index dtypes are supported.
 
     The CuPy `eigsh()` does not natively support the shift-invert mode. Here,
     the shift-invert mode is implemented by constructing a CuPy `LinearOperator`
@@ -314,8 +313,8 @@ def cupy_eigsh(
     with the LHS matrix $A - \sigma I$ and RHS vector $x$. This approach corresonds
     to the `mode='normal'` option in SciPy `eigsh()`. Currently, the sparse solver
     is implemented using the nvmath-python `DirectSolver()` class; the behavior
-    of this solver can be controlled via the `nvmath_config` argument. Only
-    `int32` index dtype for `a` is supported in this case due to the sparse
+    of this solver can be controlled via the `nvmath_config` argument. Currently,
+    only `int32` index dtype for `a` is supported in this case due to the sparse
     solver requirement.
 
     The CuPy `eigsh()` does not support generalized eigenvalue problems.

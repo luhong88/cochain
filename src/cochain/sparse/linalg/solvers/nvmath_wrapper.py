@@ -114,8 +114,8 @@ class _NVMathSparseSolver(BaseSparseSolver):
 
         if not a_pattern._is_int32_safe:
             warnings.warn(
-                "The sparse indices of the input tensor 'a' cannot be "
-                "safely cast to int32 dtype.",
+                "The sparse indices of the input tensor 'a' cannot be safely cast "
+                "to int32 dtype. This may cause downstream errors with the cuDSS backend.",
                 UserWarning,
             )
 
@@ -346,7 +346,8 @@ def nvmath_direct_solver(
     "Stateless" differentiable wrapper for `nvmath.sparse.advanced.DirectSolver`.
 
     Given a (batch of) sparse 2D matrix `a` and a (batch of) vector `b`, solve
-    the linear system `a @ x = b` for `x`.
+    the linear system `a @ x = b` for `x`. Note that both `a` and `b` must be
+    on the CUDA device.
 
     Parameters
     ----------
@@ -468,7 +469,8 @@ class NVMathDirectSolver(InvSparseOperator):
     Given a (batch of) sparse 2D matrix `a` and a (batch of) vector `b`, this class
     computes and caches the LU factorization of `a` for the purpose of solving
     the linear system `a @ x = b` for `x`. Once initialized, call the class
-    instance to with a (new) RHS `b` to perform the linear solve.
+    instance to with a (new) RHS `b` to perform the linear solve. Note that both
+    `a` and `b` must be on the CUDA device.
 
     Parameters
     ----------
