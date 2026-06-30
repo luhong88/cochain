@@ -7,7 +7,6 @@ from cochain.sparse.linalg.solvers import NVMathDirectSolver
 pytest.importorskip("nvmath")
 
 
-@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
@@ -37,7 +36,6 @@ def test_persistent_direct_solver_forward(matrix, matrix_type, trans, request, d
     torch.testing.assert_close(x, x_true)
 
 
-@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
@@ -71,7 +69,6 @@ def test_persistent_direct_solver_with_channel_dim(
     torch.testing.assert_close(x, x_true)
 
 
-@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "n_ch1, n_ch2",
     [(2, 3), (2, 1), (1, 2)],
@@ -107,7 +104,6 @@ def test_persistent_direct_solver_with_complex_channel_dim(
     torch.testing.assert_close(x, x_true)
 
 
-@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
@@ -139,7 +135,6 @@ def test_direct_solver_with_batch_dim(matrix, matrix_type, trans, request, devic
     torch.testing.assert_close(x, x_true)
 
 
-@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
@@ -174,7 +169,6 @@ def test_direct_solver_with_batch_channel_dim(
     torch.testing.assert_close(x, x_true)
 
 
-@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
@@ -281,7 +275,6 @@ def test_persistent_direct_solver_sequential_backward_pattern_1(
     torch.testing.assert_close(b2_sp_grad, b2_dense_grad)
 
 
-@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
@@ -365,7 +358,6 @@ def test_persistent_direct_solver_sequential_backward_pattern_2(
     torch.testing.assert_close(b2_sp_grad, b2_dense_grad)
 
 
-@pytest.mark.gpu_only
 @pytest.mark.parametrize(
     "matrix, matrix_type",
     [
