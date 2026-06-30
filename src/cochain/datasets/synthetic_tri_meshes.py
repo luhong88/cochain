@@ -1,9 +1,16 @@
 import numpy as np
-import pyvista as pv
 import torch
 from scipy.spatial import Delaunay
 
 from ..complex import SimplicialMesh
+
+try:
+    import pyvista as pv
+
+    _HAS_PYVISTA = True
+
+except ImportError:
+    _HAS_PYVISTA = False
 
 
 def load_two_tris_mesh() -> SimplicialMesh:
@@ -178,6 +185,9 @@ def load_finer_flat_annulus_mesh(
     mesh
         A `SimplicialMesh` object representing the annulus mesh.
     """
+    if not _HAS_PYVISTA:
+        raise ImportError("PyVista backend required.")
+
     pv_mesh = pv.Disc(
         center=(0.0, 0.0, 0.0),
         inner=r_in,
@@ -211,6 +221,9 @@ def load_icosphere_mesh(r: float = 1.0, n_sub: int = 1):
     mesh
         A `SimplicialMesh` object representing the icosphere mesh.
     """
+    if not _HAS_PYVISTA:
+        raise ImportError("PyVista backend required.")
+
     pv_sphere = pv.Icosphere(radius=r, nsub=n_sub)
 
     vert_coords_np = np.asarray(pv_sphere.points)

@@ -210,7 +210,9 @@ def test_galerkin_wedge_pairing_methods(mesh_name, request, device):
 @pytest.mark.parametrize("mesh_name", ["two_tris_mesh", "two_tets_mesh"])
 @pytest.mark.parametrize("pairing", ["scalar", "dot", "cross", "outer"])
 def test_galerkin_wedge_product_backward(mesh_name, pairing, request, device):
-    mesh: SimplicialMesh = request.getfixturevalue(mesh_name).to(device)
+    mesh: SimplicialMesh = (
+        request.getfixturevalue(mesh_name).detach().clone().to(device)
+    )
     mesh.requires_grad_()
 
     n_splx_map = mesh.n_splx

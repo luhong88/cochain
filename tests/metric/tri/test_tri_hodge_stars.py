@@ -136,7 +136,7 @@ def test_star_2_on_tet(hollow_tet_mesh: SimplicialMesh, device):
 
 
 def test_star_0_backward(hollow_tet_mesh: SimplicialMesh, device):
-    mesh = hollow_tet_mesh.to(device)
+    mesh = hollow_tet_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     s0 = tri_hodge_stars.star_0(mesh)
@@ -149,7 +149,7 @@ def test_star_0_backward(hollow_tet_mesh: SimplicialMesh, device):
 
 @pytest.mark.parametrize("dual_complex", ["circumcentric", "barycentric"])
 def test_star_1_backward(hollow_tet_mesh: SimplicialMesh, dual_complex, device):
-    mesh = hollow_tet_mesh.to(device)
+    mesh = hollow_tet_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     s1 = tri_hodge_stars.star_1(mesh, dual_complex=dual_complex)
@@ -161,7 +161,7 @@ def test_star_1_backward(hollow_tet_mesh: SimplicialMesh, dual_complex, device):
 
 
 def test_star_2_backward(hollow_tet_mesh: SimplicialMesh, device):
-    mesh = hollow_tet_mesh.to(device)
+    mesh = hollow_tet_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     s2 = tri_hodge_stars.star_2(mesh)

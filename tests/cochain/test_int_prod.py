@@ -407,7 +407,7 @@ def test_galerkin_contraction_linearity(k: int, mesh, request, device):
     ],
 )
 def test_galerkin_contraction_backward(k: int, mesh, request, device):
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     vec_field_flat = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
@@ -456,7 +456,7 @@ def test_galerkin_contraction_backward(k: int, mesh, request, device):
 )
 def test_galerkin_contraction_solver_backward(k: int, mesh, request, device):
     # First, compute backward using dense mass matrix.
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     vec_field_flat = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)

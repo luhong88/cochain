@@ -363,7 +363,7 @@ def test_galerkin_vertex_based_adjoint_relation(mesh, request, device):
 @pytest.mark.parametrize("mesh", ["hollow_tet_mesh", "two_tets_mesh"])
 @pytest.mark.parametrize("mode", ["vertex", "element"])
 def test_local_flat_backward(mesh, mode, request, device):
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     match mode:
@@ -433,7 +433,7 @@ def test_local_flat_gradcheck(mesh, mode, request, device):
     ],
 )
 def test_local_sharp_backward(mesh, location, mode, request, device):
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     cochain = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
@@ -493,7 +493,7 @@ def test_local_sharp_gradcheck(mesh, location, mode, request, device):
 @pytest.mark.parametrize("mesh", ["two_tris_mesh", "two_tets_mesh"])
 @pytest.mark.parametrize("mode", ["element", "vertex"])
 def test_galerkin_flat_backward(mesh, mode, request, device):
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     match mesh.dim:
@@ -534,7 +534,7 @@ def test_galerkin_flat_backward(mesh, mode, request, device):
 @pytest.mark.parametrize("mode", ["element", "vertex"])
 def test_galerkin_flat_solver_backward(mesh, mode, request, device):
     # First, compute backward using dense mass matrix.
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     match mode:
@@ -655,7 +655,7 @@ def test_galerkin_flat_gradcheck(mesh, mode, request, device):
     [("element", True), ("vertex", True), ("vertex", False)],
 )
 def test_galerkin_sharp_backward(mesh, mode, diagonal, request, device):
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     mass_vec = music_ops.vector_mass(mesh, mode=mode, diagonal=diagonal)
@@ -684,7 +684,7 @@ def test_galerkin_sharp_backward(mesh, mode, diagonal, request, device):
 @pytest.mark.parametrize("mesh", ["two_tris_mesh", "two_tets_mesh"])
 def test_galerkin_sharp_solver_backward(mesh, request, device):
     # First, compute backward using dense mass matrix.
-    mesh = request.getfixturevalue(mesh).to(device)
+    mesh = request.getfixturevalue(mesh).detach().clone().to(device)
     mesh.requires_grad_()
 
     # Only the "vertex" mode has non-diagonal vector mass matrix.

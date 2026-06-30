@@ -128,7 +128,7 @@ def _csr_to_csc(
     return idx_ccol.contiguous(), idx_row_csc.contiguous(), csc_to_coo_map.contiguous()
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _collect_dLdA_idx(
     a_idx_coo: npt.NDArray,
     c_idx_crow: npt.NDArray,
@@ -240,7 +240,7 @@ def _collect_dLdA_idx(
     )
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _collect_dLdB_idx(
     b_idx_coo: npt.NDArray,
     c_idx_ccol: npt.NDArray,
@@ -357,7 +357,7 @@ def _collect_dLdB_idx(
     )
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _collect_C_idx(
     c_idx_coo: npt.NDArray,
     a_idx_crow: npt.NDArray,

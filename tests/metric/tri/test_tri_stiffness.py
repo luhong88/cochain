@@ -84,7 +84,7 @@ def test_stiffness_planar(flat_annulus_mesh: SimplicialMesh, device):
 
 
 def test_stiffness_matrix_backward(two_tets_mesh: SimplicialMesh, device):
-    mesh = two_tets_mesh.to(device)
+    mesh = two_tets_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     stiff = stiffness_matrix(mesh)

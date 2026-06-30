@@ -323,7 +323,7 @@ def test_codiff_2_adjoint_relation(
 def test_laplacian_backward(
     laplacian, dual_complex, hollow_tet_mesh: SimplicialMesh, device
 ):
-    mesh = hollow_tet_mesh.to(device)
+    mesh = hollow_tet_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     l = laplacian(mesh, dual_complex)

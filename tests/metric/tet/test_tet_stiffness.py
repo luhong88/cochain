@@ -83,7 +83,7 @@ def test_stiffness_linear_precision(simple_sc_mesh: SimplicialMesh, device):
 
 
 def test_stiffness_matrix_backward(simple_sc_mesh: SimplicialMesh, device):
-    mesh = simple_sc_mesh.to(device)
+    mesh = simple_sc_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
     stiff = stiffness_matrix(mesh)
