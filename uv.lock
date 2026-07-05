@@ -443,7 +443,7 @@ wheels = [
 
 [[package]]
 name = "cochain"
-version = "0.1.0"
+version = "0.1.0a0"
 source = { editable = "." }
 dependencies = [
     { name = "einops" },
@@ -485,7 +485,7 @@ requires-dist = [
     { name = "numba", specifier = ">=0.60.0" },
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "polyscope", marker = "extra == 'vis'", specifier = ">=2.2.0" },
-    { name = "pytetwild", marker = "extra == 'examples'", specifier = ">=0.1.0" },
+    { name = "pytetwild", marker = "extra == 'examples'", specifier = "==0.1.1" },
     { name = "pyvista", extras = ["jupyter"], marker = "extra == 'examples'", specifier = ">=0.45.0" },
     { name = "scipy", specifier = ">=1.17.0" },
 ]
@@ -2726,21 +2726,25 @@ wheels = [
 
 [[package]]
 name = "pytetwild"
-version = "0.3.0"
+version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2b/dc/55324467c4fe206331fda63d60231e9b6669b92afb2e19d0326913662db3/pytetwild-0.3.0.tar.gz", hash = "sha256:8ea2c460036c757e8f0d27cd2ce3390afa675a1a4d031a6ce209326c592bd6ba", size = 2617869, upload-time = "2026-05-17T09:20:40.927Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/a5/a3006649f0cc7c14d838a4ce3d97e148dddee73d95fbb4cb8e939718a550/pytetwild-0.1.1.tar.gz", hash = "sha256:ceb4eae5bb383497bfb4cb6f0eb08524f6af6441a45c762f44b9c8e60f52113f", size = 3099964, upload-time = "2025-11-13T17:47:07.152Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/e3/5c3ff8cccd72a4fa15af89a28d5032f72ec9f11c660a8c133ac546a85402/pytetwild-0.3.0-cp311-cp311-macosx_15_0_arm64.whl", hash = "sha256:b01222d31bb5f519583fbc1685b34b40b9c8fa321eb4523ea278f5db403521dd", size = 2394212, upload-time = "2026-05-17T09:20:22.225Z" },
-    { url = "https://files.pythonhosted.org/packages/46/66/e96ad09771a95bfb27bb9f72fe2ea2cb934f6c8f74a45eda356d59122988/pytetwild-0.3.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:c11a96fc6c1e1521c6437c749cbdaae50b32f6758b5a1099928fea536b6fdfca", size = 2789452, upload-time = "2026-05-17T09:20:24.038Z" },
-    { url = "https://files.pythonhosted.org/packages/db/0a/30a5764c798626192f67b49cd316bd3d3dace2bc0ef1f5c0d975fadf7bf7/pytetwild-0.3.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:692e84313a06f53146a1c6600287815fb310f04cc762150c08ad313d4997c43a", size = 3102350, upload-time = "2026-05-17T09:20:26.382Z" },
-    { url = "https://files.pythonhosted.org/packages/97/d4/bdcd30be7d278cf2497f13d198b08b6e6fa6a0d5b10b0372359b153e7a16/pytetwild-0.3.0-cp311-cp311-win_amd64.whl", hash = "sha256:25a1c670d03abc231a73e4a368d392931a41e5b6726866cda2ecda95b757f766", size = 2111416, upload-time = "2026-05-17T09:20:29.063Z" },
-    { url = "https://files.pythonhosted.org/packages/97/9b/4c68c73658e5a0a5f50b82f76312c26e6fc3455baf244326a84a4f53103a/pytetwild-0.3.0-cp312-abi3-macosx_15_0_arm64.whl", hash = "sha256:e0f7edd8d2e29f1439cf78dde9d2be63b3c0d4091d402b8cb291f5ca75c0312e", size = 2392958, upload-time = "2026-05-17T09:20:31.644Z" },
-    { url = "https://files.pythonhosted.org/packages/e9/e4/6ce7b61c473c9b924a067c3844aa3b116fea511dfdaf6aaef8e531bb73ee/pytetwild-0.3.0-cp312-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:f316a039b725ebbffc09c9799df65d396f245b28c0604445e6293c0a5fe81efd", size = 2786265, upload-time = "2026-05-17T09:20:34.049Z" },
-    { url = "https://files.pythonhosted.org/packages/35/93/6cba5f9c7e79ffb311ab5dc1e3019fb1a3d1d52ba1bfeac94b4e2ab573bf/pytetwild-0.3.0-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:387730c725a2dde82be4ae1269f0827a39d57a2a9401bb64d15574d4161960c0", size = 3099143, upload-time = "2026-05-17T09:20:35.766Z" },
-    { url = "https://files.pythonhosted.org/packages/12/91/37a7ab51c1b779f784cbdfba2f773750ca1eba36b53df774ebe2fc8d6380/pytetwild-0.3.0-cp312-abi3-win_amd64.whl", hash = "sha256:11964e295a54cf9e2f6920a920aeeba27668c9b14e369a86f72ec5baa4f46060", size = 2109379, upload-time = "2026-05-17T09:20:38.346Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/c2/17dc67a769daffbf52a25e73bac4039bb3d63974805b80dcb886b30471bb/pytetwild-0.1.1-cp311-cp311-macosx_15_0_arm64.whl", hash = "sha256:9f6c2161d054165a6e1ae6ca6c1d6fa9f18ae3f85ab647bdc2d182b8245c04c2", size = 2405659, upload-time = "2025-11-13T17:46:43.647Z" },
+    { url = "https://files.pythonhosted.org/packages/67/64/9677d8cb8ba79fb4b5121f1a4d78eb9a9e53cff58460b78abfcf8e2f7603/pytetwild-0.1.1-cp311-cp311-macosx_15_0_x86_64.whl", hash = "sha256:551865e31baddd25685ab2eabc6a5fe911125ff9f9b21b2100eb525e6fee4610", size = 2769879, upload-time = "2025-11-13T17:46:45.24Z" },
+    { url = "https://files.pythonhosted.org/packages/74/d9/6a44d0682cb43b84dc336373870f08933abb5bec34ad6f0d0abb4f656046/pytetwild-0.1.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ad32fbc40f3edd685915aa42f829ec834afd68414c999ce6ce37dff0949dad75", size = 3415354, upload-time = "2025-11-13T17:46:47.559Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/be/fe4deb5dd534065222bae5dde3b3b378c10a740965445a5a5228dfbf1db4/pytetwild-0.1.1-cp311-cp311-win_amd64.whl", hash = "sha256:7945bb62dd56562a7cd963934955ce6ffedee3b4354ff5e3a6df62f28600cbf0", size = 2127338, upload-time = "2025-11-13T17:46:51.234Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/24/10ec6ff1d7696148d8f9b9193da1f6fa7f7d4dc1c0bd1aefc4a4be77eb6f/pytetwild-0.1.1-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:7354ddfbb80fe97bc41a8e9ce1a62c2752c077dd19d24d8814e3759fa49db610", size = 2405141, upload-time = "2025-11-13T17:46:52.969Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/f2/7f600e74a85af9ab14ec043b01ce0844a43c268d78bcac734115d824b058/pytetwild-0.1.1-cp312-cp312-macosx_15_0_x86_64.whl", hash = "sha256:f3b738a8e470acdecddc980acae08d4968e50ba1edaf547d706057eea3beb1d3", size = 2769424, upload-time = "2025-11-13T17:46:54.692Z" },
+    { url = "https://files.pythonhosted.org/packages/c3/22/99bb098056707a8cf66047abafe641d563ed5c6026b3abb0627ec44036d3/pytetwild-0.1.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3ef43c8310219affc3f2b37d145b4d28e6dca6f25a1620ece53e46438c823590", size = 3414868, upload-time = "2025-11-13T17:46:56.331Z" },
+    { url = "https://files.pythonhosted.org/packages/26/26/1426041aa06c30f3993ed31cf1b3032fbd71a6aa7b991100b9fc90637f29/pytetwild-0.1.1-cp312-cp312-win_amd64.whl", hash = "sha256:f0a57775c542e795c848c7cad1f16adeb8f56f185aa9b25dade26bfac9861f51", size = 2127713, upload-time = "2025-11-13T17:46:58.414Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/d3/f397978436c771b9d3a3909870d292db00f8c8dfbaa6750bf0a7cb90dbd5/pytetwild-0.1.1-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:e43b05f62f84761657e77df4c10a6cc2e18331e60f77383367d7c947a34e20a6", size = 2405128, upload-time = "2025-11-13T17:47:00.183Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/d3/e4c1eddeca909e9d602fad860aa9450ec3088613529cb7e574b3130e4357/pytetwild-0.1.1-cp313-cp313-macosx_15_0_x86_64.whl", hash = "sha256:f77696eab885b7c641865a86db58e9ad00c876c4fd7c016371f3e1de29152937", size = 2769632, upload-time = "2025-11-13T17:47:02.049Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/69/2bf2a14e2731b0e4de94c242efc393d3ae50ffebf1a16c781e5d693a107f/pytetwild-0.1.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:9a989fabdabb3a9192472c4aed76149e4d72f3300f341d02f61e6da72cdcb9c5", size = 3415205, upload-time = "2025-11-13T17:47:03.847Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/e3/4830585df753fa6e0efc44368a3afe260830dd6d324226087976dbba3ef2/pytetwild-0.1.1-cp313-cp313-win_amd64.whl", hash = "sha256:7a82e50a921658e588042e6b10c3a3457066741ad71c6b573fa7d31b1e858317", size = 2127815, upload-time = "2025-11-13T17:47:05.391Z" },
 ]
 
 [[package]]

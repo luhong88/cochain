@@ -35,7 +35,7 @@ vis = [
     "polyscope>=2.2.0",
 ]
 examples = [
-    "pytetwild>=0.1.0",
+    "pytetwild==0.1.1",
     "pyvista[jupyter]>=0.45.0",
 ]
 
