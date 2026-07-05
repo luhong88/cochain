@@ -220,7 +220,7 @@ def cbd_from_tet_mesh(
 
     # Generate the 1- and 0-coboundary operators. This can be done via
     # cbd_from_tri_mesh(), using unique_canon_tris as the triangle mesh.
-    unique_canon_edges, cbd_0, cbd_1 = cbd_from_tri_mesh(unique_canon_tris)
+    unique_canon_edges, cbd_0, cbd_1 = cbd_from_tri_mesh(unique_canon_tris, dtype=dtype)
 
     return (
         unique_canon_edges,
