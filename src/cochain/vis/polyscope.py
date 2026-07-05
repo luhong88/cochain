@@ -159,6 +159,7 @@ class PolyscopeViewer:
             vector_kwargs=kwargs,
         )
 
+    @torch.no_grad()
     def _compute_ps_edge_map(self, dim: int) -> Integer[np.ndarray, " edge"]:
         """
         Compute the Polyscope edge permutation map.
