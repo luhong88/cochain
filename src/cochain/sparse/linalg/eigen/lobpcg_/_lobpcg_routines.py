@@ -74,7 +74,7 @@ def _lobpcg_one_iter(
     # the subspace basis vectors.
     v = torch.hstack((x_current, search_dir, conj_dir))
 
-    v_ortho = m_orthonormalize(v, m_op, n_min=n, generator=generator, max_iter=1)
+    v_ortho = m_orthonormalize(v, m_op, n_min=n, generator=generator, max_iter=3)
     tv_ortho = t_op @ v_ortho
 
     # Perform the Rayleigh-Ritz projection.
@@ -99,7 +99,7 @@ def _lobpcg_one_iter(
     # If V is perfectly M-orthonormal, B' is identical to I and this reduces to
     # a standard eigenvalue problem for T'. This can be achieved (up to the limit
     # of floating point precision) by recycling the m_orthonormalize() function
-    # a few times. However, a cheaper approach is to just accept that B' is not
+    # a few times. A complementary approach is to just accept that B' is not
     # an identity matrix and solve the reduced GEP. Since eigh() does not support
     # GEP, we achieve the same thing by "whitening" the GEP. Let B' = L@L.T be the
     # Cholesky decomposition of B', and write the reduced GEP as
