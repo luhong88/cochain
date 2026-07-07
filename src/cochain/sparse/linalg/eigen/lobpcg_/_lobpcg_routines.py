@@ -238,9 +238,11 @@ def _lobpcg_loop(
             lambda_current = lambda_next
 
     if not converged:
+        max_res_norm_idx = res_norm.argmax()
         warnings.warn(
             f"LOBPCG did not converge after {niter} iterations. "
-            f"Max residual norm: {res_norm.max().item():.2e} (tol: {tol:.2e}).",
+            f"Max residual norm: {res_norm[max_res_norm_idx].item():.2e} "
+            f"(tol: {tol_current[max_res_norm_idx].item():.2e}).",
             UserWarning,
         )
 
