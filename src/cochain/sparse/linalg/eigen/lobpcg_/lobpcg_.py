@@ -46,8 +46,8 @@ class LOBPCGConfig:
     sigma: float | int | None = None
     v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "coord n"] | None] | None = None
     largest: bool = False
-    tol: float | None = None
-    maxiter: int | None = 1000
+    tol: float | Literal["auto"] = "auto"
+    maxiter: int = 1000
     generator: torch.Generator | None = None
 
     def expand(self, n: int) -> list[LOBPCGConfig]:
@@ -400,7 +400,7 @@ def lobpcg(
 
     tol = (
         torch.finfo(a.dtype).eps ** 0.5
-        if lobpcg_config.tol is None
+        if lobpcg_config.tol == "auto"
         else lobpcg_config.tol
     )
 

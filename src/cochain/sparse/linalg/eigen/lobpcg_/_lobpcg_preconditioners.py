@@ -59,7 +59,7 @@ class LOBPCGPrecondConfig:
     """
 
     method: Literal["identity", "jacobi", "ilu", "cholesky"] = "identity"
-    diag_damp: float | int | None = None
+    diag_damp: float | int | Literal["auto"] = "auto"
     nvmath_config: DirectSolverConfig | None = None
     spilu_kwargs: dict[str, Any] | None = None
 
@@ -136,7 +136,7 @@ class ILUPrecond:
     def __init__(
         self,
         a_sdt: Float[SparseDecoupledTensor, "m m"],
-        diag_damp: float | int | None,
+        diag_damp: float | int | Literal["auto"],
         spilu_kwargs: dict[str, Any],
     ):
         if not _HAS_CUPY:
@@ -153,7 +153,7 @@ class ILUPrecond:
             op_sdt = a_sdt
 
         else:
-            if diag_damp is None:
+            if diag_damp == "auto":
                 # If no eps is given, set eps to be proportional to the average
                 # diagonal entry size, scaled by the dtype machine eps.
                 eps = ALPHA * torch.finfo(a_sdt.dtype).eps * a_sdt.tr / a_sdt.size(0)
@@ -211,7 +211,7 @@ class ChoPrecond:
         self,
         a_sdt: Float[SparseDecoupledTensor, "m m"],
         n: int,
-        diag_damp: float | int | None,
+        diag_damp: float | int | Literal["auto"],
         nvmath_config: DirectSolverConfig,
     ):
         if not _HAS_NVMATH:
@@ -231,7 +231,7 @@ class ChoPrecond:
             op_sdt = a_sdt
 
         else:
-            if diag_damp is None:
+            if diag_damp == "auto":
                 # If no eps is given, set eps to be proportional to the average
                 # diagonal entry size, scaled by the dtype machine eps.
                 eps = ALPHA * torch.finfo(a_sdt.dtype).eps * a_sdt.tr / a_sdt.size(0)
