@@ -462,6 +462,7 @@ def nvmath_direct_solver(
     return x
 
 
+# TODO: fix the general matrix cache problem.
 class NVMathDirectSolver(InvSparseOperator):
     """
     "Stateful" differentiable wrapper for `nvmath.sparse.advanced.DirectSolver`.
@@ -502,6 +503,12 @@ class NVMathDirectSolver(InvSparseOperator):
     which allows the same factorized matrix to be re-used to solve different linear
     systems. See the `nvmath_direct_solver()` function for more details on the
     requirements and limitations of this wrapper.
+
+    Currently, the use of this class in an optimization loop for a general sparse
+    matrix is not recommended. Because the solver is called with the `trans`
+    argument alternating between "N" (in the forward pass) and "T" (in the backward
+    pass), the LHS is reset for each pass, which negates any efficiency gain by
+    storing the factorized LHS matrix.
     """
 
     def __init__(
