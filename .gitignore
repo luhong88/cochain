@@ -220,3 +220,6 @@ __marimo__/
 
 # Polyscope init files
 *.ini
+
+# Agent configs
+.agents
