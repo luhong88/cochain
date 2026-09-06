@@ -16,7 +16,6 @@ from ._matmul import (
     diag_sp_mm,
     sp_diag_mm,
 )
-from ._submat_plan import SubmatPlan, SubmatResult
 from .base_decoupled_tensor import (
     BaseDecoupledTensor,
     is_scalar_like,
@@ -24,6 +23,7 @@ from .base_decoupled_tensor import (
 )
 from .pattern import SparsityPattern
 from .sparse_decoupled_tensor import SparseDecoupledTensor
+from .submat_plan import SubmatPlan, SubmatResult
 
 
 @dataclass
@@ -200,6 +200,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         self,
         row_mask: Bool[Tensor, " diag"] | None = None,
         col_mask: Bool[Tensor, " diag"] | None = None,
+        *,
         submat_plan: SubmatPlan | None = None,
     ) -> SubmatResult:
         """
@@ -228,6 +229,11 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
             generate the submatrix specified by the `row_mask` and `col_mask`.
             If a `SubmatPlan` object was provided as the `submat_plan` argument,
             then the same object is returned here.
+
+        Note
+        ----
+        Unlike the `SparseDecoupledTensor.submatrix()` method, the current method
+        does not validate the input `submat_plan`.
         """
         if submat_plan is not None:
             return self._submatrix_from_plan(submat_plan)

@@ -17,13 +17,13 @@ from ._spgemm_plan import (
     get_bwd_plan_B,
     get_fwd_plan,
 )
-from ._submat_plan import SubmatPlan, SubmatResult
 from .base_decoupled_tensor import (
     BaseDecoupledTensor,
     is_scalar_like,
     validate_matmul_args,
 )
 from .pattern import SparsityPattern, check_pattern_equality
+from .submat_plan import SubmatPlan, SubmatResult
 
 
 @dataclass
@@ -435,6 +435,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         self,
         row_mask: Bool[Tensor, " r"] | None = None,
         col_mask: Bool[Tensor, " c"] | None = None,
+        *,
         submat_plan: SubmatPlan | None = None,
     ) -> SubmatResult:
         """
