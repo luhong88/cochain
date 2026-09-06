@@ -241,6 +241,7 @@ def test_spsp_matmul_caching_reuse_plan(a, b, device):
     c_sdt_2 = a_sdt @ b_sdt
     assert len(a_sdt.pattern._spsp_matmul_plans) == 1
     assert a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern] is plan_1
+    assert c_sdt_1.pattern is c_sdt_2.pattern
 
 
 def test_spsp_matmul_caching_bwd_plan(a, b, device):
@@ -261,12 +262,15 @@ def test_spsp_matmul_caching_bwd_plan(a, b, device):
 
     assert plan.bwd_plan_B is not None
 
+    assert c_sdt_1.pattern is c_sdt_2.pattern
+    assert c_sdt_1.pattern is c_sdt_3.pattern
+
 
 def test_spsp_matmul_caching_different_values(a, b, device):
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
 
-    c_dst_1 = a_sdt @ b_sdt
+    c_sdt_1 = a_sdt @ b_sdt
     plan = a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern]
 
     a_sdt_new_vals = 2.0 * a_sdt
@@ -276,6 +280,7 @@ def test_spsp_matmul_caching_different_values(a, b, device):
 
     assert len(a_sdt_new_vals.pattern._spsp_matmul_plans) == 1
     assert a_sdt_new_vals.pattern._spsp_matmul_plans[b_sdt_new_vals.pattern] is plan
+    assert c_sdt_1.pattern is c_sdt_2.pattern
 
 
 def test_spsp_matmul_caching_eviction(a, b, device):
