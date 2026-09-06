@@ -16,6 +16,7 @@ from ._matmul import (
     diag_sp_mm,
     sp_diag_mm,
 )
+from ._submat_plan import SubmatPlan
 from .base_decoupled_tensor import (
     BaseDecoupledTensor,
     is_scalar_like,
@@ -112,13 +113,94 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         """
         return cls(tensor)
 
-    def submatrix(
+    def _submatrix_from_plan(self, submat_plan: SubmatPlan) -> BaseDecoupledTensor:
+        if submat_plan.full_pattern is not None:
+            raise ValueError(
+                "The 'full_pattern' of a DiagDecoupledTensor must be None."
+            )
+
+        # If the submat_pattern is None, then the submatrix is still a
+        # DiagDecoupledTensor, otherwise it becomes a SparseDecoupledTensor.
+        if submat_plan.submat_pattern is None:
+            ddt = DiagDecoupledTensor(self.values[..., submat_plan.submat_mask])
+            return ddt, submat_plan
+
+        else:
+            sdt = SparseDecoupledTensor(
+                submat_plan.submat_pattern,
+                self.values[..., submat_plan.submat_mask].flatten(),
+            )
+            return sdt, submat_plan
+
+    def _submatrix_from_masks(
         self,
         row_mask: Bool[Tensor, " diag"],
         col_mask: Bool[Tensor, " diag"] | None = None,
-    ) -> Float[BaseDecoupledTensor, "*b sub_r sub_c"]:
+    ) -> BaseDecoupledTensor:
+        if (col_mask is None) or (row_mask == col_mask).all():
+            return DiagDecoupledTensor(self.values[..., row_mask])
+
+        else:
+            # Find the mask for the subsetted nonzero elements.
+            submat_mask = row_mask & col_mask
+
+            # Find the subsetted diagonal values.
+            submat_val = self.values[..., submat_mask].flatten()
+
+            # Determine the subsetted and renumbered coo index, using the
+            # same cumsum() method as in SparsityPattern.submatrix().
+            r_idx_map = torch.cumsum(row_mask, dim=0) - 1
+            c_idx_map = torch.cumsum(col_mask, dim=0) - 1
+
+            diag_idx_subset = torch.arange(self.size(-1), device=self.device)[
+                submat_mask
+            ]
+
+            idx_coo_row_submat = r_idx_map[diag_idx_subset]
+            idx_coo_col_submat = c_idx_map[diag_idx_subset]
+
+            # Tile the coo index if batched.
+            if self.n_batch_dim > 0:
+                batch_size = self.size(0)
+                nnz_per_batch = submat_mask.sum().item()
+
+                b_idx = repeat(
+                    torch.arange(batch_size, device=self.device),
+                    "b -> (b nz)",
+                    nz=nnz_per_batch,
+                )
+                r_idx = repeat(idx_coo_row_submat, "nz -> (b nz)", b=batch_size)
+                c_idx = repeat(idx_coo_col_submat, "nz -> (b nz)", b=batch_size)
+
+                submat_idx_coo = torch.vstack((b_idx, r_idx, c_idx))
+
+            else:
+                submat_idx_coo = torch.vstack((idx_coo_row_submat, idx_coo_col_submat))
+
+            # Determine the size of the submatrix.
+            r_submat_size = row_mask.sum().item()
+            c_submat_size = col_mask.sum().item()
+
+            if self.n_batch_dim > 0:
+                submat_shape = torch.Size([self.size(0), r_submat_size, c_submat_size])
+            else:
+                submat_shape = torch.Size([r_submat_size, c_submat_size])
+
+            # Generate the new SparseDecoupledTensor and cache the SubmatPlan
+            pattern = SparsityPattern(submat_idx_coo, shape=submat_shape)
+            sdt = SparseDecoupledTensor(pattern, submat_val)
+            plan = SubmatPlan(None, pattern, submat_mask)
+
+            return sdt, plan
+
+    def submatrix(
+        self,
+        row_mask: Bool[Tensor, " diag"] | None = None,
+        col_mask: Bool[Tensor, " diag"] | None = None,
+        submat_plan: SubmatPlan | None = None,
+    ) -> tuple[BaseDecoupledTensor, SubmatPlan]:
         """
-        Extract a submatrix using row and col masks.
+        Extract a submatrix using row and col masks or a SubMatPlan.
 
         Parameters
         ----------
@@ -127,76 +209,33 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         col_mask : [diag,]
             A boolean mask marking the cols to keep in the submatrix. If `None`,
             then assumed to be identical to the `row_mask`.
+        submat_plan
+            A `SubmatPlan` object that caches the index operations required to
+            generate a submatrix. If a `submat_plan` is provided, the `row_mask`
+            and `col_mask` arguments are ignored.
 
         Returns
         -------
-        submatrix : [*b, sub_r, sub_c]
+        submat
             The extracted submatrix. If the `row_mask` and `col_mask` are identical,
             then the submatrix is still a `DiagDecoupledTensor`; otherwise the
             submatrix is represented as a `SparseDecoupledTensor`.
+        submat_plan
+            A `SubmatPlan` object that caches the index operations required to
+            generate the submatrix specified by the `row_mask` and `col_mask`.
+            If a `SubmatPlan` object was provided as the `submat_plan` argument,
+            then the same object is returned here.
         """
-        if col_mask is None:
-            return DiagDecoupledTensor(self.values[..., row_mask])
+        if submat_plan is not None:
+            return self._submatrix_from_plan(submat_plan)
 
         else:
-            if (row_mask == col_mask).all():
-                return DiagDecoupledTensor(self.values[..., row_mask])
+            if row_mask is None:
+                raise ValueError(
+                    "'row_mask' cannot be None if no 'submat_plan' is provided."
+                )
 
-            else:
-                # Find the mask for the subsetted nonzero elements.
-                submat_mask = row_mask & col_mask
-
-                # Find the subsetted diagonal values.
-                submat_val = self.values[..., submat_mask].flatten()
-
-                # Determine the subsetted and renumbered coo index, using the
-                # same cumsum() method as in SparsityPattern.submatrix().
-                r_idx_map = torch.cumsum(row_mask, dim=0) - 1
-                c_idx_map = torch.cumsum(col_mask, dim=0) - 1
-
-                diag_idx_subset = torch.arange(self.size(-1), device=self.device)[
-                    submat_mask
-                ]
-
-                idx_coo_row_submat = r_idx_map[diag_idx_subset]
-                idx_coo_col_submat = c_idx_map[diag_idx_subset]
-
-                # Tile the coo index if batched.
-                if self.n_batch_dim > 0:
-                    batch_size = self.size(0)
-                    nnz_per_batch = submat_mask.sum().item()
-
-                    b_idx = repeat(
-                        torch.arange(batch_size, device=self.device),
-                        "b -> (b nz)",
-                        nz=nnz_per_batch,
-                    )
-                    r_idx = repeat(idx_coo_row_submat, "nz -> (b nz)", b=batch_size)
-                    c_idx = repeat(idx_coo_col_submat, "nz -> (b nz)", b=batch_size)
-
-                    submat_idx_coo = torch.vstack((b_idx, r_idx, c_idx))
-
-                else:
-                    submat_idx_coo = torch.vstack(
-                        (idx_coo_row_submat, idx_coo_col_submat)
-                    )
-
-                # Determine the size of the submatrix.
-                r_submat_size = row_mask.sum().item()
-                c_submat_size = col_mask.sum().item()
-
-                if self.n_batch_dim > 0:
-                    submat_shape = torch.Size(
-                        [self.size(0), r_submat_size, c_submat_size]
-                    )
-                else:
-                    submat_shape = torch.Size([r_submat_size, c_submat_size])
-
-                # Generate the new SparseDecoupledTensor
-                pattern = SparsityPattern(submat_idx_coo, shape=submat_shape)
-                sdt = SparseDecoupledTensor(pattern, submat_val)
-
-                return sdt
+            return self._submatrix_from_masks(row_mask, col_mask)
 
     @classmethod
     def eye(

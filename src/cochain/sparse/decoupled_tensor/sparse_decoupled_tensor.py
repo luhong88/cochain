@@ -473,9 +473,10 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         assumption.
         """
         if submat_plan is None:
-            assert row_mask is not None, (
-                "row_mask cannot be None if no submat_plan is provided."
-            )
+            if row_mask is None:
+                raise ValueError(
+                    "'row_mask' cannot be None if no 'submat_plan' is provided."
+                )
 
             idx_coo_submat_mask, submat_pattern = self.pattern.submatrix(
                 row_mask, col_mask
@@ -488,6 +489,15 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             return submat_sdt, submat_plan
 
         else:
+            if submat_plan.full_pattern is None:
+                raise ValueError(
+                    "The 'full_pattern' of a SparseDecoupledTensor cannot be None."
+                )
+            if submat_plan.submat_pattern is None:
+                raise ValueError(
+                    "The 'submat_pattern' of a SparseDecoupledTensor cannot be None."
+                )
+
             check_pattern_equality(
                 self.pattern,
                 submat_plan.full_pattern,
@@ -495,7 +505,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             )
 
             submat_sdt = SparseDecoupledTensor(
-                submat_plan.submat_pattern, self.values[submat_plan.idx_coo_submat_mask]
+                submat_plan.submat_pattern, self.values[submat_plan.submat_mask]
             )
 
             return submat_sdt, submat_plan
