@@ -53,11 +53,7 @@ class SpSpMMFwdPlan:
 
     def to(self, *args, **kwargs) -> "SpSpMMFwdPlan":
         return SpSpMMFwdPlan(
-            self.c_nnz,
-            self.c_idx_coo.to(*args, **kwargs),
-            self.c_idx_crow.to(*args, **kwargs),
-            self.c_idx_col.to(*args, **kwargs),
-            self.c_shape,
+            self.c_pattern.to(*args, **kwargs),
             self.c_idx.to(*args, **kwargs),
             self.a_idx.to(*args, **kwargs),
             self.b_idx.to(*args, **kwargs),

@@ -798,7 +798,11 @@ class SparsityPattern:
         and its transposed version cache a weakref link to each other, such that
         repeated or chained transpositions do not duplicate `SparsityPattern`s.
         """
-        if self._pattern_trans is None:
+        pattern_trans = (
+            self._pattern_trans() if self._pattern_trans is not None else None
+        )
+
+        if pattern_trans is None:
             idx_coo_sorted = self.idx_coo[:, self.csc_to_coo_map]
 
             idx_coo_trans = idx_coo_sorted.clone()
@@ -827,10 +831,7 @@ class SparsityPattern:
             # double transposition points to self again.
             object.__setattr__(pattern_trans, "_pattern_trans", weakref.ref(self))
 
-            return pattern_trans
-
-        else:
-            return self._pattern_trans()
+        return pattern_trans
 
     @property
     def dtype(self) -> torch.dtype:
@@ -856,6 +857,12 @@ class SparsityPattern:
         device, dtype, copy_flag, non_blocking, memory_format = parse_to(
             *args, **kwargs
         )
+
+        # If no device change occurs and copy=False, then return self, since
+        # the other to() arguments are irrelevant to pattern topology.
+        device_unchanged = (device is None) or (torch.device(device) == self.device)
+        if device_unchanged and not copy_flag:
+            return self
 
         new_idx_coo = self.idx_coo.to(
             device=device, copy=copy_flag, non_blocking=non_blocking
