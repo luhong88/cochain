@@ -17,7 +17,7 @@ from ._spgemm_plan import (
     get_bwd_plan_B,
     get_fwd_plan,
 )
-from ._submat_plan import SubmatPlan
+from ._submat_plan import SubmatPlan, SubmatResult
 from .base_decoupled_tensor import (
     BaseDecoupledTensor,
     is_scalar_like,
@@ -436,7 +436,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         row_mask: Bool[Tensor, " r"] | None = None,
         col_mask: Bool[Tensor, " c"] | None = None,
         submat_plan: SubmatPlan | None = None,
-    ) -> tuple[SparseDecoupledTensor, SubmatPlan]:
+    ) -> SubmatResult:
         """
         Extract a submatrix using row and col masks or a SubmatPlan.
 
@@ -486,7 +486,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             submat_sdt = SparseDecoupledTensor(submat_pattern, submat_val)
             submat_plan = SubmatPlan(self.pattern, submat_pattern, idx_coo_submat_mask)
 
-            return submat_sdt, submat_plan
+            return SubmatResult(submat_sdt, submat_plan)
 
         else:
             if submat_plan.full_pattern is None:
@@ -508,7 +508,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 submat_plan.submat_pattern, self.values[submat_plan.submat_mask]
             )
 
-            return submat_sdt, submat_plan
+            return SubmatResult(submat_sdt, submat_plan)
 
     def constrain(self, mask: Bool[Tensor, " r"]) -> SparseDecoupledTensor:
         """

@@ -896,9 +896,9 @@ def test_submatrix(any_a, device):
     r_mask = torch.tensor([True, False, True, True], device=device)
     c_mask = torch.tensor([False, True, True, False], device=device)
 
-    sub_sdt_1 = a_sdt.submatrix(r_mask).to_dense()
-    sub_sdt_2 = a_sdt.submatrix(r_mask, r_mask).to_dense()
-    sub_sdt_3 = a_sdt.submatrix(r_mask, c_mask).to_dense()
+    sub_sdt_1 = a_sdt.submatrix(r_mask).tensor.to_dense()
+    sub_sdt_2 = a_sdt.submatrix(r_mask, r_mask).tensor.to_dense()
+    sub_sdt_3 = a_sdt.submatrix(r_mask, c_mask).tensor.to_dense()
 
     if a_sdt.n_batch_dim == 0:
         sub_dense_1 = a_dense[r_mask][:, r_mask]
@@ -923,9 +923,11 @@ def test_submatrix_with_block_diag_config(a, device):
     r_mask = torch.cat((mask_1, mask_2))
     c_mask = torch.cat((mask_2, mask_3))
 
-    sub_block_1, sub_block_2 = block_diag_sdt.submatrix(r_mask).unpack_block_diag()
-    sub_block_1_true = a_sdt.submatrix(mask_1)
-    sub_block_2_true = a_sdt.submatrix(mask_2)
+    sub_block_1, sub_block_2 = block_diag_sdt.submatrix(
+        r_mask
+    ).tensor.unpack_block_diag()
+    sub_block_1_true = a_sdt.submatrix(mask_1).tensor
+    sub_block_2_true = a_sdt.submatrix(mask_2).tensor
 
     torch.testing.assert_close(sub_block_1.to_dense(), sub_block_1_true.to_dense())
     torch.testing.assert_close(sub_block_2.to_dense(), sub_block_2_true.to_dense())
@@ -933,9 +935,9 @@ def test_submatrix_with_block_diag_config(a, device):
     # Test an edge case where one block is completely degenerate after masking.
     sub_block_1, sub_block_2 = block_diag_sdt.submatrix(
         r_mask, c_mask
-    ).unpack_block_diag()
-    sub_block_1_true = a_sdt.submatrix(mask_1, mask_2)
-    sub_block_2_true = a_sdt.submatrix(mask_2, mask_3)
+    ).tensor.unpack_block_diag()
+    sub_block_1_true = a_sdt.submatrix(mask_1, mask_2).tensor
+    sub_block_2_true = a_sdt.submatrix(mask_2, mask_3).tensor
 
     torch.testing.assert_close(sub_block_1.to_dense(), sub_block_1_true.to_dense())
     torch.testing.assert_close(sub_block_2.to_dense(), sub_block_2_true.to_dense())
@@ -950,7 +952,7 @@ def test_batched_submatrix_equal_nnz_exception(device):
 
     r_mask = torch.tensor([True, False], device=device)
     with pytest.raises(ValueError):
-        a_sdt.submatrix(r_mask)
+        a_sdt.submatrix(r_mask).tensor
 
 
 def test_constrain(unbatched_a, device):

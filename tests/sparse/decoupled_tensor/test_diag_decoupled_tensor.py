@@ -49,9 +49,9 @@ def test_submatrix(diag, device):
     r_mask = torch.tensor([True, False, True, True], device=device)
     c_mask = torch.tensor([False, True, True, False], device=device)
 
-    sub_ddt_1 = ddt.submatrix(r_mask).to_dense()
-    sub_ddt_2 = ddt.submatrix(r_mask, r_mask).to_dense()
-    sub_ddt_3 = ddt.submatrix(r_mask, c_mask).to_dense()
+    sub_ddt_1 = ddt.submatrix(r_mask).tensor.to_dense()
+    sub_ddt_2 = ddt.submatrix(r_mask, r_mask).tensor.to_dense()
+    sub_ddt_3 = ddt.submatrix(r_mask, c_mask).tensor.to_dense()
 
     sub_diag_dense_1 = diag_dense[r_mask][:, r_mask]
     sub_diag_dense_2 = diag_dense[r_mask][:, c_mask]
@@ -68,9 +68,9 @@ def test_submatrix_with_batch_dim(diag_batched, device):
     r_mask = torch.tensor([True, False, True, True], device=device)
     c_mask = torch.tensor([False, True, True, False], device=device)
 
-    sub_ddt_1 = ddt.submatrix(r_mask).to_dense()
-    sub_ddt_2 = ddt.submatrix(r_mask, r_mask).to_dense()
-    sub_ddt_3 = ddt.submatrix(r_mask, c_mask).to_dense()
+    sub_ddt_1 = ddt.submatrix(r_mask).tensor.to_dense()
+    sub_ddt_2 = ddt.submatrix(r_mask, r_mask).tensor.to_dense()
+    sub_ddt_3 = ddt.submatrix(r_mask, c_mask).tensor.to_dense()
 
     sub_diag_dense_1 = diag_dense[:, r_mask][:, :, r_mask]
     sub_diag_dense_2 = diag_dense[:, r_mask][:, :, c_mask]

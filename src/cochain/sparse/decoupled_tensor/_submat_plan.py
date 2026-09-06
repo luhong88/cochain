@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from jaxtyping import Bool
 from torch import Tensor
 
+from .base_decoupled_tensor import BaseDecoupledTensor
 from .pattern import SparsityPattern
 
 
@@ -21,3 +23,8 @@ class SubmatPlan:
             self.submat_pattern.to(*args, **kwargs) if self.submat_pattern else None,
             self.submat_mask.to(*args, **kwargs),
         )
+
+
+class SubmatResult(NamedTuple):
+    tensor: BaseDecoupledTensor
+    plan: SubmatPlan

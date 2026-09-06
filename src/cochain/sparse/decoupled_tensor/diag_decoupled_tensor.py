@@ -16,7 +16,7 @@ from ._matmul import (
     diag_sp_mm,
     sp_diag_mm,
 )
-from ._submat_plan import SubmatPlan
+from ._submat_plan import SubmatPlan, SubmatResult
 from .base_decoupled_tensor import (
     BaseDecoupledTensor,
     is_scalar_like,
@@ -113,7 +113,7 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         """
         return cls(tensor)
 
-    def _submatrix_from_plan(self, submat_plan: SubmatPlan) -> BaseDecoupledTensor:
+    def _submatrix_from_plan(self, submat_plan: SubmatPlan) -> SubmatResult:
         if submat_plan.full_pattern is not None:
             raise ValueError(
                 "The 'full_pattern' of a DiagDecoupledTensor must be None."
@@ -123,22 +123,25 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
         # DiagDecoupledTensor, otherwise it becomes a SparseDecoupledTensor.
         if submat_plan.submat_pattern is None:
             ddt = DiagDecoupledTensor(self.values[..., submat_plan.submat_mask])
-            return ddt, submat_plan
+            return SubmatResult(ddt, submat_plan)
 
         else:
             sdt = SparseDecoupledTensor(
                 submat_plan.submat_pattern,
                 self.values[..., submat_plan.submat_mask].flatten(),
             )
-            return sdt, submat_plan
+            return SubmatResult(sdt, submat_plan)
 
     def _submatrix_from_masks(
         self,
         row_mask: Bool[Tensor, " diag"],
         col_mask: Bool[Tensor, " diag"] | None = None,
-    ) -> BaseDecoupledTensor:
+    ) -> SubmatResult:
         if (col_mask is None) or (row_mask == col_mask).all():
-            return DiagDecoupledTensor(self.values[..., row_mask])
+            ddt = DiagDecoupledTensor(self.values[..., row_mask])
+            plan = SubmatPlan(None, None, row_mask)
+
+            return SubmatResult(ddt, plan)
 
         else:
             # Find the mask for the subsetted nonzero elements.
@@ -191,14 +194,14 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
             sdt = SparseDecoupledTensor(pattern, submat_val)
             plan = SubmatPlan(None, pattern, submat_mask)
 
-            return sdt, plan
+            return SubmatResult(sdt, plan)
 
     def submatrix(
         self,
         row_mask: Bool[Tensor, " diag"] | None = None,
         col_mask: Bool[Tensor, " diag"] | None = None,
         submat_plan: SubmatPlan | None = None,
-    ) -> tuple[BaseDecoupledTensor, SubmatPlan]:
+    ) -> SubmatResult:
         """
         Extract a submatrix using row and col masks or a SubMatPlan.
 
