@@ -336,6 +336,29 @@ class SparsityPattern:
         return nnz_is_safe & n_row_is_safe & n_col_is_safe
 
     @classmethod
+    def _from_matmul_pattern(
+        cls,
+        shape: tuple[int, ...] | torch.Size,
+        idx_coo: Int64[Tensor, "2 c_nz"],
+        idx_crow: Integer[Tensor, " c_r+1"],
+        idx_col: Integer[Tensor, " c_nz"],
+    ) -> SparsityPattern:
+        """
+        Construct a `SparsityPattern` from matmul.
+
+        Construct a new `SparsityPattern` object representing the pattern of
+        a SpGEMM operation and inject the CSR index tensors into its cache.
+
+        This method is intended for with _spgemm_plan.get_fwd_plan().
+        """
+        pattern = cls(idx_coo, shape)
+
+        pattern.__dict__["idx_crow"] = idx_crow
+        pattern.__dict__["idx_col"] = idx_col
+
+        return pattern
+
+    @classmethod
     def pack_block_diag(
         cls, block_patterns: Sequence[SparsityPattern]
     ) -> SparsityPattern:
@@ -395,7 +418,7 @@ class SparsityPattern:
         config = BlockDiagConfig(batch_perm, nnzs, pattern_shapes)
 
         # Construct concatenated SparsityPattern.
-        pattern_concat = SparsityPattern(
+        pattern_concat = cls(
             idx_coo_concat[:, batch_perm],
             shape=pattern_shape_concat,
             block_diag_config=config,

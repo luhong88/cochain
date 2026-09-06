@@ -7,11 +7,12 @@ import numpy as np
 import numpy.typing as npt
 import scipy.sparse
 import torch
-from jaxtyping import Int64, Integer
+from jaxtyping import Float, Int64, Integer
 from torch import Tensor
 
 from ...utils.parsing import to_np
 from ...utils.stream import cupy_in_torch_stream
+from .pattern import SparsityPattern
 
 try:
     import cupy as cp
@@ -25,14 +26,30 @@ except ImportError:
 
 @dataclass
 class SpSpMMFwdPlan:
-    c_nnz: int
-    c_idx_coo: Int64[Tensor, " 2 c_nz"]
-    c_idx_crow: Integer[Tensor, " c_r+1"]
-    c_idx_col: Integer[Tensor, " c_nz"]
-    c_shape: torch.Size
+    c_pattern: Float[SparsityPattern, "c_r c_c"]
     c_idx: Int64[Tensor, " c_idx"]
     a_idx: Int64[Tensor, " a_idx"]
     b_idx: Int64[Tensor, " b_idx"]
+
+    @property
+    def c_nnz(self) -> int:
+        return self.c_pattern._nnz()
+
+    @property
+    def c_idx_coo(self) -> Int64[Tensor, " 2 c_nz"]:
+        return self.c_pattern.idx_coo
+
+    @property
+    def c_idx_crow(self) -> Integer[Tensor, " c_r+1"]:
+        return self.c_pattern.idx_crow
+
+    @property
+    def c_idx_col(self) -> Integer[Tensor, " c_nz"]:
+        return self.c_pattern.idx_col
+
+    @property
+    def c_shape(self) -> torch.Size:
+        return self.c_pattern.shape
 
     def to(self, *args, **kwargs) -> "SpSpMMFwdPlan":
         return SpSpMMFwdPlan(
@@ -365,7 +382,7 @@ def _collect_C_idx(
     b_idx_ccol: npt.NDArray,
     b_idx_row: npt.NDArray,
     b_csc_to_coo_map: npt.NDArray,
-) -> tuple[int, int, int, npt.NDArray, npt.NDArray, npt.NDArray]:
+) -> tuple[int, int, npt.NDArray, npt.NDArray, npt.NDArray]:
     """
     Collect the indices required to compute the A@B matmul.
 
@@ -390,7 +407,6 @@ def _collect_C_idx(
 
     if c_nnz == 0:
         return (
-            0,
             c_n_row,
             c_n_col,
             np.empty(0, dtype=idx_dtype),
@@ -463,7 +479,6 @@ def _collect_C_idx(
                 b_col_j_k_ptr += 1
 
     return (
-        c_nnz,
         c_n_row,
         c_n_col,
         c_idx[:buffer_ptr],
@@ -570,7 +585,7 @@ def get_fwd_plan(
     b_idx_row_np = to_np(b_idx_row)
     b_csc_to_coo_map_np = to_np(b_csc_to_coo_map)
 
-    c_nnz, c_n_row, c_n_col, c_idx_np, a_idx_np, b_idx_np = _collect_C_idx(
+    c_n_row, c_n_col, c_idx_np, a_idx_np, b_idx_np = _collect_C_idx(
         c_idx_coo_np,
         a_idx_crow_np,
         a_idx_col_np,
@@ -588,9 +603,11 @@ def get_fwd_plan(
 
     c_shape = torch.Size([c_n_row, c_n_col])
 
-    return SpSpMMFwdPlan(
-        c_nnz, c_idx_coo, c_idx_crow, c_idx_col, c_shape, c_idx, a_idx, b_idx
+    c_pattern = SparsityPattern._from_matmul_pattern(
+        c_shape, c_idx_coo, c_idx_crow, c_idx_col
     )
+
+    return SpSpMMFwdPlan(c_pattern, c_idx, a_idx, b_idx)
 
 
 def discover_matmul_pattern(

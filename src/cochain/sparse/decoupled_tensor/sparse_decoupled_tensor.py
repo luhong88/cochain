@@ -871,9 +871,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
                 # Perform sparse-sparse matmul with a plan using the custom
                 # matmul implementation with masked backward pass.
-                c_val, c_idx_coo, c_shape = sp_sp_mm(self.values, other.values, plan)
-                c_pattern = SparsityPattern(c_idx_coo, c_shape)
-                c_sdt = SparseDecoupledTensor(c_pattern, c_val)
+                c_val = sp_sp_mm(self.values, other.values, plan)
+                c_sdt = SparseDecoupledTensor(plan.fwd_plan.c_pattern, c_val)
 
                 return c_sdt
 
