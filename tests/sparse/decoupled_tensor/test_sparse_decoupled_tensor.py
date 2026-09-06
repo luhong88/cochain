@@ -912,6 +912,25 @@ def test_submatrix(any_a, device):
     torch.testing.assert_close(sub_sdt_3, sub_dense_2)
 
 
+def test_submatrix_plan(any_a, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(any_a).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    sub_sdt_1, sub_sdt_1_plan = a_sdt.submatrix(r_mask)
+    sub_sdt_2, sub_sdt_2_plan = a_sdt.submatrix(r_mask, r_mask)
+    sub_sdt_3, sub_sdt_3_plan = a_sdt.submatrix(r_mask, c_mask)
+
+    sub_ddt_1_repeat = a_sdt.submatrix(submat_plan=sub_sdt_1_plan).tensor
+    sub_ddt_2_repeat = a_sdt.submatrix(submat_plan=sub_sdt_2_plan).tensor
+    sub_ddt_3_repeat = a_sdt.submatrix(submat_plan=sub_sdt_3_plan).tensor
+
+    torch.testing.assert_close(sub_sdt_1.to_dense(), sub_ddt_1_repeat.to_dense())
+    torch.testing.assert_close(sub_sdt_2.to_dense(), sub_ddt_2_repeat.to_dense())
+    torch.testing.assert_close(sub_sdt_3.to_dense(), sub_ddt_3_repeat.to_dense())
+
+
 def test_submatrix_with_block_diag_config(a, device):
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     block_diag_sdt = SparseDecoupledTensor.pack_block_diag((a_sdt, a_sdt))

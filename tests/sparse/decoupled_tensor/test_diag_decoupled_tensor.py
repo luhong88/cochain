@@ -61,6 +61,25 @@ def test_submatrix(diag, device):
     torch.testing.assert_close(sub_ddt_3, sub_diag_dense_2)
 
 
+def test_submatrix_plan(diag, device):
+    ddt = DiagDecoupledTensor.from_tensor(diag).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    sub_ddt_1, sub_ddt_1_plan = ddt.submatrix(r_mask)
+    sub_ddt_2, sub_ddt_2_plan = ddt.submatrix(r_mask, r_mask)
+    sub_ddt_3, sub_ddt_3_plan = ddt.submatrix(r_mask, c_mask)
+
+    sub_ddt_1_repeat = ddt.submatrix(submat_plan=sub_ddt_1_plan).tensor
+    sub_ddt_2_repeat = ddt.submatrix(submat_plan=sub_ddt_2_plan).tensor
+    sub_ddt_3_repeat = ddt.submatrix(submat_plan=sub_ddt_3_plan).tensor
+
+    torch.testing.assert_close(sub_ddt_1.to_dense(), sub_ddt_1_repeat.to_dense())
+    torch.testing.assert_close(sub_ddt_2.to_dense(), sub_ddt_2_repeat.to_dense())
+    torch.testing.assert_close(sub_ddt_3.to_dense(), sub_ddt_3_repeat.to_dense())
+
+
 def test_submatrix_with_batch_dim(diag_batched, device):
     diag_dense = torch.diag_embed(diag_batched).to(device)
     ddt = DiagDecoupledTensor.from_tensor(diag_batched).to(device)
@@ -78,6 +97,25 @@ def test_submatrix_with_batch_dim(diag_batched, device):
     torch.testing.assert_close(sub_ddt_1, sub_diag_dense_1)
     torch.testing.assert_close(sub_ddt_2, sub_diag_dense_1)
     torch.testing.assert_close(sub_ddt_3, sub_diag_dense_2)
+
+
+def test_submatrix_plan_with_batch_dim(diag_batched, device):
+    ddt = DiagDecoupledTensor.from_tensor(diag_batched).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    sub_ddt_1, sub_ddt_1_plan = ddt.submatrix(r_mask)
+    sub_ddt_2, sub_ddt_2_plan = ddt.submatrix(r_mask, r_mask)
+    sub_ddt_3, sub_ddt_3_plan = ddt.submatrix(r_mask, c_mask)
+
+    sub_ddt_1_repeat = ddt.submatrix(submat_plan=sub_ddt_1_plan).tensor
+    sub_ddt_2_repeat = ddt.submatrix(submat_plan=sub_ddt_2_plan).tensor
+    sub_ddt_3_repeat = ddt.submatrix(submat_plan=sub_ddt_3_plan).tensor
+
+    torch.testing.assert_close(sub_ddt_1.to_dense(), sub_ddt_1_repeat.to_dense())
+    torch.testing.assert_close(sub_ddt_2.to_dense(), sub_ddt_2_repeat.to_dense())
+    torch.testing.assert_close(sub_ddt_3.to_dense(), sub_ddt_3_repeat.to_dense())
 
 
 def test_dense_conversion(diag, device):
