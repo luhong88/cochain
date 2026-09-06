@@ -324,6 +324,9 @@ class SparsityPattern:
         # Weakref cache for masked sparse-sparse matmul planning.
         object.__setattr__(self, "_spsp_matmul_plans", weakref.WeakKeyDictionary())
 
+        # Weak ref to transposed pattern; init to None.
+        object.__setattr__(self, "_pattern_trans", None)
+
     @cached_property
     def _is_int32_safe(self) -> bool:
         """Check whether the sparsity pattern can be represented with int32 dtype."""
@@ -791,31 +794,43 @@ class SparsityPattern:
 
         Note that this operation preserves the cache of existing sparse index
         tensors via cache injection. However, this operation will not preserve
-        the `BlockDiagConfig`, if there is any.
+        the `BlockDiagConfig`, if there is any. In addition, A `SparsityPattern`
+        and its transposed version cache a weakref link to each other, such that
+        repeated or chained transpositions do not duplicate `SparsityPattern`s.
         """
-        idx_coo_sorted = self.idx_coo[:, self.csc_to_coo_map]
+        if self._pattern_trans is None:
+            idx_coo_sorted = self.idx_coo[:, self.csc_to_coo_map]
 
-        idx_coo_trans = idx_coo_sorted.clone()
-        idx_coo_trans[-1] = idx_coo_sorted[-2]
-        idx_coo_trans[-2] = idx_coo_sorted[-1]
+            idx_coo_trans = idx_coo_sorted.clone()
+            idx_coo_trans[-1] = idx_coo_sorted[-2]
+            idx_coo_trans[-2] = idx_coo_sorted[-1]
 
-        shape_trans = self.shape[:-2] + (self.shape[-1], self.shape[-2])
+            shape_trans = self.shape[:-2] + (self.shape[-1], self.shape[-2])
 
-        # Note that the _coalesce_idx_map attribute is not preserved.
-        pattern_trans = SparsityPattern(idx_coo_trans, shape_trans)
+            # Note that the _coalesce_idx_map attribute is not preserved.
+            pattern_trans = SparsityPattern(idx_coo_trans, shape_trans)
 
-        attr_map = {
-            "idx_ccol": "idx_crow",
-            "idx_crow": "idx_ccol",
-            "idx_col": "idx_row_csc",
-            "idx_row_csc": "idx_col",
-        }
+            attr_map = {
+                "idx_ccol": "idx_crow",
+                "idx_crow": "idx_ccol",
+                "idx_col": "idx_row_csc",
+                "idx_row_csc": "idx_col",
+            }
 
-        for attr, attr_trans in attr_map.items():
-            if attr in self.__dict__:
-                pattern_trans.__dict__[attr_trans] = self.__dict__[attr]
+            for attr, attr_trans in attr_map.items():
+                if attr in self.__dict__:
+                    pattern_trans.__dict__[attr_trans] = self.__dict__[attr]
 
-        return pattern_trans
+            # Update self._pattern_trans weakref caching.
+            object.__setattr__(self, "_pattern_trans", weakref.ref(pattern_trans))
+            # Update the weakref caching of the transposed pattern so that
+            # double transposition points to self again.
+            object.__setattr__(pattern_trans, "_pattern_trans", weakref.ref(self))
+
+            return pattern_trans
+
+        else:
+            return self._pattern_trans()
 
     @property
     def dtype(self) -> torch.dtype:
