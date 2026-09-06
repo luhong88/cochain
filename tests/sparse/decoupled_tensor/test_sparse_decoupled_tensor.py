@@ -367,6 +367,18 @@ def test_transpose(any_a, device):
     torch.testing.assert_close(a_sdt_T, a_coo_T)
 
 
+def test_transpose_caching(any_a, device):
+    a_coo = any_a.to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
+
+    a_sdt_T_1 = a_sdt.T
+    a_sdt_T_2 = a_sdt.T
+    a_sdt_T_3 = a_sdt.T.T
+
+    assert a_sdt_T_1.pattern is a_sdt_T_2.pattern
+    assert a_sdt_T_3.pattern is a_sdt.pattern
+
+
 def test_requires_grad_is_false(any_a, device):
     a_coo = any_a.to(device)
     a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
