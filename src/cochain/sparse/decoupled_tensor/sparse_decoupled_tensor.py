@@ -17,6 +17,7 @@ from ._spgemm_plan import (
     get_bwd_plan_B,
     get_fwd_plan,
 )
+from ._submat_plan import SubmatPlan
 from .base_decoupled_tensor import (
     BaseDecoupledTensor,
     is_scalar_like,
@@ -431,10 +432,13 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         return SparseDecoupledTensor(pattern_concat, val_concat)
 
     def submatrix(
-        self, row_mask: Bool[Tensor, " r"], col_mask: Bool[Tensor, " c"] | None = None
-    ) -> SparseDecoupledTensor:
+        self,
+        row_mask: Bool[Tensor, " r"] | None = None,
+        col_mask: Bool[Tensor, " c"] | None = None,
+        submat_plan: SubmatPlan | None = None,
+    ) -> tuple[SparseDecoupledTensor, SubmatPlan]:
         """
-        Extract a submatrix using row and col masks.
+        Extract a submatrix using row and col masks or a SubmatPlan.
 
         Parameters
         ----------
@@ -444,11 +448,20 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
             A boolean mask marking the columns to be preserved for the submatrix.
             If `None`, then the column mask is assumed to be the same as the
             row mask.
+        submat_plan
+            A `SubmatPlan` object that caches the index operations required to
+            generate a submatrix. If a `submat_plan` is provided, the `row_mask`
+            and `col_mask` arguments are ignored.
 
         Returns
         -------
-        sdt
+        submat_sdt
             A `SparseDecoupledTensor` submatrix.
+        submat_plan
+            A `SubmatPlan` object that caches the index operations required to
+            generate the submatrix specified by the `row_mask` and `col_mask`.
+            If a `SubmatPlan` object was provided as the `submat_plan` argument,
+            then the same object is returned here.
 
         Notes
         -----
@@ -459,11 +472,33 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         resulting submatrices in the batch violate the equal nnz per batch element
         assumption.
         """
-        idx_coo_submat_mask, submat_pattern = self.pattern.submatrix(row_mask, col_mask)
+        if submat_plan is None:
+            assert row_mask is not None, (
+                "row_mask cannot be None if no submat_plan is provided."
+            )
 
-        submat_val = self.values[idx_coo_submat_mask]
+            idx_coo_submat_mask, submat_pattern = self.pattern.submatrix(
+                row_mask, col_mask
+            )
+            submat_val = self.values[idx_coo_submat_mask]
 
-        return SparseDecoupledTensor(submat_pattern, submat_val)
+            submat_sdt = SparseDecoupledTensor(submat_pattern, submat_val)
+            submat_plan = SubmatPlan(self.pattern, submat_pattern, idx_coo_submat_mask)
+
+            return submat_sdt, submat_plan
+
+        else:
+            check_pattern_equality(
+                self.pattern,
+                submat_plan.full_pattern,
+                "The self SparsityPattern does not match the full pattern of the plan.",
+            )
+
+            submat_sdt = SparseDecoupledTensor(
+                submat_plan.submat_pattern, self.values[submat_plan.idx_coo_submat_mask]
+            )
+
+            return submat_sdt, submat_plan
 
     def constrain(self, mask: Bool[Tensor, " r"]) -> SparseDecoupledTensor:
         """
