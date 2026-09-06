@@ -922,13 +922,17 @@ def test_submatrix_plan(any_a, device):
     sub_sdt_2, sub_sdt_2_plan = a_sdt.submatrix(r_mask, r_mask)
     sub_sdt_3, sub_sdt_3_plan = a_sdt.submatrix(r_mask, c_mask)
 
-    sub_ddt_1_repeat = a_sdt.submatrix(submat_plan=sub_sdt_1_plan).tensor
-    sub_ddt_2_repeat = a_sdt.submatrix(submat_plan=sub_sdt_2_plan).tensor
-    sub_ddt_3_repeat = a_sdt.submatrix(submat_plan=sub_sdt_3_plan).tensor
+    sub_sdt_1_repeat = a_sdt.submatrix(submat_plan=sub_sdt_1_plan).tensor
+    sub_sdt_2_repeat = a_sdt.submatrix(submat_plan=sub_sdt_2_plan).tensor
+    sub_sdt_3_repeat = a_sdt.submatrix(submat_plan=sub_sdt_3_plan).tensor
 
-    torch.testing.assert_close(sub_sdt_1.to_dense(), sub_ddt_1_repeat.to_dense())
-    torch.testing.assert_close(sub_sdt_2.to_dense(), sub_ddt_2_repeat.to_dense())
-    torch.testing.assert_close(sub_sdt_3.to_dense(), sub_ddt_3_repeat.to_dense())
+    torch.testing.assert_close(sub_sdt_1.to_dense(), sub_sdt_1_repeat.to_dense())
+    torch.testing.assert_close(sub_sdt_2.to_dense(), sub_sdt_2_repeat.to_dense())
+    torch.testing.assert_close(sub_sdt_3.to_dense(), sub_sdt_3_repeat.to_dense())
+
+    assert sub_sdt_1.pattern is sub_sdt_1_repeat.pattern
+    assert sub_sdt_2.pattern is sub_sdt_2_repeat.pattern
+    assert sub_sdt_3.pattern is sub_sdt_3_repeat.pattern
 
 
 def test_submatrix_with_block_diag_config(a, device):

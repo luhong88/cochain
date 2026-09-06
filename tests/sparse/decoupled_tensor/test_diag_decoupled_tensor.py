@@ -79,6 +79,8 @@ def test_submatrix_plan(diag, device):
     torch.testing.assert_close(sub_ddt_2.to_dense(), sub_ddt_2_repeat.to_dense())
     torch.testing.assert_close(sub_ddt_3.to_dense(), sub_ddt_3_repeat.to_dense())
 
+    assert sub_ddt_3_repeat.pattern is sub_ddt_3.pattern
+
 
 def test_submatrix_with_batch_dim(diag_batched, device):
     diag_dense = torch.diag_embed(diag_batched).to(device)
@@ -116,6 +118,8 @@ def test_submatrix_plan_with_batch_dim(diag_batched, device):
     torch.testing.assert_close(sub_ddt_1.to_dense(), sub_ddt_1_repeat.to_dense())
     torch.testing.assert_close(sub_ddt_2.to_dense(), sub_ddt_2_repeat.to_dense())
     torch.testing.assert_close(sub_ddt_3.to_dense(), sub_ddt_3_repeat.to_dense())
+
+    assert sub_ddt_3_repeat.pattern is sub_ddt_3.pattern
 
 
 def test_dense_conversion(diag, device):
