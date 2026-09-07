@@ -926,7 +926,8 @@ class SparsityPattern:
         )
 
         # Handle the cached index tensors. Note that we do not copy the weakref
-        # spsp matmul plan cache.
+        # spsp matmul plan cache; this is to prevent accidental recursive
+        # copying of matmul plans.
         cached_idx_tensors = [
             "csc_to_coo_map",
             "idx_ccol",

@@ -972,7 +972,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         See `SparsityPattern.to()` for information on how the index tensors
         behave under dtype/device conversion. Note that cached SpGEMM plans are
-        not copied if `to()` necesitates copying of the underlying `SparsityPattern`s.
+        not copied if `to()` necessitates copying of the underlying `SparsityPattern`s.
         """
         new_val = self.values.to(*args, **kwargs)
         new_pattern = self.pattern.to(*args, **kwargs)
