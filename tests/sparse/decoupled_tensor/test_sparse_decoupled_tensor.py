@@ -1,5 +1,4 @@
 import gc
-import weakref
 
 import pytest
 import torch
@@ -437,15 +436,33 @@ def test_transpose_cache_recreates_collected_pattern(any_a, device):
     expected = a_sdt.to_dense().transpose(a_sdt.n_batch_dim, a_sdt.n_batch_dim + 1)
 
     a_sdt_T = a_sdt.T
-    transposed_pattern_ref = weakref.ref(a_sdt_T.pattern)
     del a_sdt_T
     gc.collect()
-    assert transposed_pattern_ref() is None
 
     recreated = a_sdt.T
 
     assert recreated.T.pattern is a_sdt.pattern
     torch.testing.assert_close(recreated.to_dense(), expected)
+
+
+def test_temporary_transpose_reuses_spgemm_plan(a, b, device, monkeypatch):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    discovery_count = 0
+    discover_matmul_pattern = sdt_module.discover_matmul_pattern
+
+    def counted_discovery(*args, **kwargs):
+        nonlocal discovery_count
+        discovery_count += 1
+        return discover_matmul_pattern(*args, **kwargs)
+
+    monkeypatch.setattr(sdt_module, "discover_matmul_pattern", counted_discovery)
+
+    a_sdt.T @ b_sdt
+    a_sdt.T @ b_sdt
+
+    assert discovery_count == 1
 
 
 def test_requires_grad_is_false(any_a, device):
