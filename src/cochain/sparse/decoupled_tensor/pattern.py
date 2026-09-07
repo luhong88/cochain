@@ -925,7 +925,8 @@ class SparsityPattern:
             new_idx_coo, self.shape, new_block_diag_config, new_coalesce_idx_map
         )
 
-        # Handle the cached index tensors.
+        # Handle the cached index tensors. Note that we do not copy the weakref
+        # spsp matmul plan cache.
         cached_idx_tensors = [
             "csc_to_coo_map",
             "idx_ccol",
@@ -939,12 +940,6 @@ class SparsityPattern:
                 new_pattern.__dict__[attr] = self.__dict__[attr].to(
                     device=device, copy=copy_flag, non_blocking=non_blocking
                 )
-
-        # Handle the weakref spsp matmul plan cache.
-        for k, v in self._spsp_matmul_plans.items():
-            new_pattern._spsp_matmul_plans[k] = v.to(
-                device=device, copy=copy_flag, non_blocking=non_blocking
-            )
 
         return new_pattern
 

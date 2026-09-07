@@ -971,22 +971,8 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
         Perform dtype and/or device conversion.
 
         See `SparsityPattern.to()` for information on how the index tensors
-        behave under dtype/device conversion.
-
-        Note that cached SpGEMM plans copied during `to()` remain keyed by the
-        original right-operand patterns. Copying or transferring only the left
-        operand can preserve the cache hit, provided the operands remain
-        device-compatible. Copying or transferring the right operand creates a new
-        key and causes a cache miss for that operand pair. For example,
-        ```
-        a_sdt @ b_sdt
-
-        a2_sdt = a_sdt.to(copy=True)
-        b2_sdt = b_sdt.to(copy=True)
-
-        a2_sdt @ b_sdt # cache hit
-        a_sdt @ b2_sdt # cache miss
-        ```
+        behave under dtype/device conversion. Note that cached SpGEMM plans are
+        not copied if `to()` necesitates copying of the underlying `SparsityPattern`s.
         """
         new_val = self.values.to(*args, **kwargs)
         new_pattern = self.pattern.to(*args, **kwargs)
