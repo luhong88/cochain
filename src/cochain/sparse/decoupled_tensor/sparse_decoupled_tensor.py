@@ -456,13 +456,13 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
-        submat_sdt
-            A `SparseDecoupledTensor` submatrix.
-        submat_plan
-            A `SubmatPlan` object that caches the index operations required to
-            generate the submatrix specified by the `row_mask` and `col_mask`.
-            If a `SubmatPlan` object was provided as the `submat_plan` argument,
-            then the same object is returned here.
+        submat_result
+            A `SubmatResult` named tuple containing two attributes: `tensor` and
+            `plan`. `tensor` is the `SparseDecoupledTensor` submatrix. `plan` is
+            a `SubmatPlan` object that caches the index operations required to
+            generate the submatrix specified by the `row_mask` and `col_mask`. If
+            a `SubmatPlan` object was provided as the `submat_plan` argument, then
+            the same object is returned here.
 
         Notes
         -----

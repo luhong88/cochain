@@ -220,13 +220,13 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
 
         Returns
         -------
-        submat
-            The extracted submatrix. If the `row_mask` and `col_mask` are identical,
-            then the submatrix is still a `DiagDecoupledTensor`; otherwise the
-            submatrix is represented as a `SparseDecoupledTensor`.
-        submat_plan
-            A `SubmatPlan` object that caches the index operations required to
-            generate the submatrix specified by the `row_mask` and `col_mask`.
+        submat_result
+            A `SubmatResult` named tuple containing two attributes: `tensor` and
+            `plan`. `tensor` is the extracted submatrix. If the `row_mask` and
+            `col_mask` are identical, then the submatrix is still a `DiagDecoupledTensor`;
+            otherwise the submatrix is represented as a `SparseDecoupledTensor`.
+            `plan` is a `SubmatPlan` object that caches the index operations required
+            to generate the submatrix specified by the `row_mask` and `col_mask`.
             If a `SubmatPlan` object was provided as the `submat_plan` argument,
             then the same object is returned here.
 
