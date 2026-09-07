@@ -3,6 +3,7 @@ import gc
 import pytest
 import torch
 
+import cochain.sparse.decoupled_tensor.sparse_decoupled_tensor as sdt_module
 from cochain.sparse.decoupled_tensor import (
     DiagDecoupledTensor,
     SparseDecoupledTensor,
@@ -220,7 +221,7 @@ def test_spsp_matmul_caching_fwd_plan(a, b, device):
 
     assert len(a_sdt.pattern._spsp_matmul_plans) == 0
 
-    c_sdt = a_sdt @ b_sdt
+    a_sdt @ b_sdt
 
     assert len(a_sdt.pattern._spsp_matmul_plans) == 1
     assert b_sdt.pattern in a_sdt.pattern._spsp_matmul_plans
@@ -241,6 +242,53 @@ def test_spsp_matmul_caching_reuse_plan(a, b, device):
     c_sdt_2 = a_sdt @ b_sdt
     assert len(a_sdt.pattern._spsp_matmul_plans) == 1
     assert a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern] is plan_1
+    assert c_sdt_1.pattern is c_sdt_2.pattern
+
+
+def test_spsp_matmul_symbolic_discovery_once(a, b, device, monkeypatch):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    discovery_count = 0
+    discover_matmul_pattern = sdt_module.discover_matmul_pattern
+
+    def counted_discovery(*args, **kwargs):
+        nonlocal discovery_count
+        discovery_count += 1
+        return discover_matmul_pattern(*args, **kwargs)
+
+    monkeypatch.setattr(sdt_module, "discover_matmul_pattern", counted_discovery)
+
+    c_sdt_1 = a_sdt @ b_sdt
+    c_sdt_2 = a_sdt @ b_sdt
+
+    assert discovery_count == 1
+    assert c_sdt_1.pattern is c_sdt_2.pattern
+
+
+def test_chained_spsp_matmul_symbolic_discovery_once(a, b, device, monkeypatch):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+    b_sdt_T = b_sdt.T
+
+    discovery_count = 0
+    discover_matmul_pattern = sdt_module.discover_matmul_pattern
+
+    def counted_discovery(*args, **kwargs):
+        nonlocal discovery_count
+        discovery_count += 1
+        return discover_matmul_pattern(*args, **kwargs)
+
+    monkeypatch.setattr(sdt_module, "discover_matmul_pattern", counted_discovery)
+
+    c_sdt_1 = a_sdt @ b_sdt
+    d_sdt_1 = c_sdt_1 @ b_sdt_T
+    c_sdt_2 = a_sdt @ b_sdt
+    d_sdt_2 = c_sdt_2 @ b_sdt_T
+
+    assert discovery_count == 2
+    assert c_sdt_1.pattern is c_sdt_2.pattern
+    assert d_sdt_1.pattern is d_sdt_2.pattern
 
 
 def test_spsp_matmul_caching_bwd_plan(a, b, device):
@@ -261,12 +309,15 @@ def test_spsp_matmul_caching_bwd_plan(a, b, device):
 
     assert plan.bwd_plan_B is not None
 
+    assert c_sdt_1.pattern is c_sdt_2.pattern
+    assert c_sdt_1.pattern is c_sdt_3.pattern
+
 
 def test_spsp_matmul_caching_different_values(a, b, device):
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
 
-    c_dst_1 = a_sdt @ b_sdt
+    c_sdt_1 = a_sdt @ b_sdt
     plan = a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern]
 
     a_sdt_new_vals = 2.0 * a_sdt
@@ -276,6 +327,7 @@ def test_spsp_matmul_caching_different_values(a, b, device):
 
     assert len(a_sdt_new_vals.pattern._spsp_matmul_plans) == 1
     assert a_sdt_new_vals.pattern._spsp_matmul_plans[b_sdt_new_vals.pattern] is plan
+    assert c_sdt_1.pattern is c_sdt_2.pattern
 
 
 def test_spsp_matmul_caching_eviction(a, b, device):
@@ -367,6 +419,52 @@ def test_transpose(any_a, device):
     torch.testing.assert_close(a_sdt_T, a_coo_T)
 
 
+def test_transpose_caching(any_a, device):
+    a_coo = any_a.to(device)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
+
+    a_sdt_T_1 = a_sdt.T
+    a_sdt_T_2 = a_sdt.T
+    a_sdt_T_3 = a_sdt.T.T
+
+    assert a_sdt_T_1.pattern is a_sdt_T_2.pattern
+    assert a_sdt_T_3.pattern is a_sdt.pattern
+
+
+def test_transpose_cache_recreates_collected_pattern(any_a, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(any_a).to(device)
+    expected = a_sdt.to_dense().transpose(a_sdt.n_batch_dim, a_sdt.n_batch_dim + 1)
+
+    a_sdt_T = a_sdt.T
+    del a_sdt_T
+    gc.collect()
+
+    recreated = a_sdt.T
+
+    assert recreated.T.pattern is a_sdt.pattern
+    torch.testing.assert_close(recreated.to_dense(), expected)
+
+
+def test_temporary_transpose_reuses_spgemm_plan(a, b, device, monkeypatch):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    discovery_count = 0
+    discover_matmul_pattern = sdt_module.discover_matmul_pattern
+
+    def counted_discovery(*args, **kwargs):
+        nonlocal discovery_count
+        discovery_count += 1
+        return discover_matmul_pattern(*args, **kwargs)
+
+    monkeypatch.setattr(sdt_module, "discover_matmul_pattern", counted_discovery)
+
+    a_sdt.T @ b_sdt
+    a_sdt.T @ b_sdt
+
+    assert discovery_count == 1
+
+
 def test_requires_grad_is_false(any_a, device):
     a_coo = any_a.to(device)
     a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
@@ -413,11 +511,29 @@ def test_size(device):
 
 def test_to_float64(any_a, device):
     a_coo = any_a.to(device)
-    a_sdt = SparseDecoupledTensor.from_tensor(a_coo).to(torch.float64)
+    a_sdt = SparseDecoupledTensor.from_tensor(a_coo)
+    a_sdt_float64 = a_sdt.to(torch.float64)
 
-    assert a_sdt.values.dtype == torch.float64
+    assert a_sdt_float64.pattern is a_sdt.pattern
+    assert a_sdt_float64.values.dtype == torch.float64
     # The index tensors should not be affected by float dtype conversion.
-    assert a_sdt.pattern.dtype == torch.int64
+    assert a_sdt_float64.pattern.dtype == torch.int64
+
+
+def test_to_copy_after_spsp_matmul_cache_warmup(a, b, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
+    b_sdt = SparseDecoupledTensor.from_tensor(b).to(device)
+
+    expected = (a_sdt @ b_sdt).to_dense()
+    plan = a_sdt.pattern._spsp_matmul_plans[b_sdt.pattern]
+
+    a_sdt_copy = a_sdt.to(copy=True)
+    actual = (a_sdt_copy @ b_sdt).to_dense()
+
+    assert a_sdt_copy.pattern is not a_sdt.pattern
+    assert b_sdt.pattern in a_sdt_copy.pattern._spsp_matmul_plans
+    assert a_sdt_copy.pattern._spsp_matmul_plans[b_sdt.pattern] is not plan
+    torch.testing.assert_close(actual, expected)
 
 
 def test_to_device(any_a, device):
@@ -896,9 +1012,9 @@ def test_submatrix(any_a, device):
     r_mask = torch.tensor([True, False, True, True], device=device)
     c_mask = torch.tensor([False, True, True, False], device=device)
 
-    sub_sdt_1 = a_sdt.submatrix(r_mask).to_dense()
-    sub_sdt_2 = a_sdt.submatrix(r_mask, r_mask).to_dense()
-    sub_sdt_3 = a_sdt.submatrix(r_mask, c_mask).to_dense()
+    sub_sdt_1 = a_sdt.submatrix(r_mask).tensor.to_dense()
+    sub_sdt_2 = a_sdt.submatrix(r_mask, r_mask).tensor.to_dense()
+    sub_sdt_3 = a_sdt.submatrix(r_mask, c_mask).tensor.to_dense()
 
     if a_sdt.n_batch_dim == 0:
         sub_dense_1 = a_dense[r_mask][:, r_mask]
@@ -912,6 +1028,54 @@ def test_submatrix(any_a, device):
     torch.testing.assert_close(sub_sdt_3, sub_dense_2)
 
 
+def test_submatrix_plan(any_a, device):
+    a_sdt = SparseDecoupledTensor.from_tensor(any_a).to(device)
+
+    r_mask = torch.tensor([True, False, True, True], device=device)
+    c_mask = torch.tensor([False, True, True, False], device=device)
+
+    sub_sdt_1, sub_sdt_1_plan = a_sdt.submatrix(r_mask)
+    sub_sdt_2, sub_sdt_2_plan = a_sdt.submatrix(r_mask, r_mask)
+    sub_sdt_3, sub_sdt_3_plan = a_sdt.submatrix(r_mask, c_mask)
+
+    sub_sdt_1_repeat = a_sdt.submatrix(submat_plan=sub_sdt_1_plan).tensor
+    sub_sdt_2_repeat = a_sdt.submatrix(submat_plan=sub_sdt_2_plan).tensor
+    sub_sdt_3_repeat = a_sdt.submatrix(submat_plan=sub_sdt_3_plan).tensor
+
+    torch.testing.assert_close(sub_sdt_1.to_dense(), sub_sdt_1_repeat.to_dense())
+    torch.testing.assert_close(sub_sdt_2.to_dense(), sub_sdt_2_repeat.to_dense())
+    torch.testing.assert_close(sub_sdt_3.to_dense(), sub_sdt_3_repeat.to_dense())
+
+    assert sub_sdt_1.pattern is sub_sdt_1_repeat.pattern
+    assert sub_sdt_2.pattern is sub_sdt_2_repeat.pattern
+    assert sub_sdt_3.pattern is sub_sdt_3_repeat.pattern
+
+
+def test_submatrix_plan_gradient_matches_one_shot(a, device):
+    source = SparseDecoupledTensor.from_tensor(a).to(device)
+    one_shot_values = source.values.detach().clone().requires_grad_()
+    planned_values = source.values.detach().clone().requires_grad_()
+    one_shot_source = SparseDecoupledTensor(source.pattern, one_shot_values)
+    planned_source = SparseDecoupledTensor(source.pattern, planned_values)
+
+    row_mask = torch.tensor([True, False, True, True], device=device)
+    col_mask = torch.tensor([False, True, True, False], device=device)
+
+    one_shot = one_shot_source.submatrix(row_mask, col_mask).tensor
+    plan = planned_source.submatrix(row_mask, col_mask).plan
+    planned = planned_source.submatrix(submat_plan=plan).tensor
+
+    one_shot.values.square().sum().backward()
+    planned.values.square().sum().backward()
+
+    torch.testing.assert_close(planned.to_dense(), one_shot.to_dense())
+    torch.testing.assert_close(planned_values.grad, one_shot_values.grad)
+    torch.testing.assert_close(
+        planned_values.grad[~plan.submat_mask],
+        torch.zeros_like(planned_values.grad[~plan.submat_mask]),
+    )
+
+
 def test_submatrix_with_block_diag_config(a, device):
     a_sdt = SparseDecoupledTensor.from_tensor(a).to(device)
     block_diag_sdt = SparseDecoupledTensor.pack_block_diag((a_sdt, a_sdt))
@@ -923,9 +1087,11 @@ def test_submatrix_with_block_diag_config(a, device):
     r_mask = torch.cat((mask_1, mask_2))
     c_mask = torch.cat((mask_2, mask_3))
 
-    sub_block_1, sub_block_2 = block_diag_sdt.submatrix(r_mask).unpack_block_diag()
-    sub_block_1_true = a_sdt.submatrix(mask_1)
-    sub_block_2_true = a_sdt.submatrix(mask_2)
+    sub_block_1, sub_block_2 = block_diag_sdt.submatrix(
+        r_mask
+    ).tensor.unpack_block_diag()
+    sub_block_1_true = a_sdt.submatrix(mask_1).tensor
+    sub_block_2_true = a_sdt.submatrix(mask_2).tensor
 
     torch.testing.assert_close(sub_block_1.to_dense(), sub_block_1_true.to_dense())
     torch.testing.assert_close(sub_block_2.to_dense(), sub_block_2_true.to_dense())
@@ -933,9 +1099,9 @@ def test_submatrix_with_block_diag_config(a, device):
     # Test an edge case where one block is completely degenerate after masking.
     sub_block_1, sub_block_2 = block_diag_sdt.submatrix(
         r_mask, c_mask
-    ).unpack_block_diag()
-    sub_block_1_true = a_sdt.submatrix(mask_1, mask_2)
-    sub_block_2_true = a_sdt.submatrix(mask_2, mask_3)
+    ).tensor.unpack_block_diag()
+    sub_block_1_true = a_sdt.submatrix(mask_1, mask_2).tensor
+    sub_block_2_true = a_sdt.submatrix(mask_2, mask_3).tensor
 
     torch.testing.assert_close(sub_block_1.to_dense(), sub_block_1_true.to_dense())
     torch.testing.assert_close(sub_block_2.to_dense(), sub_block_2_true.to_dense())
@@ -950,7 +1116,7 @@ def test_batched_submatrix_equal_nnz_exception(device):
 
     r_mask = torch.tensor([True, False], device=device)
     with pytest.raises(ValueError):
-        a_sdt.submatrix(r_mask)
+        a_sdt.submatrix(r_mask).tensor
 
 
 def test_constrain(unbatched_a, device):

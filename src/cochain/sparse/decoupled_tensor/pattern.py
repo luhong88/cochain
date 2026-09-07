@@ -324,6 +324,10 @@ class SparsityPattern:
         # Weakref cache for masked sparse-sparse matmul planning.
         object.__setattr__(self, "_spsp_matmul_plans", weakref.WeakKeyDictionary())
 
+        # References for transposed patterns.
+        object.__setattr__(self, "_ref_to_canon_pattern", None)
+        object.__setattr__(self, "_ref_to_trans_pattern", None)
+
     @cached_property
     def _is_int32_safe(self) -> bool:
         """Check whether the sparsity pattern can be represented with int32 dtype."""
@@ -334,6 +338,29 @@ class SparsityPattern:
         n_col_is_safe = self.size(-1) < int32_max
 
         return nnz_is_safe & n_row_is_safe & n_col_is_safe
+
+    @classmethod
+    def _from_matmul_pattern(
+        cls,
+        shape: tuple[int, ...] | torch.Size,
+        idx_coo: Int64[Tensor, "2 c_nz"],
+        idx_crow: Integer[Tensor, " c_r+1"],
+        idx_col: Integer[Tensor, " c_nz"],
+    ) -> SparsityPattern:
+        """
+        Construct a `SparsityPattern` from matmul.
+
+        Construct a new `SparsityPattern` object representing the pattern of
+        a SpGEMM operation and inject the CSR index tensors into its cache.
+
+        This method is intended for with _spgemm_plan.get_fwd_plan().
+        """
+        pattern = cls(idx_coo, shape)
+
+        pattern.__dict__["idx_crow"] = idx_crow
+        pattern.__dict__["idx_col"] = idx_col
+
+        return pattern
 
     @classmethod
     def pack_block_diag(
@@ -395,7 +422,7 @@ class SparsityPattern:
         config = BlockDiagConfig(batch_perm, nnzs, pattern_shapes)
 
         # Construct concatenated SparsityPattern.
-        pattern_concat = SparsityPattern(
+        pattern_concat = cls(
             idx_coo_concat[:, batch_perm],
             shape=pattern_shape_concat,
             block_diag_config=config,
@@ -761,15 +788,7 @@ class SparsityPattern:
         """
         return 2
 
-    @property
-    def T(self) -> SparsityPattern:
-        """
-        The matrix transpose along the two sparse dimensions.
-
-        Note that this operation preserves the cache of existing sparse index
-        tensors via cache injection. However, this operation will not preserve
-        the `BlockDiagConfig`, if there is any.
-        """
+    def _get_transposed_pattern(self) -> SparsityPattern:
         idx_coo_sorted = self.idx_coo[:, self.csc_to_coo_map]
 
         idx_coo_trans = idx_coo_sorted.clone()
@@ -779,7 +798,7 @@ class SparsityPattern:
         shape_trans = self.shape[:-2] + (self.shape[-1], self.shape[-2])
 
         # Note that the _coalesce_idx_map attribute is not preserved.
-        pattern_trans = SparsityPattern(idx_coo_trans, shape_trans)
+        transposed_pattern = SparsityPattern(idx_coo_trans, shape_trans)
 
         attr_map = {
             "idx_ccol": "idx_crow",
@@ -790,9 +809,69 @@ class SparsityPattern:
 
         for attr, attr_trans in attr_map.items():
             if attr in self.__dict__:
-                pattern_trans.__dict__[attr_trans] = self.__dict__[attr]
+                transposed_pattern.__dict__[attr_trans] = self.__dict__[attr]
 
-        return pattern_trans
+        return transposed_pattern
+
+    @property
+    def T(self) -> SparsityPattern:
+        """
+        The matrix transpose along the two sparse dimensions.
+
+        Note that this operation preserves the cache of existing sparse index
+        tensors via cache injection. However, this operation will not preserve
+        the `BlockDiagConfig`, if there is any. In addition, A `SparsityPattern`
+        and its transposed version cache references to each other, such that
+        repeated or chained transpositions do not duplicate `SparsityPattern`s;
+        in particular, the original `SparsityPattern` holds a strong reference
+        to the transposed pattern (so that repeated use of temporarily generated
+        transposed patterns are not rediscovered), while the transposed
+        `SparsityPattern` holds a weak reference to the original.
+        """
+        # We distinguish between two `SparsityPattern`s: the original/canonical
+        # pattern, and a derived, transposed pattern.
+        #
+        # The canonical pattern holds
+        # - self._ref_to_canon_pattern = None
+        # - self._ref_to_trans_pattern: SparsityPattern | None (i.e., strong ref)
+        #
+        # The transposed pattern holds
+        # - self._ref_to_canon_pattern: weakref.ReferenceType[SparsityPattern]
+        # - self._ref_to_trans_pattern = None
+
+        self_is_canon = self._ref_to_canon_pattern is None
+
+        if self_is_canon:
+            if self._ref_to_trans_pattern is None:
+                trans_pattern = self._get_transposed_pattern()
+                # Update self to hold a strong ref to the transposed pattern.
+                object.__setattr__(self, "_ref_to_trans_pattern", trans_pattern)
+                # Update the transposed pattern to hold a weak ref to self.
+                object.__setattr__(
+                    trans_pattern, "_ref_to_canon_pattern", weakref.ref(self)
+                )
+                return trans_pattern
+            else:
+                return self._ref_to_trans_pattern
+
+        else:
+            canon_pattern = (
+                self._ref_to_canon_pattern()
+                if self._ref_to_canon_pattern is not None
+                else None
+            )
+
+            if canon_pattern is None:
+                canon_pattern = self._get_transposed_pattern()
+                # Update self to hold a weak ref to the canonical pattern.
+                object.__setattr__(
+                    self, "_ref_to_canon_pattern", weakref.ref(canon_pattern)
+                )
+                # Update the canonical pattern to hold a strong ref to self.
+                object.__setattr__(canon_pattern, "_ref_to_trans_pattern", self)
+                return canon_pattern
+            else:
+                return self._ref_to_canon_pattern()
 
     @property
     def dtype(self) -> torch.dtype:
@@ -819,6 +898,12 @@ class SparsityPattern:
             *args, **kwargs
         )
 
+        # If no device change occurs and copy=False, then return self, since
+        # the other to() arguments are irrelevant to pattern topology.
+        device_unchanged = (device is None) or (torch.device(device) == self.device)
+        if device_unchanged and not copy_flag:
+            return self
+
         new_idx_coo = self.idx_coo.to(
             device=device, copy=copy_flag, non_blocking=non_blocking
         )
@@ -840,7 +925,9 @@ class SparsityPattern:
             new_idx_coo, self.shape, new_block_diag_config, new_coalesce_idx_map
         )
 
-        # Handle the cached index tensors.
+        # Handle the cached index tensors. Note that we do not copy the weakref
+        # spsp matmul plan cache; this is to prevent accidental recursive
+        # copying of matmul plans.
         cached_idx_tensors = [
             "csc_to_coo_map",
             "idx_ccol",
@@ -854,12 +941,6 @@ class SparsityPattern:
                 new_pattern.__dict__[attr] = self.__dict__[attr].to(
                     device=device, copy=copy_flag, non_blocking=non_blocking
                 )
-
-        # Handle the weakref spsp matmul plan cache.
-        for k, v in self._spsp_matmul_plans.items():
-            new_pattern._spsp_matmul_plans[k] = v.to(
-                device=device, copy=copy_flag, non_blocking=non_blocking
-            )
 
         return new_pattern
 

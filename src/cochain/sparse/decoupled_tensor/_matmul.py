@@ -144,11 +144,7 @@ class FixedTopoSpSpMMAutogradFunction(torch.autograd.Function):
         a_val: Float[Tensor, " a_nz"],
         b_val: Float[Tensor, " b_nz"],
         plan: SpSpMMPlan,
-    ) -> tuple[
-        Float[Tensor, " c_nz"],
-        Integer[Tensor, "2 c_nz"],
-        torch.Size,
-    ]:
+    ) -> Float[Tensor, " c_nz"]:
         c_val = torch.zeros(plan.fwd_plan.c_nnz, dtype=a_val.dtype, device=a_val.device)
         c_val.scatter_add_(
             dim=0,
@@ -156,14 +152,11 @@ class FixedTopoSpSpMMAutogradFunction(torch.autograd.Function):
             src=a_val[plan.fwd_plan.a_idx] * b_val[plan.fwd_plan.b_idx],
         )
 
-        return c_val, plan.fwd_plan.c_idx_coo, plan.fwd_plan.c_shape
+        return c_val
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         a_val, b_val, plan = inputs
-        c_val, c_idx_coo, c_shape = output
-
-        ctx.mark_non_differentiable(c_idx_coo)
         ctx.save_for_backward(a_val, b_val)
 
         # It is okay to attach SpSpMMPlan to ctx since none of its index tensors
@@ -174,8 +167,6 @@ class FixedTopoSpSpMMAutogradFunction(torch.autograd.Function):
     def backward(
         ctx,
         dLdC_val: Float[Tensor, " c_nz"],
-        _1,
-        _2,
     ) -> tuple[Float[Tensor, " a_nz"] | None, Float[Tensor, " b_nz"] | None, None]:
         a_val, b_val = ctx.saved_tensors
         plan: SpSpMMPlan = ctx.plan
@@ -366,10 +357,7 @@ def sp_sp_mm(
     a_val: Float[Tensor, " a_nz"],
     b_val: Float[Tensor, " b_nz"],
     spsp_mm_plan: SpSpMMPlan,
-) -> tuple[
-    Integer[Tensor, " c_nz"],
-    Integer[Tensor, "2 c_nz"],
-]:
+) -> Float[Tensor, " c_nz"]:
     """Sparse-Sparse 2D matrix multiplication with fixed sparsity autograd."""
     return FixedTopoSpSpMMAutogradFunction.apply(a_val, b_val, spsp_mm_plan)
 

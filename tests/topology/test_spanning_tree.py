@@ -79,7 +79,7 @@ def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     # Test positive definiteness
     free_edge_mask = tree_mask | cotree_mask
     l1 = star_1(mesh) @ laplacian_1(mesh)
-    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
+    l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -93,7 +93,7 @@ def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device)
     tree_mask = compute_tree_mask(topo_laplacian_0=l0, canon_edges=mesh.edges)
 
     l1_down = star_1(mesh) @ laplacian_1_grad_div(mesh)
-    l1_fixed = l1_down.submatrix(tree_mask).to_dense()
+    l1_fixed = l1_down.submatrix(tree_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -107,7 +107,7 @@ def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
 
     l1_up = star_1(mesh) @ laplacian_1_curl_curl(mesh)
-    l1_fixed = l1_up.submatrix(cotree_mask).to_dense()
+    l1_fixed = l1_up.submatrix(cotree_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -133,7 +133,7 @@ def test_l1_positive_definite_absolute_bc(
     free_edge_mask = tree_mask | cotree_mask
 
     l1 = star_1(mesh) @ laplacian_1(mesh)
-    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
+    l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -150,7 +150,7 @@ def test_l1_down_positive_definite_absolute_bc(
 
     l1 = star_1(mesh) @ laplacian_1_grad_div(mesh)
     # Absolute BC does not require any further masking.
-    l1_fixed = l1.submatrix(tree_mask).to_dense()
+    l1_fixed = l1.submatrix(tree_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -167,7 +167,7 @@ def test_l1_up_positive_definite_absolute_bc(
 
     l1 = star_1(mesh) @ laplacian_1_curl_curl(mesh)
     # Absolute BC does not require any further masking.
-    l1_fixed = l1.submatrix(cotree_mask).to_dense()
+    l1_fixed = l1.submatrix(cotree_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -201,7 +201,7 @@ def test_l1_positive_definite_relative_bc(
     free_edge_mask = (~mesh.bd_edge_mask) & (tree_mask | cotree_mask)
 
     l1 = star_1(mesh) @ laplacian_1(mesh)
-    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
+    l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -223,7 +223,7 @@ def test_l1_down_positive_definite_relative_bc(
     free_edge_mask = (~mesh.bd_edge_mask) & tree_mask
 
     l1 = star_1(mesh) @ laplacian_1(mesh)
-    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
+    l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -246,7 +246,7 @@ def test_l1_up_positive_definite_relative_bc(
     free_edge_mask = (~mesh.bd_edge_mask) & cotree_mask
 
     l1 = star_1(mesh) @ laplacian_1(mesh)
-    l1_fixed = l1.submatrix(free_edge_mask).to_dense()
+    l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
     assert min_eig > 0.0
@@ -279,7 +279,7 @@ def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, 
         cotree_mask=cotree_mask,
     )
     free_edge_mask = (~mesh.bd_edge_mask) & (tree_mask | cotree_mask)
-    l1_fixed_topo = weak_l1.submatrix(free_edge_mask).to_dense()
+    l1_fixed_topo = weak_l1.submatrix(free_edge_mask).tensor.to_dense()
 
     # Next, perform the same decomposition but using the hodge star for edge weights
     s1 = star_1(mesh)
@@ -299,7 +299,7 @@ def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, 
         cotree_mask=cotree_mask,
     )
     free_edge_mask = (~mesh.bd_edge_mask) & (tree_mask | cotree_mask)
-    l1_fixed_geo = weak_l1.submatrix(free_edge_mask).to_dense()
+    l1_fixed_geo = weak_l1.submatrix(free_edge_mask).tensor.to_dense()
 
     topo_cond = torch.linalg.cond(l1_fixed_topo)
     geo_cond = torch.linalg.cond(l1_fixed_geo)

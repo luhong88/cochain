@@ -3,9 +3,11 @@ __all__ = [
     "DiagDecoupledTensor",
     "SparseDecoupledTensor",
     "SparsityPattern",
+    "SubmatPlan",
 ]
 
 from .base_decoupled_tensor import BaseDecoupledTensor
 from .diag_decoupled_tensor import DiagDecoupledTensor
 from .pattern import SparsityPattern
 from .sparse_decoupled_tensor import SparseDecoupledTensor
+from .submat_plan import SubmatPlan

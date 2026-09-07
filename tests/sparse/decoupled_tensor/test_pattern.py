@@ -1,3 +1,5 @@
+import gc
+import weakref
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -394,6 +396,24 @@ def test_transpose(sp_with_empty_row, sp_with_empty_col, device):
     torch.testing.assert_close(
         pattern_T.csc_to_coo_map, true_csc_to_coo_map_T.to(device)
     )
+
+
+def test_transpose_recreates_collected_canonical_pattern(sp_with_empty_row, device):
+    idx_coo, shape, *_ = sp_with_empty_row
+    pattern = SparsityPattern(idx_coo, shape).to(device)
+    pattern_T = pattern.T
+    expected_idx_coo = pattern.idx_coo.clone()
+    canonical_pattern_ref = weakref.ref(pattern)
+
+    del pattern
+    gc.collect()
+
+    assert canonical_pattern_ref() is None
+
+    recreated_pattern = pattern_T.T
+
+    torch.testing.assert_close(recreated_pattern.idx_coo, expected_idx_coo)
+    assert recreated_pattern.T is pattern_T
 
 
 def test_transpose_with_batch_dim(sp_with_batch_dim, sp_with_batch_dim_T, device):
