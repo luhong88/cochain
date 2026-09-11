@@ -14,7 +14,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ..sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
-from ..sparse.linalg.solvers._sparse_solver import InvSparseOperator
+from ..sparse.linalg.solvers import InvSparseOperator
 
 
 def _inv_mass_matmul(

@@ -12,7 +12,7 @@ from torch import Tensor
 
 from ....utils.parsing import to_col_major
 from ...decoupled_tensor import SparseDecoupledTensor, SparsityPattern
-from ._sparse_solver import (
+from .sparse_solver import (
     BaseSparseSolver,
     InvSparseOperator,
     SparseSolverAutogradFunction,
