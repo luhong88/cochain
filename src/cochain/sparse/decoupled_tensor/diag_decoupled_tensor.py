@@ -230,8 +230,8 @@ class DiagDecoupledTensor(BaseDecoupledTensor):
             If a `SubmatPlan` object was provided as the `submat_plan` argument,
             then the same object is returned here.
 
-        Note
-        ----
+        Notes
+        -----
         Unlike the `SparseDecoupledTensor.submatrix()` method, the current method
         does not validate the input `submat_plan`.
         """
