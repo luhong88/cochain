@@ -60,7 +60,7 @@ def _inv_mass_matmul(
         return torch.linalg.solve(mass.to_dense(), rhs.to_dense())
 
 
-@dataclass
+@dataclass(frozen=True)
 class MixedWeakLaplacianBlocks:
     r"""
     Construct the mixed formulation representation for a weak $k$-Laplacian or its down component.
@@ -164,7 +164,7 @@ class MixedWeakLaplacianBlocks:
                 "'cbd_k' and 'mass_kp1' must both be None or neither be None."
             )
 
-        self.down_only = null_cbd_k
+        object.__setattr__(self, "down_only", null_cbd_k)
 
     @property
     def dtype(self) -> torch.dtype:
@@ -209,7 +209,7 @@ class MixedWeakLaplacianBlocks:
         return self._block_10.T
 
     @cached_property
-    def _block_11(self) -> Float[SparseDecoupledTensor, " k_splx k_splx"]:
+    def _block_11(self) -> Float[SparseDecoupledTensor, " k_splx k_splx"] | None:
         if self.down_only:
             return None
         else:
@@ -322,6 +322,7 @@ class MixedWeakLaplacianBlocks:
 
         return lhs, rhs
 
+    # TODO: document singular metric issue
     def get_gep(
         self,
     ) -> tuple[
@@ -337,7 +338,7 @@ class MixedWeakLaplacianBlocks:
         -------
         mixed_k_laplacian : [km1_splx+k_splx, km1_splx+k_splx]
             The mixed formulation representation of $S_k$.
-        metric : [km1_splx+k_splx, *ch]
+        metric : [km1_splx+k_splx, km1_splx+k_splx]
             The mixed formulation representation of $M_k$.
         """
         return self._mixed_k_laplacian, self._get_metric(padded=True)
@@ -346,7 +347,7 @@ class MixedWeakLaplacianBlocks:
         self, x: Float[Tensor, " k_splx *ch"]
     ) -> tuple[
         Float[SparseDecoupledTensor, "km1_splx km1_splx"],
-        Float[SparseDecoupledTensor, " km1_splx *ch"],
+        Float[Tensor, " km1_splx *ch"],
     ]:
         r"""
         Generate the linear system required to solve for $y$.
@@ -375,7 +376,7 @@ class MixedWeakLaplacianBlocks:
         self, x: Float[Tensor, " k_splx *ch"], y: Float[Tensor, " km1_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
         r"""
-        Solve $S_k x = b$ for $x$ via its codifferential $y$.
+        Evaluate $b = S_k x$ from $x$ and its codifferential $y$.
 
         Parameters
         ----------
@@ -387,7 +388,7 @@ class MixedWeakLaplacianBlocks:
 
         Returns
         -------
-        b : [km1_splx, *ch]
+        b : [k_splx, *ch]
             The vector $b$ in $S_k x = b$.
         """
         if self.down_only:
