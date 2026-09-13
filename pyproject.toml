@@ -36,7 +36,8 @@ vis = [
 ]
 examples = [
     "pytetwild==0.1.1",
-    "pyvista[jupyter]>=0.45.0",
+    "pyvista[jupyter]>=0.48.0",
+    "pyacvd>=0.4.0",
 ]
 
 [dependency-groups]

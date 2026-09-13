@@ -47,5 +47,5 @@ def test_betti_via_morse(mesh, betti_true, request, device):
 
 
 def test_betti_smoke(two_tris_mesh, two_tets_mesh, device):
-    compute_betti_numbers(two_tris_mesh.to(device), manifold=True)
+    compute_betti_numbers(two_tris_mesh.to(device), orientable_manifold=True)
     compute_betti_numbers(two_tets_mesh.to(device))
