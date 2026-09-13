@@ -9,6 +9,7 @@ from torch import Tensor
 from cochain.complex import SimplicialMesh
 from cochain.metric.hodge_laplacians import (
     MixedWeakLaplacianBlocks,
+    codifferential,
     weak_down_laplacian,
     weak_up_laplacian,
 )
@@ -540,9 +541,8 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialMesh, device):
     m1 = tet_masses.mass_1(mesh)
 
     d0 = mesh.cbd[0]
-    d0_T = d0.T
 
-    codiff_1 = inv_m0 @ d0_T @ m1
+    codiff_1 = codifferential(cbd_km1=d0, mass_k=m1, inv_mass_km1=inv_m0)
 
     x0 = torch.randn(mesh.n_verts, dtype=mesh.dtype, device=mesh.device)
     x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
@@ -561,9 +561,8 @@ def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialMesh, device):
     m2 = tet_masses.mass_2(mesh).to_dense()
 
     d1 = mesh.cbd[1].to_dense()
-    d1_T = d1.T
 
-    codiff_2 = torch.linalg.solve(m1, d1_T @ m2)  # inv_m1 @ d1_T @ m2
+    codiff_2 = codifferential(cbd_km1=d1, mass_k=m2, mass_km1=m1)
 
     x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
     x2 = torch.randn(mesh.n_tris, dtype=mesh.dtype, device=mesh.device)

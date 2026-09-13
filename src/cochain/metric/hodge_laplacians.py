@@ -179,8 +179,7 @@ class MixedWeakLaplacianBlocks:
         """
         The shape of the weak k-Laplacian.
 
-        Note that this is different from the shape of the weak k-Laplacian in
-        the weak formulation.
+        Note that this is different from the shape of the mixed block system.
         """
         return self.mass_k.shape
 
@@ -188,8 +187,7 @@ class MixedWeakLaplacianBlocks:
         """
         Get the size of the weak k-Laplacian.
 
-        Note that this is different from the size of the weak k-Laplacian in
-        the weak formulation.
+        Note that this is different from the size of the mixed block system.
         """
         if dim is None:
             return self.shape
