@@ -1,7 +1,5 @@
 __all__ = ["detect_mesh_boundaries"]
 
-from dataclasses import dataclass
-
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
@@ -15,6 +13,8 @@ def detect_mesh_boundaries(
         Float[SparseDecoupledTensor, "tri edge"],
         Float[SparseDecoupledTensor, "tet tri"],
     ],
+    *,
+    bd_mask_km1: Bool[Tensor, " km1_splx"] | None = None,
 ) -> tuple[
     Bool[Tensor, " vert"],
     Bool[Tensor, " edge"],
@@ -29,17 +29,24 @@ def detect_mesh_boundaries(
     cbd
         A tuple containing the 0-, 1-, and 2-coboundary operators. For a tri mesh,
         the 2-coboundary operator is an empty SparseDecoupledTensor of shape (0, tri).
+    bd_mask_km1
+        An optional boolean mask that marks a subset of the $(k-1)$-dimensional
+        boundary simplices, where $k$ is the dimension of the mesh. If provided,
+        the function returns a tuple of boolean masks that mark boundary simplices
+        that are restricted to this mask. Note that this function does not check
+        whether `bd_mask_km1` (incorrectly) contains interior $(k-1)$-dimensional
+        simplices.
 
     Returns
     -------
-    vert_bd_mask : [vert,]
+    bd_vert_mask : [vert,]
         A boolean mask for the mesh verts where `True` marks the boundary verts.
-    edge_bd_mask : [vert,]
+    bd_edge_mask : [edge,]
         A boolean mask for the mesh edges where `True` marks the boundary edges.
-    tri_bd_mask : [vert,]
+    bd_tri_mask : [tri,]
         A boolean mask for the mesh tris where `True` marks the boundary tris.
         For a tri mesh, this mask contains `False` only.
-    tet_bd_mask : [vert,]
+    bd_tet_mask : [tet,]
         A boolean mask for the mesh tets where `True` marks the boundary tets.
         For a tri mesh, this is an empty Tensor; for a tet mesh, this mask contains
         `False` only.
@@ -51,7 +58,7 @@ def detect_mesh_boundaries(
     """
     cbd_ops = [cbd[dim] for dim in [2, 1, 0]]
 
-    # The top-level simplies by definition cannot be boundaries; populate the
+    # The top-level simplices by definition cannot be boundaries; populate the
     # tet boundary mask with False.
     bd_masks = [
         torch.zeros(
@@ -75,15 +82,21 @@ def detect_mesh_boundaries(
             # The first non-empty cbd encodes the relation between the top-level
             # simplices and their codim 1 faces.
             if is_top_level:
-                # A face of a top-level simplex is on the boundary if it is the
-                # face of exactly one top-level simplex. This can be checked by
-                # summing over the rows of the absolute values of the coboundary
-                # operator, which counts the number of cofaces.
-                face_relation_count = cbd.to_sparse_coo().abs().sum(dim=0).to_dense()
-                face_is_boundary = torch.isclose(
-                    face_relation_count, torch.ones_like(face_relation_count)
-                )
-                bd_masks.append(face_is_boundary)
+                if bd_mask_km1 is None:
+                    # A face of a top-level simplex is on the boundary if it is the
+                    # face of exactly one top-level simplex. This can be checked by
+                    # summing over the rows of the absolute values of the coboundary
+                    # operator, which counts the number of cofaces.
+                    face_relation_count = (
+                        cbd.to_sparse_coo().abs().sum(dim=0).to_dense()
+                    )
+                    face_is_boundary = torch.isclose(
+                        face_relation_count, torch.ones_like(face_relation_count)
+                    )
+                    bd_masks.append(face_is_boundary)
+                else:
+                    bd_masks.append(bd_mask_km1.to(dtype=torch.bool, device=cbd.device))
+
                 is_top_level = False
 
             else:
@@ -102,8 +115,4 @@ def detect_mesh_boundaries(
 
     bd_masks.reverse()
 
-    return bd_masks
-
-
-@dataclass(frozen=True)
-class BoundarySelection:
+    return tuple(bd_masks)
