@@ -1,5 +1,7 @@
 __all__ = ["detect_mesh_boundaries"]
 
+from dataclasses import dataclass
+
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
@@ -60,11 +62,11 @@ def detect_mesh_boundaries(
     ]
 
     is_top_level = True
+    # Go through the coboundary operators in reverse order.
     for cbd in cbd_ops:
+        # This branch is only active for the 2-coboundary operator of a tri mesh.
         if cbd._nnz() == 0:
-            # Only the 2-coboundary operator can be zero among tri and tet meshes.
-            # If the 2-coboundary operator is empty, then there are no tets in
-            # the mesh and the tris are top-level and cannot be boundaries.
+            # On a tri mesh, the tris are top-level and cannot be boundaries.
             n_faces = cbd.size(-1)
             face_is_boundary = torch.zeros(n_faces, dtype=torch.bool, device=cbd.device)
             bd_masks.append(face_is_boundary)
@@ -86,11 +88,11 @@ def detect_mesh_boundaries(
 
             else:
                 # If a simplex is on the boundary, then all of its faces are also
-                # boundary simplices. The matrix-vector multiplication effectively
+                # boundary simplices. The vector-matrix multiplication effectively
                 # counts, for each k-simplex, how many boundary (k+1)-simplices
                 # it shares a face relation with.
-                boundary_face_relation_count = cbd.T.abs() @ bd_masks[-1].to(
-                    dtype=cbd.dtype
+                boundary_face_relation_count = (
+                    bd_masks[-1].to(dtype=cbd.dtype) @ cbd.abs()
                 )
                 face_is_boundary = ~torch.isclose(
                     boundary_face_relation_count,
@@ -101,3 +103,7 @@ def detect_mesh_boundaries(
     bd_masks.reverse()
 
     return bd_masks
+
+
+@dataclass(frozen=True)
+class BoundarySelection:
