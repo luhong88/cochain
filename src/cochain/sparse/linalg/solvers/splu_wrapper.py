@@ -15,7 +15,7 @@ from ....utils.parsing import to_np
 from ....utils.stream import cupy_in_torch_stream
 from ...decoupled_tensor import SparseDecoupledTensor
 from ...decoupled_tensor._conversion import sdt_to_cupy_csc, sdt_to_scipy_csc
-from ._sparse_solver import (
+from .sparse_solver import (
     BaseSparseSolver,
     InvSparseOperator,
     SparseSolverAutogradFunction,

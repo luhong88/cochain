@@ -10,7 +10,6 @@ from torch import Tensor
 from ...complex import SimplicialMesh
 from ...sparse.decoupled_tensor import DiagDecoupledTensor
 from ...utils.faces import enumerate_local_faces
-from ...utils.search import splx_search
 from ._tri_geometry import compute_tri_areas
 from .tri_stiffness import compute_cotan_weights
 

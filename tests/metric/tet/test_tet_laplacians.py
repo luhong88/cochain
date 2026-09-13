@@ -1,26 +1,214 @@
 from functools import partial
+from typing import Any, Literal
 
 import pytest
 import torch
+from jaxtyping import Float
 from torch import Tensor
 
 from cochain.complex import SimplicialMesh
-from cochain.metric.tet import tet_hodge_stars, tet_laplacians, tet_masses
-from cochain.metric.tet.tet_laplacians import MixedWeakLaplacianBlocks
+from cochain.metric.hodge_laplacians import (
+    MixedWeakLaplacianBlocks,
+    codifferential,
+    weak_down_laplacian,
+    weak_up_laplacian,
+)
+from cochain.metric.tet import tet_hodge_stars, tet_masses
+from cochain.metric.tet.tet_stiffness import stiffness_matrix as tet_stiffness_matrix
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.sparse.linalg.solvers import SuperLU
+
+
+def _weak_laplacian_0(
+    tet_mesh: SimplicialMesh,
+    method: Literal["cotan", "consistent"] = "cotan",
+) -> Float[SparseDecoupledTensor, "vert vert"]:
+    """Weak 0-Laplacian / stiffness matrix for a tet mesh."""
+    match method:
+        case "cotan":
+            return tet_stiffness_matrix(tet_mesh)
+        case "consistent":
+            return weak_up_laplacian(tet_mesh.cbd[0], tet_masses.mass_1(tet_mesh))
+        case _:
+            raise ValueError(f"Unknown method '{method}'.")
+
+
+def _weak_laplacian_1_grad_div(
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor | Tensor, "edge edge"]:
+    """Grad-div component of the weak 1-Laplacian for a tet mesh."""
+    return weak_down_laplacian(
+        cbd_km1=tet_mesh.cbd[0],
+        mass_k=tet_masses.mass_1(tet_mesh),
+        inv_mass_km1=tet_hodge_stars.star_0(tet_mesh).inv,
+    )
+
+
+def _weak_laplacian_1_curl_curl(
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
+    """Curl-curl component of the weak 1-Laplacian for a tet mesh."""
+    return weak_up_laplacian(tet_mesh.cbd[1], tet_masses.mass_2(tet_mesh))
+
+
+def _weak_laplacian_1(
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor | Tensor, "edge edge"]:
+    """Weak hybrid 1-Laplacian for a tet mesh."""
+    return SparseDecoupledTensor.assemble(
+        _weak_laplacian_1_grad_div(tet_mesh),
+        _weak_laplacian_1_curl_curl(tet_mesh),
+    )
+
+
+def _weak_laplacian_2_curl_curl(
+    tet_mesh: SimplicialMesh,
+    method: Literal["dense", "inv_star", "solver", "mixed"] = "dense",
+    *,
+    solver_kwargs: dict[str, Any] | None = None,
+) -> (
+    Float[Tensor, "tri tri"]
+    | Float[SparseDecoupledTensor, "tri tri"]
+    | MixedWeakLaplacianBlocks
+):
+    """Curl-curl component of the weak 2-Laplacian for a tet mesh."""
+    d1 = tet_mesh.cbd[1]
+    m1 = tet_masses.mass_1(tet_mesh)
+    m2 = tet_masses.mass_2(tet_mesh)
+
+    match method:
+        case "dense":
+            return weak_down_laplacian(d1, m2, mass_km1=m1)
+        case "inv_star":
+            return weak_down_laplacian(
+                d1, m2, inv_mass_km1=tet_hodge_stars.star_1(tet_mesh).inv
+            )
+        case "solver":
+            return weak_down_laplacian(
+                d1,
+                m2,
+                mass_km1=SuperLU(m1, backend="scipy"),
+                solver_kwargs=solver_kwargs,
+            )
+        case "mixed":
+            return MixedWeakLaplacianBlocks(
+                cbd_km1=d1,
+                cbd_k=None,
+                mass_km1=m1,
+                mass_k=m2,
+                mass_kp1=None,
+            )
+        case _:
+            raise ValueError(f"Unknown method '{method}'.")
+
+
+def _weak_laplacian_2_grad_div(
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "tri tri"]:
+    """Grad-div component of the weak 2-Laplacian for a tet mesh."""
+    return weak_up_laplacian(tet_mesh.cbd[2], tet_masses.mass_3(tet_mesh))
+
+
+def _weak_laplacian_2(
+    tet_mesh: SimplicialMesh,
+    method: Literal["dense", "inv_star", "solver", "mixed"] = "dense",
+    *,
+    solver_kwargs: dict[str, Any] | None = None,
+) -> (
+    Float[Tensor, "tri tri"]
+    | Float[SparseDecoupledTensor, "tri tri"]
+    | MixedWeakLaplacianBlocks
+):
+    """Weak 2-Laplacian for a tet mesh."""
+    match method:
+        case "dense":
+            curl_curl = _weak_laplacian_2_curl_curl(tet_mesh, "dense")
+            grad_div = _weak_laplacian_2_grad_div(tet_mesh).to_dense()
+            return curl_curl + grad_div
+
+        case "inv_star":
+            curl_curl = _weak_laplacian_2_curl_curl(tet_mesh, "inv_star")
+            grad_div = _weak_laplacian_2_grad_div(tet_mesh)
+            return SparseDecoupledTensor.assemble(grad_div, curl_curl)
+
+        case "solver":
+            curl_curl = _weak_laplacian_2_curl_curl(
+                tet_mesh, "solver", solver_kwargs=solver_kwargs
+            )
+            grad_div = _weak_laplacian_2_grad_div(tet_mesh).to_dense()
+            return curl_curl + grad_div
+
+        case "mixed":
+            return MixedWeakLaplacianBlocks(
+                cbd_km1=tet_mesh.cbd[1],
+                cbd_k=tet_mesh.cbd[2],
+                mass_km1=tet_masses.mass_1(tet_mesh),
+                mass_k=tet_masses.mass_2(tet_mesh),
+                mass_kp1=tet_masses.mass_3(tet_mesh),
+            )
+
+        case _:
+            raise ValueError(f"Unknown method '{method}'.")
+
+
+def _weak_laplacian_3(
+    tet_mesh: SimplicialMesh,
+    method: Literal["dense", "inv_star", "solver", "mixed"] = "dense",
+    *,
+    solver_kwargs: dict[str, Any] | None = None,
+) -> (
+    Float[Tensor, "tet tet"]
+    | Float[SparseDecoupledTensor, "tet tet"]
+    | MixedWeakLaplacianBlocks
+):
+    """Weak 3-Laplacian for a tet mesh."""
+    d2 = tet_mesh.cbd[2]
+    m2 = tet_masses.mass_2(tet_mesh)
+    m3 = tet_masses.mass_3(tet_mesh)
+
+    match method:
+        case "dense":
+            return weak_down_laplacian(d2, m3, mass_km1=m2)
+
+        case "inv_star":
+            inv_m2 = tet_hodge_stars.star_2(tet_mesh).inv
+            return weak_down_laplacian(d2, m3, inv_mass_km1=inv_m2)
+
+        case "solver":
+            from cochain.sparse.linalg.solvers import SuperLU
+
+            return weak_down_laplacian(
+                d2,
+                m3,
+                mass_km1=SuperLU(m2, backend="scipy"),
+                solver_kwargs=solver_kwargs,
+            )
+
+        case "mixed":
+            return MixedWeakLaplacianBlocks(
+                cbd_km1=d2,
+                cbd_k=None,
+                mass_km1=m2,
+                mass_k=m3,
+                mass_kp1=None,
+            )
+
+        case _:
+            raise ValueError(f"Unknown method '{method}'.")
 
 
 @pytest.mark.parametrize(
     "weak_laplacian, betti",
     [
-        (partial(tet_laplacians.weak_laplacian_0, method="cotan"), 1),
-        (partial(tet_laplacians.weak_laplacian_0, method="consistent"), 1),
-        (tet_laplacians.weak_laplacian_1, 0),
-        (partial(tet_laplacians.weak_laplacian_2, method="dense"), 0),
-        (partial(tet_laplacians.weak_laplacian_2, method="inv_star"), 0),
-        (partial(tet_laplacians.weak_laplacian_3, method="dense"), 0),
-        (partial(tet_laplacians.weak_laplacian_3, method="inv_star"), 0),
+        (partial(_weak_laplacian_0, method="cotan"), 1),
+        (partial(_weak_laplacian_0, method="consistent"), 1),
+        (_weak_laplacian_1, 0),
+        (partial(_weak_laplacian_2, method="dense"), 0),
+        (partial(_weak_laplacian_2, method="inv_star"), 0),
+        (partial(_weak_laplacian_2, method="solver"), 0),
+        (partial(_weak_laplacian_3, method="dense"), 0),
+        (partial(_weak_laplacian_3, method="inv_star"), 0),
+        (partial(_weak_laplacian_3, method="solver"), 0),
     ],
 )
 def test_sphere_homology_group_dims(
@@ -37,13 +225,15 @@ def test_sphere_homology_group_dims(
 @pytest.mark.parametrize(
     "weak_laplacian, betti",
     [
-        (partial(tet_laplacians.weak_laplacian_0, method="cotan"), 1),
-        (partial(tet_laplacians.weak_laplacian_0, method="consistent"), 1),
-        (tet_laplacians.weak_laplacian_1, 1),
-        (partial(tet_laplacians.weak_laplacian_2, method="dense"), 0),
-        (partial(tet_laplacians.weak_laplacian_2, method="inv_star"), 0),
-        (partial(tet_laplacians.weak_laplacian_3, method="dense"), 0),
-        (partial(tet_laplacians.weak_laplacian_3, method="inv_star"), 0),
+        (partial(_weak_laplacian_0, method="cotan"), 1),
+        (partial(_weak_laplacian_0, method="consistent"), 1),
+        (_weak_laplacian_1, 1),
+        (partial(_weak_laplacian_2, method="dense"), 0),
+        (partial(_weak_laplacian_2, method="inv_star"), 0),
+        (partial(_weak_laplacian_2, method="solver"), 0),
+        (partial(_weak_laplacian_3, method="dense"), 0),
+        (partial(_weak_laplacian_3, method="inv_star"), 0),
+        (partial(_weak_laplacian_3, method="solver"), 0),
     ],
 )
 def test_torus_homology_group_dims(
@@ -60,13 +250,15 @@ def test_torus_homology_group_dims(
 @pytest.mark.parametrize(
     "weak_laplacian, betti",
     [
-        (partial(tet_laplacians.weak_laplacian_0, method="cotan"), 1),
-        (partial(tet_laplacians.weak_laplacian_0, method="consistent"), 1),
-        (tet_laplacians.weak_laplacian_1, 0),
-        (partial(tet_laplacians.weak_laplacian_2, method="dense"), 1),
-        (partial(tet_laplacians.weak_laplacian_2, method="inv_star"), 1),
-        (partial(tet_laplacians.weak_laplacian_3, method="dense"), 0),
-        (partial(tet_laplacians.weak_laplacian_3, method="inv_star"), 0),
+        (partial(_weak_laplacian_0, method="cotan"), 1),
+        (partial(_weak_laplacian_0, method="consistent"), 1),
+        (_weak_laplacian_1, 0),
+        (partial(_weak_laplacian_2, method="dense"), 1),
+        (partial(_weak_laplacian_2, method="inv_star"), 1),
+        (partial(_weak_laplacian_2, method="solver"), 1),
+        (partial(_weak_laplacian_3, method="dense"), 0),
+        (partial(_weak_laplacian_3, method="inv_star"), 0),
+        (partial(_weak_laplacian_3, method="solver"), 0),
     ],
 )
 def test_spherical_shell_homology_group_dims(
@@ -89,10 +281,8 @@ def test_laplacian_0_equivalence(two_tets_mesh: SimplicialMesh, device):
     """
     mesh = two_tets_mesh.to(device)
 
-    l0_cotan = tet_laplacians.weak_laplacian_0(mesh, method="cotan").to_dense()
-    l0_consistent = tet_laplacians.weak_laplacian_0(
-        mesh, method="consistent"
-    ).to_dense()
+    l0_cotan = _weak_laplacian_0(mesh, method="cotan").to_dense()
+    l0_consistent = _weak_laplacian_0(mesh, method="consistent").to_dense()
 
     torch.testing.assert_close(l0_cotan, l0_consistent)
 
@@ -100,13 +290,15 @@ def test_laplacian_0_equivalence(two_tets_mesh: SimplicialMesh, device):
 @pytest.mark.parametrize(
     "weak_laplacian",
     [
-        partial(tet_laplacians.weak_laplacian_0, method="cotan"),
-        partial(tet_laplacians.weak_laplacian_0, method="consistent"),
-        tet_laplacians.weak_laplacian_1,
-        partial(tet_laplacians.weak_laplacian_2, method="dense"),
-        partial(tet_laplacians.weak_laplacian_2, method="inv_star"),
-        partial(tet_laplacians.weak_laplacian_3, method="dense"),
-        partial(tet_laplacians.weak_laplacian_3, method="inv_star"),
+        partial(_weak_laplacian_0, method="cotan"),
+        partial(_weak_laplacian_0, method="consistent"),
+        _weak_laplacian_1,
+        partial(_weak_laplacian_2, method="dense"),
+        partial(_weak_laplacian_2, method="inv_star"),
+        partial(_weak_laplacian_2, method="solver"),
+        partial(_weak_laplacian_3, method="dense"),
+        partial(_weak_laplacian_3, method="inv_star"),
+        partial(_weak_laplacian_3, method="solver"),
     ],
 )
 def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialMesh, device):
@@ -124,13 +316,15 @@ def test_laplacian_symmetry(weak_laplacian, two_tets_mesh: SimplicialMesh, devic
 @pytest.mark.parametrize(
     "weak_laplacian",
     [
-        partial(tet_laplacians.weak_laplacian_0, method="cotan"),
-        partial(tet_laplacians.weak_laplacian_0, method="consistent"),
-        tet_laplacians.weak_laplacian_1,
-        partial(tet_laplacians.weak_laplacian_2, method="dense"),
-        partial(tet_laplacians.weak_laplacian_2, method="inv_star"),
-        partial(tet_laplacians.weak_laplacian_3, method="dense"),
-        partial(tet_laplacians.weak_laplacian_3, method="inv_star"),
+        partial(_weak_laplacian_0, method="cotan"),
+        partial(_weak_laplacian_0, method="consistent"),
+        _weak_laplacian_1,
+        partial(_weak_laplacian_2, method="dense"),
+        partial(_weak_laplacian_2, method="inv_star"),
+        partial(_weak_laplacian_2, method="solver"),
+        partial(_weak_laplacian_3, method="dense"),
+        partial(_weak_laplacian_3, method="inv_star"),
+        partial(_weak_laplacian_3, method="solver"),
     ],
 )
 def test_laplacian_PSD(weak_laplacian, two_tets_mesh: SimplicialMesh, device):
@@ -146,8 +340,8 @@ def test_laplacian_PSD(weak_laplacian, two_tets_mesh: SimplicialMesh, device):
 @pytest.mark.parametrize(
     "weak_laplacian",
     [
-        partial(tet_laplacians.weak_laplacian_0, method="cotan"),
-        partial(tet_laplacians.weak_laplacian_0, method="consistent"),
+        partial(_weak_laplacian_0, method="cotan"),
+        partial(_weak_laplacian_0, method="consistent"),
     ],
 )
 def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialMesh, device):
@@ -162,9 +356,9 @@ def test_laplacian_0_kernel(weak_laplacian, two_tets_mesh: SimplicialMesh, devic
 @pytest.mark.parametrize(
     "weak_laplacian",
     [
-        tet_laplacians.weak_laplacian_2_curl_curl,
-        tet_laplacians.weak_laplacian_2,
-        tet_laplacians.weak_laplacian_3,
+        _weak_laplacian_2_curl_curl,
+        _weak_laplacian_2,
+        _weak_laplacian_3,
     ],
 )
 def test_mixed_formulation_forward_pass(
@@ -191,8 +385,8 @@ def test_mixed_formulation_forward_pass(
 @pytest.mark.parametrize(
     "weak_laplacian",
     [
-        tet_laplacians.weak_laplacian_2,
-        tet_laplacians.weak_laplacian_3,
+        _weak_laplacian_2,
+        _weak_laplacian_3,
     ],
 )
 def test_mixed_formulation_linear_solve(
@@ -219,8 +413,8 @@ def test_mixed_formulation_linear_solve(
 @pytest.mark.parametrize(
     "weak_laplacian",
     [
-        tet_laplacians.weak_laplacian_2,
-        tet_laplacians.weak_laplacian_3,
+        _weak_laplacian_2,
+        _weak_laplacian_3,
     ],
 )
 def test_mixed_formulation_gep_smoke(
@@ -235,13 +429,13 @@ def test_mixed_formulation_gep_smoke(
     "down, up, mass",
     [
         (
-            tet_laplacians.weak_laplacian_1_grad_div,
-            tet_laplacians.weak_laplacian_1_curl_curl,
+            _weak_laplacian_1_grad_div,
+            _weak_laplacian_1_curl_curl,
             tet_masses.mass_1,
         ),
         (
-            partial(tet_laplacians.weak_laplacian_2_curl_curl, method="dense"),
-            tet_laplacians.weak_laplacian_2_grad_div,
+            partial(_weak_laplacian_2_curl_curl, method="dense"),
+            _weak_laplacian_2_grad_div,
             tet_masses.mass_2,
         ),
     ],
@@ -269,7 +463,7 @@ def test_laplacian_1_curl_free(two_tets_mesh: SimplicialMesh, device):
     """The curl-curl 1-Laplacian annihilates a curl-free 1-cochain."""
     mesh = two_tets_mesh.to(device)
 
-    l1_curl_curl = tet_laplacians.weak_laplacian_1_curl_curl(mesh)
+    l1_curl_curl = _weak_laplacian_1_curl_curl(mesh)
 
     d0 = mesh.cbd[0]
     x0 = torch.randn(mesh.n_verts, dtype=mesh.dtype, device=mesh.device)
@@ -285,7 +479,7 @@ def test_laplacian_1_div_free(two_tets_mesh: SimplicialMesh, device):
     """The grad-div 1-Laplacian annihilates a div-free 1-cochain."""
     mesh = two_tets_mesh.to(device)
 
-    l1_grad_div = tet_laplacians.weak_laplacian_1_grad_div(mesh)
+    l1_grad_div = _weak_laplacian_1_grad_div(mesh)
 
     d1_T = mesh.cbd[1].T.to_dense()
     m1 = tet_masses.mass_1(mesh).to_dense()
@@ -306,7 +500,7 @@ def test_laplacian_2_curl_free(two_tets_mesh: SimplicialMesh, device):
     # Double precision is required for this test to pass.
     mesh = two_tets_mesh.to(dtype=torch.float64, device=device)
 
-    l2_curl_curl = tet_laplacians.weak_laplacian_2_curl_curl(mesh, method="dense")
+    l2_curl_curl = _weak_laplacian_2_curl_curl(mesh, method="dense")
 
     d2_T = mesh.cbd[2].T.to_dense()
     m2 = tet_masses.mass_2(mesh).to_dense()
@@ -326,7 +520,7 @@ def test_laplacian_2_div_free(two_tets_mesh: SimplicialMesh, device):
     """The grad-div component of the 2-Laplacian annihilates a div-free 2-cochain."""
     mesh = two_tets_mesh.to(device)
 
-    l2_grad_div = tet_laplacians.weak_laplacian_2_grad_div(mesh)
+    l2_grad_div = _weak_laplacian_2_grad_div(mesh)
 
     d1 = mesh.cbd[1]
     x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
@@ -347,9 +541,8 @@ def test_codiff_1_adjoint_relation(two_tets_mesh: SimplicialMesh, device):
     m1 = tet_masses.mass_1(mesh)
 
     d0 = mesh.cbd[0]
-    d0_T = d0.T
 
-    codiff_1 = inv_m0 @ d0_T @ m1
+    codiff_1 = codifferential(cbd_km1=d0, mass_k=m1, inv_mass_km1=inv_m0)
 
     x0 = torch.randn(mesh.n_verts, dtype=mesh.dtype, device=mesh.device)
     x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
@@ -368,9 +561,8 @@ def test_codiff_2_adjoint_relation(two_tets_mesh: SimplicialMesh, device):
     m2 = tet_masses.mass_2(mesh).to_dense()
 
     d1 = mesh.cbd[1].to_dense()
-    d1_T = d1.T
 
-    codiff_2 = torch.linalg.solve(m1, d1_T @ m2)  # inv_m1 @ d1_T @ m2
+    codiff_2 = codifferential(cbd_km1=d1, mass_k=m2, mass_km1=m1)
 
     x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
     x2 = torch.randn(mesh.n_tris, dtype=mesh.dtype, device=mesh.device)
@@ -405,21 +597,24 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialMesh, device):
 @pytest.mark.parametrize(
     "laplacian, method",
     [
-        (tet_laplacians.weak_laplacian_0, "cotan"),
-        (tet_laplacians.weak_laplacian_0, "consistent"),
-        (tet_laplacians.weak_laplacian_1_grad_div, None),
-        (tet_laplacians.weak_laplacian_1_curl_curl, None),
-        (tet_laplacians.weak_laplacian_1, None),
-        (tet_laplacians.weak_laplacian_2_curl_curl, "dense"),
-        (tet_laplacians.weak_laplacian_2_curl_curl, "inv_star"),
-        (tet_laplacians.weak_laplacian_2_curl_curl, "mixed"),
-        (tet_laplacians.weak_laplacian_2_grad_div, None),
-        (tet_laplacians.weak_laplacian_2, "dense"),
-        (tet_laplacians.weak_laplacian_2, "inv_star"),
-        (tet_laplacians.weak_laplacian_2, "mixed"),
-        (tet_laplacians.weak_laplacian_3, "dense"),
-        (tet_laplacians.weak_laplacian_3, "inv_star"),
-        (tet_laplacians.weak_laplacian_3, "mixed"),
+        (_weak_laplacian_0, "cotan"),
+        (_weak_laplacian_0, "consistent"),
+        (_weak_laplacian_1_grad_div, None),
+        (_weak_laplacian_1_curl_curl, None),
+        (_weak_laplacian_1, None),
+        (_weak_laplacian_2_curl_curl, "dense"),
+        (_weak_laplacian_2_curl_curl, "inv_star"),
+        (_weak_laplacian_2_curl_curl, "mixed"),
+        (_weak_laplacian_2_curl_curl, "solver"),
+        (_weak_laplacian_2_grad_div, None),
+        (_weak_laplacian_2, "dense"),
+        (_weak_laplacian_2, "inv_star"),
+        (_weak_laplacian_2, "mixed"),
+        (_weak_laplacian_2, "solver"),
+        (_weak_laplacian_3, "dense"),
+        (_weak_laplacian_3, "inv_star"),
+        (_weak_laplacian_3, "mixed"),
+        (_weak_laplacian_3, "solver"),
     ],
 )
 def test_laplacian_backward(laplacian, method, two_tets_mesh: SimplicialMesh, device):
@@ -450,21 +645,24 @@ def test_laplacian_backward(laplacian, method, two_tets_mesh: SimplicialMesh, de
 @pytest.mark.parametrize(
     "laplacian, method",
     [
-        (tet_laplacians.weak_laplacian_0, "cotan"),
-        (tet_laplacians.weak_laplacian_0, "consistent"),
-        (tet_laplacians.weak_laplacian_1_grad_div, None),
-        (tet_laplacians.weak_laplacian_1_curl_curl, None),
-        (tet_laplacians.weak_laplacian_1, None),
-        (tet_laplacians.weak_laplacian_2_curl_curl, "dense"),
-        (tet_laplacians.weak_laplacian_2_curl_curl, "inv_star"),
-        (tet_laplacians.weak_laplacian_2_curl_curl, "mixed"),
-        (tet_laplacians.weak_laplacian_2_grad_div, None),
-        (tet_laplacians.weak_laplacian_2, "dense"),
-        (tet_laplacians.weak_laplacian_2, "inv_star"),
-        (tet_laplacians.weak_laplacian_2, "mixed"),
-        (tet_laplacians.weak_laplacian_3, "dense"),
-        (tet_laplacians.weak_laplacian_3, "inv_star"),
-        (tet_laplacians.weak_laplacian_3, "mixed"),
+        (_weak_laplacian_0, "cotan"),
+        (_weak_laplacian_0, "consistent"),
+        (_weak_laplacian_1_grad_div, None),
+        (_weak_laplacian_1_curl_curl, None),
+        (_weak_laplacian_1, None),
+        (_weak_laplacian_2_curl_curl, "dense"),
+        (_weak_laplacian_2_curl_curl, "inv_star"),
+        (_weak_laplacian_2_curl_curl, "mixed"),
+        (_weak_laplacian_2_curl_curl, "solver"),
+        (_weak_laplacian_2_grad_div, None),
+        (_weak_laplacian_2, "dense"),
+        (_weak_laplacian_2, "inv_star"),
+        (_weak_laplacian_2, "mixed"),
+        (_weak_laplacian_2, "solver"),
+        (_weak_laplacian_3, "dense"),
+        (_weak_laplacian_3, "inv_star"),
+        (_weak_laplacian_3, "mixed"),
+        (_weak_laplacian_3, "solver"),
     ],
 )
 def test_laplacian_gradcheck(laplacian, method, two_tets_mesh: SimplicialMesh, device):

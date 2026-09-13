@@ -7,15 +7,14 @@ from jaxtyping import Float
 from torch import Tensor
 
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
-from ..sparse.linalg.solvers._sparse_solver import InvSparseOperator
+from ..sparse.linalg.solvers import InvSparseOperator
 from .ext_prod.whitney import WhitneyWedgeL2Projector
 
 
 def galerkin_contract(
     vec_field_flat: Float[Tensor, " edge *ch"],
     cochain_k: Float[Tensor, " k_splx *ch"],
-    mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
-    | Float[InvSparseOperator, "km1_splx km1_splx"],
+    mass_km1: Float[SparseDecoupledTensor | InvSparseOperator, "km1_splx km1_splx"],
     wedge_op: WhitneyWedgeL2Projector,
     solver_kwargs: dict[str, Any] | None = None,
 ) -> Float[Tensor, " km1_splx *ch"]:
@@ -50,6 +49,8 @@ def galerkin_contract(
     wedge_op
         An instance of `WhitneyWedgeL2Projector` configured to compute the load
         vector for the wedge product between a 1-cochain and a $(k-1)$-cochain.
+    solver_kwargs
+        Keyword arguments passed to the `mass_km1` sparse solver.
 
     Returns
     -------

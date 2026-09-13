@@ -1,14 +1,42 @@
 import torch
+from jaxtyping import Float
 
 from cochain.complex import SimplicialMesh
-from cochain.metric.tri.tri_hodge_stars import star_1
-from cochain.metric.tri.tri_laplacians import (
-    laplacian_1,
-    laplacian_1_curl_curl,
-    laplacian_1_grad_div,
-)
+from cochain.metric import hodge_laplacians
+from cochain.metric.tri import tri_hodge_stars
+from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.topology.spanning_tree import compute_cotree_mask, compute_tree_mask
 from cochain.topology.topo_laplacians import laplacian_k
+
+
+def _weak_laplacian_1_grad_div(
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
+    """Grad-div component of the weak 1-Laplacian for a tri mesh."""
+    return hodge_laplacians.weak_down_laplacian(
+        cbd_km1=tet_mesh.cbd[0],
+        mass_k=tri_hodge_stars.star_1(tet_mesh),
+        inv_mass_km1=tri_hodge_stars.star_0(tet_mesh).inv,
+    )
+
+
+def _weak_laplacian_1_curl_curl(
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
+    """Curl-curl component of the weak 1-Laplacian for a tri mesh."""
+    return hodge_laplacians.weak_up_laplacian(
+        tet_mesh.cbd[1], tri_hodge_stars.star_2(tet_mesh)
+    )
+
+
+def _weak_laplacian_1(
+    tet_mesh: SimplicialMesh,
+) -> Float[SparseDecoupledTensor, "edge edge"]:
+    """Weak hybrid 1-Laplacian for a tri mesh."""
+    return SparseDecoupledTensor.assemble(
+        _weak_laplacian_1_grad_div(tet_mesh),
+        _weak_laplacian_1_curl_curl(tet_mesh),
+    )
 
 
 def test_cbd_0_rank(finer_flat_annulus_mesh: SimplicialMesh, device):
@@ -78,7 +106,7 @@ def test_l1_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
 
     # Test positive definiteness
     free_edge_mask = tree_mask | cotree_mask
-    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1 = _weak_laplacian_1(mesh)
     l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
@@ -92,7 +120,7 @@ def test_l1_down_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device)
     l0 = laplacian_k(mesh, k=0, component="up")
     tree_mask = compute_tree_mask(topo_laplacian_0=l0, canon_edges=mesh.edges)
 
-    l1_down = star_1(mesh) @ laplacian_1_grad_div(mesh)
+    l1_down = _weak_laplacian_1_grad_div(mesh)
     l1_fixed = l1_down.submatrix(tree_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
@@ -106,7 +134,7 @@ def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
 
-    l1_up = star_1(mesh) @ laplacian_1_curl_curl(mesh)
+    l1_up = _weak_laplacian_1_curl_curl(mesh)
     l1_fixed = l1_up.submatrix(cotree_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
@@ -132,7 +160,7 @@ def test_l1_positive_definite_absolute_bc(
     # Absolute BC does not require any further masking.
     free_edge_mask = tree_mask | cotree_mask
 
-    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1 = _weak_laplacian_1(mesh)
     l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
@@ -148,7 +176,7 @@ def test_l1_down_positive_definite_absolute_bc(
     l0 = laplacian_k(mesh, k=0, component="up")
     tree_mask = compute_tree_mask(topo_laplacian_0=l0, canon_edges=mesh.edges)
 
-    l1 = star_1(mesh) @ laplacian_1_grad_div(mesh)
+    l1 = _weak_laplacian_1_grad_div(mesh)
     # Absolute BC does not require any further masking.
     l1_fixed = l1.submatrix(tree_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
@@ -165,7 +193,7 @@ def test_l1_up_positive_definite_absolute_bc(
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
 
-    l1 = star_1(mesh) @ laplacian_1_curl_curl(mesh)
+    l1 = _weak_laplacian_1_curl_curl(mesh)
     # Absolute BC does not require any further masking.
     l1_fixed = l1.submatrix(cotree_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
@@ -200,7 +228,7 @@ def test_l1_positive_definite_relative_bc(
     # since they are fixed by the relative boundary condition.
     free_edge_mask = (~mesh.bd_edge_mask) & (tree_mask | cotree_mask)
 
-    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1 = _weak_laplacian_1(mesh)
     l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
@@ -222,7 +250,7 @@ def test_l1_down_positive_definite_relative_bc(
 
     free_edge_mask = (~mesh.bd_edge_mask) & tree_mask
 
-    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1 = _weak_laplacian_1(mesh)
     l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
@@ -245,7 +273,7 @@ def test_l1_up_positive_definite_relative_bc(
 
     free_edge_mask = (~mesh.bd_edge_mask) & cotree_mask
 
-    l1 = star_1(mesh) @ laplacian_1(mesh)
+    l1 = _weak_laplacian_1(mesh)
     l1_fixed = l1.submatrix(free_edge_mask).tensor.to_dense()
     min_eig = torch.linalg.eigvalsh(l1_fixed).min()
 
@@ -264,7 +292,7 @@ def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, 
 
     l0 = laplacian_k(mesh, k=0, component="up")
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
-    weak_l1 = star_1(mesh) @ laplacian_1(mesh)
+    weak_l1 = _weak_laplacian_1(mesh)
 
     # First, perform tree-cotree decomposition with no geometric edge weights
     cotree_mask = compute_cotree_mask(
@@ -282,7 +310,7 @@ def test_l1_gauge_fix_condition_number(finer_flat_annulus_mesh: SimplicialMesh, 
     l1_fixed_topo = weak_l1.submatrix(free_edge_mask).tensor.to_dense()
 
     # Next, perform the same decomposition but using the hodge star for edge weights
-    s1 = star_1(mesh)
+    s1 = tri_hodge_stars.star_1(mesh)
     inv_s1 = s1.inv
 
     cotree_mask = compute_cotree_mask(

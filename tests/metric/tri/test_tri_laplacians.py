@@ -1,9 +1,81 @@
+from typing import Literal
+
 import pytest
 import torch
+from jaxtyping import Float
 
 from cochain.complex import SimplicialMesh
-from cochain.metric.tri import tri_hodge_stars, tri_laplacians
+from cochain.metric.hodge_laplacians import codifferential
+from cochain.metric.tri import tri_hodge_stars
 from cochain.metric.tri.tri_stiffness import stiffness_matrix
+from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
+
+
+def _codifferential_1(
+    tri_mesh: SimplicialMesh,
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+) -> Float[SparseDecoupledTensor, "vert edge"]:
+    """Codifferential on discrete 1-forms for a tri mesh."""
+    return codifferential(
+        cbd_km1=tri_mesh.cbd[0],
+        mass_k=tri_hodge_stars.star_1(tri_mesh, dual_complex),
+        inv_mass_km1=tri_hodge_stars.star_0(tri_mesh).inv,
+    )
+
+
+def _codifferential_2(
+    tri_mesh: SimplicialMesh,
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+) -> Float[SparseDecoupledTensor, "edge tri"]:
+    """Codifferential on discrete 2-forms for a tri mesh."""
+    return codifferential(
+        cbd_km1=tri_mesh.cbd[1],
+        mass_k=tri_hodge_stars.star_2(tri_mesh),
+        inv_mass_km1=tri_hodge_stars.star_1(tri_mesh, dual_complex).inv,
+    )
+
+
+def _hodge_laplacian_0(
+    tri_mesh: SimplicialMesh,
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+) -> Float[SparseDecoupledTensor, "vert vert"]:
+    """Classical Hodge 0-Laplacian for a tri mesh."""
+    return _codifferential_1(tri_mesh, dual_complex) @ tri_mesh.cbd[0]
+
+
+def _hodge_laplacian_1_grad_div(
+    tri_mesh: SimplicialMesh,
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+) -> Float[SparseDecoupledTensor, "edge edge"]:
+    """Grad-div component of the classical 1-Laplacian for a tri mesh."""
+    return tri_mesh.cbd[0] @ _codifferential_1(tri_mesh, dual_complex)
+
+
+def _hodge_laplacian_1_curl_curl(
+    tri_mesh: SimplicialMesh,
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+) -> Float[SparseDecoupledTensor, "edge edge"]:
+    """Curl-curl component of the classical 1-Laplacian for a tri mesh."""
+    return _codifferential_2(tri_mesh, dual_complex) @ tri_mesh.cbd[1]
+
+
+def _hodge_laplacian_1(
+    tri_mesh: SimplicialMesh,
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+) -> Float[SparseDecoupledTensor, "edge edge"]:
+    """Classical Hodge 1-Laplacian for a tri mesh."""
+    return SparseDecoupledTensor.assemble(
+        _hodge_laplacian_1_grad_div(tri_mesh, dual_complex),
+        _hodge_laplacian_1_curl_curl(tri_mesh, dual_complex),
+    )
+
+
+def _hodge_laplacian_2(
+    tri_mesh: SimplicialMesh,
+    dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+) -> Float[SparseDecoupledTensor, "tri tri"]:
+    """Classical Hodge 2-Laplacian for a tri mesh."""
+    return tri_mesh.cbd[1] @ _codifferential_2(tri_mesh, dual_complex)
 
 
 def test_l0_stiffness_relation(two_tris_mesh: SimplicialMesh, device):
@@ -13,7 +85,7 @@ def test_l0_stiffness_relation(two_tris_mesh: SimplicialMesh, device):
     stiffness_direct = stiffness_matrix(mesh).to_dense()
 
     s0 = tri_hodge_stars.star_0(mesh)
-    l0 = tri_laplacians.laplacian_0(mesh, dual_complex="circumcentric")
+    l0 = _hodge_laplacian_0(mesh, dual_complex="circumcentric")
     stiffness_indirect = (s0 @ l0).to_dense()
 
     torch.testing.assert_close(stiffness_indirect, stiffness_direct)
@@ -28,72 +100,70 @@ def test_l0_direct_construction(two_tris_mesh: SimplicialMesh, device):
     """
     mesh = two_tris_mesh.to(device)
 
-    l0_via_cotan = tri_laplacians.laplacian_0(
-        mesh, dual_complex="circumcentric"
-    ).to_dense()
+    l0_via_cotan = _hodge_laplacian_0(mesh, dual_complex="circumcentric").to_dense()
 
-    codiff_1 = tri_laplacians.codifferential_1(mesh, dual_complex="circumcentric")
+    codiff_1 = _codifferential_1(mesh, dual_complex="circumcentric")
     l0 = (codiff_1 @ mesh.cbd[0]).to_dense()
 
     torch.testing.assert_close(l0, l0_via_cotan)
 
 
 @pytest.mark.parametrize(
-    "laplacian, dual_complex, betti",
+    "laplacian_factory, dual_complex, betti",
     [
-        (tri_laplacians.laplacian_0, "circumcentric", 1),
-        (tri_laplacians.laplacian_0, "barycentric", 1),
-        (tri_laplacians.laplacian_1, "circumcentric", 0),
-        (tri_laplacians.laplacian_1, "barycentric", 0),
-        (tri_laplacians.laplacian_2, "circumcentric", 0),
-        (tri_laplacians.laplacian_2, "barycentric", 0),
+        (_hodge_laplacian_0, "circumcentric", 1),
+        (_hodge_laplacian_0, "barycentric", 1),
+        (_hodge_laplacian_1, "circumcentric", 0),
+        (_hodge_laplacian_1, "barycentric", 0),
+        (_hodge_laplacian_2, "circumcentric", 0),
+        (_hodge_laplacian_2, "barycentric", 0),
     ],
 )
 def test_disk_homology_group_dims(
-    laplacian, dual_complex, betti, tent_mesh: SimplicialMesh, device
+    laplacian_factory, dual_complex, betti, tent_mesh: SimplicialMesh, device
 ):
     mesh = tent_mesh.to(device)
-    operator = laplacian(mesh, dual_complex).to_dense()
+    operator = laplacian_factory(mesh, dual_complex).to_dense()
     dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
     torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
 
 
 @pytest.mark.parametrize(
-    "laplacian, dual_complex, betti",
+    "laplacian_factory, dual_complex, betti",
     [
-        (tri_laplacians.laplacian_0, "circumcentric", 1),
-        (tri_laplacians.laplacian_0, "barycentric", 1),
-        (tri_laplacians.laplacian_1, "circumcentric", 1),
-        (tri_laplacians.laplacian_1, "barycentric", 1),
-        (tri_laplacians.laplacian_2, "circumcentric", 0),
-        (tri_laplacians.laplacian_2, "barycentric", 0),
+        (_hodge_laplacian_0, "circumcentric", 1),
+        (_hodge_laplacian_0, "barycentric", 1),
+        (_hodge_laplacian_1, "circumcentric", 1),
+        (_hodge_laplacian_1, "barycentric", 1),
+        (_hodge_laplacian_2, "circumcentric", 0),
+        (_hodge_laplacian_2, "barycentric", 0),
     ],
 )
 def test_annulus_homology_group_dims(
-    laplacian, dual_complex, betti, flat_annulus_mesh: SimplicialMesh, device
+    laplacian_factory, dual_complex, betti, flat_annulus_mesh: SimplicialMesh, device
 ):
     mesh = flat_annulus_mesh.to(device)
-    operator = laplacian(mesh, dual_complex).to_dense()
+    operator = laplacian_factory(mesh, dual_complex).to_dense()
     dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
     torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
 
 
 @pytest.mark.parametrize(
-    "laplacian, dual_complex, betti",
+    "laplacian_factory, dual_complex, betti",
     [
-        (tri_laplacians.laplacian_0, "circumcentric", 1),
-        (tri_laplacians.laplacian_0, "barycentric", 1),
-        (tri_laplacians.laplacian_1, "circumcentric", 0),
-        (tri_laplacians.laplacian_1, "barycentric", 0),
-        (tri_laplacians.laplacian_2, "circumcentric", 1),
-        (tri_laplacians.laplacian_2, "barycentric", 1),
+        (_hodge_laplacian_0, "circumcentric", 1),
+        (_hodge_laplacian_0, "barycentric", 1),
+        (_hodge_laplacian_1, "circumcentric", 0),
+        (_hodge_laplacian_1, "barycentric", 0),
+        (_hodge_laplacian_2, "circumcentric", 1),
+        (_hodge_laplacian_2, "barycentric", 1),
     ],
 )
 def test_sphere_homology_group_dims(
-    laplacian, dual_complex, betti, icosphere_mesh: SimplicialMesh, device
+    laplacian_factory, dual_complex, betti, icosphere_mesh: SimplicialMesh, device
 ):
     mesh = icosphere_mesh.to(device)
-    operator = laplacian(mesh, dual_complex).to_dense()
+    operator = laplacian_factory(mesh, dual_complex).to_dense()
     dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
     torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
 
@@ -104,7 +174,7 @@ def test_sphere_homology_group_dims(
 )
 def test_laplacian_0_kernel(dual_complex, tent_mesh: SimplicialMesh, device):
     mesh = tent_mesh.to(device)
-    l0 = tri_laplacians.laplacian_0(mesh, dual_complex)
+    l0 = _hodge_laplacian_0(mesh, dual_complex)
     row_sum = l0.to_dense().sum(dim=-1)
     torch.testing.assert_close(row_sum, torch.zeros_like(row_sum))
 
@@ -117,7 +187,7 @@ def test_laplacian_2_kernel(dual_complex, hollow_tet_mesh: SimplicialMesh, devic
     """Check that the tri area vector is in the kernel of the 2-Laplacian for a closed mesh."""
     mesh = hollow_tet_mesh.to(device)
 
-    l2 = tri_laplacians.laplacian_2(mesh, dual_complex)
+    l2 = _hodge_laplacian_2(mesh, dual_complex)
     areas = tri_hodge_stars.compute_tri_areas(mesh.vert_coords, mesh.tris)
 
     zeros = (l2 @ areas).to_dense()
@@ -126,32 +196,32 @@ def test_laplacian_2_kernel(dual_complex, hollow_tet_mesh: SimplicialMesh, devic
 
 
 @pytest.mark.parametrize(
-    "laplacian, dual_complex, star",
+    "laplacian_factory, dual_complex, star",
     [
-        (tri_laplacians.laplacian_0, "circumcentric", tri_hodge_stars.star_0),
-        (tri_laplacians.laplacian_0, "barycentric", tri_hodge_stars.star_0),
+        (_hodge_laplacian_0, "circumcentric", tri_hodge_stars.star_0),
+        (_hodge_laplacian_0, "barycentric", tri_hodge_stars.star_0),
         (
-            tri_laplacians.laplacian_1,
+            _hodge_laplacian_1,
             "circumcentric",
             tri_hodge_stars._star_1_circumcentric,
         ),
         (
-            tri_laplacians.laplacian_1,
+            _hodge_laplacian_1,
             "barycentric",
             tri_hodge_stars._star_1_barycentric,
         ),
-        (tri_laplacians.laplacian_2, "circumcentric", tri_hodge_stars.star_2),
-        (tri_laplacians.laplacian_2, "barycentric", tri_hodge_stars.star_2),
+        (_hodge_laplacian_2, "circumcentric", tri_hodge_stars.star_2),
+        (_hodge_laplacian_2, "barycentric", tri_hodge_stars.star_2),
     ],
 )
 def test_laplacian_symmetry(
-    laplacian, dual_complex, star, hollow_tet_mesh: SimplicialMesh, device
+    laplacian_factory, dual_complex, star, hollow_tet_mesh: SimplicialMesh, device
 ):
     """Test that the stiffness matrices are symmetric, but the corresponding Laplacians are not."""
     mesh = hollow_tet_mesh.to(device)
 
     star_i = star(mesh)
-    laplacian_i = laplacian(mesh, dual_complex)
+    laplacian_i = laplacian_factory(mesh, dual_complex)
     stiffness_i = star_i @ laplacian_i
 
     laplacian_i_T = laplacian_i.T
@@ -162,32 +232,32 @@ def test_laplacian_symmetry(
 
 
 @pytest.mark.parametrize(
-    "laplacian, dual_complex, star",
+    "laplacian_factory, dual_complex, star",
     [
-        (tri_laplacians.laplacian_0, "circumcentric", tri_hodge_stars.star_0),
-        (tri_laplacians.laplacian_0, "barycentric", tri_hodge_stars.star_0),
+        (_hodge_laplacian_0, "circumcentric", tri_hodge_stars.star_0),
+        (_hodge_laplacian_0, "barycentric", tri_hodge_stars.star_0),
         (
-            tri_laplacians.laplacian_1,
+            _hodge_laplacian_1,
             "circumcentric",
             tri_hodge_stars._star_1_circumcentric,
         ),
         (
-            tri_laplacians.laplacian_1,
+            _hodge_laplacian_1,
             "barycentric",
             tri_hodge_stars._star_1_barycentric,
         ),
-        (tri_laplacians.laplacian_2, "circumcentric", tri_hodge_stars.star_2),
-        (tri_laplacians.laplacian_2, "barycentric", tri_hodge_stars.star_2),
+        (_hodge_laplacian_2, "circumcentric", tri_hodge_stars.star_2),
+        (_hodge_laplacian_2, "barycentric", tri_hodge_stars.star_2),
     ],
 )
 def test_laplacian_PSD(
-    laplacian, dual_complex, star, hollow_tet_mesh: SimplicialMesh, device
+    laplacian_factory, dual_complex, star, hollow_tet_mesh: SimplicialMesh, device
 ):
     """Test that the stiffness matrices are positive semi-definite."""
     mesh = hollow_tet_mesh.to(device)
 
     star_i = star(mesh)
-    laplacian_i = laplacian(mesh, dual_complex)
+    laplacian_i = laplacian_factory(mesh, dual_complex)
     stiffness_i = (star_i @ laplacian_i).to_dense()
 
     eigs = torch.linalg.eigvalsh(stiffness_i)
@@ -204,8 +274,8 @@ def test_laplacian_1_orthogonality(
     """Test that composing the up and down 1-Laplacian gives zero."""
     mesh = hollow_tet_mesh.to(device)
 
-    l1_grad_div = tri_laplacians.laplacian_1_grad_div(mesh, dual_complex)
-    l1_curl_curl = tri_laplacians.laplacian_1_curl_curl(mesh, dual_complex)
+    l1_grad_div = _hodge_laplacian_1_grad_div(mesh, dual_complex)
+    l1_curl_curl = _hodge_laplacian_1_curl_curl(mesh, dual_complex)
 
     composition_1 = (l1_grad_div @ l1_curl_curl).to_dense()
     composition_2 = (l1_curl_curl @ l1_grad_div).to_dense()
@@ -222,7 +292,7 @@ def test_laplacian_1_curl_free(dual_complex, hollow_tet_mesh: SimplicialMesh, de
     """The curl-curl 1-Laplacian annihilates a curl-free 1-cochain."""
     mesh = hollow_tet_mesh.to(device)
 
-    l1_curl_curl = tri_laplacians.laplacian_1_curl_curl(mesh, dual_complex)
+    l1_curl_curl = _hodge_laplacian_1_curl_curl(mesh, dual_complex)
 
     x0 = mesh.vert_coords.sum(axis=-1, keepdim=True)
     # A gradient field is irrotational.
@@ -241,8 +311,8 @@ def test_laplacian_1_div_free(dual_complex, hollow_tet_mesh: SimplicialMesh, dev
     """The grad-div 1-Laplacian annihilates a div-free 1-cochain."""
     mesh = hollow_tet_mesh.to(device)
 
-    codiff_2 = tri_laplacians.codifferential_2(mesh, dual_complex)
-    l1_grad_div = tri_laplacians.laplacian_1_grad_div(mesh, dual_complex)
+    codiff_2 = _codifferential_2(mesh, dual_complex)
+    l1_grad_div = _hodge_laplacian_1_grad_div(mesh, dual_complex)
 
     x2 = torch.randn(mesh.n_tris, dtype=torch.float32, device=mesh.device)
 
@@ -267,7 +337,7 @@ def test_codiff_1_adjoint_relation(
     s1 = tri_hodge_stars.star_1(mesh, dual_complex)
 
     d0 = mesh.cbd[0]
-    codiff_1 = tri_laplacians.codifferential_1(mesh, dual_complex)
+    codiff_1 = _codifferential_1(mesh, dual_complex)
 
     x0 = torch.randn(mesh.n_verts, dtype=mesh.dtype, device=mesh.device)
     x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
@@ -292,7 +362,7 @@ def test_codiff_2_adjoint_relation(
     s2 = tri_hodge_stars.star_2(mesh)
 
     d1 = mesh.cbd[1]
-    codiff_2 = tri_laplacians.codifferential_2(mesh, dual_complex)
+    codiff_2 = _codifferential_2(mesh, dual_complex)
 
     x1 = torch.randn(mesh.n_edges, dtype=mesh.dtype, device=mesh.device)
     x2 = torch.randn(mesh.n_tris, dtype=mesh.dtype, device=mesh.device)
@@ -304,29 +374,29 @@ def test_codiff_2_adjoint_relation(
 
 
 @pytest.mark.parametrize(
-    "laplacian, dual_complex",
+    "laplacian_factory, dual_complex",
     [
-        (tri_laplacians.laplacian_0, "circumcentric"),
-        (tri_laplacians.laplacian_0, "barycentric"),
+        (_hodge_laplacian_0, "circumcentric"),
+        (_hodge_laplacian_0, "barycentric"),
         (
-            tri_laplacians.laplacian_1,
+            _hodge_laplacian_1,
             "circumcentric",
         ),
         (
-            tri_laplacians.laplacian_1,
+            _hodge_laplacian_1,
             "barycentric",
         ),
-        (tri_laplacians.laplacian_2, "circumcentric"),
-        (tri_laplacians.laplacian_2, "barycentric"),
+        (_hodge_laplacian_2, "circumcentric"),
+        (_hodge_laplacian_2, "barycentric"),
     ],
 )
 def test_laplacian_backward(
-    laplacian, dual_complex, hollow_tet_mesh: SimplicialMesh, device
+    laplacian_factory, dual_complex, hollow_tet_mesh: SimplicialMesh, device
 ):
     mesh = hollow_tet_mesh.detach().clone().to(device)
     mesh.requires_grad_()
 
-    l = laplacian(mesh, dual_complex)
+    l = laplacian_factory(mesh, dual_complex)
     output = l.values.sum()
     output.backward()
 
@@ -335,24 +405,24 @@ def test_laplacian_backward(
 
 
 @pytest.mark.parametrize(
-    "laplacian, dual_complex",
+    "laplacian_factory, dual_complex",
     [
-        (tri_laplacians.laplacian_0, "circumcentric"),
-        (tri_laplacians.laplacian_0, "barycentric"),
+        (_hodge_laplacian_0, "circumcentric"),
+        (_hodge_laplacian_0, "barycentric"),
         (
-            tri_laplacians.laplacian_1,
+            _hodge_laplacian_1,
             "circumcentric",
         ),
         (
-            tri_laplacians.laplacian_1,
+            _hodge_laplacian_1,
             "barycentric",
         ),
-        (tri_laplacians.laplacian_2, "circumcentric"),
-        (tri_laplacians.laplacian_2, "barycentric"),
+        (_hodge_laplacian_2, "circumcentric"),
+        (_hodge_laplacian_2, "barycentric"),
     ],
 )
 def test_laplacian_gradcheck(
-    laplacian, dual_complex, hollow_tet_mesh: SimplicialMesh, device
+    laplacian_factory, dual_complex, hollow_tet_mesh: SimplicialMesh, device
 ):
     # Scale the vertex coordinates by a factor of 100 to improve numerical
     # precision for gradcheck (esp. for the grad-div component of L_1).
@@ -364,7 +434,7 @@ def test_laplacian_gradcheck(
     def laplacian_fxn(test_vert_coords):
         mesh = hollow_tet_mesh.to(device=device, dtype=torch.float64)
         mesh.vert_coords = test_vert_coords
-        l = laplacian(mesh, dual_complex)
+        l = laplacian_factory(mesh, dual_complex)
         return l.values.sum()
 
     assert torch.autograd.gradcheck(laplacian_fxn, (vert_coords,), fast_mode=True)
