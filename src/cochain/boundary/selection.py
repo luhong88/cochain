@@ -8,6 +8,7 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
 from ..complex import SimplicialMesh
+from ..topology.boundaries import detect_mesh_boundaries
 
 
 @dataclass(frozen=True, eq=False)
@@ -96,12 +97,12 @@ class BoundarySelection:
         )
         return cls(constrained_masks)
 
-    def restrict_full_cochain(
+    def extract_retained(
         self, k: int, k_cochain: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " retained_k_splx *ch"]:
         return k_cochain[self.retained_mask[k]]
 
-    def prolong_constrained_cochain(
+    def embed_retained(
         self, k: int, k_cochain: Float[Tensor, " retained_k_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
         full_cochain = torch.zeros(
@@ -112,12 +113,12 @@ class BoundarySelection:
         full_cochain[self.retained_idx[k]] = k_cochain
         return full_cochain
 
-    def gather_constrained_cochain(
+    def exxtract_constrained(
         self, k: int, k_cochain: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " constrained_k_splx *ch"]:
         return k_cochain[self.constrained_mask[k]]
 
-    def scatter_constrained_cochain(
+    def embed_constrained(
         self, k: int, k_cochain: Float[Tensor, " constrained_k_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
         full_cochain = torch.zeros(
