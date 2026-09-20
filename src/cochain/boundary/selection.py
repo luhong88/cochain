@@ -117,7 +117,12 @@ class BoundarySelection:
     def from_tangential_bd_mask(
         cls, mesh: SimplicialMesh, tangent_mask_km1: Bool[Tensor, " km1_splx"]
     ):
-        """Create a `BoundarySelection` for a mesh with mixed boundary condition."""
+        """
+        Create a `BoundarySelection` for a mesh with mixed boundary condition.
+
+        The `tangent_mask_km1` argument marks the codim-one simplices in the
+        tangential boundary subcomplex.
+        """
         # Check that the input mask is indeed a subset of the (k-1)-dim bd mask.
         # In logic, (p -> q) is equivalent to (~p | q).
         if not torch.all(~tangent_mask_km1 | mesh.bd_mask[mesh.dim - 1]):
