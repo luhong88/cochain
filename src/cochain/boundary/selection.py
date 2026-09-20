@@ -14,32 +14,34 @@ from ..topology.boundaries import detect_mesh_boundaries
 @dataclass(frozen=True, eq=False)
 class BoundarySelection:
     """
-    An immutable dataclass for storing boundary condition selections.
+    Select the tangential boundary subcomplex of a simplicial mesh.
 
-    This class supports the specification of relative, absolute, and mixed
-    boundary conditions on a simplicial mesh, and provides automatic downward
-    closure of boundary simplex selections and utilities for cochain manipulation
-    with respect to the retained/constrained degrees of freedom.
+    The factory methods construct absolute, relative, or mixed boundary condition
+    selections and ensure downward closure of the selected codim-one boundary simplices.
+    Cochain helpers gather from and scatter into the resulting retained and constrained
+    spaces.
 
     Parameters
     ----------
     constrained_mask
-        a tuple of boolean masks, where `constrained_mask[k]` marks the k-simplices
-        representing the tangential degrees of freedom constrained by the boundary
-        condition specification.
+        A tuple of boolean masks. `constrained_mask[k]` marks the k-simplices
+        in the tangential boundary subcomplex.
 
     Attributes
     ----------
     constrained_idx
-        A tuple of integer tensors, where `constrained_idx[k]` contains the indices
-        of the k-simplices marked by `constrained_mask[k]`.
+        Indices selected by `constrained_mask` in global simplex order.
     retained_mask
-        A tuple of boolean masks, where `retained_mask[k]` marks the k-simplices
-        that are retained/unconstrained by the boundary condition specification.
-        More specifically, `retained_mask[k]=~constrained_mask[k]`.
+        Complements of `constrained_mask` in each degree.
     retained_idx
-        A tuple of integer tensors, where `retained_idx[k]` contains the indices
-        of the k-simplices marked by `retained_mask[k]`.
+        Indices selected by `retained_mask` in global simplex order.
+
+    Notes
+    -----
+    In general, a k-cochain in the tangential boundary subcomplex is a constrained
+    k-simplex, and a k-cochain in the complement is a retained k-simplex; similar
+    terminologies are used to describe the coefficients of a k-cochain on the
+    constrained/retained k-simplices.
     """
 
     constrained_mask: tuple[
@@ -133,20 +135,19 @@ class BoundarySelection:
         self, k: int, k_cochain: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " retained_k_splx *ch"]:
         """
-        Extract the retained degrees of freedom from a cochain.
+        Restrict a full cochain to its retained coefficients.
 
         Parameters
         ----------
         k
-            The degree of the input cochain.
+            Cochain degree.
         k_cochain : [k_splx, *ch]
-            The input cochain, with optional trailing channel dimensions.
+            Full cochain, with optional trailing dimensions.
 
         Returns
         -------
         retained_cochain : [retained_k_splx, *ch]
-            An output cochain that only contains coefficients on the retained
-            degrees of freedom.
+            Coefficients on retained k-simplices, in global simplex order.
         """
         return k_cochain[self.retained_mask[k]]
 
@@ -154,19 +155,19 @@ class BoundarySelection:
         self, k: int, k_cochain: Float[Tensor, " retained_k_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
         """
-        Lift the coefficients on the retained degrees of freedom to a full cochain.
+        Prolong retained coefficients to a full cochain by zero extension.
 
         Parameters
         ----------
         k
-            The degree of the input cochain.
+            Cochain degree.
         k_cochain : [retained_k_splx, *ch]
-            The input cochain, with optional trailing channel dimensions.
+            Retained coefficients, with optional trailing dimensions.
 
         Returns
         -------
         full_cochain : [k_splx, *ch]
-            An output cochain with zero coefficients on constrained k-simplices.
+            Full cochain with zeros on constrained k-simplices.
         """
         full_cochain = torch.zeros(
             (self.constrained_mask[k].size(0), *k_cochain.shape[1:]),
@@ -176,24 +177,23 @@ class BoundarySelection:
         full_cochain[self.retained_idx[k]] = k_cochain
         return full_cochain
 
-    def exxtract_constrained(
+    def extract_constrained(
         self, k: int, k_cochain: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " constrained_k_splx *ch"]:
         """
-        Extract the constrained degrees of freedom from a cochain.
+        Gather a full cochain's constrained coefficients.
 
         Parameters
         ----------
         k
-            The degree of the input cochain.
+            Cochain degree.
         k_cochain : [k_splx, *ch]
-            The input cochain, with optional trailing channel dimensions.
+            Full cochain, with optional trailing dimensions.
 
         Returns
         -------
-        constrained_cochain : [retained_k_splx, *ch]
-            An output cochain that only contains coefficients on the constrained
-            degrees of freedom.
+        constrained_cochain : [constrained_k_splx, *ch]
+            Coefficients on constrained k-simplices, in global simplex order.
         """
         return k_cochain[self.constrained_mask[k]]
 
@@ -201,19 +201,19 @@ class BoundarySelection:
         self, k: int, k_cochain: Float[Tensor, " constrained_k_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
         """
-        Lift the coefficients on the constrained degrees of freedom to a full cochain.
+        Scatter constrained coefficients into a full cochain by zero extension.
 
         Parameters
         ----------
         k
-            The degree of the input cochain.
+            Cochain degree.
         k_cochain : [constrained_k_splx, *ch]
-            The input cochain, with optional trailing channel dimensions.
+            Constrained coefficients, with optional trailing dimensions.
 
         Returns
         -------
         full_cochain : [k_splx, *ch]
-            An output cochain with zero coefficients on retained k-simplices.
+            Full cochain with zeros on retained k-simplices.
         """
         full_cochain = torch.zeros(
             (self.constrained_mask[k].size(0), *k_cochain.shape[1:]),
