@@ -13,6 +13,35 @@ from ..topology.boundaries import detect_mesh_boundaries
 
 @dataclass(frozen=True, eq=False)
 class BoundarySelection:
+    """
+    An immutable dataclass for storing boundary condition selections.
+
+    This class supports the specification of relative, absolute, and mixed
+    boundary conditions on a simplicial mesh, and provides automatic downward
+    closure of boundary simplex selections and utilities for cochain manipulation
+    with respect to the retained/constrained degrees of freedom.
+
+    Parameters
+    ----------
+    constrained_mask
+        a tuple of boolean masks, where `constrained_mask[k]` marks the k-simplices
+        representing the tangential degrees of freedom constrained by the boundary
+        condition specification.
+
+    Attributes
+    ----------
+    constrained_idx
+        A tuple of integer tensors, where `constrained_idx[k]` contains the indices
+        of the k-simplices marked by `constrained_mask[k]`.
+    retained_mask
+        A tuple of boolean masks, where `retained_mask[k]` marks the k-simplices
+        that are retained/unconstrained by the boundary condition specification.
+        More specifically, `retained_mask[k]=~constrained_mask[k]`.
+    retained_idx
+        A tuple of integer tensors, where `retained_idx[k]` contains the indices
+        of the k-simplices marked by `retained_mask[k]`.
+    """
+
     constrained_mask: tuple[
         Bool[Tensor, " vert"],
         Bool[Tensor, " edge"],
@@ -65,6 +94,7 @@ class BoundarySelection:
 
     @classmethod
     def from_absolute_bc(cls, mesh: SimplicialMesh):
+        """Create a `BoundarySelection` for a mesh with absolute boundary condition."""
         constrained_masks = tuple(
             torch.zeros(
                 n_splx,
@@ -77,6 +107,7 @@ class BoundarySelection:
 
     @classmethod
     def from_relative_bc(cls, mesh: SimplicialMesh):
+        """Create a `BoundarySelection` for a mesh with relative boundary condition."""
         constrained_masks = detect_mesh_boundaries(mesh.cbd)
         return cls(constrained_masks)
 
@@ -84,6 +115,7 @@ class BoundarySelection:
     def from_tangential_bd_mask(
         cls, mesh: SimplicialMesh, tangent_mask_km1: Bool[Tensor, " km1_splx"]
     ):
+        """Create a `BoundarySelection` for a mesh with mixed boundary condition."""
         # Check that the input mask is indeed a subset of the (k-1)-dim bd mask.
         # In logic, (p -> q) is equivalent to (~p | q).
         if not torch.all(~tangent_mask_km1 | mesh.bd_mask[mesh.dim - 1]):
@@ -100,11 +132,42 @@ class BoundarySelection:
     def extract_retained(
         self, k: int, k_cochain: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " retained_k_splx *ch"]:
+        """
+        Extract the retained degrees of freedom from a cochain.
+
+        Parameters
+        ----------
+        k
+            The degree of the input cochain.
+        k_cochain : [k_splx, *ch]
+            The input cochain, with optional trailing channel dimensions.
+
+        Returns
+        -------
+        retained_cochain : [retained_k_splx, *ch]
+            An output cochain that only contains coefficients on the retained
+            degrees of freedom.
+        """
         return k_cochain[self.retained_mask[k]]
 
     def embed_retained(
         self, k: int, k_cochain: Float[Tensor, " retained_k_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
+        """
+        Lift the coefficients on the retained degrees of freedom to a full cochain.
+
+        Parameters
+        ----------
+        k
+            The degree of the input cochain.
+        k_cochain : [retained_k_splx, *ch]
+            The input cochain, with optional trailing channel dimensions.
+
+        Returns
+        -------
+        full_cochain : [k_splx, *ch]
+            An output cochain with zero coefficients on constrained k-simplices.
+        """
         full_cochain = torch.zeros(
             (self.constrained_mask[k].size(0), *k_cochain.shape[1:]),
             dtype=k_cochain.dtype,
@@ -116,11 +179,42 @@ class BoundarySelection:
     def exxtract_constrained(
         self, k: int, k_cochain: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " constrained_k_splx *ch"]:
+        """
+        Extract the constrained degrees of freedom from a cochain.
+
+        Parameters
+        ----------
+        k
+            The degree of the input cochain.
+        k_cochain : [k_splx, *ch]
+            The input cochain, with optional trailing channel dimensions.
+
+        Returns
+        -------
+        constrained_cochain : [retained_k_splx, *ch]
+            An output cochain that only contains coefficients on the constrained
+            degrees of freedom.
+        """
         return k_cochain[self.constrained_mask[k]]
 
     def embed_constrained(
         self, k: int, k_cochain: Float[Tensor, " constrained_k_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
+        """
+        Lift the coefficients on the constrained degrees of freedom to a full cochain.
+
+        Parameters
+        ----------
+        k
+            The degree of the input cochain.
+        k_cochain : [constrained_k_splx, *ch]
+            The input cochain, with optional trailing channel dimensions.
+
+        Returns
+        -------
+        full_cochain : [k_splx, *ch]
+            An output cochain with zero coefficients on retained k-simplices.
+        """
         full_cochain = torch.zeros(
             (self.constrained_mask[k].size(0), *k_cochain.shape[1:]),
             dtype=k_cochain.dtype,
