@@ -16,6 +16,9 @@
 \usepackage{cleveref}             % Smart referencing (use \cref instead of \ref)
 \usepackage{url}
 
+\newcommand{\up}{\text{up}}
+\newcommand{\down}{\text{down}}
+
 \begin{filecontents}[overwrite]{references.bib}
 @misc{jackd_complex_eigs,
   author={Jack Dominic},
@@ -108,7 +111,7 @@ Let $A\in\mathbb R^{N\times N}$ be a symmetric matrix. Consider the eigenvalue p
     Av_k=\lambda_k v_k
     \label{eig}
 \end{equation}
-subject to the orthonormality constraint that $v_k^Tv_l=\delta_{kl}$, where $\delta_{kl}$ is the Kronecker delta function. For any loss $L$ that is a function of $A$, its derivative with respect to any matrix element $A_{ij}$ is given by
+subject to the orthonormality constraint that $v_k^Tv_l=\delta_{kl}$, where $\delta_{kl}$ is the Kronecker delta function. For any loss $L$ that is a function of the $\lambda_k$'s and $v_k$'s (and thus indirectly a function of $A$), its derivative with respect to any matrix element $A_{ij}$ is given by
 \begin{equation}
     \overline{A}_{ij} = \frac{\partial L}{\partial A_{ij}} = \sum_k\frac{\partial L}{\partial\lambda_k}\frac{\partial\lambda_k}{\partial A_{ij}} + \sum_k\frac{\partial L}{\partial v_k}\frac{\partial v_k}{\partial A_{ij}} = \sum_k \overline{\lambda}_k\frac{\partial\lambda_k}{\partial A_{ij}} + \sum_k \overline{v}_k^T\frac{\partial v_k}{\partial A_{ij}}
     \label{eig_der_expansion}
@@ -132,12 +135,16 @@ This equation can be expressed more compactly if we define the following matrice
 \begin{itemize}
     \item The gradient matrix $\partial L/\partial A$ such that $[\partial L/\partial A]_{ij} = \partial L/\partial A_{ij}$,
     \item The diagonal matrix $\overline\Lambda$ such that $\overline{\Lambda}_{ii}=\overline{\lambda}_i$, and
-    \item The eigenvector matrix $V$ whose columns are the $v_k$'s.
+    \item The eigenvector matrix $V$ whose columns are the $v_k$'s (i.e., $[V]_{ik}=v_{k,i}$).
 \end{itemize}
 Using these definitions, the eigenvalue contribution is
 \begin{equation}
+\boxed{
     \overline A_\Lambda = V\overline\Lambda V^T
+    \label{dLdA_via_eigenvalues}
+}
 \end{equation}
+
 
 \paragraph{Eigenvector component}
 Next, let us consider the second term in \eqref{eig_der_expansion}, which accounts for contributions from the eigenvectors. We start by taking the derivative of \eqref{eig} with respect to $A_{ij}$,
@@ -175,7 +182,7 @@ where we have defined the inverse spectral gap matrix $F$ as $F_{ij}=1/(\lambda_
     \sum_k \overline{v}_k^T \frac{\partial v_k}{\partial A_{ij}} = \sum_{k,l} F_{lk} (v_l^TE_{ij}v_k) \overline{v}_k^Tv_l = \sum_{k,l} v_{l,i} (F_{lk}\overline{v}_k^Tv_l) v_{k,j} \label{eig_vec_der_pre_matrix_form}
 \end{equation}
 
-As before, this equation can be expressed more compactly if we define the rojection matrix $P$ such that $P_{kl}= v_k^T\overline{v}_l=\overline{v}_l^Tv_k$ (i.e., $P_{kl}$ takes the gradient of $L$ with respect $v_l$ and projects it onto the subspace of $v_k$). Using this matrix, the term $F_{lk}\overline{v}_k^Tv_l$ in \eqref{eig_vec_der_pre_matrix_form} is simply $[F\odot P]_{lk}$, where $\odot$ is the elementwise Hadamard product, and the bilinear form $\sum_{kl}v_{l,i}[F\odot P]_{lk}v_{k,j}$ can be written as $V_{i\cdot}(F\odot P)V_{j\cdot}^T$, where $V_{i\cdot}$ is a row vector representing the $i$th row of the eigenvector matrix $V$. Taken together, the eigenvector contribution is
+As before, this equation can be expressed more compactly if we define the projection matrix $P$ such that $P_{kl}= v_k^T\overline{v}_l=\overline{v}_l^Tv_k$ (i.e., $P_{kl}$ takes the gradient of $L$ with respect $v_l$ and projects it onto the subspace of $v_k$). Using this matrix, the term $F_{lk}\overline{v}_k^Tv_l$ in \eqref{eig_vec_der_pre_matrix_form} is simply $[F\odot P]_{lk}$, where $\odot$ is the elementwise Hadamard product, and the bilinear form $\sum_{kl}v_{l,i}[F\odot P]_{lk}v_{k,j}$ can be written as $V_{i\cdot}(F\odot P)V_{j\cdot}^T$, where $V_{i\cdot}$ is a row vector representing the $i$th row of the eigenvector matrix $V$. Taken together, the eigenvector contribution is
 \begin{equation}
     \overline{A}_V = V(F\odot P)V^T \label{eig_vec_der_asym_final}
 \end{equation}
@@ -191,11 +198,14 @@ Note that, although $A$ is symmetric, \eqref{eig_vec_der_asym_final} is not guar
 \end{align}
 in place of $\partial L/\partial A_{ij}$. Here, equality (1) follows by switching the dummy index variables $k$ and $l$, and equality (2) follows by the antisymmetry of $F$. Therefore, instead of \eqref{eig_vec_der_asym_final}, the symmetry corrected eigenvector contribution is
 \begin{equation}
+\boxed{
     \overline{A}_V = \frac 1 2 V\left[F \odot (P - P^T)\right]V^T
+    \label{dLdA_via_eigenvectors_sym}
+}
 \end{equation}
 
 \paragraph{Degenerate eigenvalues}
-A key assumption of the preceeding derivation is that $A$ does not contain degenerate eigenvalues; i.e., every eigenvalue of $A$ has an algebraic and geometric multiplicity of one. Algebraically, this assumption is reflected in the fact that $F$ contains elements of the form \begin{equation}\Delta_{ji}^{-1} = 1/(\lambda_j - \lambda_i)\end{equation} which goes to infinity as two eigenvalues collide.
+A key assumption of the preceding derivation is that $A$ does not contain degenerate eigenvalues; i.e., every eigenvalue of $A$ has an algebraic and geometric multiplicity of one. Algebraically, this assumption is reflected in the fact that $F$ contains elements of the form \begin{equation}\Delta_{ji}^{-1} = 1/(\lambda_j - \lambda_i)\end{equation} which goes to infinity as two eigenvalues collide.
 
 The singularity in $F$ is not a numerical artifact; instead, it reflects the fact that $\partial v_k/\partial A_{ij}$ is not well defined when $\lambda_k$ is degenerate. For a nondegenerate eigenvalue $\lambda_i$, there is a unique mapping from $A$ to the orthonormal basis (up to a +/- sign) of $E_i$, the eigenspace spanned by $v_i$. However, for a degenerate eigenvalue $\lambda_k$ with algebraic multiplicity $n$, the mapping from $A$ to $E_k$ is not uniquely defined, since there are infinitely many unit-length vectors in $E_k$ and infinitely many choices of orthonormal basis vectors. Furthermore, this mapping is discontinuous, since any perturbations to $A$ that "breaks the symmetry" by creating new pertured eigenvalues from $\lambda_k$ will split $E_k$ into distinct new eigenspaces, causing the vectors in the unperturbed $E_k$ to snap onto the perturbed eigenspace basis vectors.
 
@@ -225,6 +235,7 @@ Then, substituting this into \eqref{eig_vec_der_asym_final} gives
 which is the truncated version of \eqref{eig_vec_der_pre_matrix_form}.
 
 \section{Generalized eigenvalue problem}
+\label{gep}
 
 Let $A\in\mathbb R^{N\times N}$ be a symmetric matrix and let $M\in\mathbb R^{N\times N}$ be a symmetric positive definite matrix. Consider the generalized eigenvalue problem
 \begin{equation}
@@ -242,7 +253,10 @@ First, differentiate \eqref{gen_eig} with respect to $M_{ij}$ and multiply it on
 \end{align}
 Writing in matrix form, this gives the eigenvalue contribution
 \begin{equation}
+\boxed{
     \overline{M}_\Lambda = -V\overline\Lambda\Lambda V^T
+    \label{dLdM_via_eigenvalues}
+}
 \end{equation}
 
 \paragraph{Eigenvector component}
@@ -284,9 +298,106 @@ To account for the symmetry condition, we define the symmetrized kernel $S = K +
 \end{equation}
 So that the symmetrized eigenvector contribution is
 \begin{equation}
+\boxed{
     \overline{M}_V = -\frac 1 2 VSV^T
+    \label{dLdM_via_eigenvectors_sym}
+}
 \end{equation}
 To remove gradient contributions from unresolved eigenvectors, we define the oblique subspace projection matrix $P'=UU^TM$, and it follows as before that $\overline{A}_{V,\text{trunc}} = P'\overline{A}_{V,\text{full}}P'^T$ and $\overline{M}_{V,\text{trunc}} = P'\overline{M}_{V,\text{full}}P'^T$.
+
+
+\section{Hodge Laplacians}
+
+Lastly, we investigate a specialized class of generalized eigenvalue problems involving weak Hodge Laplacians. Let us define the weak Hodge Laplacian on $k$-cochains as
+\begin{equation}
+    S_k = M_k d_{k-1} M_{k-1}^{-1} d_{k-1}^T M_k + d_k^T M_{k+1} d_k
+    \label{weak_hodge_laplacian}
+\end{equation}
+where the $M_k$'s are the symmetric positive definite mass matrices and the $d_k$'s are the coboundary operators; the two terms in the definition of $S_k$ are sometimes called the down and up components, respectively. In general, $S_k$ and its two components are symmetric positive semidefinite matrices, and we are interested in their generalized eigenvalue problems
+\begin{equation}
+    S_k v_i = \lambda_i M_k v_i
+    \label{weak_hodge_laplacian_eigenproblem}
+\end{equation}
+and how to differentiate through \eqref{weak_hodge_laplacian_eigenproblem} to find the $\bar{M_k}$'s; note that the $d_k$'s are topological and will be considered as non-differentiable in this note. Anticipating the derivation below, we will also define the codifferential
+\begin{equation}
+    \delta_k = M_{k-1}^{-1}d_{k-1}^TM_k
+\end{equation}
+as well as the auxiliary variable
+\begin{equation}
+    w_i = \delta_k v_i = M_{k-1}^{-1}d_{k-1}^TM_k v_i
+\end{equation}
+The auxiliary variables $w_i$ can be collected as column vectors into a matrix $W$, where $[W]_{ij}=w_{j,i}$.
+
+\paragraph{General strategy}
+For a given loss $L$ as a function of the $\lambda_i$'s and $v_i$'s, its derivative with respect to elements of the three mass matrices in \eqref{weak_hodge_laplacian} follow the same pattern. Specifically, let $M$ be either $M_{k-1}$, $M_k$, or $M_{k+1}$; then the derivative of $L$ with respect to $M_{ij}$ is given by the chain rule as
+\begin{equation}
+    \overline M_{ij} = \sum_m \overline\lambda_m\frac{\partial \lambda_m}{\partial S_k}\frac{\partial S_k}{\partial M_{ij}} + \sum_{m,p,q} \overline v_m^T\frac{\partial v_m}{\partial [S_k]_{pq}} \frac{\partial [S_k]_{pq}}{\partial M_{ij}} + \sum_m\left[ \overline\lambda_m\frac{\partial \lambda_m}{\partial M_{ij}} + \overline v_m^T\frac{\partial v_m}{\partial M_{ij}} \right]
+    \label{weak_hodge_laplacian_chain_rule}
+\end{equation}
+Here, the first two terms describe the gradient path from $L$ to $M$ through the left-hand side of \eqref{weak_hodge_laplacian_eigenproblem} via its role in the definition of $S_k$, and the last term describes the gradient path from $L$ to $M$ through the right-and side of \eqref{weak_hodge_laplacian_eigenproblem} via its role as the metric in the generalized eigenvalue problem, which is only applicable to $M_k$.
+
+Determining \eqref{weak_hodge_laplacian_chain_rule} is fairly straightforward, because the only unknown expression in \eqref{weak_hodge_laplacian_chain_rule} is $\partial S_k/\partial M_{ij}$. To see why, note that $S_k$ plays the same role in the eigenvalue problem definition as the generic matrix $A$ in the preceding sections; therefore, $\overline\lambda_m\partial \lambda_m/\partial S_k$ is given by \eqref{dLdA_via_eigenvalues} and $\overline v_m^T \partial v_m/\partial [S_k]_{pq}$ is given by \eqref{dLdA_via_eigenvectors_sym}. In addition, for $M = M_k$, the last term in \eqref{weak_hodge_laplacian_chain_rule} is derived in Section \ref{gep}, with $\overline\lambda_m \partial \lambda_m/\partial M_{ij}$ given by \eqref{dLdM_via_eigenvalues} and $\overline v_m^T \partial v_m/\partial M_{ij}$ given by \eqref{dLdM_via_eigenvectors_sym}.
+
+\paragraph{Gradient with respect to $M_{k+1}$}
+The derivative of $S_k$ with respect to $M_{k+1}$ enters only through the up term of $S_k$, and is given componentwise by
+\begin{equation}
+\frac{\partial [S_k]_{pq}}{\partial [M_{k+1}]_{ij}} = [d_k^TE_{ij}d_k]_{pq} = [d_k]_{ip}[d_k]_{jq}
+\end{equation}
+Therefore, the derivative of $L$ with respect to $[M_k]_{ij}$ is given by the first two terms in \eqref{weak_hodge_laplacian_chain_rule} as,
+\begin{equation}
+    [\overline M_{k+1}]_{ij} = \sum_{m,n,p,q}\left[ \overline \lambda_m v_{m,p}v_{m,q} + \frac 1 2 v_{n,p}F_{nm}(\overline v_m^Tv_n - \overline v_n^Tv_m)v_{m,q} \right] [d_k]_{ip}[d_k]_{jq}
+\end{equation}
+or, more concisely,
+\begin{equation}
+\boxed{
+    \overline M_{k+1} &= (d_k V)\left[\overline\Lambda + \frac 1 2 F \odot (P - P^T)\right](d_k V)^T
+}
+\end{equation}
+
+\paragraph{Gradient with respect to $M_{k-1}$}
+The derivative of $S_k$ with respect to $M_{k-1}$ enters only through the down term of $S_k$, and the derivation here follows the same pattern as for $M_{k+1}$. Since the down term of $S_k$ depends on $M_{k_1}$ only via its inverse, we first determine how to take the derivative of a matrix inverse with respect to the matrix elements.
+
+For an arbitrary matrix $A$, the derivative of $A^{-1}$ with respect to the matrix element $A_{ij}$ can be found by differentiating the identity $AA^{-1}=I$ with respect to $A_{ij}$,
+\begin{equation}
+\begin{aligned}
+    \frac{\partial A}{\partial A_{ij}}A^{-1} + A\frac{\partial A^{-1}}{\partial A_{ij}} & = 0 \\
+    \frac{\partial A^{-1}}{\partial A_{ij}} &= -A^{-1}E_{ij}A^{-1}
+\end{aligned}
+\end{equation}
+With this result, it follows that
+\begin{equation}
+    \frac{\partial [S_k]_{pq}}{\partial [M_{k-1}]_{ij}} = -[M_k d_{k-1}M_{k-1}^{-1}E_{ij}M_{k-1}^{-1}d_{k-1}^TM_k]_{pq} = -[\delta_k^TE_{ij}\delta_k]_{pq} = -\delta_{k,ip}\delta_{k,jq}
+\end{equation}
+and
+\begin{equation}
+\boxed{
+    \overline M_{k-1} = -W\left[\overline\Lambda + \frac 1 2 F \odot (P - P^T)\right]W^T
+}
+\end{equation}
+
+\paragraph{Gradient with respect to $M_k$}
+For $\overline{M}_k$, we first determine the left-hand side contribution to $\overline M_k$ via the derivative of $S_k$ with respect to $M_k$,
+\begin{equation}
+\begin{aligned}
+    \frac{\partial [S_k]_{pq}}{\partial [M_k]_{ij}} &= E_{ij} d_{k-1} M_{k-1}^{-1} d_{k-1}^T M_k + M_k d_{k-1} M_{k-1}^{-1} d_{k-1}^T E_{ij} \\
+    &= E_{ij} d_{k-1} \delta_k + \delta_k^T d_{k-1}^T E_{ij} \\
+    &= \delta_{ip}[d_{k-1}\delta_k]_{jq} + [d_{k-1}\delta_k]_{ip}\delta_{jq}
+\end{aligned}
+\end{equation}
+Therefore,
+\begin{equation}
+\boxed{
+    \overline M_{k, \text{lhs}} = V\left[\overline\Lambda + \frac 1 2 F \odot (P - P^T)\right](d_{k-1} W)^T + (d_{k-1} W)\left[\overline\Lambda + \frac 1 2 F \odot (P - P^T)\right]V^T
+}
+\end{equation}
+The right-hand side contribution to $\overline M_k$ via the metric is given by
+\begin{equation}
+\boxed{
+    \overline M_{k, \text{rhs}} = - V\overline\Lambda\Lambda V^T - \frac 1 2 VSV^T
+}
+\end{equation}
+as per Section \ref{gep}.
+
 
 \bibliographystyle{plain} % or alpha, unsrt, etc.
 \bibliography{references} % Note: Do not add .bib extension here
