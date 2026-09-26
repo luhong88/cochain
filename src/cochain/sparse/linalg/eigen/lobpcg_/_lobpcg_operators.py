@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -16,6 +18,35 @@ try:
 
 except ImportError:
     _HAS_NVMATH = False
+
+
+class LinearOp(ABC):
+    """
+    An ABC representing the action of a linear operator for finding its eigenmodes.
+
+    Parameters
+    ----------
+    dtype
+        The dtype of the linear operator.
+    device
+        The device of the linear operator.
+    shape
+        The shape of the linear operator.
+    """
+
+    dtype: torch.dtype
+    device: torch.device
+    shape: torch.Size
+
+    def size(self, dim: int | None = None) -> int | torch.Size:
+        """Return the shape of the sparse matrix."""
+        if dim is None:
+            return self.shape
+        else:
+            return self.shape[dim]
+
+    @abstractmethod
+    def __matmal__(self, other): ...
 
 
 class IdOp:

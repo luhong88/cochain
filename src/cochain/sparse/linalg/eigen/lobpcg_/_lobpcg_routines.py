@@ -14,6 +14,7 @@ from ...solvers import DirectSolverConfig
 from ..base.utils import m_orthonormalize
 from ._lobpcg_operators import (
     IdOp,
+    LinearOp,
     ShiftInvSymGEPSpOp,
     ShiftInvSymSpOp,
 )
@@ -27,6 +28,7 @@ from ._lobpcg_preconditioners import (
 
 SparseDecoupledTensorLike: TypeAlias = (
     IdOp
+    | Float[LinearOp, "m m"]
     | Float[SparseDecoupledTensor, "m m"]
     | Float[ShiftInvSymSpOp, "m m"]
     | Float[ShiftInvSymGEPSpOp, "m m"]
@@ -263,6 +265,18 @@ def _dispatch_ops(
     SparseDecoupledTensorLike,
     LOBPCGPreconditioner,
 ]:
+    if isinstance(a_op, LinearOp):
+        if sigma is not None:
+            raise NotImplementedError(
+                "The shift-invert mode is not implemented when 'a_op' is "
+                "represented as a matrix-free linear operator."
+            )
+        if precond_config.method != "identity":
+            raise NotImplementedError(
+                "Preconditioners are not implemented when 'a_op' is "
+                "represented as a matrix-free linear operator."
+            )
+
     if sigma is not None:
         # If doing shift-invert mode, always use the identity preconditioner and
         # ignore the user inputs.
