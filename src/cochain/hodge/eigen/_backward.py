@@ -1,3 +1,4 @@
+from einops import einsum
 from jaxtyping import Float, Integer
 from torch import Tensor
 
@@ -7,7 +8,7 @@ from ...sparse.linalg.eigen.base._backward import compute_dLdA_val, compute_dLdM
 
 def compute_dLdM_km1_val(
     mass_km1_pattern: Integer[SparsityPattern, "km1_splx km1_splx"],
-    eig_vecs_codiff: Float[Tensor, "km1_splx eig"],
+    eig_vec_codiffs: Float[Tensor, "km1_splx eig"],
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
     eig_vec_grad_proj: Float[Tensor, "k_splx k_splx"] | None,
@@ -22,7 +23,7 @@ def compute_dLdM_km1_val(
     """
     return -compute_dLdA_val(
         a_pattern=mass_km1_pattern,
-        eig_vecs=eig_vecs_codiff,
+        eig_vecs=eig_vec_codiffs,
         dLdl=dLdl,
         dLdv=dLdv,
         eig_vec_grad_proj=eig_vec_grad_proj,
@@ -35,7 +36,7 @@ def compute_dLdM_k_val(
     mass_k_pattern: Integer[SparsityPattern, "k_splx k_splx"],
     eig_vals: Float[Tensor, " eig"],
     eig_vecs: Float[Tensor, "k_splx eig"],
-    eig_vecs_codiff: Float[Tensor, "km1_splx eig"],
+    eig_vec_codiffs: Float[Tensor, "km1_splx eig"],
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
     eig_vec_grad_proj: Float[Tensor, "k_splx k_splx"] | None,
@@ -48,7 +49,7 @@ def compute_dLdM_k_val(
     # as the metric).
 
     # The LHS path logic is similar to that in compute_dLdA_val().
-    d_eig_vec_codiffs = cbd_km1 @ eig_vecs_codiff
+    d_eig_vec_codiffs = cbd_km1 @ eig_vec_codiffs
 
     eig_vecs_row = eig_vecs[mass_k_pattern.idx_coo[0]]
     d_eig_vec_codiffs_col = d_eig_vec_codiffs[mass_k_pattern.idx_coo[1]]
