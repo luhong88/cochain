@@ -5,7 +5,7 @@ import torch
 from jaxtyping import Float
 
 from cochain.complex import SimplicialMesh, collate_fn
-from cochain.metric import hodge_laplacians
+from cochain.hodge import laplacians
 from cochain.metric.tri import tri_hodge_stars
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 
@@ -15,7 +15,7 @@ def _codifferential_1(
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[SparseDecoupledTensor, "vert edge"]:
     """Codifferential on discrete 1-forms for a tri mesh."""
-    return hodge_laplacians.codifferential(
+    return laplacians.codifferential(
         cbd_km1=tri_mesh.cbd[0],
         mass_k=tri_hodge_stars.star_1(tri_mesh, dual_complex),
         inv_mass_km1=tri_hodge_stars.star_0(tri_mesh).inv,
@@ -27,7 +27,7 @@ def _codifferential_2(
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
 ) -> Float[SparseDecoupledTensor, "edge tri"]:
     """Codifferential on discrete 2-forms for a tri mesh."""
-    return hodge_laplacians.codifferential(
+    return laplacians.codifferential(
         cbd_km1=tri_mesh.cbd[1],
         mass_k=tri_hodge_stars.star_2(tri_mesh),
         inv_mass_km1=tri_hodge_stars.star_1(tri_mesh, dual_complex).inv,

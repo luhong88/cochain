@@ -7,7 +7,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from cochain.complex import SimplicialMesh
-from cochain.metric.hodge_laplacians import (
+from cochain.hodge.laplacians import (
     MixedWeakLaplacianBlocks,
     codifferential,
     weak_down_laplacian,
