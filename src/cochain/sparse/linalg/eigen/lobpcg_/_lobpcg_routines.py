@@ -321,18 +321,6 @@ def _dispatch_ops(
     SparseDecoupledTensorLike,
     LOBPCGPreconditioner,
 ]:
-    if isinstance(a_op, LinearOp):
-        if sigma is not None:
-            raise NotImplementedError(
-                "The shift-invert mode is not implemented when 'a_op' is "
-                "represented as a matrix-free linear operator."
-            )
-        if precond_config.method != "identity":
-            raise NotImplementedError(
-                "Preconditioners are not implemented when 'a_op' is "
-                "represented as a matrix-free linear operator."
-            )
-
     if sigma is not None:
         # If doing shift-invert mode, always use the identity preconditioner and
         # ignore the user inputs.
@@ -428,6 +416,10 @@ def lobpcg_forward(
     | GEP      | A@x = λM@x                       | A               | M | M | I |
     | SI       | inv(A - σI)@x = (λ - σ)^-1 * x   | inv(A - σI)     | I | I | I |
     | GEP + SI | inv(A - σM)@M@x = (λ - σ)^-1 * x | inv(A - σM) @ M | I | M | M |
+
+    This function can accept matrix-free `a_op` as a `LinearOp` object, although
+    this is currently not compatible with the shift-invert mode or non-identity
+    preconditioners.
     """
     if (a_norm is None) != (m_norm is None):
         raise ValueError(
@@ -438,6 +430,18 @@ def lobpcg_forward(
             "The matrix-free residual stopping criterion via 'atol' does not "
             "support the shift-invert mode."
         )
+
+    if isinstance(a_op, LinearOp):
+        if sigma is not None:
+            raise NotImplementedError(
+                "The shift-invert mode is not implemented when 'a_op' is "
+                "represented as a matrix-free linear operator."
+            )
+        if precond_config.method != "identity":
+            raise NotImplementedError(
+                "Preconditioners are not implemented when 'a_op' is "
+                "represented as a matrix-free linear operator."
+            )
 
     n = v0.size(-1)
 

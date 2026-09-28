@@ -12,10 +12,16 @@ from torch import Tensor
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ...solvers import DirectSolverConfig
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
-from ..base.utils import compute_lorentzian_eps, matrix_inf_norm
-from ._lobpcg_operators import LinearOp
+from ..base.utils import compute_lorentzian_eps_via_norm, matrix_inf_norm
 from ._lobpcg_preconditioners import LOBPCGPrecondConfig
 from ._lobpcg_routines import lobpcg_forward
+
+# In general, the generic `lobpcg()` function implemented here will only accept
+# matrix-explicit `a`, even though the backend numerical routines/util functions
+# can support `a` as a matrix-free LinearOp object. This limitation is due to the
+# difficulty of implementing a custom autograd function for arbitrary linear operators.
+# Therefore, the matrix-free backends are reserved exclusively for operator-specific
+# LOBPCG frontends that they implement operator-specific autograd functions.
 
 
 @dataclass
@@ -38,10 +44,6 @@ class LOBPCGConfig:
     tol
         Residual tolerance for stopping criterion; by default this is set to
         the square root of the machine epsilon at runtime.
-    atol
-        Absolute residual floor for the matrix-free stopping criterion. By default,
-        estimate it from the first block of operator applications. Ignored by the
-        explicit-matrix and shift-invert stopping criteria.
     maxiter
         Maximum number of LOBPCG iterations allowed.
     generator
@@ -52,7 +54,6 @@ class LOBPCGConfig:
     v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "coord n"] | None] | None = None
     largest: bool = False
     tol: float | Literal["auto"] = "auto"
-    atol: float | Literal["auto"] = "auto"
     maxiter: int = 1000
     generator: torch.Generator | None = None
 
@@ -251,9 +252,8 @@ def _lobpcg_batch(
     return eig_vals, eig_vecs
 
 
-# TODO: update to handle LinearOp path
 def lobpcg(
-    a: Float[SparseDecoupledTensor | LinearOp, "m m"],
+    a: Float[SparseDecoupledTensor, "m m"],
     m: Float[SparseDecoupledTensor, "m m"] | None = None,
     block_diag_batch: bool = False,
     n: int | None = None,
@@ -414,12 +414,7 @@ def lobpcg(
     processed_lobpcg_config = replace(lobpcg_config, v0=v0, tol=tol)
 
     if eps == "auto":
-        if isinstance(a, LinearOp):
-            raise NotImplementedError(
-                "eps='auto' is not supported if 'a' is a matrix-free linear operator."
-            )
-
-        eps = compute_lorentzian_eps(a, m)
+        eps = compute_lorentzian_eps_via_norm(a, m)
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(
@@ -432,12 +427,8 @@ def lobpcg(
             nvmath_config,
         )
     else:
-        if isinstance(a, LinearOp):
-            a_norm = None
-            m_norm = None
-        else:
-            a_norm = matrix_inf_norm(a)
-            m_norm = matrix_inf_norm(m)
+        a_norm = matrix_inf_norm(a)
+        m_norm = matrix_inf_norm(m)
 
         eig_vals, eig_vecs = _lobpcg_no_batch(
             a,
