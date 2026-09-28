@@ -153,7 +153,7 @@ class MixedWeakLaplacianBlocks:
     cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
     mass_k: Float[SparseDecoupledTensor, "k_splx k_splx"]
-    mass_kp1: Float[SparseDecoupledTensor, "kp1_splx kp1_splx"] | None
+    mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
 
     def __post_init__(self):
         null_cbd_k = self.cbd_k is None
