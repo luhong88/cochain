@@ -38,7 +38,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         n: int,
         l: int,
         eps: float | int | Literal["auto"],
-        atol: float | Literal["auto"],
+        op_scale: float | Literal["auto"],
         solver_type: Literal["scipy_splu", "cupy_splu", "nvmath_direct_solver"],
         solver_config: DirectSolverConfig | dict[str, Any],
         lobpcg_config: LOBPCGConfig,
@@ -66,7 +66,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             m_op=mass_k,
             a_norm=None,
             m_norm=None,
-            atol=atol,
+            op_scale=op_scale,
             nvmath_config=DirectSolverConfig(),
             precond_config=precond_config,
             **asdict(lobpcg_config),
@@ -90,7 +90,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             n,
             l,
             eps,
-            atol,
+            op_scale,
             solver_type,
             solver_config,
             lobpcg_config,
@@ -223,12 +223,13 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         )
 
 
+# TODO: update docstring
 def mixed_weak_laplacian_lobpcg(
     mixed_weak_laplacian: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"],
     n: int | None = None,
     l: int = 6,
     eps: float | int | Literal["auto"] = "auto",
-    atol: float | Literal["auto"] = "auto",
+    op_scale: float | Literal["auto"] = "auto",
     solver_type: Literal[
         "scipy_splu", "cupy_splu", "nvmath_direct_solver"
     ] = "scipy_splu",
@@ -238,6 +239,8 @@ def mixed_weak_laplacian_lobpcg(
 ) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"]]:
     """
     Sparse differentiable eigensolver for mixed weak Hodge Laplacians using LOBPCG.
+
+    Note that Block-diagonal batching is not supported.
 
     Parameters
     ----------
@@ -263,9 +266,9 @@ def mixed_weak_laplacian_lobpcg(
         to dominate the gradient calculation as the spectral gap approaches the
         square root of `eps`. Set to integer 0 to disable regularization; set to
         "auto" to select `eps` based on the input dtype and matrix inf-norm.
-    atol
+    op_scale
         Operator scale for the matrix-free residual floor: the floor for each
-        eigenvector x is tol * atol * ||x||. By default, estimate this scale from
+        eigenvector x is tol * op_scale * ||x||. By default, estimate this scale from
         the first block of operator applications. Ignored by the explicit-matrix
         and shift-invert stopping criteria.
     lobpcg_config
@@ -349,7 +352,7 @@ def mixed_weak_laplacian_lobpcg(
         n,
         l,
         eps,
-        atol,
+        op_scale,
         solver_type,
         solver_config,
         processed_lobpcg_config,

@@ -155,7 +155,7 @@ def _lobpcg_loop(
     precond: LOBPCGPreconditioner,
     largest: bool,
     tol: float,
-    atol: float | Literal["auto"],
+    op_scale: float | Literal["auto"],
     a_norm: float | None,
     m_norm: float | None,
     sigma: float | int | None,
@@ -170,7 +170,7 @@ def _lobpcg_loop(
     tx_current = t_op @ x_current
 
     if a_norm is None:
-        if atol == "auto":
+        if op_scale == "auto":
             # Compute a lower bound estimate of the matrix norm ||A||_2, used
             # later as part of the matrix-free convergence criteria.
             a_norm_lower_bound = (
@@ -178,7 +178,7 @@ def _lobpcg_loop(
                 / torch.linalg.norm(x_current, dim=0)
             ).max()
         else:
-            a_norm_lower_bound = atol
+            a_norm_lower_bound = op_scale
 
     # Compute the eigenvalues using the Rayleigh quotient X.T@S@T@X/X.T@M@X.
     # Since X is M-orthonormal, X.T@M@X = 1. In most cases, S = I and B = M so
@@ -394,7 +394,7 @@ def lobpcg_forward(
     v0: Float[Tensor, "m n"],
     largest: bool,
     tol: float,
-    atol: float | Literal["auto"],
+    op_scale: float | Literal["auto"],
     maxiter: int,
     nvmath_config: DirectSolverConfig,
     precond_config: LOBPCGPrecondConfig,
@@ -427,7 +427,7 @@ def lobpcg_forward(
         )
     if a_norm is None and sigma is not None:
         raise NotImplementedError(
-            "The matrix-free residual stopping criterion via 'atol' does not "
+            "The matrix-free residual stopping criterion via 'op_scale' does not "
             "support the shift-invert mode."
         )
 
@@ -457,7 +457,7 @@ def lobpcg_forward(
         x_0=v0,
         largest=largest,
         tol=tol,
-        atol=atol,
+        op_scale=op_scale,
         a_norm=a_norm,
         m_norm=m_norm,
         sigma=sigma,
