@@ -1,5 +1,5 @@
 from dataclasses import asdict, replace
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import torch
 from jaxtyping import Float, Integer
@@ -31,20 +31,21 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None,
         mass_km1_val: Float[Tensor, " km1_nz"],
         mass_km1_pattern: Integer[SparsityPattern, "km1_splx km1_splx"],
-        mass_km1_solver: InvSparseOperator,
+        mass_km1_solver_factory: Callable[[InvSparseOperator], InvSparseOperator],
         mass_k_val: Float[SparseDecoupledTensor, " k_nz"],
         mass_k_pattern: Integer[SparsityPattern, "k_splx k_splx"],
         mass_kp1_val: Float[Tensor, " kp1_nz"] | None,
         mass_kp1_pattern: Integer[SparsityPattern, "kp1_splx kp1_splx"] | None,
-        k: int,
+        l: int,
         eps: float | int | Literal["auto"],
         atol: float | Literal["auto"],
         lobpcg_config: LOBPCGConfig,
         precond_config: LOBPCGPrecondConfig,
         nvmath_config: DirectSolverConfig,
         solver_kwargs: dict[str, Any] | None,
-    ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
+    ) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"], InvSparseOperator]:
         mass_km1 = SparseDecoupledTensor(mass_km1_pattern, mass_km1_val)
+        mass_km1_solver = mass_km1_solver_factory(mass_km1)
         mass_k = SparseDecoupledTensor(mass_k_pattern, mass_k_val)
 
         if mass_kp1_val is None:
@@ -69,9 +70,9 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             **asdict(lobpcg_config),
         )
 
-        eig_vals_true = eig_vals[:k]
+        eig_vals_true = eig_vals[:l]
 
-        return eig_vals_true, eig_vecs[:, :k]
+        return eig_vals_true, eig_vecs[:, :l], mass_km1_solver
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -80,7 +81,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             cbd_k,
             mass_km1_val,
             mass_km1_pattern,
-            mass_km1_solver,
+            mass_km1_solver_factory,
             mass_k_val,
             mass_k_pattern,
             mass_kp1_val,
@@ -93,7 +94,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             nvmath_config,
             solver_kwargs,
         ) = inputs
-        eig_vals, eig_vecs = output
+        eig_vals, eig_vecs, mass_km1_solver = output
 
         needs_grad_mass_km1_val = ctx.needs_input_grad[2]
         needs_grad_mass_k_val = ctx.needs_input_grad[5]
@@ -118,7 +119,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "m k"] | None
+        ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "m k"] | None, _
     ) -> tuple[
         None,
         None,
@@ -227,7 +228,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
 
 def mixed_weak_laplacian_lobpcg(
     mixed_weak_laplacian: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"],
-    mass_km1_solver: Float[InvSparseOperator, "km1_splx km1_splx"],
+    mass_km1_solver_factory: Callable[[InvSparseOperator], InvSparseOperator],
     n: int | None = None,
     l: int = 6,
     eps: float | int | Literal["auto"] = "auto",
@@ -244,8 +245,9 @@ def mixed_weak_laplacian_lobpcg(
     ----------
     mixed_weak_laplacian : [k_splx, k_splx]
         A weak Hodge Laplacian represented as a `MixedWeakLaplacianBlocks` object.
-    mass_km1_solver : [km1_splx, km1_splx]
-        The $M_{k-1}$ mass matrix represented as a preconfigured sparse linear solver.
+    mass_km1_solver_factory
+        A function that takes in a $M_{k-1}$ mass matrix and returns a configured
+        sparse linear solver.
     n
         The number of approximated eigenvalues/eigenvectors ("block size"), which
         should be in the range [`l`, `k_splx`] (default value: `k`). In general, it is
@@ -325,12 +327,12 @@ def mixed_weak_laplacian_lobpcg(
 
     processed_lobpcg_config = replace(lobpcg_config, v0=v0, tol=tol)
 
-    eig_vals, eig_vecs = MixedWeakLaplacianLOBPCGAutogradFunction.apply(
+    eig_vals, eig_vecs, _ = MixedWeakLaplacianLOBPCGAutogradFunction.apply(
         mixed_weak_laplacian.cbd_km1,
         mixed_weak_laplacian.cbd_k,
         mixed_weak_laplacian.mass_km1.values,
         mixed_weak_laplacian.mass_km1.pattern,
-        mass_km1_solver,
+        mass_km1_solver_factory,
         mixed_weak_laplacian.mass_k.values,
         mixed_weak_laplacian.mass_k.pattern,
         getattr(mixed_weak_laplacian.mass_kp1, "values", None),
