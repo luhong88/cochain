@@ -46,7 +46,7 @@ class LinearOp(ABC):
             return self.shape[dim]
 
     @abstractmethod
-    def __matmal__(self, other): ...
+    def __matmul__(self, other): ...
 
 
 class IdOp:

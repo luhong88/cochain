@@ -1,9 +1,11 @@
 import warnings
+from typing import Literal
 
 try:
     from typing import TypeAlias
 except ImportError:
     from typing_extensions import TypeAlias
+
 
 import torch
 from jaxtyping import Float
@@ -153,8 +155,9 @@ def _lobpcg_loop(
     precond: LOBPCGPreconditioner,
     largest: bool,
     tol: float,
-    a_norm: float,
-    m_norm: float,
+    atol: float | Literal["auto"],
+    a_norm: float | None,
+    m_norm: float | None,
     sigma: float | int | None,
     niter: int,
     generator: torch.Generator | None,
@@ -166,6 +169,17 @@ def _lobpcg_loop(
 
     tx_current = t_op @ x_current
 
+    if a_norm is None:
+        if atol == "auto":
+            # Compute a lower bound estimate of the matrix norm ||A||_2, used
+            # later as part of the matrix-free convergence criteria.
+            a_norm_lower_bound = (
+                torch.linalg.norm(tx_current, dim=0)
+                / torch.linalg.norm(x_current, dim=0)
+            ).max()
+        else:
+            a_norm_lower_bound = atol
+
     # Compute the eigenvalues using the Rayleigh quotient X.T@S@T@X/X.T@M@X.
     # Since X is M-orthonormal, X.T@M@X = 1. In most cases, S = I and B = M so
     # the quotient further reduces to X.T@T@X = X.T@M@X@Λ = Λ. For the shift-invert
@@ -176,7 +190,8 @@ def _lobpcg_loop(
     converged = False
     for _ in range(niter):
         # Compute the residual vectors R = T@X - B@X@Λ.
-        res = tx_current - (b_op @ x_current) * lambda_current.view(1, -1)
+        bx_current = b_op @ x_current
+        res = tx_current - bx_current * lambda_current.view(1, -1)
         res_norm = torch.linalg.norm(res, dim=0)
 
         # The PyTorch implementation of LOBPCG uses the tolerance threshold
@@ -211,8 +226,49 @@ def _lobpcg_loop(
         # ||R_true_i||_2 < tol*(||A||_2 + ||M||_2*|λ_i|)
         #
         # which is effectively the same error bound as before.
-        if sigma is None:
+        #
+        # When A is provided as a matrix-free linear operator, it may not be possible
+        # to explicitly compute the inf-norm ||A||_∞. Instead, we simply ask whether
+        #
+        # ||R_i||_2 < tol*(||A@X_i||_2 + |λ_i|*||M@X_i||_2)
+        #
+        # The ratio ||R_i||_2/(||A@X_i||_2 + |λ_i|*||M@X_i||_2) provides a
+        # scale-invariant test of the error A@X_i - λ_iM@X_i. To see why, let
+        # u = A@X_i and v = λ_iM@X_i. Then, by the law of cosines,
+        #
+        # ||u - v||^2 = ||u||^2 + ||v||^2 - 2*||u||*||v||*cos(θ)
+        #
+        # As the algorithm converges, u and v have roughly the same length L,
+        #
+        # ||u - v||^2 = 4*L^2*sin(θ/2)^2
+        #
+        # and thus
+        #
+        # ||u - v||/(||u|| + ||v||) = sin(θ/2)
+        #
+        # That is, the ratio measures the difference in direction that is invariant
+        # to L.
+        #
+        # A problem with this approach is that, for λ_i equal to or close to zero,
+        # both u and v should be close to zero as well, which can result in
+        # artificially stringent convergence criteria. Therefore, we add in an
+        # absolute floor to the tolerance that is scaled by the matrix norm of
+        # A and the length of X_i; we approximate ||A||_2 as s = max(||A@X_0||/||X_0||)
+        # over the initial trial eigenvectors. Taken together,
+        #
+        # ||R_i||_2 < tol*(s*||X_i||_2 + ||A@X_i||_2 + |λ_i|*||M@X_i||_2)
+        if a_norm is None:
+            # The absolute floor makes convergence attainable for harmonic modes,
+            # whose individual ||Ax|| and |lambda| ||Mx|| both approach zero.
+            abs_floor = a_norm_lower_bound * torch.linalg.norm(x_current, dim=0)
+            rel_criterion = torch.linalg.norm(
+                tx_current, dim=0
+            ) + lambda_current.abs() * torch.linalg.norm(bx_current, dim=0)
+            tol_current = tol * (abs_floor + rel_criterion)
+
+        elif sigma is None:
             tol_current = tol * (a_norm + m_norm * lambda_current.abs())
+
         else:
             tol_current = tol * lambda_current.abs()
 
@@ -344,12 +400,13 @@ def _dispatch_ops(
 def lobpcg_forward(
     a_op: SparseDecoupledTensorLike,
     m_op: Float[SparseDecoupledTensor, "m m"] | None,
-    a_norm: float,
-    m_norm: float,
+    a_norm: float | None,
+    m_norm: float | None,
     sigma: float | int | None,
     v0: Float[Tensor, "m n"],
     largest: bool,
     tol: float,
+    atol: float | Literal["auto"],
     maxiter: int,
     nvmath_config: DirectSolverConfig,
     precond_config: LOBPCGPrecondConfig,
@@ -372,6 +429,16 @@ def lobpcg_forward(
     | SI       | inv(A - σI)@x = (λ - σ)^-1 * x   | inv(A - σI)     | I | I | I |
     | GEP + SI | inv(A - σM)@M@x = (λ - σ)^-1 * x | inv(A - σM) @ M | I | M | M |
     """
+    if (a_norm is None) != (m_norm is None):
+        raise ValueError(
+            "'a_norm' and 'm_norm' must either both be None or both be provided."
+        )
+    if a_norm is None and sigma is not None:
+        raise NotImplementedError(
+            "The matrix-free residual stopping criterion via 'atol' does not "
+            "support the shift-invert mode."
+        )
+
     n = v0.size(-1)
 
     t_op, b_op, m_op, s_op, precond = _dispatch_ops(
@@ -386,6 +453,7 @@ def lobpcg_forward(
         x_0=v0,
         largest=largest,
         tol=tol,
+        atol=atol,
         a_norm=a_norm,
         m_norm=m_norm,
         sigma=sigma,
