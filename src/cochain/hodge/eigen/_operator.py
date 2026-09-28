@@ -16,15 +16,16 @@ class MixedWeakLaplacianOp(LinearOp):
     mass_km1_solver: Float[InvSparseOperator, "km1_splx km1_splx"]
     solver_kwargs: dict[str, Any] | None = None
 
+    def __post_init__(self):
+        if self.solver_kwargs is None:
+            object.__setattr__(self, "solver_kwargs", {})
+
     def __matmul__(
         self, other: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
         _, rhs = self.laplacian.get_codiff_system(other)
 
-        if self.solver_kwargs is None:
-            solver_kwargs = {}
-
-        codiff = self.mass_km1_solver(rhs, **solver_kwargs)
+        codiff = self.mass_km1_solver(rhs, **self.solver_kwargs)
 
         prod = self.laplacian.get_forward_pass(x=other, y=codiff)
 
