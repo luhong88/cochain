@@ -120,7 +120,7 @@ def compute_dLdM_k_val(
 
 def compute_dLdM_kp1_val(
     cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"],
-    mass_kp1_pattern: Integer[SparsityPattern, "km1_splx km1_splx"],
+    mass_kp1_pattern: Integer[SparsityPattern, "km1_splx km1_splx"] | None,
     eig_vecs: Float[Tensor, "k_splx eig"],
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
