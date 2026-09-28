@@ -135,7 +135,7 @@ def compute_dLdM_kp1_val(
     """
     return compute_dLdA_val(
         a_pattern=mass_kp1_pattern,
-        eig_vecs=cbd_k.T @ eig_vecs,
+        eig_vecs=cbd_k @ eig_vecs,
         dLdl=dLdl,
         dLdv=dLdv,
         eig_vec_grad_proj=eig_vec_grad_proj,
