@@ -21,7 +21,7 @@ from ...sparse.linalg.eigen.lobpcg_.lobpcg_ import LOBPCGConfig
 from ...sparse.linalg.solvers import DirectSolverConfig
 from ..laplacians import MixedWeakLaplacianBlocks
 from ._backward import compute_dLdM_k_val, compute_dLdM_km1_val, compute_dLdM_kp1_val
-from ._operator import MassKm1InvOp, MixedWeakLaplacianOp
+from ._operator import MassKm1Solver, MixedWeakLaplacianOp
 
 
 class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
@@ -43,7 +43,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         solver_config: DirectSolverConfig | dict[str, Any],
         lobpcg_config: LOBPCGConfig,
         precond_config: LOBPCGPrecondConfig,
-    ) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"], MassKm1InvOp]:
+    ) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"], MassKm1Solver]:
         mass_km1 = SparseDecoupledTensor(mass_km1_pattern, mass_km1_val)
         mass_k = SparseDecoupledTensor(mass_k_pattern, mass_k_val)
 
@@ -57,8 +57,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
 
         laplacian = MixedWeakLaplacianBlocks(cbd_km1, cbd_k, mass_km1, mass_k, mass_kp1)
 
-        mass_km1_inv_op = MassKm1InvOp(mass_km1, solver_type, solver_config, n)
-        laplacian_op = MixedWeakLaplacianOp(laplacian, mass_km1_inv_op)
+        mass_km1_solver = MassKm1Solver(mass_km1, solver_type, solver_config, n)
+        laplacian_op = MixedWeakLaplacianOp(laplacian, mass_km1_solver)
 
         # TODO: investigate necessity of nvmath_config argument
         eig_vals, eig_vecs = lobpcg_forward(
@@ -74,7 +74,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
 
         eig_vals_true = eig_vals[:l]
 
-        return eig_vals_true, eig_vecs[:, :l], mass_km1_inv_op
+        return eig_vals_true, eig_vecs[:, :l], mass_km1_solver
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -96,7 +96,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             lobpcg_config,
             precond_config,
         ) = inputs
-        eig_vals, eig_vecs, mass_km1_inv_op = output
+        eig_vals, eig_vecs, mass_km1_solver = output
 
         needs_grad_mass_km1_val = ctx.needs_input_grad[2]
         needs_grad_mass_k_val = ctx.needs_input_grad[4]
@@ -113,7 +113,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         ctx.eps = compute_lorentzian_eps_via_eigs(eig_vals) if eps == "auto" else eps
 
         if needs_codiff:
-            ctx.mass_km1_inv_op = mass_km1_inv_op
+            ctx.mass_km1_solver = mass_km1_solver
 
         if needs_grad_mass_kp1_val:
             ctx.cbd_k = cbd_k
@@ -165,12 +165,12 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             cauchy = compute_cauchy_matrix(eig_vals, ctx.eps)
 
         if needs_codiff:
-            mass_km1_inv_op: MassKm1InvOp = ctx.mass_km1_inv_op
+            mass_km1_solver: MassKm1Solver = ctx.mass_km1_solver
 
             mass_k = SparseDecoupledTensor(mass_k_pattern, mass_k_val)
             rhs = cbd_km1.T @ mass_k @ eig_vecs
 
-            eig_vec_codiffs = mass_km1_inv_op @ rhs
+            eig_vec_codiffs = mass_km1_solver.solve(rhs)
 
         if needs_grad_mass_km1_val:
             dLdM_km1 = compute_dLdM_km1_val(

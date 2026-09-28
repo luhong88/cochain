@@ -18,7 +18,7 @@ from ..laplacians import MixedWeakLaplacianBlocks
 
 
 @dataclass(frozen=True)
-class MassKm1InvOp:
+class MassKm1Solver:
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
     solver_type: Literal["scipy_splu", "cupy_splu", "nvmath_direct_solver"]
     solver_config: DirectSolverConfig | dict[str, Any]
@@ -42,8 +42,8 @@ class MassKm1InvOp:
         )
 
         return _NVMathSparseSolver(
-            self.laplacian.mass_km1.values,
-            self.laplacian.mass_km1.pattern,
+            self.mass_km1.values,
+            self.mass_km1.pattern,
             b_dummy,
             matrix_type=nvmath_sp.DirectSolverMatrixType.SPD,
             config=self.solver_config,
@@ -62,49 +62,40 @@ class MassKm1InvOp:
             raise TypeError("'solver_config' must be a dict object.")
 
         return _SuperLUSparseSolver(
-            self.laplacian.mass_km1,
+            self.mass_km1,
             matrix_type="spd",
             backend=backend,
             **self.solver_config,
         )
 
-    def __matmul_nvmath_direct_solver__(
-        self, other: Float[Tensor, " k_splx *ch"]
-    ) -> Float[Tensor, " k_splx *ch"]:
-        _, rhs = self.laplacian.get_codiff_system(other)
-
+    def _solve_via_nvmath_direct_solver(
+        self, b: Float[Tensor, " km1_splx *ch"]
+    ) -> Float[Tensor, " km1_splx *ch"]:
         # Pad channel dim up to size 3n.
-        l = other.size(-1)
+        l = b.size(-1)
         pad = 3 * self.n - l
 
         rhs_padded_col_major = to_col_major(
-            torch.nn.functional.pad(rhs, (0, pad, 0, 0)), batch_first=False
+            torch.nn.functional.pad(b, (0, pad, 0, 0)), batch_first=False
         )
 
-        codiff = self._nvmath_direct_solver(rhs_padded_col_major)
+        x = self._nvmath_direct_solver.solve(rhs_padded_col_major)[:, :l]
 
-        prod = self.laplacian.get_forward_pass(x=other[:, :l], y=codiff[:, :l])
+        return x
 
-        return prod
+    def _solve_via_splu(
+        self, b: Float[Tensor, " km1_splx *ch"]
+    ) -> Float[Tensor, " km1_splx *ch"]:
+        return self._splu.solve(b)
 
-    def __matmul_splu__(
-        self, other: Float[Tensor, " k_splx *ch"]
-    ) -> Float[Tensor, " k_splx *ch"]:
-        other_flat = self._splu._flatten_b(other)
-        codiff_flat = self._splu.solve(other_flat)
-        prod_flat = self.laplacian.get_forward_pass(x=other_flat, y=codiff_flat)
-        prod = _SuperLUSparseSolver._unflatten_x(prod_flat, other)
-
-        return prod
-
-    def __matmul__(
-        self, other: Float[Tensor, " k_splx *ch"]
-    ) -> Float[Tensor, " k_splx *ch"]:
+    def solve(
+        self, b: Float[Tensor, " km1_splx *ch"]
+    ) -> Float[Tensor, " km1_splx *ch"]:
         match self.solver_type:
             case "nvmath_direct_solver":
-                return self.__matmul_nvmath_direct_solver__(other)
+                return self._solve_via_nvmath_direct_solver(b)
             case "scipy_splu" | "cupy_splu":
-                return self.__matmul_splu__(other)
+                return self._solve_via_splu(b)
             case _:
                 raise ValueError(
                     f"Unrecognized 'solver_type' argument '{self.solver_type}'"
@@ -114,7 +105,7 @@ class MassKm1InvOp:
 @dataclass(frozen=True)
 class MixedWeakLaplacianOp(LinearOp):
     laplacian: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"]
-    mass_km1_inv_op: MassKm1InvOp
+    mass_km1_solver: MassKm1Solver
 
     @property
     def dtype(self) -> torch.dtype:
@@ -134,4 +125,7 @@ class MixedWeakLaplacianOp(LinearOp):
     def __matmul__(
         self, other: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " k_splx *ch"]:
-        return self.mass_km1_inv_op @ other
+        _, rhs = self.laplacian.get_codiff_system(other)
+        codiff = self.mass_km1_solver.solve(rhs)
+        prod = self.laplacian.get_forward_pass(x=other, y=codiff)
+        return prod
