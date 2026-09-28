@@ -381,6 +381,9 @@ def lobpcg(
     if lobpcg_config.v0 is None:
         if n is None:
             n = k
+        else:
+            if n < k or n > a.size(-1):
+                raise ValueError("n must be in the range [k, m].")
 
         if block_diag_batch:
             v0 = [
@@ -403,13 +406,17 @@ def lobpcg(
     else:
         v0 = lobpcg_config.v0
 
-        if v0.size(-1) != n:
-            raise ValueError(
-                "n is inconsistent with the shape of the config-specified v0."
-            )
-
-    if n < k or n > a.size(-1):
-        raise ValueError("n must be in the range [k, m].")
+        if isinstance(v0, Sequence):
+            for v0_ in v0:
+                if v0_.size(-1) < k or v0_.size(-1) > a.size(-1):
+                    raise ValueError(
+                        "The config-specified v0 must be contain between k and m columns vectors."
+                    )
+        else:
+            if v0.size(-1) < k or v0.size(-1) > a.size(-1):
+                raise ValueError(
+                    "The config-specified v0 must be contain between k and m columns vectors."
+                )
 
     tol = (
         torch.finfo(a.dtype).eps ** 0.5
