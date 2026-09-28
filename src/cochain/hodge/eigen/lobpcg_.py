@@ -1,0 +1,347 @@
+from dataclasses import asdict, replace
+from typing import Any, Literal
+
+import torch
+from jaxtyping import Float, Integer
+from torch import Tensor
+
+from ...sparse.decoupled_tensor import (
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
+from ...sparse.linalg.eigen.base._backward import (
+    compute_cauchy_matrix,
+    compute_eig_vec_grad_proj,
+)
+from ...sparse.linalg.eigen.base.utils import compute_lorentzian_eps_via_eigs
+from ...sparse.linalg.eigen.lobpcg_._lobpcg_preconditioners import LOBPCGPrecondConfig
+from ...sparse.linalg.eigen.lobpcg_._lobpcg_routines import lobpcg_forward
+from ...sparse.linalg.eigen.lobpcg_.lobpcg_ import LOBPCGConfig
+from ...sparse.linalg.solvers import DirectSolverConfig, InvSparseOperator
+from ..laplacians import MixedWeakLaplacianBlocks
+from ._backward import compute_dLdM_k_val, compute_dLdM_km1_val, compute_dLdM_kp1_val
+from ._operator import MixedWeakLaplacianOp
+
+
+class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(
+        cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"],
+        cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None,
+        mass_km1_val: Float[Tensor, " km1_nz"],
+        mass_km1_pattern: Integer[SparsityPattern, "km1_splx km1_splx"],
+        mass_km1_solver: InvSparseOperator,
+        mass_k_val: Float[SparseDecoupledTensor, " k_nz"],
+        mass_k_pattern: Integer[SparsityPattern, "k_splx k_splx"],
+        mass_kp1_val: Float[Tensor, " kp1_nz"] | None,
+        mass_kp1_pattern: Integer[SparsityPattern, "kp1_splx kp1_splx"] | None,
+        k: int,
+        eps: float | int | Literal["auto"],
+        atol: float | Literal["auto"],
+        lobpcg_config: LOBPCGConfig,
+        precond_config: LOBPCGPrecondConfig,
+        nvmath_config: DirectSolverConfig,
+        solver_kwargs: dict[str, Any] | None,
+    ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
+        mass_km1 = SparseDecoupledTensor(mass_km1_pattern, mass_km1_val)
+        mass_k = SparseDecoupledTensor(mass_k_pattern, mass_k_val)
+
+        if mass_kp1_val is None:
+            mass_kp1 = None
+        else:
+            if mass_kp1_pattern is None:
+                mass_kp1 = DiagDecoupledTensor(mass_kp1_val)
+            else:
+                mass_kp1 = SparseDecoupledTensor(mass_kp1_pattern, mass_kp1_val)
+
+        laplacian = MixedWeakLaplacianBlocks(cbd_km1, cbd_k, mass_km1, mass_k, mass_kp1)
+        laplacian_op = MixedWeakLaplacianOp(laplacian, mass_km1_solver, solver_kwargs)
+
+        eig_vals, eig_vecs = lobpcg_forward(
+            a_op=laplacian_op,
+            m_op=mass_k,
+            a_norm=None,
+            m_norm=None,
+            atol=atol,
+            nvmath_config=nvmath_config,
+            precond_config=precond_config,
+            **asdict(lobpcg_config),
+        )
+
+        eig_vals_true = eig_vals[:k]
+
+        return eig_vals_true, eig_vecs[:, :k]
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        (
+            cbd_km1,
+            cbd_k,
+            mass_km1_val,
+            mass_km1_pattern,
+            mass_km1_solver,
+            mass_k_val,
+            mass_k_pattern,
+            mass_kp1_val,
+            mass_kp1_pattern,
+            k,
+            eps,
+            atol,
+            lobpcg_config,
+            precond_config,
+            nvmath_config,
+            solver_kwargs,
+        ) = inputs
+        eig_vals, eig_vecs = output
+
+        needs_grad_mass_km1_val = ctx.needs_input_grad[2]
+        needs_grad_mass_k_val = ctx.needs_input_grad[5]
+        needs_grad_mass_kp1_val = ctx.needs_input_grad[7]
+
+        needs_codiff = needs_grad_mass_km1_val or needs_grad_mass_k_val
+
+        ctx.save_for_backward(eig_vals, eig_vecs, mass_k_val if needs_codiff else None)
+
+        ctx.cbd_km1 = cbd_km1
+        ctx.mass_km1_pattern = mass_km1_pattern
+        ctx.mass_k_pattern = mass_k_pattern
+        ctx.mass_kp1_pattern = mass_kp1_pattern
+        ctx.eps = compute_lorentzian_eps_via_eigs(eig_vals) if eps == "auto" else eps
+
+        if needs_codiff:
+            ctx.mass_km1_solver = mass_km1_solver
+            ctx.solver_kwargs = solver_kwargs
+
+        if needs_grad_mass_kp1_val:
+            ctx.cbd_k = cbd_k
+
+    @staticmethod
+    def backward(
+        ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "m k"] | None
+    ) -> tuple[
+        None,
+        None,
+        Float[Tensor, " km1_nz"] | None,
+        None,
+        None,
+        Float[Tensor, " k_nz"] | None,
+        None,
+        Float[Tensor, " kp1_nz"] | None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ]:
+        needs_grad_mass_km1_val = ctx.needs_input_grad[2]
+        needs_grad_mass_k_val = ctx.needs_input_grad[5]
+        needs_grad_mass_kp1_val = ctx.needs_input_grad[7]
+
+        needs_codiff = needs_grad_mass_km1_val or needs_grad_mass_k_val
+
+        # The eigenvectors need to be length-normalized for the following calculation.
+        eig_vals, eig_vecs, mass_k_val = ctx.saved_tensors
+
+        cbd_km1: SparseDecoupledTensor = ctx.cbd_km1
+        mass_km1_pattern: SparsityPattern = ctx.mass_km1_pattern
+        mass_k_pattern: SparsityPattern = ctx.mass_k_pattern
+        mass_kp1_pattern: SparsityPattern | None = ctx.mass_kp1_pattern
+
+        # This error should never be triggered if the user-facing wrapper does its job.
+        if eig_vecs is None:
+            raise ValueError("Eigenvectors are required for backward().")
+
+        if dLdv is None:
+            eig_vec_grad_proj = None
+            cauchy = None
+        else:
+            eig_vec_grad_proj = compute_eig_vec_grad_proj(eig_vecs, dLdv)
+            cauchy = compute_cauchy_matrix(eig_vals, ctx.eps)
+
+        if needs_codiff:
+            mass_km1_solver: InvSparseOperator = ctx.mass_km1_solver
+            solver_kwargs = ctx.solver_kwargs
+
+            mass_k = SparseDecoupledTensor(mass_k_pattern, mass_k_val)
+            rhs = cbd_km1.T @ mass_k @ eig_vecs
+
+            if solver_kwargs is None:
+                solver_kwargs = {}
+
+            eig_vec_codiffs = mass_km1_solver(rhs, **solver_kwargs)
+
+        if needs_grad_mass_km1_val:
+            dLdM_km1 = compute_dLdM_km1_val(
+                mass_km1_pattern, eig_vec_codiffs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+            )
+        else:
+            dLdM_km1 = None
+
+        if needs_grad_mass_k_val:
+            dLdM_k = compute_dLdM_k_val(
+                cbd_km1,
+                mass_k_pattern,
+                eig_vals,
+                eig_vecs,
+                eig_vec_codiffs,
+                dLdl,
+                dLdv,
+                eig_vec_grad_proj,
+                cauchy,
+            )
+        else:
+            dLdM_k = None
+
+        if needs_grad_mass_kp1_val:
+            cbd_k: SparseDecoupledTensor = ctx.cbd_k
+
+            dLdM_kp1 = compute_dLdM_kp1_val(
+                cbd_k, mass_kp1_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+            )
+        else:
+            dLdM_kp1 = None
+
+        return (
+            None,
+            None,
+            dLdM_km1,
+            None,
+            None,
+            dLdM_k,
+            None,
+            dLdM_kp1,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+
+def mixed_weak_laplacian_lobpcg(
+    mixed_weak_laplacian: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"],
+    mass_km1_solver: Float[InvSparseOperator, "km1_splx km1_splx"],
+    n: int | None = None,
+    l: int = 6,
+    eps: float | int | Literal["auto"] = "auto",
+    atol: float | Literal["auto"] = "auto",
+    lobpcg_config: LOBPCGConfig | None = None,
+    nvmath_config: DirectSolverConfig | None = None,
+    precond_config: LOBPCGPrecondConfig | None = None,
+    solver_kwargs: dict[str, Any] | None = None,
+) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"]]:
+    """
+    Sparse differentiable eigensolver for mixed weak Hodge Laplacians using LOBPCG.
+
+    Parameters
+    ----------
+    mixed_weak_laplacian : [k_splx, k_splx]
+        A weak Hodge Laplacian represented as a `MixedWeakLaplacianBlocks` object.
+    mass_km1_solver : [km1_splx, km1_splx]
+        The $M_{k-1}$ mass matrix represented as a preconfigured sparse linear solver.
+    n
+        The number of approximated eigenvalues/eigenvectors ("block size"), which
+        should be in the range [`l`, `k_splx`] (default value: `k`). In general, it is
+        recommended to set the `n` argument somewhat higher than `l`, to make the
+        convergence of the `l` desired eigenvalues faster and to account for
+        possible degenerate eigenvalues.
+    l
+        The number of eigenvalues/eigenvectors to find. Note that, by default,
+        this function finds the `l` smallest eigenvalues of `mixed_weak_laplacian`;
+        this behavior can be changed in `lobpcg_config`.
+    eps
+        The strength of Lorentzian broadening/regularization, which removes
+        singularities in backward gradient calculation when some of the
+        eigenvalues are (near) degenerate. As a heuristic, the regularization starts
+        to dominate the gradient calculation as the spectral gap approaches the
+        square root of `eps`. Set to integer 0 to disable regularization; set to
+        "auto" to select `eps` based on the input dtype and matrix inf-norm.
+    atol
+        Operator scale for the matrix-free residual floor: the floor for each
+        eigenvector x is tol * atol * ||x||. By default, estimate this scale from
+        the first block of operator applications. Ignored by the explicit-matrix
+        and shift-invert stopping criteria.
+    lobpcg_config
+        Additional optional LOBPCG configurations.
+    nvmath_config
+        Additional optional arguments for nvmath `DirectSolver()`; only relevant
+        for the shift-invert mode. The config passed to this argument is
+        independent of the `nvmath_config` attribute of the `LOBPCGPrecondConfig`
+        class.
+    precond_config
+        Additional optional arguments for LOBPCG preconditioners. Note that the
+        preconditioner config is ignored in the shift-invert mode.
+    solver_kwargs
+        Keyword arguments passed to the `mass_km1_solver` sparse solver.
+
+    Returns
+    -------
+    eig_vals : [l,]
+        A tensor of `l` eigenvalues.
+    eig_vecs : [k_splx, l]
+        A tensor of `l` orthonormal eigenvectors; each column represents an eigenvector.
+    """
+    # Note that we delegate the CuPy and nvmath-python dependency checks to
+    # the operator and preconditioner constructors, rather than performing a
+    # top-level check.
+
+    if lobpcg_config is None:
+        lobpcg_config = LOBPCGConfig()
+    if precond_config is None:
+        precond_config = LOBPCGPrecondConfig()
+    if nvmath_config is None:
+        nvmath_config = DirectSolverConfig()
+
+    # Process raw LOBPCG config.
+    if lobpcg_config.v0 is None:
+        if n is None:
+            n = l
+        else:
+            if n < l or n > mixed_weak_laplacian.size(-1):
+                raise ValueError("n must be in the range [k, m].")
+
+        v0 = torch.randn(
+            (mixed_weak_laplacian.size(0), n),
+            generator=lobpcg_config.generator,
+            dtype=mixed_weak_laplacian.dtype,
+            device=mixed_weak_laplacian.device,
+        )
+
+    else:
+        v0 = lobpcg_config.v0
+
+    tol = (
+        torch.finfo(mixed_weak_laplacian.dtype).eps ** 0.5
+        if lobpcg_config.tol == "auto"
+        else lobpcg_config.tol
+    )
+
+    processed_lobpcg_config = replace(lobpcg_config, v0=v0, tol=tol)
+
+    eig_vals, eig_vecs = MixedWeakLaplacianLOBPCGAutogradFunction.apply(
+        mixed_weak_laplacian.cbd_km1,
+        mixed_weak_laplacian.cbd_k,
+        mixed_weak_laplacian.mass_km1.values,
+        mixed_weak_laplacian.mass_km1.pattern,
+        mass_km1_solver,
+        mixed_weak_laplacian.mass_k.values,
+        mixed_weak_laplacian.mass_k.pattern,
+        getattr(mixed_weak_laplacian.mass_kp1, "values", None),
+        getattr(mixed_weak_laplacian.mass_kp1, "pattern", None),
+        l,
+        eps,
+        atol,
+        processed_lobpcg_config,
+        precond_config,
+        nvmath_config,
+        solver_kwargs,
+    )
+
+    return eig_vals, eig_vecs
