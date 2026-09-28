@@ -112,6 +112,7 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
             m_op=m_op,
             a_norm=a_norm,
             m_norm=m_norm,
+            atol="auto",  # atol is only relevant for matrix-free linear operators
             nvmath_config=nvmath_config,
             precond_config=precond_config,
             **asdict(lobpcg_config),
