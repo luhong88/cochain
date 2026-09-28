@@ -8,8 +8,9 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from ...sparse.decoupled_tensor import SparseDecoupledTensor
 from ...sparse.linalg.eigen.lobpcg_._lobpcg_operators import LinearOp
-from ...sparse.linalg.solvers import DirectSolverConfig, InvSparseOperator
+from ...sparse.linalg.solvers import DirectSolverConfig
 from ...sparse.linalg.solvers.nvmath_wrapper import _NVMathSparseSolver
 from ...sparse.linalg.solvers.splu_wrapper import _SuperLUSparseSolver
 from ...utils.parsing import to_col_major
@@ -17,27 +18,11 @@ from ..laplacians import MixedWeakLaplacianBlocks
 
 
 @dataclass(frozen=True)
-class MixedWeakLaplacianOp(LinearOp):
-    laplacian: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"]
-    mass_km1_solver: Float[InvSparseOperator, "km1_splx km1_splx"]
+class MassKm1InvOp:
+    mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
     solver_type: Literal["scipy_splu", "cupy_splu", "nvmath_direct_solver"]
     solver_config: DirectSolverConfig | dict[str, Any]
     n: int
-
-    @property
-    def dtype(self) -> torch.dtype:
-        return self.laplacian.dtype
-
-    @property
-    def device(self) -> torch.device:
-        return self.laplacian.device
-
-    @property
-    def shape(self) -> torch.Size:
-        return self.laplacian.shape
-
-    def size(self, dim: int | None = None) -> int | torch.Size:
-        return self.laplacian.size(dim)
 
     @cached_property
     def _nvmath_direct_solver(self) -> _NVMathSparseSolver:
@@ -49,9 +34,9 @@ class MixedWeakLaplacianOp(LinearOp):
         # Solve a linear system with a channel dim of at most 3n size.
         b_dummy = to_col_major(
             torch.zeros(
-                (self.laplacian.mass_km1.size(-1), 3 * self.n),
-                dtype=self.dtype,
-                device=self.device,
+                (self.mass_km1.size(-1), 3 * self.n),
+                dtype=self.mass_km1.dtype,
+                device=self.mass_km1.device,
             ),
             batch_first=False,
         )
@@ -124,3 +109,29 @@ class MixedWeakLaplacianOp(LinearOp):
                 raise ValueError(
                     f"Unrecognized 'solver_type' argument '{self.solver_type}'"
                 )
+
+
+@dataclass(frozen=True)
+class MixedWeakLaplacianOp(LinearOp):
+    laplacian: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"]
+    mass_km1_inv_op: MassKm1InvOp
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self.laplacian.dtype
+
+    @property
+    def device(self) -> torch.device:
+        return self.laplacian.device
+
+    @property
+    def shape(self) -> torch.Size:
+        return self.laplacian.shape
+
+    def size(self, dim: int | None = None) -> int | torch.Size:
+        return self.laplacian.size(dim)
+
+    def __matmul__(
+        self, other: Float[Tensor, " k_splx *ch"]
+    ) -> Float[Tensor, " k_splx *ch"]:
+        return self.mass_km1_inv_op @ other
