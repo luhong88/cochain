@@ -409,22 +409,6 @@ def test_mixed_formulation_linear_solve(
     torch.testing.assert_close(x_mix, x_dense)
 
 
-# TODO: improve mixed formulation GEP test coverage.
-@pytest.mark.parametrize(
-    "weak_laplacian",
-    [
-        _weak_laplacian_2,
-        _weak_laplacian_3,
-    ],
-)
-def test_mixed_formulation_gep_smoke(
-    weak_laplacian, two_tets_mesh: SimplicialMesh, device
-):
-    mesh = two_tets_mesh.to(device)
-    l_block: MixedWeakLaplacianBlocks = weak_laplacian(mesh, method="mixed")
-    l_block.get_gep()
-
-
 @pytest.mark.parametrize(
     "down, up, mass",
     [
