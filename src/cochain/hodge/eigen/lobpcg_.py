@@ -240,15 +240,10 @@ def mixed_weak_laplacian_lobpcg(
     """
     Sparse differentiable eigensolver for mixed weak Hodge Laplacians using LOBPCG.
 
-    Note that Block-diagonal batching is not supported.
-
     Parameters
     ----------
     mixed_weak_laplacian : [k_splx, k_splx]
         A weak Hodge Laplacian represented as a `MixedWeakLaplacianBlocks` object.
-    mass_km1_solver_factory
-        A function that takes in a $M_{k-1}$ mass matrix and returns a configured
-        sparse linear solver.
     n
         The number of approximated eigenvalues/eigenvectors ("block size"), which
         should be in the range [`l`, `k_splx`] (default value: `k`). In general, it is
@@ -271,18 +266,19 @@ def mixed_weak_laplacian_lobpcg(
         eigenvector x is tol * op_scale * ||x||. By default, estimate this scale from
         the first block of operator applications. Ignored by the explicit-matrix
         and shift-invert stopping criteria.
+    solver_type
+        Which sparse linear solver backend to use for representing the action
+        of the inverse of $M_{k-1}$.
+    solver_config
+        Additional optional arguments for the sparse linear solver constructors.
+        If solver_type is "nvmath_direct_solver", then this should be an
+        instance of `DirectSolverConfig`; if the solver_type is "*_splu", then this
+        should be a dict.
     lobpcg_config
         Additional optional LOBPCG configurations.
-    nvmath_config
-        Additional optional arguments for nvmath `DirectSolver()`; only relevant
-        for the shift-invert mode. The config passed to this argument is
-        independent of the `nvmath_config` attribute of the `LOBPCGPrecondConfig`
-        class.
     precond_config
         Additional optional arguments for LOBPCG preconditioners. Note that the
         preconditioner config is ignored in the shift-invert mode.
-    solver_kwargs
-        Keyword arguments passed to the `mass_km1_solver` sparse solver.
 
     Returns
     -------
@@ -290,6 +286,10 @@ def mixed_weak_laplacian_lobpcg(
         A tensor of `l` eigenvalues.
     eig_vecs : [k_splx, l]
         A tensor of `l` orthonormal eigenvectors; each column represents an eigenvector.
+
+    Notes
+    -----
+    Note that Block-diagonal batching is not supported.
     """
     # Note that we delegate the CuPy and nvmath-python dependency checks to
     # the operator and preconditioner constructors, rather than performing a
