@@ -381,9 +381,6 @@ def lobpcg(
     if lobpcg_config.v0 is None:
         if n is None:
             n = k
-        else:
-            if n < k or n > a.size(-1):
-                raise ValueError("n must be in the range [k, m].")
 
         if block_diag_batch:
             v0 = [
@@ -405,6 +402,14 @@ def lobpcg(
 
     else:
         v0 = lobpcg_config.v0
+
+        if v0.size(-1) != n:
+            raise ValueError(
+                "n is inconsistent with the shape of the config-specified v0."
+            )
+
+    if n < k or n > a.size(-1):
+        raise ValueError("n must be in the range [k, m].")
 
     tol = (
         torch.finfo(a.dtype).eps ** 0.5

@@ -140,8 +140,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         None,
     ]:
         needs_grad_mass_km1_val = ctx.needs_input_grad[2]
-        needs_grad_mass_k_val = ctx.needs_input_grad[5]
-        needs_grad_mass_kp1_val = ctx.needs_input_grad[7]
+        needs_grad_mass_k_val = ctx.needs_input_grad[4]
+        needs_grad_mass_kp1_val = ctx.needs_input_grad[6]
 
         needs_codiff = needs_grad_mass_km1_val or needs_grad_mass_k_val
 
@@ -310,9 +310,6 @@ def mixed_weak_laplacian_lobpcg(
     if lobpcg_config.v0 is None:
         if n is None:
             n = l
-        else:
-            if n < l or n > mixed_weak_laplacian.size(-1):
-                raise ValueError("n must be in the range [k, m].")
 
         v0 = torch.randn(
             (mixed_weak_laplacian.size(0), n),
@@ -323,6 +320,14 @@ def mixed_weak_laplacian_lobpcg(
 
     else:
         v0 = lobpcg_config.v0
+
+        if v0.size(-1) != n:
+            raise ValueError(
+                "n is inconsistent with the shape of the config-specified v0."
+            )
+
+    if n < l or n > mixed_weak_laplacian.size(-1):
+        raise ValueError("n must be in the range [k, m].")
 
     tol = (
         torch.finfo(mixed_weak_laplacian.dtype).eps ** 0.5
