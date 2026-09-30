@@ -77,6 +77,40 @@ def test_lobpcg_config_v0_expansion_and_batched_forward(
     assert eig_vecs.size() == (15, k)  # 6 + 9 = 15 total nodes.
 
 
+def test_single_v0_shape_validation(rand_sp_spd_6x6, device):
+    a = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
+    v0 = torch.randn((6, 2), dtype=a.dtype, device=device)
+
+    eig_vals, eig_vecs = lobpcg(a, n=2, k=2, lobpcg_config=LOBPCGConfig(v0=v0))
+    assert eig_vals.shape == (2,)
+    assert eig_vecs.shape == (6, 2)
+
+    with pytest.raises(ValueError, match="Unbatched v0 must have shape"):
+        lobpcg(a, n=2, k=2, lobpcg_config=LOBPCGConfig(v0=v0[:, :1]))
+
+    with pytest.raises(ValueError, match="Unbatched v0 must have shape"):
+        lobpcg(a, n=2, k=2, lobpcg_config=LOBPCGConfig(v0=v0[:5]))
+
+
+def test_batched_v0_and_block_size_validation(rand_sp_spd_6x6, rand_sp_spd_9x9, device):
+    a1 = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
+    a2 = SparseDecoupledTensor.from_tensor(rand_sp_spd_9x9).to(device)
+    a = SparseDecoupledTensor.pack_block_diag((a1, a2))
+
+    with pytest.raises(ValueError, match="size of each matrix block"):
+        lobpcg(a, block_diag_batch=True, n=7, k=2)
+
+    v0_1 = torch.randn((5, 2), dtype=a.dtype, device=device)
+    v0_2 = torch.randn((9, 2), dtype=a.dtype, device=device)
+    with pytest.raises(ValueError, match="Each batched v0 must have shape"):
+        lobpcg(
+            a,
+            block_diag_batch=True,
+            k=2,
+            lobpcg_config=LOBPCGConfig(v0=[v0_1, v0_2]),
+        )
+
+
 def test_standard_forward(rand_sp_spd_6x6: Float[Tensor, "6 6"], device):
     a_sdt = SparseDecoupledTensor.from_tensor(rand_sp_spd_6x6).to(device)
     a_dense = rand_sp_spd_6x6.to_dense().to(device)

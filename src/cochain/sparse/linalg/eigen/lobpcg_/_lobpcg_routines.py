@@ -20,13 +20,7 @@ from ._lobpcg_operators import (
     ShiftInvSymGEPSpOp,
     ShiftInvSymSpOp,
 )
-from ._lobpcg_preconditioners import (
-    ChoPrecond,
-    IdentityPrecond,
-    ILUPrecond,
-    JacobiPrecond,
-    LOBPCGPrecondConfig,
-)
+from ._lobpcg_preconditioners import LOBPCGPreconditioner
 
 SparseDecoupledTensorLike: TypeAlias = (
     IdOp
@@ -34,10 +28,6 @@ SparseDecoupledTensorLike: TypeAlias = (
     | Float[SparseDecoupledTensor, "m m"]
     | Float[ShiftInvSymSpOp, "m m"]
     | Float[ShiftInvSymGEPSpOp, "m m"]
-)
-
-LOBPCGPreconditioner: TypeAlias = (
-    IdentityPrecond | JacobiPrecond | ILUPrecond | ChoPrecond
 )
 
 
@@ -313,43 +303,12 @@ def _dispatch_ops(
     m_op: Float[SparseDecoupledTensor, "m m"] | None,
     sigma: float | int | None,
     nvmath_config: DirectSolverConfig,
-    precond_config: LOBPCGPrecondConfig,
 ) -> tuple[
     SparseDecoupledTensorLike,
     SparseDecoupledTensorLike,
     SparseDecoupledTensorLike,
     SparseDecoupledTensorLike,
-    LOBPCGPreconditioner,
 ]:
-    if sigma is not None:
-        # If doing shift-invert mode, always use the identity preconditioner and
-        # ignore the user inputs.
-        precond = IdentityPrecond()
-    else:
-        match precond_config.method:
-            case "identity":
-                precond = IdentityPrecond()
-            case "jacobi":
-                # a_op is not required to be int32-safe.
-                precond = JacobiPrecond(a_sdt=a_op)
-            case "ilu":
-                # a_op is required to be int32-safe.
-                precond = ILUPrecond(
-                    a_sdt=a_op,
-                    diag_damp=precond_config.diag_damp,
-                    spilu_kwargs=precond_config.spilu_kwargs,
-                )
-            case "cholesky":
-                # a_op is required to be int32-safe.
-                precond = ChoPrecond(
-                    a_sdt=a_op,
-                    n=n,
-                    diag_damp=precond_config.diag_damp,
-                    nvmath_config=precond_config.nvmath_config,
-                )
-            case _:
-                raise ValueError(f"Unknown preconditioner '{precond_config.method}'.")
-
     match (m_op, sigma):
         case (None, None):
             t_op = a_op
@@ -382,7 +341,7 @@ def _dispatch_ops(
         case _:
             raise ValueError("Invalid eigenvalue problem definition.")
 
-    return t_op, b_op, m_op, s_op, precond
+    return t_op, b_op, m_op, s_op
 
 
 def lobpcg_forward(
@@ -396,8 +355,8 @@ def lobpcg_forward(
     tol: float,
     op_scale: float | Literal["auto"],
     maxiter: int,
+    precond: LOBPCGPreconditioner,
     nvmath_config: DirectSolverConfig,
-    precond_config: LOBPCGPrecondConfig,
     generator: torch.Generator | None,
 ) -> tuple[Float[Tensor, " n"], Float[Tensor, "m n"]]:
     """
@@ -418,8 +377,7 @@ def lobpcg_forward(
     | GEP + SI | inv(A - σM)@M@x = (λ - σ)^-1 * x | inv(A - σM) @ M | I | M | M |
 
     This function can accept matrix-free `a_op` as a `LinearOp` object, although
-    this is currently not compatible with the shift-invert mode or non-identity
-    preconditioners.
+    this is currently not compatible with the shift-invert mode.
     """
     if (a_norm is None) != (m_norm is None):
         raise ValueError(
@@ -437,17 +395,10 @@ def lobpcg_forward(
                 "The shift-invert mode is not implemented when 'a_op' is "
                 "represented as a matrix-free linear operator."
             )
-        if precond_config.method != "identity":
-            raise NotImplementedError(
-                "Preconditioners are not implemented when 'a_op' is "
-                "represented as a matrix-free linear operator."
-            )
 
     n = v0.size(-1)
 
-    t_op, b_op, m_op, s_op, precond = _dispatch_ops(
-        n, a_op, m_op, sigma, nvmath_config, precond_config
-    )
+    t_op, b_op, m_op, s_op = _dispatch_ops(n, a_op, m_op, sigma, nvmath_config)
 
     return _lobpcg_loop(
         t_op=t_op,
