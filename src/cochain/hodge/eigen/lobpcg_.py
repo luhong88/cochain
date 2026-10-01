@@ -1,5 +1,13 @@
+from __future__ import annotations
+
+__all__ = [
+    "mixed_weak_laplacian_lobpcg",
+    "LOBPCGConfig",
+    "LaplacianLOBPCGPrecondConfig",
+]
+
 from dataclasses import asdict, replace
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import torch
 from jaxtyping import Float, Integer
@@ -15,16 +23,61 @@ from ...sparse.linalg.eigen.base._backward import (
     compute_eig_vec_grad_proj,
 )
 from ...sparse.linalg.eigen.base.utils import compute_lorentzian_eps_via_eigs
-from ...sparse.linalg.eigen.lobpcg_._lobpcg_preconditioners import LOBPCGPrecondConfig
+from ...sparse.linalg.eigen.lobpcg_._lobpcg_preconditioners import (
+    IdentityPrecond,
+    LOBPCGPrecondConfig,
+    LOBPCGPreconditioner,
+)
 from ...sparse.linalg.eigen.lobpcg_._lobpcg_routines import lobpcg_forward
 from ...sparse.linalg.eigen.lobpcg_.lobpcg_ import LOBPCGConfig
 from ...sparse.linalg.solvers import DirectSolverConfig
 from ..laplacians import MixedWeakLaplacianBlocks
 from ._backward import compute_dLdM_k_val, compute_dLdM_km1_val, compute_dLdM_kp1_val
 from ._operator import MassKm1Solver, MixedWeakLaplacianOp
+from ._preconditioners import (
+    LaplacianLOBPCGPrecondConfig,
+    ShiftedLumpedPrecond,
+    ShiftedUpPrecond,
+)
 
 
 class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
+    @staticmethod
+    def _dispatch_precond(
+        mixed_weak_laplacian: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"],
+        lobpcg_config: LOBPCGConfig,
+        precond_config: LaplacianLOBPCGPrecondConfig,
+    ) -> LOBPCGPreconditioner:
+        match precond_config.method:
+            case "identity":
+                precond = IdentityPrecond()
+            case "shifted_up":
+                precond = ShiftedUpPrecond(
+                    weak_up_laplacian=mixed_weak_laplacian._block_11,
+                    mass_k=mixed_weak_laplacian.mass_k,
+                    star_k=precond_config.star_k,
+                    tau=precond_config.tau,
+                    n=lobpcg_config.v0.size(-1),
+                    nvmath_config=precond_config.nvmath_config,
+                )
+            case "shifted_lumped":
+                precond = ShiftedLumpedPrecond(
+                    cbd_km1=mixed_weak_laplacian.cbd_km1,
+                    cbd_k=mixed_weak_laplacian.cbd_k,
+                    star_km1=precond_config.star_km1,
+                    mass_k=mixed_weak_laplacian.mass_k,
+                    star_k=precond_config.star_k,
+                    mass_kp1=mixed_weak_laplacian.mass_kp1,
+                    tau=precond_config.tau,
+                    n=lobpcg_config.v0.size(-1),
+                    nvmath_config=precond_config.nvmath_config,
+                )
+
+            case _:
+                raise ValueError(f"Unknown preconditioner '{precond_config.method}'.")
+
+        return precond
+
     @staticmethod
     def forward(
         cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"],
@@ -42,7 +95,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         solver_type: Literal["scipy_splu", "cupy_splu", "nvmath_direct_solver"],
         solver_config: DirectSolverConfig | dict[str, Any],
         lobpcg_config: LOBPCGConfig,
-        precond_config: LOBPCGPrecondConfig,
+        precond_config: LaplacianLOBPCGPrecondConfig,
     ) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"], MassKm1Solver]:
         mass_km1 = SparseDecoupledTensor(mass_km1_pattern, mass_km1_val)
         mass_k = SparseDecoupledTensor(mass_k_pattern, mass_k_val)
@@ -56,19 +109,23 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
                 mass_kp1 = SparseDecoupledTensor(mass_kp1_pattern, mass_kp1_val)
 
         laplacian = MixedWeakLaplacianBlocks(cbd_km1, cbd_k, mass_km1, mass_k, mass_kp1)
+        precond = MixedWeakLaplacianLOBPCGAutogradFunction._dispatch_precond(
+            laplacian, lobpcg_config, precond_config
+        )
 
         mass_km1_solver = MassKm1Solver(mass_km1, solver_type, solver_config, n)
         laplacian_op = MixedWeakLaplacianOp(laplacian, mass_km1_solver)
 
-        # TODO: investigate necessity of nvmath_config argument
+        # The nvmath_config argument is only relevant for the shift-invert mode,
+        # which is currently not supported for matrix-free linear operators.
         eig_vals, eig_vecs = lobpcg_forward(
             a_op=laplacian_op,
             m_op=mass_k,
             a_norm=None,
             m_norm=None,
             op_scale=op_scale,
+            precond=precond,
             nvmath_config=DirectSolverConfig(),
-            precond_config=precond_config,
             **asdict(lobpcg_config),
         )
 
@@ -223,7 +280,6 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         )
 
 
-# TODO: update docstring
 def mixed_weak_laplacian_lobpcg(
     mixed_weak_laplacian: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"],
     n: int | None = None,
@@ -235,7 +291,7 @@ def mixed_weak_laplacian_lobpcg(
     ] = "scipy_splu",
     solver_config: DirectSolverConfig | dict[str, Any] | None = None,
     lobpcg_config: LOBPCGConfig | None = None,
-    precond_config: LOBPCGPrecondConfig | None = None,
+    precond_config: LaplacianLOBPCGPrecondConfig | None = None,
 ) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"]]:
     """
     Sparse differentiable eigensolver for mixed weak Hodge Laplacians using LOBPCG.
@@ -310,27 +366,31 @@ def mixed_weak_laplacian_lobpcg(
                 raise ValueError(f"Unrecognized 'solver_type' argument '{solver_type}'")
 
     # Process raw LOBPCG config.
+    n_k_splx = mixed_weak_laplacian.size(0)
+
     if lobpcg_config.v0 is None:
         if n is None:
             n = l
+    else:
+        v0 = lobpcg_config.v0
 
+        if not isinstance(v0, Tensor):
+            raise ValueError("Unbatched v0 must be a tensor.")
+        if n is None:
+            n = v0.size(-1)
+        if v0.ndim != 2 or v0.shape != (n_k_splx, n):
+            raise ValueError("Unbatched v0 must have shape (k, n).")
+
+    if n < l or n > n_k_splx:
+        raise ValueError("n must be in the range [l, k].")
+
+    if lobpcg_config.v0 is None:
         v0 = torch.randn(
-            (mixed_weak_laplacian.size(0), n),
+            (n_k_splx, n),
             generator=lobpcg_config.generator,
             dtype=mixed_weak_laplacian.dtype,
             device=mixed_weak_laplacian.device,
         )
-
-    else:
-        v0 = lobpcg_config.v0
-
-        if v0.size(-1) != n:
-            raise ValueError(
-                "n is inconsistent with the shape of the config-specified v0."
-            )
-
-    if n < l or n > mixed_weak_laplacian.size(-1):
-        raise ValueError("n must be in the range [k, m].")
 
     tol = (
         torch.finfo(mixed_weak_laplacian.dtype).eps ** 0.5

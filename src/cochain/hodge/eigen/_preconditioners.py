@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -19,6 +24,60 @@ try:
 
 except ImportError:
     _HAS_NVMATH = False
+
+
+@dataclass
+class LaplacianLOBPCGPrecondConfig:
+    """
+    A dataclass encapsulating mixed weak Laplacian LOBPCG preconditioner configuration.
+
+    Parameters
+    ----------
+    method
+        The preconditioning method; set to "identity" to disable preconditioning.
+    tau
+        The strength of shift/regularization by the mass matrix and has the same
+        unit as the eigenvalues. When `tau` is set to "auto", it is computed as
+        the approximate mean of the generalized eigenvalues, scaled down by a
+        factor of 0.01. This is applicable to both the "shifted_up" and "shifted_lumped"
+        methods.
+    star_km1 : [km1_splx, km1_splx]
+        An optional, diagonal Hodge (k-1)-star operator used by the "shifted_lumped"
+        method to approximate the inverse of the corresponding consistent mass
+        matrix. It is recommended to compute the Hodge star with a barycentric
+        dual so that it is guaranteed to be SPD regardless of mesh quality.
+    star_k : [k_splx, k_splx]
+        An optional, diagonal Hodge k-star operator used when `tau` is "auto".
+    nvmath_config
+        Optional configurations for the `nvmath-python` `DirectSolver()`; applicable
+        to both the "shifted_up" and "shifted_lumped" methods.
+    """
+
+    method: Literal["identity", "shifted_up", "shifted_lumped"] = "identity"
+    tau: float | Literal["auto"] = "auto"
+    star_km1: Float[DiagDecoupledTensor, "km1_splx km1_splx"] | None = None
+    star_k: Float[DiagDecoupledTensor, "k_splx k_splx"] | None = None
+    nvmath_config: DirectSolverConfig | None = None
+
+    def __post_init__(self):
+        if self.method in ["shifted_up", "shifted_lumped"]:
+            if self.tau == "auto":
+                if self.star_k is None:
+                    raise ValueError(
+                        "'star_k' is required for automatic scale estimation for tau."
+                    )
+            else:
+                if self.tau <= 0:
+                    raise ValueError("'tau' must be a positive float.")
+
+            if self.method == "shifted_lumped":
+                if self.star_km1 is None:
+                    raise ValueError(
+                        "'star_km1' is required for method = 'shifted_lumped'."
+                    )
+
+            if self.nvmath_config is None:
+                self.nvmath_config = DirectSolverConfig()
 
 
 def _mean_generalized_eigenvalues(
@@ -60,23 +119,15 @@ class ShiftedUpPrecond(LOBPCGPreconditioner):
         weak_up_laplacian: Float[SparseDecoupledTensor, "k_splx k_splx"],
         mass_k: Float[SparseDecoupledTensor, "k_splx k_splx"],
         star_k: Float[DiagDecoupledTensor, "k_splx k_splx"] | None,
-        tau: float | None,
+        tau: float | Literal["auto"],
         n: int,
         nvmath_config: DirectSolverConfig,
     ):
         if not _HAS_NVMATH:
             raise ImportError("nvmath-python backend required.")
 
-        if tau is None:
-            if star_k is None:
-                raise ValueError(
-                    "'star_k' is required for automatic scale estimation for tau."
-                )
-            else:
-                tau = _mean_generalized_eigenvalues(weak_up_laplacian, star_k.inv)
-
-        elif tau <= 0:
-            raise ValueError("'tau' must be a positive float.")
+        if tau == "auto":
+            tau = _mean_generalized_eigenvalues(weak_up_laplacian, star_k.inv)
 
         self.n = n
 
@@ -141,7 +192,7 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
         mass_k: Float[SparseDecoupledTensor, "k_splx k_splx"],
         star_k: Float[DiagDecoupledTensor, "k_splx k_splx"] | None,
         mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None,
-        tau: float | None,
+        tau: float | Literal["auto"],
         n: int,
         nvmath_config: DirectSolverConfig,
     ):
@@ -153,20 +204,12 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
                 "'cbd_k' and 'mass_kp1' must both be None or neither be None."
             )
 
-        if tau is None:
-            if star_k is None:
-                raise ValueError(
-                    "'star_k' is required for automatic scale estimation for tau."
-                )
-        elif tau <= 0:
-            raise ValueError("'tau' must be a positive float.")
-
         self.n = n
 
         weak_down_laplacian = mass_k @ cbd_km1 @ star_km1.inv @ cbd_km1.T @ mass_k
 
         if mass_kp1 is None:
-            if tau is None:
+            if tau == "auto":
                 tau = _mean_generalized_eigenvalues(weak_down_laplacian, star_k.inv)
 
             op = SparseDecoupledTensor.assemble(weak_down_laplacian, tau * mass_k)
@@ -177,7 +220,7 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
                 weak_down_laplacian, weak_up_laplacian
             )
 
-            if tau is None:
+            if tau == "auto":
                 tau = _mean_generalized_eigenvalues(weak_laplacian, star_k.inv)
 
             op = SparseDecoupledTensor.assemble(weak_laplacian, tau * mass_k)
