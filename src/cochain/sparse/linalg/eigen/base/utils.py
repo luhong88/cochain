@@ -408,12 +408,12 @@ def matrix_inf_norm(sdt: Float[SparseDecoupledTensor, "m m"] | None) -> float:
         return row_sum.max().item()
 
 
-def compute_lorentzian_eps(
+def compute_lorentzian_eps_via_norm(
     a: Float[SparseDecoupledTensor, "m m"],
     m: Float[SparseDecoupledTensor, "m m"] | None,
 ) -> float:
     """
-    Automatically select the strength of Lorentzian broadening/regularization.
+    Select the strength of Lorentzian broadening from matrix norms.
 
     The parameter `eps` should be small enough to allow accurate gradients through
     the eigenvectors of near-degenerate eigenvalues, but large enough to stabilize
@@ -439,4 +439,17 @@ def compute_lorentzian_eps(
 
     lorentz_eps = 10.0 * machine_eps * max(1.0, (a_norm / safe_m_norm) ** 2.0)
 
+    return lorentz_eps
+
+
+def compute_lorentzian_eps_via_eigs(eig_vals: Float[Tensor, " eig"]) -> float:
+    """
+    Select the strength of Lorentzian broadening from resolved eigenvalues.
+
+    This function is similar to `compute_lorentzian_eps_via_norm()`, but it
+    estimate the spectral scale from the computed eigenvalues directly, which is
+    useful for matrix-free linear operators.
+    """
+    scale = eig_vals.abs().max().item()
+    lorentz_eps = 10.0 * torch.finfo(eig_vals.dtype).eps * max(1.0, scale**2)
     return lorentz_eps

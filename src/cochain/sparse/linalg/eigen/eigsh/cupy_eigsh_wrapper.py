@@ -15,7 +15,7 @@ from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ....decoupled_tensor._conversion import sdt_to_cupy_csr
 from ...solvers import DirectSolverConfig
 from ..base._backward import dLdA_backward
-from ..base.utils import compute_lorentzian_eps
+from ..base.utils import compute_lorentzian_eps_via_norm
 from ._cupy_eigsh_operators import CuPyShiftInvSymOp
 
 try:
@@ -339,7 +339,7 @@ def cupy_eigsh(
         nvmath_config = DirectSolverConfig()
 
     if eps == "auto":
-        eps = compute_lorentzian_eps(a, None)
+        eps = compute_lorentzian_eps_via_norm(a, None)
 
     if block_diag_batch:
         eig_vals, eig_vecs = _cupy_eigsh_batch(

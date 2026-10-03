@@ -49,12 +49,13 @@ def mass_0(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "vert vert"
     tri_areas = compute_tri_areas(tri_mesh.vert_coords, tri_mesh.tris)
 
     # Using the magic formula, the integral for M_ij can be solved analytically
-    # for each triangle. If i = j, M_ij = A/12; if i != j, M_ij = A/24. This
+    # for each triangle. If i = j, M_ij = A/6; if i != j, M_ij = A/12. This
     # then defines a local 3x3 mass-0 matrix that can be scattered to construct
     # the global mass-0 matrix.
-    ref_local_mass_0 = ((torch.ones(3, 3) + torch.eye(3)) / 12.0).to(
-        dtype=tri_mesh.dtype, device=tri_mesh.device
-    )
+    ref_local_mass_0 = (
+        torch.ones(3, 3, dtype=tri_mesh.dtype, device=tri_mesh.device)
+        + torch.eye(3, dtype=tri_mesh.dtype, device=tri_mesh.device)
+    ) / 12.0
     local_mass_0: Float[Tensor, "tri 3 3"] = einsum(
         tri_areas, ref_local_mass_0, "tri, vert_1 vert_2 -> tri vert_1 vert_2"
     )
@@ -116,9 +117,9 @@ def mass_1(tri_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # For each tri, compute all area integrals of λ_i*λ_k for each pair of vertices
     # (i, k). As shown in the mass_0() function, this integral evaluates to
     # A*(1 + δ_ik)/12, where δ is the Kronecker delta.
-    ref_bc_poly_ints = (torch.ones((3, 3)) + torch.eye(3)).to(
-        dtype=tri_mesh.dtype, device=tri_mesh.device
-    )
+    ref_bc_poly_ints = torch.ones(
+        (3, 3), dtype=tri_mesh.dtype, device=tri_mesh.device
+    ) + torch.eye(3, dtype=tri_mesh.dtype, device=tri_mesh.device)
     bc_poly_ints = einsum(
         tri_areas / 12.0, ref_bc_poly_ints, "tri, v_1 v_2 -> tri v_1 v_2"
     )

@@ -1,4 +1,5 @@
 import warnings
+from abc import ABC, abstractmethod
 from collections import ChainMap
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -13,7 +14,6 @@ from ....decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from ....decoupled_tensor._conversion import sdt_to_cupy_csc
 from ...solvers import DirectSolverConfig
 from ...solvers.nvmath_wrapper import _NVMathSparseSolver
-from ._lobpcg_operators import IdOp
 
 try:
     import cupy as cp
@@ -70,10 +70,30 @@ class LOBPCGPrecondConfig:
             self.nvmath_config = DirectSolverConfig()
 
 
-IdentityPrecond = IdOp
+class LOBPCGPreconditioner(ABC):
+    """
+    An ABC representing the action of a LOBPCG preconditioner.
+
+    The only requirement for a LOBPCG preconditioner is to implement a
+    `__matmul__()` method that takes in a matrix of residual (columns) vectors
+    of shape `(m, k)`, and returns a matrix of search direction vectors of the same
+    shape; here, `m` is the shape of the matrix whose eigenmodes are to be resolved,
+    and `k` is the number of trial eigenvectors.
+    """
+
+    @abstractmethod
+    def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]: ...
 
 
-class JacobiPrecond:
+class IdentityPrecond(LOBPCGPreconditioner):
+    def __init__(self):
+        pass
+
+    def __matmul__(self, other):
+        return other
+
+
+class JacobiPrecond(LOBPCGPreconditioner):
     r"""
     Jacobi preconditioner for LOBPCG.
 
@@ -105,7 +125,7 @@ class JacobiPrecond:
         return self.ddt @ res
 
 
-class ILUPrecond:
+class ILUPrecond(LOBPCGPreconditioner):
     r"""
     Diagonally damped incomplete LU preconditioner for LOBPCG.
 
@@ -184,7 +204,7 @@ class ILUPrecond:
         return sol
 
 
-class ChoPrecond:
+class ChoPrecond(LOBPCGPreconditioner):
     r"""
     Diagonally damped Cholesky preconditioner for LOBPCG.
 

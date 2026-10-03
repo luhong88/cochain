@@ -53,12 +53,13 @@ def mass_0(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "vert vert"
     )
 
     # Using the magic formula, the integral for M_ij can be solved analytically
-    # for each triangle. If i = j, M_ij = V/20; if i != j, M_ij = V/40. This
+    # for each triangle. If i = j, M_ij = V/10; if i != j, M_ij = V/20. This
     # then defines a local 4x4 mass-0 matrix that can be scattered to construct
     # the global mass-0 matrix.
-    ref_local_mass_0 = ((torch.ones(4, 4) + torch.eye(4)) / 20.0).to(
-        dtype=tet_mesh.dtype, device=tet_mesh.device
-    )
+    ref_local_mass_0 = (
+        torch.ones(4, 4, dtype=tet_mesh.dtype, device=tet_mesh.device)
+        + torch.eye(4, dtype=tet_mesh.dtype, device=tet_mesh.device)
+    ) / 20.0
     local_mass_0: Float[Tensor, "tet 4 4"] = einsum(
         tet_vols, ref_local_mass_0, "tet, vert_1 vert_2 -> tet vert_1 vert_2"
     )
@@ -123,9 +124,9 @@ def mass_1(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "edge edge"
     # For each tri, compute all volume integrals of λ_i*λ_k for each pair of vertices
     # (i, k). As shown in the mass_0() function, this integral evaluates to
     # V*(1 + δ_ik)/20, where δ is the Kronecker delta.
-    ref_bc_poly_ints = (torch.ones((4, 4)) + torch.eye(4)).to(
-        dtype=tet_mesh.dtype, device=tet_mesh.device
-    )
+    ref_bc_poly_ints = torch.ones(
+        (4, 4), dtype=tet_mesh.dtype, device=tet_mesh.device
+    ) + torch.eye(4, dtype=tet_mesh.dtype, device=tet_mesh.device)
     bc_poly_ints = einsum(
         tet_unsigned_vols / 20.0, ref_bc_poly_ints, "tet, v_1 v_2 -> tet v_1 v_2"
     )
@@ -239,7 +240,7 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     $$
     W_{ijk}(x) = 2(
         \lambda_i\nabla\lambda_j\times\nabla\lambda_k
-        - \lambda_j\nabla\lambda_k\times\nabla\lambda_i
+        + \lambda_j\nabla\lambda_k\times\nabla\lambda_i
         + \lambda_k\nabla\lambda_i\times\nabla\lambda_j)
     $$
 
@@ -255,10 +256,6 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     coordinate of vertex $i$. These two representations are mathematically equivalent.
     """
     tet_vert_coords: Float[Tensor, "tet 4 3"] = tet_mesh.vert_coords[tet_mesh.tets]
-
-    tet_signed_vols: Float[Tensor, " tet"] = compute_tet_signed_vols(
-        tet_mesh.vert_coords, tet_mesh.tets
-    )
 
     # For each tet ijkl and each 2-form basis function, associate basis function
     # with the opposite vertex; i.e., W_i(x) = (x - v_i)/3V is the basis associated
@@ -278,8 +275,9 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     # (k, l). As shown in the mass_0() function, this integral evaluates to
     # V*(1 + δ_ik)/20, where δ is the Kronecker delta. Here, we ignore the volume
     # term since it will get canceled out by the 1/9V^2 term in the integral.
-    ints: Float[Tensor, "4 4"] = (torch.ones((4, 4)) + torch.eye(4)).to(
-        dtype=tet_mesh.dtype, device=tet_mesh.device
+    ints: Float[Tensor, "4 4"] = (
+        torch.ones((4, 4), dtype=tet_mesh.dtype, device=tet_mesh.device)
+        + torch.eye(4, dtype=tet_mesh.dtype, device=tet_mesh.device)
     ) / 20.0
 
     # Compute the local gram matrix.
@@ -304,8 +302,13 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     whitney_dot.sub_(repeat(torch.einsum("kl,til->ti", ints, g), "t i -> t i j", j=4))
     whitney_dot.add_(torch.einsum("kl,tij->tij", ints, g))
 
-    # Scale the dot product by the 1/9V term.
-    whitney_dot_scaled = whitney_dot / (9.0 * tet_signed_vols.view(-1, 1, 1))
+    # Scale the dot product by the 1/9V term. Note that, since the volume integral
+    # uses unsigned volume, dividing by 9V^2 requires using the unsigned volume
+    # as well; i.e., |V|/(9V^2) = 1/(9|V|).
+    tet_unsigned_vols: Float[Tensor, " tet"] = compute_tet_signed_vols(
+        tet_mesh.vert_coords, tet_mesh.tets
+    ).abs()
+    whitney_dot_scaled = whitney_dot / (9.0 * tet_unsigned_vols.view(-1, 1, 1))
 
     # Note that, for the purpose of computing the mass-2 matrix, the definition
     # of tri faces is different from the global, "canonical" definitions used in
@@ -316,10 +319,10 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
     #
     # However, here, we enumerate the tri faces by first enumerating the vertices
     # that oppose the tri faces, and the tri vertices are enumerated such that
-    # its (right-hand rule) area normal is outward-facing (for positively oriented
-    # tets; this is why whitney_dot_scaled uses the signed volume, to correct for
-    # the flipped area normal direction in a negatively oriented tet). More
-    # specifically, this results in the following tri face definitions:
+    # its (right-hand rule) area normal is outward-facing for positively oriented
+    # tets. Reversing the tet orientation changes the sign of every local basis
+    # function, which cancels in their pairwise inner products. More specifically,
+    # this results in the following tri face definitions:
     #
     # [[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]]
     #
@@ -336,8 +339,8 @@ def mass_2(tet_mesh: SimplicialMesh) -> Float[SparseDecoupledTensor, "tri tri"]:
         tet_mesh.tri_faces.parity, dims=(-1,)
     )
 
-    # Mapping the local basis function to the global basis function requires
-    # correction of both the triangle face orientation as well as the tet orientations.
+    # Mapping the local basis functions to the global basis functions requires
+    # correcting the triangle face orientation on both indices.
     whitney_inner_prod_signed: Float[Tensor, "tet tri=4 tri=4"] = einsum(
         whitney_dot_scaled,
         global_tri_parity,

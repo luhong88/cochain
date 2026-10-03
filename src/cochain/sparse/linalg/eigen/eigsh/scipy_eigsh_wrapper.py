@@ -17,7 +17,7 @@ from .....utils.parsing import to_np
 from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
 from ....decoupled_tensor._conversion import sdt_to_scipy_csc, sdt_to_scipy_csr
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
-from ..base.utils import compute_lorentzian_eps
+from ..base.utils import compute_lorentzian_eps_via_norm
 
 
 @dataclass
@@ -401,7 +401,7 @@ def scipy_eigsh(
         config = SciPyEigshConfig()
 
     if eps == "auto":
-        eps = compute_lorentzian_eps(a, m)
+        eps = compute_lorentzian_eps_via_norm(a, m)
 
     if block_diag_batch:
         eig_vals, eig_vecs = _scipy_eigsh_batch(a, m, k, eps, compute_eig_vecs, config)

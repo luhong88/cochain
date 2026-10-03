@@ -13,7 +13,11 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ..sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+from ..sparse.decoupled_tensor import (
+    BaseDecoupledTensor,
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+)
 from ..sparse.linalg.solvers import InvSparseOperator
 
 
@@ -152,8 +156,8 @@ class MixedWeakLaplacianBlocks:
     cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"]
     cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
-    mass_k: Float[SparseDecoupledTensor, "k_splx k_splx"]
-    mass_kp1: Float[SparseDecoupledTensor, "kp1_splx kp1_splx"] | None
+    mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
+    mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
 
     def __post_init__(self):
         null_cbd_k = self.cbd_k is None
@@ -165,6 +169,11 @@ class MixedWeakLaplacianBlocks:
             )
 
         object.__setattr__(self, "down_only", null_cbd_k)
+
+        if isinstance(self.mass_km1, DiagDecoupledTensor):
+            raise ValueError(
+                "If 'mass_km1' is a diagonal tensor, form the Schur-complement operator directly.",
+            )
 
     @property
     def dtype(self) -> torch.dtype:
@@ -320,31 +329,10 @@ class MixedWeakLaplacianBlocks:
 
         return lhs, rhs
 
-    # TODO: document singular metric issue
-    def get_gep(
-        self,
-    ) -> tuple[
-        Float[SparseDecoupledTensor, "km1_splx+k_splx km1_splx+k_splx"],
-        Float[SparseDecoupledTensor, "km1_splx+k_splx km1_splx+k_splx"],
-    ]:
-        r"""
-        Generate the mixed formulation representation of the weak k-Laplacian GEP.
-
-        The generalized eigenvalue problem is defined as $S_k x = \lambda M_k x$.
-
-        Returns
-        -------
-        mixed_k_laplacian : [km1_splx+k_splx, km1_splx+k_splx]
-            The mixed formulation representation of $S_k$.
-        metric : [km1_splx+k_splx, km1_splx+k_splx]
-            The mixed formulation representation of $M_k$.
-        """
-        return self._mixed_k_laplacian, self._get_metric(padded=True)
-
     def get_codiff_system(
         self, x: Float[Tensor, " k_splx *ch"]
     ) -> tuple[
-        Float[SparseDecoupledTensor, "km1_splx km1_splx"],
+        Float[BaseDecoupledTensor, "km1_splx km1_splx"],
         Float[Tensor, " km1_splx *ch"],
     ]:
         r"""
@@ -362,12 +350,12 @@ class MixedWeakLaplacianBlocks:
         Returns
         -------
         lhs : [km1_splx, km1_splx]
-            The consistent 1-mass matrix, representing the LHS of the subsystem.
+            The (k-1)-mass matrix, representing the LHS of the subsystem.
         rhs : [km1_splx, *ch]
             The RHS of the subsystem.
         """
         lhs = self.mass_km1
-        rhs = self.cbd_km1.T @ self.mass_k @ x
+        rhs = self._block_01 @ x  # cbd_km1.T @ mass_k @ x
         return lhs, rhs
 
     def get_forward_pass(
@@ -390,12 +378,12 @@ class MixedWeakLaplacianBlocks:
             The vector $b$ in $S_k x = b$.
         """
         if self.down_only:
-            return self.mass_k @ self.cbd_km1 @ y
+            return self._block_10 @ y  # mass_k @ cbd_km1 @ y
 
         else:
             return (
-                self.mass_k @ self.cbd_km1 @ y
-                + self.cbd_k.T @ self.mass_kp1 @ self.cbd_k @ x
+                self._block_10 @ y  # mass_k @ cbd_km1 @ y
+                + self._block_11 @ x  # cbd_k.T @ mass_kp1 @ cbd_k @ x
             )
 
 

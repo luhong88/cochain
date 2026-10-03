@@ -2,7 +2,7 @@ import torch
 from jaxtyping import Float
 
 from cochain.complex import SimplicialMesh
-from cochain.metric import hodge_laplacians
+from cochain.hodge import laplacians
 from cochain.metric.tri import tri_hodge_stars
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 from cochain.topology.spanning_tree import compute_cotree_mask, compute_tree_mask
@@ -13,7 +13,7 @@ def _weak_laplacian_1_grad_div(
     tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """Grad-div component of the weak 1-Laplacian for a tri mesh."""
-    return hodge_laplacians.weak_down_laplacian(
+    return laplacians.weak_down_laplacian(
         cbd_km1=tet_mesh.cbd[0],
         mass_k=tri_hodge_stars.star_1(tet_mesh),
         inv_mass_km1=tri_hodge_stars.star_0(tet_mesh).inv,
@@ -24,7 +24,7 @@ def _weak_laplacian_1_curl_curl(
     tet_mesh: SimplicialMesh,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """Curl-curl component of the weak 1-Laplacian for a tri mesh."""
-    return hodge_laplacians.weak_up_laplacian(
+    return laplacians.weak_up_laplacian(
         tet_mesh.cbd[1], tri_hodge_stars.star_2(tet_mesh)
     )
 

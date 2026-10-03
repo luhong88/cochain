@@ -32,7 +32,7 @@ def compute_cauchy_matrix(
 
 
 def compute_dLdA_val(
-    a_pattern: Integer[SparsityPattern, "r c"],
+    a_pattern: Integer[SparsityPattern, "r c"] | None,
     eig_vecs: Float[Tensor, "c k"],
     dLdl: Float[Tensor, " k"],
     dLdv: Float[Tensor, "c k"] | None,
@@ -44,9 +44,14 @@ def compute_dLdA_val(
 
     Note that the formula implemented in this function is applicable to both
     standard and generalized eigenvalue problems.
+
+    If `a_pattern` is None, then it is assumed that A is a `DiagDecoupledTensor`.
     """
-    eig_vecs_row = eig_vecs[a_pattern.idx_coo[0]]
-    eig_vecs_col = eig_vecs[a_pattern.idx_coo[1]]
+    if a_pattern is None:
+        eig_vecs_row = eig_vecs_col = eig_vecs
+    else:
+        eig_vecs_row = eig_vecs[a_pattern.idx_coo[0]]
+        eig_vecs_col = eig_vecs[a_pattern.idx_coo[1]]
 
     # If the loss does not depend on the eigenvectors, then the eigenvalue
     # component of the gradient is given by dLdA_ij = sum_k[dLdλ_k * V_ik * V_jk]

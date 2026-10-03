@@ -11,6 +11,30 @@ from cochain.metric.tet import tet_hodge_stars, tet_masses
 from cochain.metric.tet._tet_geometry import compute_tet_signed_vols
 
 
+@pytest.fixture(
+    params=[(), (0,), (1,), (0, 1)],
+    ids=["positive", "first_negative", "second_negative", "both_negative"],
+)
+def oriented_two_tets_mesh(two_tets_mesh: SimplicialMesh, request):
+    """
+    Exercise positive, negative, and mixed tetrahedron orientations.
+
+    Construct a set of alternative two_tets_mesh with various combinations of
+    volume signs to check whether the mass matrix implementations correctly
+    handle signed volumes. Note that the two_tets_mesh itself consits of
+    positively oriented tets only.
+    """
+    tets = two_tets_mesh.tets.clone()
+    for tet_idx in request.param:
+        tets[tet_idx] = tets[tet_idx, [1, 0, 2, 3]]
+    mesh = SimplicialMesh.from_tet_mesh(
+        vert_coords=two_tets_mesh.vert_coords.clone(), tets=tets
+    )
+    volumes = compute_tet_signed_vols(mesh.vert_coords, mesh.tets)
+    assert (volumes < 0).sum().item() == len(request.param)
+    return mesh
+
+
 def test_mass_0_with_skfem(two_tets_mesh: SimplicialMesh, device):
     mesh = two_tets_mesh.to(device)
 
@@ -71,8 +95,8 @@ def test_mass_1_with_skfem(two_tets_mesh: SimplicialMesh, device):
     torch.testing.assert_close(cochain_mass_1_eigs, skfem_mass_1_eigs_torch)
 
 
-def test_mass_2_with_skfem(two_tets_mesh: SimplicialMesh, device):
-    mesh = two_tets_mesh.to(device)
+def test_mass_2_with_skfem(oriented_two_tets_mesh: SimplicialMesh, device):
+    mesh = oriented_two_tets_mesh.to(device)
 
     skfem_mesh = skfem.MeshTet(
         mesh.vert_coords.T.cpu().detach().numpy(),
@@ -129,6 +153,22 @@ def test_mass_matrix_positive_definite(
     eigs = torch.linalg.eigvalsh(mass)
 
     assert eigs.min() >= 1e-6
+
+
+@pytest.mark.parametrize(
+    "mass_matrix",
+    [tet_masses.mass_0, tet_masses.mass_1, tet_masses.mass_2, tet_masses.mass_3],
+)
+def test_mass_matrix_tet_orientation_invariance(
+    mass_matrix, two_tets_mesh, oriented_two_tets_mesh, device
+):
+    """Changing tet vertex ordering must preserve the assembled SPD metric."""
+    reference = mass_matrix(two_tets_mesh.to(device, torch.float64)).to_dense()
+    actual = mass_matrix(oriented_two_tets_mesh.to(device, torch.float64)).to_dense()
+
+    torch.testing.assert_close(actual, reference)
+    # cholesky() raises an exception if the matrix is not positive definite.
+    torch.linalg.cholesky(actual)
 
 
 def test_mass_0_matrix_total_vol_partition(two_tets_mesh: SimplicialMesh, device):
@@ -262,9 +302,9 @@ def test_mass_1_patch(two_tets_mesh: SimplicialMesh, device):
     torch.testing.assert_close(energy, true_energy)
 
 
-def test_mass_2_patch(two_tets_mesh: SimplicialMesh, device):
+def test_mass_2_patch(oriented_two_tets_mesh: SimplicialMesh, device):
     """Check that M_2 computes the L^2 norm for a const 2-form exactly."""
-    mesh = two_tets_mesh.to(device)
+    mesh = oriented_two_tets_mesh.to(device)
 
     # Define a constant 2-form and discretize it with de Rham map.
     de_rham = DeRhamMap(k=2, quad_degree=1, mesh=mesh)
@@ -313,14 +353,16 @@ def test_mass_matrix_backward(mass_matrix, two_tets_mesh: SimplicialMesh, device
     "mass_matrix",
     [tet_masses.mass_0, tet_masses.mass_1, tet_masses.mass_2, tet_masses.mass_3],
 )
-def test_mass_matrix_gradcheck(mass_matrix, two_tets_mesh: SimplicialMesh, device):
-    vert_coords = two_tets_mesh.vert_coords.clone().to(
+def test_mass_matrix_gradcheck(
+    mass_matrix, oriented_two_tets_mesh: SimplicialMesh, device
+):
+    vert_coords = oriented_two_tets_mesh.vert_coords.clone().to(
         dtype=torch.float64, device=device
     )
     vert_coords.requires_grad_()
 
     def mass_fxn(test_vert_coords):
-        mesh = two_tets_mesh.to(device=device, dtype=torch.float64)
+        mesh = oriented_two_tets_mesh.to(device=device, dtype=torch.float64)
         mesh.vert_coords = test_vert_coords
         m = mass_matrix(mesh)
         return m.values.sum()
