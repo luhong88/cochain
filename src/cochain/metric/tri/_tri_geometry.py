@@ -4,7 +4,6 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ...complex import SimplicialMesh
-from ...sparse.decoupled_tensor import SparseDecoupledTensor
 
 # We adopt the following convention for describing the relation between vertices
 # locally in a triangle. For a given triangle represented by three vertex indices,
