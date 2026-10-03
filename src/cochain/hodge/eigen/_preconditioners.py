@@ -117,7 +117,7 @@ class ShiftedUpPrecond(LOBPCGPreconditioner):
     def __init__(
         self,
         weak_up_laplacian: Float[SparseDecoupledTensor, "k_splx k_splx"],
-        mass_k: Float[SparseDecoupledTensor, "k_splx k_splx"],
+        mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"],
         star_k: Float[DiagDecoupledTensor, "k_splx k_splx"] | None,
         tau: float | Literal["auto"],
         n: int,
@@ -189,7 +189,7 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
         cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"],
         cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None,
         star_km1: Float[DiagDecoupledTensor, "km1_splx km1_splx"],
-        mass_k: Float[SparseDecoupledTensor, "k_splx k_splx"],
+        mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"],
         star_k: Float[DiagDecoupledTensor, "k_splx k_splx"] | None,
         mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None,
         tau: float | Literal["auto"],

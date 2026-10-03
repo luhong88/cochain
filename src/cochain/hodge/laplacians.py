@@ -13,7 +13,11 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ..sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+from ..sparse.decoupled_tensor import (
+    BaseDecoupledTensor,
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+)
 from ..sparse.linalg.solvers import InvSparseOperator
 
 
@@ -152,7 +156,7 @@ class MixedWeakLaplacianBlocks:
     cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"]
     cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
-    mass_k: Float[SparseDecoupledTensor, "k_splx k_splx"]
+    mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
 
     def __post_init__(self):
@@ -165,6 +169,11 @@ class MixedWeakLaplacianBlocks:
             )
 
         object.__setattr__(self, "down_only", null_cbd_k)
+
+        if isinstance(self.mass_km1, DiagDecoupledTensor):
+            raise ValueError(
+                "If 'mass_km1' is a diagonal tensor, form the Schur-complement operator directly.",
+            )
 
     @property
     def dtype(self) -> torch.dtype:
@@ -323,7 +332,7 @@ class MixedWeakLaplacianBlocks:
     def get_codiff_system(
         self, x: Float[Tensor, " k_splx *ch"]
     ) -> tuple[
-        Float[SparseDecoupledTensor, "km1_splx km1_splx"],
+        Float[BaseDecoupledTensor, "km1_splx km1_splx"],
         Float[Tensor, " km1_splx *ch"],
     ]:
         r"""
@@ -341,7 +350,7 @@ class MixedWeakLaplacianBlocks:
         Returns
         -------
         lhs : [km1_splx, km1_splx]
-            The consistent 1-mass matrix, representing the LHS of the subsystem.
+            The (k-1)-mass matrix, representing the LHS of the subsystem.
         rhs : [km1_splx, *ch]
             The RHS of the subsystem.
         """

@@ -14,6 +14,7 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from ...sparse.decoupled_tensor import (
+    BaseDecoupledTensor,
     DiagDecoupledTensor,
     SparseDecoupledTensor,
     SparsityPattern,
@@ -39,6 +40,15 @@ from ._preconditioners import (
     ShiftedLumpedPrecond,
     ShiftedUpPrecond,
 )
+
+
+def _reconstruct_op(
+    val: Tensor, pattern: SparsityPattern | None
+) -> BaseDecoupledTensor:
+    if pattern is None:
+        return DiagDecoupledTensor(val)
+    else:
+        return SparseDecoupledTensor(pattern, val)
 
 
 class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
@@ -84,8 +94,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None,
         mass_km1_val: Float[Tensor, " km1_nz"],
         mass_km1_pattern: Integer[SparsityPattern, "km1_splx km1_splx"],
-        mass_k_val: Float[SparseDecoupledTensor, " k_nz"],
-        mass_k_pattern: Integer[SparsityPattern, "k_splx k_splx"],
+        mass_k_val: Float[Tensor, " k_nz"],
+        mass_k_pattern: Integer[SparsityPattern, "k_splx k_splx"] | None,
         mass_kp1_val: Float[Tensor, " kp1_nz"] | None,
         mass_kp1_pattern: Integer[SparsityPattern, "kp1_splx kp1_splx"] | None,
         n: int,
@@ -98,15 +108,12 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         precond_config: LaplacianLOBPCGPrecondConfig,
     ) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"], MassKm1Solver]:
         mass_km1 = SparseDecoupledTensor(mass_km1_pattern, mass_km1_val)
-        mass_k = SparseDecoupledTensor(mass_k_pattern, mass_k_val)
+        mass_k = _reconstruct_op(mass_k_val, mass_k_pattern)
 
         if mass_kp1_val is None:
             mass_kp1 = None
         else:
-            if mass_kp1_pattern is None:
-                mass_kp1 = DiagDecoupledTensor(mass_kp1_val)
-            else:
-                mass_kp1 = SparseDecoupledTensor(mass_kp1_pattern, mass_kp1_val)
+            mass_kp1 = _reconstruct_op(mass_kp1_val, mass_kp1_pattern)
 
         laplacian = MixedWeakLaplacianBlocks(cbd_km1, cbd_k, mass_km1, mass_k, mass_kp1)
         precond = MixedWeakLaplacianLOBPCGAutogradFunction._dispatch_precond(
@@ -375,11 +382,11 @@ def mixed_weak_laplacian_lobpcg(
         v0 = lobpcg_config.v0
 
         if not isinstance(v0, Tensor):
-            raise ValueError("Unbatched v0 must be a tensor.")
+            raise ValueError("v0 must be a tensor.")
         if n is None:
             n = v0.size(-1)
         if v0.ndim != 2 or v0.shape != (n_k_splx, n):
-            raise ValueError("Unbatched v0 must have shape (k, n).")
+            raise ValueError("v0 must have shape (k, n).")
 
     if n < l or n > n_k_splx:
         raise ValueError("n must be in the range [l, k].")
@@ -406,7 +413,7 @@ def mixed_weak_laplacian_lobpcg(
         mixed_weak_laplacian.mass_km1.values,
         mixed_weak_laplacian.mass_km1.pattern,
         mixed_weak_laplacian.mass_k.values,
-        mixed_weak_laplacian.mass_k.pattern,
+        getattr(mixed_weak_laplacian.mass_k, "pattern", None),
         getattr(mixed_weak_laplacian.mass_kp1, "values", None),
         getattr(mixed_weak_laplacian.mass_kp1, "pattern", None),
         n,
