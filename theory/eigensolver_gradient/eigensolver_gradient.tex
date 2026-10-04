@@ -218,7 +218,7 @@ where $\epsilon>0$ is a small regularization constant. When $|\Delta_{ji}|^2 \gg
 While Lorentzian broadening bounds the inverse-gap factor, it dampens the coupling between distinct near-degenerate modes, whose exact eigenvector sensitivity scales as $1/\Delta$. Where that coupling matters, annealing $\epsilon$ toward zero can reduce the bias away from degeneracies, but cannot make individual eigenvectors differentiable at an exact degeneracy.
 
 \paragraph{Partial decomposition}
-For large or sparse matrix eigenvalue problems, one often relies on iterative numerical methods to approximate a subset of the full eigenvalue spectrum. This is problematic for computing the sensitivity of the eigenvectors, since, according to \eqref{eig_vec_der_asym}, the derivative $\partial v_k/\partial A_{ij}$ depends on all eigenvectors; in other words, perturbations to $A_{ij}$ rotate $v_k$ into all other eigenvectors $v_l$, and the degree of this ``mixing'' depends on the coupling $v_l^TE_{ij}v_k$ and the spectral gap $\lambda_k - \lambda_l$. When the strength of these couplings is wweak, ignoring contributions orthogonal to the known eigenvectors is an acceptable approximation. See \cite{kasim2020derivativespartialeigendecompositionreal} for a method that recovers contributions from the missing eigenvectors.
+For large or sparse matrix eigenvalue problems, one often relies on iterative numerical methods to approximate a subset of the full eigenvalue spectrum. This is problematic for computing the sensitivity of the eigenvectors, since, according to \eqref{eig_vec_der_asym}, the derivative $\partial v_k/\partial A_{ij}$ depends on all eigenvectors; in other words, perturbations to $A_{ij}$ rotate $v_k$ into all other eigenvectors $v_l$, and the degree of this ``mixing'' depends on the coupling $v_l^TE_{ij}v_k$ and the spectral gap $\lambda_k - \lambda_l$. When the strength of these couplings is weak, ignoring contributions orthogonal to the known eigenvectors is an acceptable approximation. See \cite{kasim2020derivativespartialeigendecompositionreal} for a method that recovers contributions from the missing eigenvectors.
 
 When implementing a sparse eigensolver autograd function using this subspace approximation, one might wish to compare the truncated gradient against the gradient from a dense eigensolver, such as \texttt{torch.linalg.eigh()}, which performs a full eigendecomposition. To compare the same subspace approximation, contributions involving unresolved eigenvectors need to be projected out of the dense eigensolver gradient. Define the subspace projection matrix $P'=UU^T$, where $U\in\mathbb R^{N\times r}$ contains the first $r$ resolved eigenvectors. The truncated eigenvector sensitivity $\overline{A}_{V,\text{trunc}}$ is related to the full sensitivity $\overline{A}_{V,\text{full}}$ by
 \begin{equation}
@@ -226,11 +226,11 @@ When implementing a sparse eigensolver autograd function using this subspace app
 \end{equation}
 To see why this is true, first note that
 \begin{equation}
-    [P'V]_{ij} = \sum_{l<k}\sum_m U_{il}U_{ml}V_{mj} = \sum_{l<k}v_{l,i}\sum_m v_{l,m}v_{j,m} = \sum_{l<k} v_{l,i}\delta_{lj}
+    [P'V]_{ij} = \sum_{l\le r}\sum_m U_{il}U_{ml}V_{mj} = \sum_{l\le r}v_{l,i}\sum_m v_{l,m}v_{j,m} = \sum_{l\le r} v_{l,i}\delta_{lj}
 \end{equation}
 Then, substituting this into \eqref{eig_vec_der_asym_final} gives
 \begin{align}
-    [P'\overline{A}_{V,\text{full}}P'^T]_{ij} & = \sum_{m,n}[P'V]_{im}[F\odot P]_{mn}[P'V]_{jn} \\ & = \sum_{m,n}\sum_{l<k}\sum_{p<k}v_{l,i}\delta_{lm}F_{mn}(\overline{v}_n^Tv_m)v_{p,j}\delta_{pn} \\ &=\sum_{l<k}\sum_{p<k} v_{l,i}(F_{lp}\overline{v}_p^Tv_l)v_{p,j}
+    [P'\overline{A}_{V,\text{full}}P'^T]_{ij} & = \sum_{m,n}[P'V]_{im}[F\odot P]_{mn}[P'V]_{jn} \\ & = \sum_{m,n}\sum_{l\le r}\sum_{p\le r}v_{l,i}\delta_{lm}F_{mn}(\overline{v}_n^Tv_m)v_{p,j}\delta_{pn} \\ &=\sum_{l\le r}\sum_{p\le r} v_{l,i}(F_{lp}\overline{v}_p^Tv_l)v_{p,j}
 \end{align}
 which is the truncated version of \eqref{eig_vec_der_pre_matrix_form}.
 
@@ -352,6 +352,7 @@ or, more concisely,
 \boxed{
     \overline M_{k+1} = (d_k V)\left[\overline\Lambda + \frac 1 2 F \odot (P - P^T)\right](d_k V)^T
 }
+\label{M_kp1_sensitivity}
 \end{equation}
 
 \paragraph{Gradient with respect to $M_{k-1}$}
@@ -398,6 +399,63 @@ The independent metric contribution to $\overline M_k$ is given by
 \end{equation}
 as per Section \ref{gep}. The total gradient with respect to $M_k$ is $\overline M_k=\overline M_{k,\text{lhs}}+\overline M_{k,\text{rhs}}$. 
 
+\paragraph{Subspace projection of the mass-gradient paths}
+As in the preceding sections, one might wish to compare the truncated mass sensitivities against those from a full dense eigendecomposition. Let $U$ contain the first $r$ resolved eigenvectors, and define the $M_k$-orthogonal, oblique subspace projector $P'=UU^TM_k$. Since $S_k$ plays the role of $A$ in Section \ref{gep}, its full sensitivity is
+\begin{equation}
+    \overline S_{k,\text{full}} = V\left[\overline\Lambda + \frac 1 2 F\odot(P-P^T)\right]V^T
+\end{equation}
+and the same subspace projection as before gives
+\begin{equation}
+    \overline S_{k,\text{trunc}} = P'\overline S_{k,\text{full}}P'^T, \qquad
+    \overline M_{k,\text{rhs},\text{trunc}} = P'\overline M_{k,\text{rhs},\text{full}}P'^T
+    \label{hodge_projected_gep_gradients}
+\end{equation}
+To see how this projection affects the neighboring mass sensitivities, first note that $M_k$-orthonormality gives
+\begin{equation}
+    [P'V]_{im} = \sum_{l\le r} v_{l,i}(v_l^TM_kv_m) = \sum_{l\le r} v_{l,i}\delta_{lm}
+\end{equation}
+that is, $P'V$ keeps the resolved columns of $V$ and sets the unresolved columns to zero; similarly,
+\begin{equation}
+    [d_kP'V]_{im}=\sum_{l\le r}[d_kv_l]_i\delta_{lm}
+    \qquad
+    [\delta_kP'V]_{im}=\sum_{l\le r} w_{l,i}\delta_{lm}
+\end{equation}
+
+For $M_{k+1}$, we claim that the truncated sensitivity is
+\begin{equation}
+\boxed{
+\overline M_{k+1,\text{trunc}} &= (d_kP')\overline S_{k,\text{full}}(d_kP')^T
+}
+\end{equation}
+To see why, substitute $\overline S_{k,\text{trunc}}$ into the first two terms of \eqref{weak_hodge_laplacian_chain_rule} and use the componentwise expression for $\partial[S_k]_{pq}/\partial[M_{k+1}]_{ij}$ derived above; this gives
+\begin{align}
+    [\overline M_{k+1,\text{trunc}}]_{ij}
+    &= \sum_{p,q}[\overline S_{k,\text{trunc}}]_{pq}[d_k]_{ip}[d_k]_{jq} \\
+    &= \sum_{m\le r}\sum_{n\le r}[d_kv_n]_i\left[\overline\Lambda+\frac 1 2 F\odot(P-P^T)\right]_{nm}[d_kv_m]_j
+\end{align}
+which is precisely \eqref{M_kp1_sensitivity} with both eigenvector indices restricted to the resolved modes. Similarly, for $M_{k-1}$,
+\begin{equation}
+\boxed{
+    \overline M_{k-1,\text{trunc}} = -(\delta_kP')\overline S_{k,\text{full}}(\delta_kP')^T
+}
+\label{hodge_projected_mass_gradients}
+\end{equation}
+because 
+\begin{align}
+    [\overline M_{k-1,\text{trunc}}]_{ij}
+    &= -\sum_{p,q}[\overline S_{k,\text{trunc}}]_{pq}\delta_{k,ip}\delta_{k,jq} \\
+    &= -\sum_{m\le r}\sum_{n\le r} w_{n,i}\left[\overline\Lambda+\frac 1 2 F\odot(P-P^T)\right]_{nm}w_{m,j}
+\end{align}
+
+Lastly, for $M_k$, the same substitution into its componentwise derivative gives
+\begin{equation}
+\boxed{
+    \overline M_{k,\text{lhs},\text{trunc}}
+    = \overline S_{k,\text{trunc}}(d_{k-1}\delta_k)^T
+       +(d_{k-1}\delta_k)\overline S_{k,\text{trunc}}
+}
+\end{equation}
+and the total truncated gradient $\overline M_{k,\text{trunc}}$ is obtained by adding the independently projected right-hand-side contribution from \eqref{hodge_projected_gep_gradients}.
 
 \bibliographystyle{plain} % or alpha, unsrt, etc.
 \bibliography{references} % Note: Do not add .bib extension here
