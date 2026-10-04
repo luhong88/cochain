@@ -424,7 +424,7 @@ that is, $P'V$ keeps the resolved columns of $V$ and sets the unresolved columns
 For $M_{k+1}$, we claim that the truncated sensitivity is
 \begin{equation}
 \boxed{
-\overline M_{k+1,\text{trunc}} &= (d_kP')\overline S_{k,\text{full}}(d_kP')^T
+\overline M_{k+1,\text{trunc}} &= d_k\overline S_{k,\text{trunc}}d_k^T
 }
 \end{equation}
 To see why, substitute $\overline S_{k,\text{trunc}}$ into the first two terms of \eqref{weak_hodge_laplacian_chain_rule} and use the componentwise expression for $\partial[S_k]_{pq}/\partial[M_{k+1}]_{ij}$ derived above; this gives
@@ -436,7 +436,7 @@ To see why, substitute $\overline S_{k,\text{trunc}}$ into the first two terms o
 which is precisely \eqref{M_kp1_sensitivity} with both eigenvector indices restricted to the resolved modes. Similarly, for $M_{k-1}$,
 \begin{equation}
 \boxed{
-    \overline M_{k-1,\text{trunc}} = -(\delta_kP')\overline S_{k,\text{full}}(\delta_kP')^T
+    \overline M_{k-1,\text{trunc}} = -\delta_k\overline S_{k,\text{trunc}}\delta_k^T
 }
 \label{hodge_projected_mass_gradients}
 \end{equation}
