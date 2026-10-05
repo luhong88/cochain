@@ -29,7 +29,9 @@ def m_orthonormalize(
         A sparse 2D symmetric positive definite matrix that induces an inner product
         on the column space of $V$.
     rtol
-        A relative tolerance threshold for checking linearly dependent vectors.
+        A relative tolerance threshold on the normalized Gram eigenvalues for
+        checking linearly dependent vectors. Defaults to `m` times the double
+        precision machine epsilon.
     n_min
         The minimum number of column vectors to be returned.
     max_iter
@@ -39,8 +41,17 @@ def m_orthonormalize(
     -------
     v_ortho : [m, l]
         A dense 2D matrix whose columns form an $M$-orthonormal basis for the column
-        space of V. The number of column vectors `l` should be between `n_min` and
-        `n`, depending on the number of linearly independent column vectors in $V$.
+        space of V, up to the relative rank tolerance. Without a soft restart,
+        the number of columns satisfies $0 \le l \le n$; an all-zero or empty
+        input returns an empty basis. A soft restart can supplement this basis
+        with vectors outside the input column space.
+
+    Raises
+    ------
+    ValueError
+        If `v` contains nonfinite entries, or a nonzero column has a nonpositive
+        or nonfinite computed squared metric norm, or the normalized Gram matrix
+        is nonfinite.
 
     Notes
     -----
@@ -57,7 +68,7 @@ def m_orthonormalize(
     **Canonical orthogonalization**
     Consider a matrix $V$ whose column vectors are to be M-orthonormalized. Let us
     denote this unknown $M$-orthogonal matrix as $U$, which satisfies the condition
-    $U^T M U = I$. Since the column vectors of $V$ and $U$ spans the same space,
+    $U^T M U = I$. Since the column vectors of $V$ and $U$ span the same space,
     there is a linear transformation, represented by the whitening matrix $W$,
     such that $U = V W$.
 
@@ -118,7 +129,7 @@ def m_orthonormalize(
     = U^T M R - (U^T M U) U^T M R = 0
     $$
 
-    which shows that the column vectors of U and $R^\perp$ are $M$-orthogonal, and
+    which shows that the column vectors of $U$ and $R^\perp$ are $M$-orthogonal, and
     thus the column space of $R^\perp$ is $M$-orthogonal to the column space of $U$.
 
     **Jacobi preconditioning**
@@ -128,26 +139,23 @@ def m_orthonormalize(
     it is numerically preferable to perform the orthogonalization after the column
     vectors of $V$ have been normalized.
 
-    Instead of directly modifying $V$, we can achieve the same normalization by
-    preconditioning the Gram matrix $G$, which tends to be computationally cheaper.
-    To do so, let us define a diagonal matrix $D$ whose diagonal elements
-    correspond to the norms of the column vectors of $V$. Since the Gram matrix
-    $G$ contains all pairwise inner products of the column vectors of $V$,
-    we can define $D$ in terms of $G$ as $D_{ii} = 1/\sqrt{G_{ii}}$.
+    To avoid underflow/overflow from computing the norms of very small or large
+    column entries, first discard exactly zero columns and divide each remaining
+    column by its largest absolute entry,
 
-    With the matrix $D$, we define the normalized matrix $\bar V$ as $\bar V = VD$.
-    The Gram matrix $\bar G$ of $\bar V$ is then given by
+    $$s_j = \max_i |V_{ij}|, \qquad B_j = V_j / s_j$$
 
-    $$\bar G = \bar V^T M \bar V = D^T V^T M V D = D^T G D = D G D$$
+    Then compute the squared metric norms of the scaled columns and normalize
+    explicitly,
 
-    Given the eigendecomposition $\bar G = \bar Q \bar\Lambda \bar Q^T$, we define
-    the whitening matrix $\bar W = D \bar Q \bar \Lambda^{-1/2}$, such that
+    $$q_j = B_j^T M B_j, \qquad C_j = B_j / \sqrt{q_j}$$
 
-    $$
-    U^T M U
-    = (D \bar Q \bar \Lambda^{-1/2})^T (V^T M V) (D \bar Q \bar \Lambda^{-1/2})
-    = (\bar Q \bar \Lambda^{-1/2})^T \bar G (\bar Q \bar \Lambda^{-1/2}) = I
-    $$
+    The normalized Gram matrix is $\bar G = C^T M C$. Given its eigendecomposition
+    $\bar G = \bar Q \bar\Lambda \bar Q^T$, retain eigenvalues greater than
+    `rtol` times the largest eigenvalue and construct the output directly from
+    the normalized columns
+
+    $$U = C \bar Q_\text{kept} \bar\Lambda^{-1/2}_\text{kept}$$
 
     **Iterative refinement**
     Since $G = V^T M V$, the condition number of $G$ is roughly the square of the
@@ -214,22 +222,39 @@ def _m_orthonormalize_one_iter(
     if rtol is None:
         rtol = v.size(0) * eps
 
-    # Compute the M-orthogonal gram matrix.
-    gram: Float[Tensor, "n n"] = v.T @ (m @ v)
+    if not torch.isfinite(v).all():
+        raise ValueError("'v' must contain only finite entries.")
 
-    # Implicit normalization of G. Let D be a diagonal matrix whose diagonal
-    # elements are the inverse square roots of the diagonal elements of G; then
-    # the normalized G is G' = D@G@D. This is equivalent to normalizing the columns
-    # of V, but computationally cheaper. This scaling improves the condition number
-    # of G for eigh(). Note that columns of V that are zero or very close to
-    # zero are not length-normalized.
-    v_col_norm2 = torch.diag(gram).clamp(min=0.0)
-    diag = 1.0 / torch.sqrt(v_col_norm2)
+    if v.numel() == 0:
+        return torch.zeros_like(v[:, :0]), v.new_tensor(0.0)
 
-    zero_col_mask = (~torch.isfinite(diag)) | (v_col_norm2 < eps * 10)
-    diag[zero_col_mask] = 1.0
+    # Normalize the length of each column of V by dividing each column by its
+    # absolute max entry.
+    col_max = v.abs().amax(dim=0)
+    nonzero_col = col_max > 0
+    if not nonzero_col.any():
+        return torch.zeros_like(v[:, :0]), v.new_tensor(0.0)
+    v_scaled = v[:, nonzero_col] / col_max[nonzero_col]
+    mv_scaled = m @ v_scaled
 
-    g_scaled = torch.einsum("i,ij,j->ij", diag, gram, diag)
+    # Compute the M-norms of the columns of the scaled V.
+    col_norm2 = (v_scaled * mv_scaled).sum(dim=0)
+    if not (torch.isfinite(col_norm2) & (col_norm2 > 0)).all():
+        raise ValueError(
+            "Nonzero columns must have finite, strictly positive squared metric "
+            "norms; check that 'm' is positive definite and numerically well-scaled."
+        )
+
+    # Form the M-orthogonal gram matrix G using V_normed, the M-normalized V.
+    col_norm = torch.sqrt(col_norm2)
+    v_normed = v_scaled / col_norm
+    mv_normed = mv_scaled / col_norm
+    g_scaled = v_normed.T @ mv_normed
+    if not torch.isfinite(g_scaled).all():
+        raise ValueError("The normalized Gram matrix must be finite.")
+
+    # Enforce symmetry on G.
+    g_scaled = (g_scaled + g_scaled.T) / 2.0
 
     # Perform an eigendecomposition of G = Q @ Λ @ Q.T.
     eig_vals, eig_vecs = torch.linalg.eigh(g_scaled)
@@ -238,27 +263,19 @@ def _m_orthonormalize_one_iter(
     eps = rtol * eig_vals.max()
     mask = eig_vals > eps
 
-    # If V is basically zero, return a single zero vector and a condition number of 0.
+    # If V is basically zero, return an empty basis zero and a condition number of 0.
     if not mask.any():
-        return torch.zeros_like(v[:, :1]), torch.tensor(
-            0.0, dtype=v.dtype, device=v.device
-        )
+        return torch.zeros_like(v[:, :0]), v.new_tensor(0.0)
 
     eig_vals_masked = eig_vals[mask]
-    inv_eig_vals_masked = 1.0 / torch.sqrt(eig_vals_masked)
     eig_vecs_masked = eig_vecs[:, mask]
 
     # Check the condition number using the masked eigenvalues, for assessing
     # progress of iterative refinement.
-    cond = torch.sqrt(eig_vals_masked.max() / eig_vals_masked.min())
+    cond = torch.sqrt(eig_vals_masked.max()) / torch.sqrt(eig_vals_masked.min())
 
-    # Compute the whitening matrix W = D @ Q @ Λ^(-1/2) as the inverse square root
-    # of G. Need to apply the D vector here to undo the implicit normalization.
-    whiten = torch.einsum("i,ij,j->ij", diag, eig_vecs_masked, inv_eig_vals_masked)
-
-    # Find V_ortho = V @ W, the M-orthonormal version of V. With some algebra,
-    # one can check that V_ortho.T @ M @ V_ortho = I.
-    v_ortho = v @ whiten
+    # Find V_ortho = V_normed @ Q @ Λ^(-1/2) using the retained eigenpairs.
+    v_ortho = (v_normed @ eig_vecs_masked) / torch.sqrt(eig_vals_masked)
 
     return v_ortho, cond
 

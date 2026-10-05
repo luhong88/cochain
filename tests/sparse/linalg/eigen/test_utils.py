@@ -1,12 +1,13 @@
 import pytest
 import torch
 
-from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
+from cochain.sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from cochain.sparse.linalg.eigen import (
     canonicalize_eig_vec_signs,
     grassmann_proj_dists,
     m_orthonormalize,
 )
+from cochain.sparse.linalg.eigen.base.utils import _m_orthonormalize_one_iter
 
 
 @pytest.fixture
@@ -121,6 +122,128 @@ def test_m_orthonormalize_ill_conditioned(v_ill_conditioned, spd_matrix_m, n):
     identity_exact = torch.eye(n, dtype=v_ortho.dtype)
 
     torch.testing.assert_close(identity_approx, identity_exact)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_m_orthonormalize_extreme_orthogonal_column_scales(dtype, device):
+    """Preserve tiny and huge directions without squaring their original scales."""
+    scales = torch.tensor(
+        [1e-30, -1e-20, 1e-8, -1e20, 1e30]
+        if dtype == torch.float32
+        else [1e-310, -1e-200, 1e-8, -1e200, 1e300],
+        dtype=dtype,
+        device=device,
+    )
+    basis = torch.eye(8, dtype=dtype, device=device)[:, :5]
+    v = basis * scales
+    metric = DiagDecoupledTensor(torch.ones(8, dtype=dtype, device=device)).to_sdt()
+
+    # Exercise both the helper in its input precision and the public refinement.
+    one_iter, cond = _m_orthonormalize_one_iter(v, metric)
+    refined = m_orthonormalize(v, metric)
+    torch.testing.assert_close(cond, cond.new_tensor(1.0))
+    for u in (one_iter, refined):
+        assert u.shape == v.shape
+        assert u.dtype == dtype
+        assert u.device == v.device
+        assert torch.isfinite(u).all()
+        torch.testing.assert_close(
+            u.T @ (metric @ u), torch.eye(5, device=device, dtype=dtype)
+        )
+        torch.testing.assert_close(u @ u.T, basis @ basis.T)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("rank_deficient", [False, True])
+def test_m_orthonormalize_column_rescaling_invariance(
+    v_dense, v_rank_deficient, spd_matrix_m, dtype, rank_deficient, device
+):
+    """Independent signed rescaling preserves rank, span, and metric orthonormality."""
+    v = (v_rank_deficient if rank_deficient else v_dense).to(device=device, dtype=dtype)
+    metric = spd_matrix_m.to(device=device, dtype=dtype)
+    exponent = 30 if dtype == torch.float32 else 300
+    scales = torch.logspace(-exponent, exponent, v.size(1), dtype=dtype, device=device)
+    scales[::2] *= -1
+
+    reference = m_orthonormalize(v, metric)
+    u = m_orthonormalize(v * scales, metric)
+    expected_rank = v.size(1) - (2 if rank_deficient else 0)
+    assert u.shape == (v.size(0), expected_rank)
+    identity = torch.eye(expected_rank, dtype=dtype, device=device)
+    torch.testing.assert_close(u.T @ (metric @ u), identity)
+
+    # Unit singular values of the metric overlap establish identical subspaces.
+    overlap = reference.T @ (metric @ u)
+    torch.testing.assert_close(overlap @ overlap.T, identity)
+
+
+@pytest.mark.parametrize("scales", [(1.0, 1.0), (1e-200, -1e200)])
+def test_m_orthonormalize_relative_rank_tolerance(scales, device):
+    """Near dependence is detected after normalization, independently of amplitude."""
+    v = torch.tensor(
+        [[1.0, 1.0], [0.0, 1e-4], [0.0, 0.0]], dtype=torch.float64, device=device
+    )
+    metric = DiagDecoupledTensor(torch.ones(3, dtype=v.dtype, device=device)).to_sdt()
+    v *= v.new_tensor(scales)
+
+    dependent = m_orthonormalize(v, metric, rtol=1e-6)
+    independent = m_orthonormalize(v, metric, rtol=1e-10)
+    assert dependent.shape == (3, 1)
+    assert independent.shape == (3, 2)
+    torch.testing.assert_close(dependent.T @ (metric @ dependent), v.new_ones((1, 1)))
+    torch.testing.assert_close(
+        independent.T @ (metric @ independent),
+        torch.eye(2, dtype=v.dtype, device=device),
+    )
+
+
+def test_m_orthonormalize_no_retained_eigenvalues(device):
+    """An explicit rank tolerance can discard all otherwise valid directions."""
+    v = torch.eye(3, dtype=torch.float64, device=device)
+    metric = DiagDecoupledTensor(torch.ones(3, dtype=v.dtype, device=device)).to_sdt()
+    u, cond = _m_orthonormalize_one_iter(v, metric, rtol=1.0)
+    assert u.shape == (3, 0)
+    torch.testing.assert_close(cond, cond.new_tensor(0.0))
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")])
+def test_m_orthonormalize_nonfinite_columns(invalid, device):
+    """Nonfinite columns are rejected rather than hidden by rank truncation."""
+    v = torch.eye(3, dtype=torch.float64, device=device)
+    v[0, 1] = invalid
+    metric = DiagDecoupledTensor(torch.ones(3, dtype=v.dtype, device=device)).to_sdt()
+    with pytest.raises(ValueError, match="finite entries"):
+        m_orthonormalize(v, metric)
+
+
+@pytest.mark.parametrize("metric_value", [0.0, -1.0, float("nan"), float("inf"), 1e308])
+def test_m_orthonormalize_invalid_metric_norms(metric_value, device):
+    """Reject zero, negative, nonfinite, or overflowing computed metric norms."""
+    v = torch.ones((2, 1), dtype=torch.float64, device=device)
+    metric = DiagDecoupledTensor(v.new_ones(2)).to_sdt()
+    # Simulate invalid values introduced after the tensor constructor's checks.
+    metric.values.fill_(metric_value)
+    with pytest.raises(ValueError, match="strictly positive squared metric norms"):
+        _m_orthonormalize_one_iter(v, metric)
+    # The public API's precision conversion can reject nonfinite metric values
+    # in the sparse tensor constructor before invoking the helper.
+    with pytest.raises(
+        ValueError,
+        match="strictly positive squared metric norms|values contain NaN or Inf",
+    ):
+        m_orthonormalize(v, metric)
+
+
+def test_m_orthonormalize_nonfinite_normalized_gram(device):
+    """Report a nonfinite normalized Gram even when individual norms are valid."""
+    v = torch.eye(2, dtype=torch.float64, device=device)
+    # This indefinite metric has positive diagonal entries, but normalization
+    # overflows the off-diagonal Gram entries. Positive column norms alone do
+    # not establish that the supplied metric is positive definite.
+    metric_dense = v.new_tensor([[1e-200, 1e200], [1e200, 1e-200]])
+    metric = SparseDecoupledTensor.from_tensor(metric_dense.to_sparse_coo())
+    with pytest.raises(ValueError, match="normalized Gram matrix must be finite"):
+        m_orthonormalize(v, metric)
 
 
 def test_canonicalize_eig_vec_signs_deterministic():
