@@ -1,3 +1,4 @@
+import torch
 from einops import einsum
 from jaxtyping import Float, Integer
 from torch import Tensor
@@ -78,7 +79,7 @@ def compute_dLdM_k_val(
         "nz eig, nz eig, eig -> nz",
     )
 
-    if dLdv is None:
+    if (dLdv is None) or (not torch.any(dLdv)):
         dLdM_lhs = dLdM_eig_vals + dLdM_eig_vals_T
 
     else:

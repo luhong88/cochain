@@ -62,7 +62,7 @@ def compute_dLdA_val(
         "nz eig, nz eig, eig -> nz",
     )
 
-    if dLdv is None:
+    if (dLdv is None) or (not torch.any(dLdv)):
         dLdA_val = dLdA_eig_vals
 
     else:
@@ -109,7 +109,7 @@ def compute_dLdM_val(
         "eig, eig, nz eig, nz eig -> nz",
     )
 
-    if dLdv is None:
+    if (dLdv is None) or (not torch.any(dLdv)):
         dLdM_val = dLdM_eig_vals
 
     else:
@@ -148,7 +148,7 @@ def dLdA_backward(
     if eig_vecs is None:
         raise ValueError("Eigenvectors are required for backward().")
 
-    if dLdv is None:
+    if (dLdv is None) or (not torch.any(dLdv)):
         eig_vec_grad_proj = None
         cauchy = None
     else:
@@ -184,7 +184,7 @@ def dLdA_dLdM_backward(
         if eig_vecs is None:
             raise ValueError("Eigenvectors are required for backward().")
 
-        if dLdv is None:
+        if (dLdv is None) or (not torch.any(dLdv)):
             eig_vec_grad_proj = None
             cauchy = None
         else:

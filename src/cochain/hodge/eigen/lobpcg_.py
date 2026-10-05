@@ -230,7 +230,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         if eig_vecs is None:
             raise ValueError("Eigenvectors are required for backward().")
 
-        if dLdv is None:
+        if (dLdv is None) or (not torch.any(dLdv)):
             eig_vec_grad_proj = None
             cauchy = None
         else:
