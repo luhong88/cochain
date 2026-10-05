@@ -11,7 +11,7 @@ def compute_dLdM_km1_val(
     eig_vec_codiffs: Float[Tensor, "km1_splx eig"],
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
-    eig_vec_grad_proj: Float[Tensor, "k_splx k_splx"] | None,
+    eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
     cauchy: Float[Tensor, "k_splx k_splx"] | None,
 ) -> Float[Tensor, " nz"]:
     """
@@ -120,7 +120,7 @@ def compute_dLdM_k_val(
 
 def compute_dLdM_kp1_val(
     cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"],
-    mass_kp1_pattern: Integer[SparsityPattern, "km1_splx km1_splx"] | None,
+    mass_kp1_pattern: Integer[SparsityPattern, "kp1_splx kp1_splx"] | None,
     eig_vecs: Float[Tensor, "k_splx eig"],
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
