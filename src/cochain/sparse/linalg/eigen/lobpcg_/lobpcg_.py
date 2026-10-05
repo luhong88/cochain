@@ -399,7 +399,7 @@ def lobpcg(
     incomplete LU, and Cholesky preconditioners are defined soly in terms of `a`.
     For generalized eigenvalue problems, this works reasonably well when searching
     for the smallest eigenvalues, which suppresses the effect of `m`, but performance
-    will degrade for the largest  eigenvalues; the shift-invert mode does not take
+    will degrade for the largest eigenvalues; the shift-invert mode does not take
     preconditioners.
 
     This implementation employs a rank-adaptive, iterative, canonical/PCA
