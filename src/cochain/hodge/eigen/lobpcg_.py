@@ -12,6 +12,7 @@ from typing import Any, Literal
 import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
+from torch.autograd.function import once_differentiable
 
 from ...sparse.decoupled_tensor import (
     BaseDecoupledTensor,
@@ -62,6 +63,12 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             case "identity":
                 precond = IdentityPrecond()
             case "shifted_up":
+                if mixed_weak_laplacian._block_11 is None:
+                    raise ValueError(
+                        "The ShiftedUpPrecond is not applicable for a down-only "
+                        "MixedWeakLaplacianBlocks object."
+                    )
+
                 precond = ShiftedUpPrecond(
                     weak_up_laplacian=mixed_weak_laplacian._block_11,
                     mass_k=mixed_weak_laplacian.mass_k,
@@ -70,6 +77,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
                     n=lobpcg_config.v0.size(-1),
                     nvmath_config=precond_config.nvmath_config,
                 )
+
             case "shifted_lumped":
                 precond = ShiftedLumpedPrecond(
                     cbd_km1=mixed_weak_laplacian.cbd_km1,
@@ -183,6 +191,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             ctx.cbd_k = cbd_k
 
     @staticmethod
+    @once_differentiable
     def backward(
         ctx, dLdl: Float[Tensor, " k"], dLdv: Float[Tensor, "m k"] | None, _
     ) -> tuple[
@@ -214,7 +223,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
 
         cbd_km1: SparseDecoupledTensor = ctx.cbd_km1
         mass_km1_pattern: SparsityPattern = ctx.mass_km1_pattern
-        mass_k_pattern: SparsityPattern = ctx.mass_k_pattern
+        mass_k_pattern: SparsityPattern | None = ctx.mass_k_pattern
         mass_kp1_pattern: SparsityPattern | None = ctx.mass_kp1_pattern
 
         # This error should never be triggered if the user-facing wrapper does its job.
@@ -231,7 +240,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         if needs_codiff:
             mass_km1_solver: MassKm1Solver = ctx.mass_km1_solver
 
-            mass_k = SparseDecoupledTensor(mass_k_pattern, mass_k_val)
+            mass_k = _reconstruct_op(mass_k_val, mass_k_pattern)
             rhs = cbd_km1.T @ mass_k @ eig_vecs
 
             eig_vec_codiffs = mass_km1_solver.solve(rhs)
@@ -300,19 +309,24 @@ def mixed_weak_laplacian_lobpcg(
     lobpcg_config: LOBPCGConfig | None = None,
     precond_config: LaplacianLOBPCGPrecondConfig | None = None,
 ) -> tuple[Float[Tensor, " l"], Float[Tensor, "k_splx l"]]:
-    """
+    r"""
     Sparse differentiable eigensolver for mixed weak Hodge Laplacians using LOBPCG.
+
+    This function implements a specialized version of `lobpcg()` that avoids
+    materializing the matrix inverse of non-diagonal $M_{k-1}$ in the down-component
+    of the weak Hodge $k$-Laplacian by representing the Laplacian as a matrix-free
+    operator.
 
     Parameters
     ----------
     mixed_weak_laplacian : [k_splx, k_splx]
         A weak Hodge Laplacian represented as a `MixedWeakLaplacianBlocks` object.
     n
-        The number of approximated eigenvalues/eigenvectors ("block size"), which
-        should be in the range [`l`, `k_splx`] (default value: `k`). In general, it is
-        recommended to set the `n` argument somewhat higher than `l`, to make the
-        convergence of the `l` desired eigenvalues faster and to account for
-        possible degenerate eigenvalues.
+        The number of approximated eigenvalues/eigenvectors, which should be in
+        the range [`l`, `k_splx`] (default value: `k`). In general, it is recommended
+        to set the `n` argument somewhat higher than `l`, to make the convergence
+        of the `l` desired eigenvalues faster and to account for possible degenerate
+        eigenvalues.
     l
         The number of eigenvalues/eigenvectors to find. Note that, by default,
         this function finds the `l` smallest eigenvalues of `mixed_weak_laplacian`;
@@ -323,12 +337,12 @@ def mixed_weak_laplacian_lobpcg(
         eigenvalues are (near) degenerate. As a heuristic, the regularization starts
         to dominate the gradient calculation as the spectral gap approaches the
         square root of `eps`. Set to integer 0 to disable regularization; set to
-        "auto" to select `eps` based on the input dtype and matrix inf-norm.
+        "auto" to select `eps` dynamically at each iteration based on the computed
+        eigenvalues.
     op_scale
         Operator scale for the matrix-free residual floor: the floor for each
         eigenvector x is tol * op_scale * ||x||. By default, estimate this scale from
-        the first block of operator applications. Ignored by the explicit-matrix
-        and shift-invert stopping criteria.
+        the first block of operator applications.
     solver_type
         Which sparse linear solver backend to use for representing the action
         of the inverse of $M_{k-1}$.
@@ -348,11 +362,23 @@ def mixed_weak_laplacian_lobpcg(
     eig_vals : [l,]
         A tensor of `l` eigenvalues.
     eig_vecs : [k_splx, l]
-        A tensor of `l` orthonormal eigenvectors; each column represents an eigenvector.
+        A tensor of `l` $M_k$-orthonormal eigenvectors; each column represents
+        an eigenvector.
 
     Notes
     -----
-    Note that Block-diagonal batching is not supported.
+    Block-diagonal batching and the shift-invert mode is not supported.
+
+    The autograd through eigenvectors do not account for contributions from the
+    unresolved eigenvectors. Currently, only first-order derivatives are supported.
+
+    This implementation accepts specific preconditioners, including: identity,
+    "shifted up" ($(S_k^up + \tau M_k)^{-1}$), and "shifted lumped"
+    (approximately, $(S_k + \tau M_k)^{-1}$) preconditioners; in particular, the
+    "shifted up" preconditioner is not applicable for down-component only
+    `MixedWeakLaplacianBlocks`. The preconditioner can be configured using a
+    `LaplacianLOBPCGPrecondConfig` and will be generated internally. Both the
+    "shifted up" and "shifted lumped" preconditioners require `nvmath-python`.
     """
     # Note that we delegate the CuPy and nvmath-python dependency checks to
     # the operator and preconditioner constructors, rather than performing a
