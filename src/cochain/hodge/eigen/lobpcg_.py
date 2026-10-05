@@ -370,6 +370,7 @@ def mixed_weak_laplacian_lobpcg(
 
     The autograd through eigenvectors do not account for contributions from the
     unresolved eigenvectors. Currently, only first-order derivatives are supported.
+    The coboundary operators are treated as nondifferentiable.
 
     This implementation accepts specific preconditioners, including: identity,
     "shifted up" ($(S_k^up + \tau M_k)^{-1}$), and "shifted lumped"
