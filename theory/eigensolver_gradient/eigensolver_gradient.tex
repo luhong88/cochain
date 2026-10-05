@@ -345,7 +345,7 @@ The derivative of $S_k$ with respect to $M_{k+1}$ enters only through the up ter
 \end{equation}
 Therefore, the derivative of $L$ with respect to $[M_{k+1}]_{ij}$ is given by the first two terms in \eqref{weak_hodge_laplacian_chain_rule} as,
 \begin{equation}
-    [\overline M_{k+1}]_{ij} = \sum_{m,n,p,q}\left[ \overline \lambda_m v_{m,p}v_{m,q} + \frac 1 2 v_{n,p}F_{nm}(\overline v_m^Tv_n - \overline v_n^Tv_m)v_{m,q} \right] [d_k]_{ip}[d_k]_{jq}
+    [\overline M_{k+1}]_{ij} = \sum_{m,p,q} \overline \lambda_m v_{m,p}v_{m,q}[d_k]_{ip}[d_k]_{jq} + \frac 1 2 \sum_{m,n,p,q} v_{n,p}F_{nm}(\overline v_m^Tv_n - \overline v_n^Tv_m)v_{m,q}[d_k]_{ip}[d_k]_{jq}
 \end{equation}
 or, more concisely,
 \begin{equation}
@@ -424,7 +424,7 @@ that is, $P'V$ keeps the resolved columns of $V$ and sets the unresolved columns
 For $M_{k+1}$, we claim that the truncated sensitivity is
 \begin{equation}
 \boxed{
-\overline M_{k+1,\text{trunc}} &= d_k\overline S_{k,\text{trunc}}d_k^T
+    \overline M_{k+1,\text{trunc}} = d_k\overline S_{k,\text{trunc}}d_k^T
 }
 \end{equation}
 To see why, substitute $\overline S_{k,\text{trunc}}$ into the first two terms of \eqref{weak_hodge_laplacian_chain_rule} and use the componentwise expression for $\partial[S_k]_{pq}/\partial[M_{k+1}]_{ij}$ derived above; this gives
