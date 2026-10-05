@@ -218,7 +218,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
 
         needs_codiff = needs_grad_mass_km1_val or needs_grad_mass_k_val
 
-        # The eigenvectors need to be length-normalized for the following calculation.
+        # The eigenvectors need to be M_k-normalized for the following calculation.
         eig_vals, eig_vecs, mass_k_val = ctx.saved_tensors
 
         cbd_km1: SparseDecoupledTensor = ctx.cbd_km1
@@ -323,7 +323,7 @@ def mixed_weak_laplacian_lobpcg(
         A weak Hodge Laplacian represented as a `MixedWeakLaplacianBlocks` object.
     n
         The number of approximated eigenvalues/eigenvectors, which should be in
-        the range [`l`, `k_splx`] (default value: `k`). In general, it is recommended
+        the range [`l`, `k_splx`] (default value: `l`). In general, it is recommended
         to set the `n` argument somewhat higher than `l`, to make the convergence
         of the `l` desired eigenvalues faster and to account for possible degenerate
         eigenvalues.
@@ -337,8 +337,7 @@ def mixed_weak_laplacian_lobpcg(
         eigenvalues are (near) degenerate. As a heuristic, the regularization starts
         to dominate the gradient calculation as the spectral gap approaches the
         square root of `eps`. Set to integer 0 to disable regularization; set to
-        "auto" to select `eps` dynamically at each iteration based on the computed
-        eigenvalues.
+        "auto" to select `eps` based on the computed eigenvalues.
     op_scale
         Operator scale for the matrix-free residual floor: the floor for each
         eigenvector x is tol * op_scale * ||x||. By default, estimate this scale from

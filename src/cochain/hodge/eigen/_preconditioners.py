@@ -180,7 +180,7 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
     with the inverse of the corresponding Hodge star. Here, `tau` controls the strength
     of regularization and has the same unit as the eigenvalues. When `tau` is not
     provided, it is computed as the approximate mean of the generalized eigenvalues
-    of $S_k^\up$, scaled down by a factor of 0.01; specifically, `star_k` is used
+    of $S_k'$, scaled down by a factor of 0.01; specifically, `star_k` is used
     to approximate $M_k^{-1}$ when `tau` is not provided.
     """
 

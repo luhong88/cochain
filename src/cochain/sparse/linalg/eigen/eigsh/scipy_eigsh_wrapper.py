@@ -14,7 +14,12 @@ from jaxtyping import Float, Integer
 from torch import Tensor
 
 from .....utils.parsing import to_np
-from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ....decoupled_tensor import (
+    BaseDecoupledTensor,
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
 from ....decoupled_tensor._conversion import sdt_to_scipy_csc, sdt_to_scipy_csr
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 from ..base.utils import compute_lorentzian_eps_via_norm
@@ -316,7 +321,7 @@ def _scipy_eigsh_batch(
 
 def scipy_eigsh(
     a: Float[SparseDecoupledTensor, "r c"],
-    m: Float[SparseDecoupledTensor, "r c"] | None = None,
+    m: Float[BaseDecoupledTensor, "r c"] | None = None,
     *,
     block_diag_batch: bool = False,
     k: int = 6,
@@ -337,7 +342,8 @@ def scipy_eigsh(
     m : [r, c]
         A real symmetric square sparse matrix that induces an inner product
         on the column space of `a`. If `m` is provided, solve a generalized
-        eigenvalue problem.
+        eigenvalue problem.  Note that, if `block_diag_batch=True`, then `m` cannot
+        be a `DiagDecoupledTensor`.
     block_diag_batch
         Whether the input `a` matrix (and `m` if not `None`) is block-diagonal.
         If `a` and `m` are block-diagonal, then they must both have valid and
@@ -390,6 +396,14 @@ def scipy_eigsh(
     While the latter approach typically lead to faster convergence, it has higher
     memory requirement due to the need to factorize the matrix.
     """
+    if isinstance(m, DiagDecoupledTensor):
+        if block_diag_batch:
+            raise TypeError(
+                "'m' cannot be a DiagDecoupledTensor when 'block_diag_batch' is True."
+            )
+        else:
+            m = m.to_sdt()
+
     # Eigenvectors are required for backward().
     compute_eig_vecs = return_eigenvectors
     if a.requires_grad:

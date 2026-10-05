@@ -34,13 +34,13 @@ def compute_dLdM_km1_val(
 
 def compute_dLdM_k_val(
     cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"],
-    mass_k_pattern: Integer[SparsityPattern, "k_splx k_splx"],
+    mass_k_pattern: Integer[SparsityPattern, "k_splx k_splx"] | None,
     eig_vals: Float[Tensor, " eig"],
     eig_vecs: Float[Tensor, "k_splx eig"],
     eig_vec_codiffs: Float[Tensor, "km1_splx eig"],
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
-    eig_vec_grad_proj: Float[Tensor, "k_splx k_splx"] | None,
+    eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
     cauchy: Float[Tensor, "k_splx k_splx"] | None,
 ):
     """Compute the gradient with respect to the nonzero values of $M_k$."""
@@ -52,11 +52,16 @@ def compute_dLdM_k_val(
     # The LHS path logic is similar to that in compute_dLdA_val().
     d_eig_vec_codiffs = cbd_km1 @ eig_vec_codiffs
 
-    eig_vecs_row = eig_vecs[mass_k_pattern.idx_coo[0]]
-    d_eig_vec_codiffs_col = d_eig_vec_codiffs[mass_k_pattern.idx_coo[1]]
+    if mass_k_pattern is None:
+        eig_vecs_row = eig_vecs_col = eig_vecs
+        d_eig_vec_codiffs_row = d_eig_vec_codiffs_col = d_eig_vec_codiffs
 
-    eig_vecs_col = eig_vecs[mass_k_pattern.idx_coo[1]]
-    d_eig_vec_codiffs_row = d_eig_vec_codiffs[mass_k_pattern.idx_coo[0]]
+    else:
+        eig_vecs_row = eig_vecs[mass_k_pattern.idx_coo[0]]
+        eig_vecs_col = eig_vecs[mass_k_pattern.idx_coo[1]]
+
+        d_eig_vec_codiffs_col = d_eig_vec_codiffs[mass_k_pattern.idx_coo[1]]
+        d_eig_vec_codiffs_row = d_eig_vec_codiffs[mass_k_pattern.idx_coo[0]]
 
     # If the loss does not depend on the eigenvectors, then the eigenvalue
     # component of the gradient is given by
@@ -125,7 +130,7 @@ def compute_dLdM_kp1_val(
     eig_vecs: Float[Tensor, "k_splx eig"],
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
-    eig_vec_grad_proj: Float[Tensor, "k_splx k_splx"] | None,
+    eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
     cauchy: Float[Tensor, "k_splx k_splx"] | None,
 ) -> Float[Tensor, " nz"]:
     """

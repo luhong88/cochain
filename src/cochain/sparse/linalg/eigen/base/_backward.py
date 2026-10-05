@@ -87,7 +87,7 @@ def compute_dLdA_val(
 
 
 def compute_dLdM_val(
-    m_pattern: Integer[SparsityPattern, "r c"],
+    m_pattern: Integer[SparsityPattern, "r c"] | None,
     eig_vals: Float[Tensor, " k"],
     eig_vecs: Float[Tensor, "c k"],
     dLdl: Float[Tensor, " k"],
@@ -95,8 +95,11 @@ def compute_dLdM_val(
     eig_vec_grad_proj: Float[Tensor, "k k"] | None,
     cauchy: Float[Tensor, "k k"] | None,
 ) -> Float[Tensor, " nz"]:
-    eig_vecs_row = eig_vecs[m_pattern.idx_coo[0]]
-    eig_vecs_col = eig_vecs[m_pattern.idx_coo[1]]
+    if m_pattern is None:
+        eig_vecs_row = eig_vecs_col = eig_vecs
+    else:
+        eig_vecs_row = eig_vecs[m_pattern.idx_coo[0]]
+        eig_vecs_col = eig_vecs[m_pattern.idx_coo[1]]
 
     # If the loss does not depend on the eigenvectors, then the eigenvalue
     # component of the gradient is given by

@@ -9,7 +9,12 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ....decoupled_tensor import (
+    BaseDecoupledTensor,
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
 from ...solvers import DirectSolverConfig
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
 from ..base.utils import compute_lorentzian_eps_via_norm, matrix_inf_norm
@@ -304,7 +309,7 @@ def _lobpcg_batch(
 
 def lobpcg(
     a: Float[SparseDecoupledTensor, "m m"],
-    m: Float[SparseDecoupledTensor, "m m"] | None = None,
+    m: Float[BaseDecoupledTensor, "m m"] | None = None,
     block_diag_batch: bool = False,
     n: int | None = None,
     k: int = 6,
@@ -336,7 +341,8 @@ def lobpcg(
     m : [m, m]
         A real, symmetric positive definite square matrix that induces an inner
         product on the column space of `a`. If `m` is provided, solve a generalized
-        eigenvalue problem.
+        eigenvalue problem. Note that, if `block_diag_batch=True`, then `m` cannot
+        be a `DiagDecoupledTensor`.
     block_diag_batch
         Whether the input `a` matrix (and `m` if not `None`) is block-diagonal.
         If `a` and `m` are block-diagonal, then they must both have valid and
@@ -415,6 +421,14 @@ def lobpcg(
     # Note that we delegate the CuPy and nvmath-python dependency checks to
     # the operator and preconditioner constructors, rather than performing a
     # top-level check.
+
+    if isinstance(m, DiagDecoupledTensor):
+        if block_diag_batch:
+            raise TypeError(
+                "'m' cannot be a DiagDecoupledTensor when 'block_diag_batch' is True."
+            )
+        else:
+            m = m.to_sdt()
 
     if lobpcg_config is None:
         lobpcg_config = LOBPCGConfig()
