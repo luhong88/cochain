@@ -81,17 +81,6 @@ def get_mixed_weak_down_2_laplacian(
     )
 
 
-def get_schur_complement_weak_down_2_laplacian(
-    tet_mesh: SimplicialMesh,
-) -> Float[Tensor, "tri tri"]:
-    mass_km1 = SuperLU(tet_masses.mass_1(tet_mesh), backend="scipy")
-    return weak_down_laplacian(
-        cbd_km1=tet_mesh.cbd[1],
-        mass_k=tet_masses.mass_2(tet_mesh),
-        mass_km1=mass_km1,
-    )
-
-
 def get_mixed_weak_1_laplacian(
     tet_mesh: SimplicialMesh,
 ) -> Float[MixedWeakLaplacianBlocks, "edge edge"]:
@@ -216,7 +205,13 @@ def test_down_laplacian_forward(bunny_tet_mesh, device):
     mesh = bunny_tet_mesh.to(device, torch.float64)
 
     mixed_laplacian = get_mixed_weak_down_2_laplacian(mesh)
-    schur_complement = get_schur_complement_weak_down_2_laplacian(mesh)
+
+    mass_km1 = SuperLU(tet_masses.mass_1(mesh), backend="scipy")
+    schur_complement = weak_down_laplacian(
+        cbd_km1=mesh.cbd[1],
+        mass_k=tet_masses.mass_2(mesh),
+        mass_km1=mass_km1,
+    )
 
     eig_vals_true, eig_vecs_true = dense_gep(
         schur_complement, mixed_laplacian.mass_k.to_dense()
