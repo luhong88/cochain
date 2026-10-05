@@ -178,23 +178,23 @@ def _lobpcg_loop(
     lambda_current = torch.diag(x_current.T @ (s_op @ tx_current))
 
     converged = False
-    for _ in range(niter):
+    for i in range(niter + 1):
         # Compute the residual vectors R = T@X - B@X@Λ.
         bx_current = b_op @ x_current
         res = tx_current - bx_current * lambda_current.view(1, -1)
         res_norm = torch.linalg.norm(res, dim=0)
+        x_norm = torch.linalg.norm(x_current, dim=0)
 
         # The PyTorch implementation of LOBPCG uses the tolerance threshold
         #
-        # ||R_i||_2 < tol(||X_i||_2||A||_2 + ||X_i||_2||M||_2|λ_i|)
+        # ||R_i||_2 < tol*(||X_i||_2||A||_2 + ||X_i||_2||M||_2|λ_i|)
         #
-        # where tol is the square root of the machine epsilon. Here, we assume that
-        # ||X_i|| is close to one and replace the matrix 2-norms with the inf-norm
-        # to reduce the computational cost, which gives
+        # where tol is the square root of the machine epsilon. Here, we replace
+        # the matrix 2-norms with the inf-norm to reduce the computational cost,
         #
-        # ||R_i||_2 < tol(||A||_∞ + ||M||_∞|λ_i|)
+        # ||R_i||_2 < tol*(||A||_∞ + ||M||_∞|λ_i|)*||X_i||_2
         #
-        # For the shift-invert mode, we nned to use a different tolerance threshold.
+        # For the shift-invert mode, we need to use a different tolerance threshold.
         # Let μ_i = 1/(λ_i - σ) be the shift-inverted eigenvalue. Note that, in the
         # SI mode,
         #
@@ -210,10 +210,10 @@ def _lobpcg_loop(
         # ||R_true_i||_2 = ||A - σM||_2||R_i||_2/|μ_i|
         #
         # By the triangle inequality, ||A - σM||_2 <= ||A||_2 + |σ|*||M||_2. If
-        # we require that ||R_i||_2 < tol*|μ_i| and assume that σ is approximately
-        # λ_i, then
+        # we require that ||R_i||_2 < tol*|μ_i|*||X_i||_2 and assume that σ is
+        # approximately λ_i, then
         #
-        # ||R_true_i||_2 < tol*(||A||_2 + ||M||_2*|λ_i|)
+        # ||R_true_i||_2 < tol*(||A||_2 + ||M||_2*|λ_i|)*||X_i||_2
         #
         # which is effectively the same error bound as before.
         #
@@ -250,40 +250,42 @@ def _lobpcg_loop(
         if a_norm is None:
             # The absolute floor makes convergence attainable for harmonic modes,
             # whose individual ||Ax|| and |lambda| ||Mx|| both approach zero.
-            abs_floor = a_norm_lower_bound * torch.linalg.norm(x_current, dim=0)
+            abs_floor = a_norm_lower_bound * x_norm
             rel_criterion = torch.linalg.norm(
                 tx_current, dim=0
             ) + lambda_current.abs() * torch.linalg.norm(bx_current, dim=0)
             tol_current = tol * (abs_floor + rel_criterion)
 
         elif sigma is None:
-            tol_current = tol * (a_norm + m_norm * lambda_current.abs())
+            tol_current = tol * (a_norm + m_norm * lambda_current.abs()) * x_norm
 
         else:
-            tol_current = tol * lambda_current.abs()
+            tol_current = tol * lambda_current.abs() * x_norm
 
         if (res_norm <= tol_current).all():
             converged = True
             break
 
-        else:
-            lambda_next, x_next, tx_next = _lobpcg_one_iter(
-                t_op,
-                m_op,
-                s_op,
-                res,
-                x_current,
-                x_prev,
-                precond,
-                largest,
-                tol_current,
-                generator,
-            )
+        if i == niter:
+            break
 
-            x_prev = x_current
-            x_current = x_next
-            tx_current = tx_next
-            lambda_current = lambda_next
+        lambda_next, x_next, tx_next = _lobpcg_one_iter(
+            t_op,
+            m_op,
+            s_op,
+            res,
+            x_current,
+            x_prev,
+            precond,
+            largest,
+            tol_current,
+            generator,
+        )
+
+        x_prev = x_current
+        x_current = x_next
+        tx_current = tx_next
+        lambda_current = lambda_next
 
     if not converged:
         max_res_norm_idx = res_norm.argmax()
