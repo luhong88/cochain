@@ -25,6 +25,20 @@ from cochain.sparse.linalg.solvers import SuperLU
 # linear solve, we generally relax the assert_close() tolerance thresholds in
 # this suite of tests to atol=1e-5.
 
+itemize_backends = pytest.mark.parametrize(
+    "backend",
+    [
+        pytest.param("scipy_splu", marks=[]),
+        pytest.param(
+            "cupy_splu", marks=[pytest.mark.gpu_only, pytest.mark.requires_cupy]
+        ),
+        pytest.param(
+            "nvmath_direct_solver",
+            marks=[pytest.mark.gpu_only, pytest.mark.requires_nvmath],
+        ),
+    ],
+)
+
 
 @pytest.fixture(scope="module")
 def bunny_tet_mesh() -> SimplicialMesh:
@@ -148,7 +162,8 @@ def test_v0_shape_validation(bunny_tet_mesh, device):
         )
 
 
-def test_full_laplacian_forward(bunny_tet_mesh, device):
+@itemize_backends
+def test_full_laplacian_forward(bunny_tet_mesh, backend, device):
     mesh = bunny_tet_mesh.to(device, torch.float64)
 
     mixed_laplacian = get_mixed_weak_1_laplacian(mesh)
@@ -165,6 +180,7 @@ def test_full_laplacian_forward(bunny_tet_mesh, device):
         mixed_laplacian,
         n=2 * l,
         l=l,
+        solver_type=backend,
         lobpcg_config=LOBPCGConfig(largest=True),
     )
     eig_vals = torch.flip(eig_vals_rev, dims=(0,))
@@ -183,6 +199,7 @@ def test_full_laplacian_forward(bunny_tet_mesh, device):
         mixed_laplacian,
         n=2 * l,
         l=l,
+        solver_type=backend,
         lobpcg_config=LOBPCGConfig(largest=False),
     )
 
