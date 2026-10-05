@@ -148,9 +148,10 @@ class MixedWeakLaplacianBlocks:
     and pass this system to a sparse linear solver to find the $(k-1)$-cochain
     $y$, then, call `get_forward_pass()` to compute $b = M_k d_{k-1} y + d_k^T M_{k+1} d_k x$.
     
-    * Solve the generalized eigenvalue problem $S_k x = \lambda M_k x$: call the
-    `get_gep()` method to generate the mixed representation of $S_k$ and $M_k$,
-    which can be passed to a sparse eigensolver to find the eigenpairs.
+    * Solve the generalized eigenvalue problem $S_k x = \lambda M_k x$: use the
+    specialized LOBPCG solver `mixed_weak_laplacian_lobpcg()`. In general, the
+    mixed formulation results in positive semidefinite mass matrices that are
+    not suitable for generic generalized eigenvalue problem solvers.
     """
 
     cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"]
