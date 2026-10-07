@@ -6,12 +6,107 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ....decoupled_tensor import SparseDecoupledTensor
+from ....decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+
+
+def _m_normalize(
+    v: Float[Tensor, "m n"],
+    m: Float[BaseDecoupledTensor, "m m"],
+) -> tuple[
+    Float[Tensor, "m l"],
+    Float[Tensor, "m l"],
+    Float[Tensor, " l"],
+    Float[Tensor, " l"],
+]:
+    r"""
+    M-normalize the nonzero column vectors of a matrix.
+
+    Parameters
+    ----------
+    v : [m, n]
+        A dense 2D matrix whose columns are to be M-normalized.
+    m : [m, m]
+        A sparse 2D symmetric positive definite matrix that induces an inner product
+        on the column space of $V$.
+
+    Returns
+    -------
+    v_normed : [m, l]
+        A dense 2D matrix whose columns consist of the M-normalized, nonzero
+        column vectors of `v`.
+    mv_normed: [m, l]
+        A dense 2D matrix computed as `m @ v_normed`.
+    col_norm: [l,]
+        The M-norms of the nonzero column vectors of `v`.
+    col_mask: [l,]
+        A boolean mask marking the nonzero columns of `v`.
+
+    Notes
+    -----
+    This function considers a column vector to be zero if every elements in that
+    column is identically zero. The calculation of column vector norms after
+    scaling by `1/col_max` avoids potential numerical issues for very large or
+    small column vectors.
+    """
+    if v.numel() == 0:
+        empty = torch.zeros_like(v[:, :0])
+        return empty, empty, v.new_empty(0), v.new_empty(0)
+
+    # Normalize the length of each column of V by dividing each column by its
+    # absolute max entry, which gives V_scaled.
+    col_max = v.abs().amax(dim=0)
+    col_mask = col_max > 0
+
+    if not col_mask.any():
+        empty = torch.zeros_like(v[:, :0])
+        return empty, empty, v.new_empty(0), v.new_empty(0)
+
+    v_scaled = v[:, col_mask] / col_max[col_mask]
+    mv_scaled = m @ v_scaled
+
+    # Compute the M-norms of the columns of V_scaled.
+    col_norm2 = (v_scaled * mv_scaled).sum(dim=0)
+    col_norm = torch.sqrt(col_norm2)
+
+    return (
+        v_scaled / col_norm,
+        mv_scaled / col_norm,
+        col_norm * col_max[col_mask],
+        col_mask,
+    )
+
+
+def _m_orthogonalize(
+    v: Float[Tensor, "m n"],
+    u: Float[Tensor, "m l"],
+    m: Float[BaseDecoupledTensor, "m m"],
+    mv: Float[Tensor, "m n"] | None = None,
+) -> Float[Tensor, "m l"]:
+    """
+    Find the vector components perpendicular from an M-orthonormal vector set.
+
+    Assuming that V contains column vectors that are M-orthonormal, then this
+    function computes the perpendicular projection U_perp = U - V@(V.T@M@U). This
+    projection is performed twice to guard against the possibility that U lies
+    almost entirely in span(V). It is possible to perform this iterative
+    refinement selectively by checking the change in vector norm after the
+    first projection, but that would require computing U.T@M@U, which is usually
+    more expensive than just projecting again.
+
+    Note that this function does not guard against input V that deviates from
+    the M-orthonormality condition or an input M that is ill-conditioned.
+    """
+    if mv is None:
+        mv = m @ v
+
+    u_perp = u - v @ (mv.T @ u)
+    u_perp_again = u_perp - v @ (mv.T @ u_perp)
+    return u_perp_again
 
 
 def m_orthonormalize(
     v: Float[Tensor, "m n"],
-    m: Float[SparseDecoupledTensor, "m m"],
+    m: Float[BaseDecoupledTensor, "m m"],
     *,
     rtol: float | None = None,
     n_min: int | None = None,
@@ -45,13 +140,6 @@ def m_orthonormalize(
         the number of columns satisfies $0 \le l \le n$; an all-zero or empty
         input returns an empty basis. A soft restart can supplement this basis
         with vectors outside the input column space.
-
-    Raises
-    ------
-    ValueError
-        If `v` contains nonfinite entries, or a nonzero column has a nonpositive
-        or nonfinite computed squared metric norm, or the normalized Gram matrix
-        is nonfinite.
 
     Notes
     -----
@@ -187,9 +275,7 @@ def m_orthonormalize(
 
             # The padded vectors need to form a subspace that is orthogonal to
             # the current V_ortho column space.
-            pad_overlap = v_ortho_double.T @ (m_double @ pad)
-            pad_proj = v_ortho_double @ pad_overlap
-            pad_perp = pad - pad_proj
+            pad_perp = _m_orthogonalize(v_ortho_double, pad, m_double)
 
             # The padded vectors need to be M-orthonormal.
             pad_res_ortho, pad_cond = _m_orthonormalize_one_iter(
@@ -213,7 +299,7 @@ def m_orthonormalize(
 
 def _m_orthonormalize_one_iter(
     v: Float[Tensor, "m n"],
-    m: Float[SparseDecoupledTensor, "m m"],
+    m: Float[BaseDecoupledTensor, "m m"],
     rtol: float | None = None,
 ) -> tuple[Float[Tensor, "m l"], Float[Tensor, ""]]:
     """Perform one iteration of M-orthonormalization."""
@@ -222,33 +308,12 @@ def _m_orthonormalize_one_iter(
     if rtol is None:
         rtol = v.size(0) * eps
 
-    if not torch.isfinite(v).all():
-        raise ValueError("'v' must contain only finite entries.")
-
-    if v.numel() == 0:
+    # Compute V_normed, which contains the M-normalized nonzero column vectors of V.
+    v_normed, mv_normed, _, _ = _m_normalize(v, m)
+    if v_normed.size(1) == 0:
         return torch.zeros_like(v[:, :0]), v.new_tensor(0.0)
-
-    # Normalize the length of each column of V by dividing each column by its
-    # absolute max entry.
-    col_max = v.abs().amax(dim=0)
-    nonzero_col = col_max > 0
-    if not nonzero_col.any():
-        return torch.zeros_like(v[:, :0]), v.new_tensor(0.0)
-    v_scaled = v[:, nonzero_col] / col_max[nonzero_col]
-    mv_scaled = m @ v_scaled
-
-    # Compute the M-norms of the columns of the scaled V.
-    col_norm2 = (v_scaled * mv_scaled).sum(dim=0)
-    if not (torch.isfinite(col_norm2) & (col_norm2 > 0)).all():
-        raise ValueError(
-            "Nonzero columns must have finite, strictly positive squared metric "
-            "norms; check that 'm' is positive definite and numerically well-scaled."
-        )
 
     # Form the M-orthogonal gram matrix G using V_normed, the M-normalized V.
-    col_norm = torch.sqrt(col_norm2)
-    v_normed = v_scaled / col_norm
-    mv_normed = mv_scaled / col_norm
     g_scaled = v_normed.T @ mv_normed
     if not torch.isfinite(g_scaled).all():
         raise ValueError("The normalized Gram matrix must be finite.")
