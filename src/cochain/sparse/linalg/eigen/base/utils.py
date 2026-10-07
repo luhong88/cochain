@@ -48,8 +48,9 @@ def _m_normalize(
     scaling by `1/col_max` avoids potential numerical issues for very large or
     small column vectors.
     """
+    empty = torch.empty((v.size(0), 0), dtype=v.dtype, device=v.device)
+
     if v.numel() == 0:
-        empty = torch.zeros_like(v[:, :0])
         return empty, empty, v.new_empty(0), v.new_empty(0)
 
     # Normalize the length of each column of V by dividing each column by its
@@ -58,7 +59,6 @@ def _m_normalize(
     col_mask = col_max > 0
 
     if not col_mask.any():
-        empty = torch.zeros_like(v[:, :0])
         return empty, empty, v.new_empty(0), v.new_empty(0)
 
     v_scaled = v[:, col_mask] / col_max[col_mask]
@@ -256,7 +256,13 @@ def m_orthonormalize(
     # Force double precision to further suppress the condition number issue.
     v_dtype = v.dtype
     v_double = v.to(torch.float64)
-    m_double = m.to(torch.float64)
+
+    # In LOBPCG this function may be called with m as an IdOp object, which does
+    # not have the dtype attribute.
+    if getattr(m, "dtype", torch.float64) == torch.float64:
+        m_double = m
+    else:
+        m_double = m.to(torch.float64)
 
     v_current = v_double
     for _ in range(max_iter):
@@ -330,7 +336,9 @@ def _m_orthonormalize_one_iter(
 
     # If V is basically zero, return an empty basis zero and a condition number of 0.
     if not mask.any():
-        return torch.zeros_like(v[:, :0]), v.new_tensor(0.0)
+        return torch.empty(
+            (v.size(0), 0), dtype=v.dtype, device=v.device
+        ), v.new_tensor(0.0)
 
     eig_vals_masked = eig_vals[mask]
     eig_vecs_masked = eig_vecs[:, mask]

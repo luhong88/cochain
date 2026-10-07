@@ -13,7 +13,12 @@ from torch import Tensor
 
 from ....decoupled_tensor import SparseDecoupledTensor
 from ...solvers import DirectSolverConfig
-from ..base.utils import m_orthonormalize
+from ..base.utils import (
+    _m_normalize,
+    _m_orthogonalize,
+    _m_orthonormalize_one_iter,
+    m_orthonormalize,
+)
 from ._lobpcg_operators import (
     IdOp,
     LinearOp,
@@ -31,17 +36,96 @@ SparseDecoupledTensorLike: TypeAlias = (
 )
 
 
+def _orthonormalize_search_directions(
+    new_dir: Float[Tensor, "m k"],
+    x_current: Float[Tensor, "m n"],
+    m_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
+    rtol: float | None = None,
+) -> Float[Tensor, "m l"]:
+    """M-orthonormalize new search directions against a fixed Ritz block X."""
+    x_dtype = x_current.dtype
+
+    x_double = x_current.to(torch.float64)
+    new_dir_double = new_dir.to(torch.float64)
+
+    if getattr(m_op, "dtype", torch.float64) == torch.float64:
+        m_double = m_op
+    else:
+        m_double = m_op.to(torch.float64)
+
+    empty = torch.empty(
+        (x_current.size(0), 0),
+        dtype=x_current.dtype,
+        device=x_current.device,
+    )
+
+    # Compute the rank of the complement of span(X). We can assume that the column
+    # vectors of X are linearly independent, and the number of column vectors/trial
+    # eigenvectors (i.e., n) is smaller than the dimension of the ambient space
+    # for the eigenvectors (i.e., m), so rank(X) = n and the complement of span(X)
+    # has dimension m - n.
+    complement_rank = x_double.size(0) - x_double.size(1)
+
+    # If m = n already, then there are no possible new search directions.
+    if complement_rank == 0:
+        return empty
+
+    # Set a heuristic for dropping small columns, which is the machine eps scaled
+    # by the vector length.
+    if rtol is None:
+        rtol = x_double.size(0) * torch.finfo(torch.float64).eps
+
+    # M-normalize the search direction column vectors to produce the matrix C;
+    # exactly-zero (soft-locked) columns are removed.
+    c, _, _, _ = _m_normalize(new_dir_double, m_double)
+    if c.size(1) == 0:
+        return empty
+
+    # Find the components of C that are perpendicular to span(X). It is safe to
+    # assume that X satisfies the M-orthonormality condition, which is required
+    # by _m_orthogonalize().
+    mx = m_double @ x_double
+    c = _m_orthogonalize(x_double, c, m_double, mx)
+
+    # Drop columns of C whose M-norm is < rtol, and M-normalize the rest of
+    # the column vectors.
+    c, _, col_norms, _ = _m_normalize(c, m_double)
+    c = c[:, col_norms > rtol]
+
+    # Ensure that the columns of C form a set of M-orthonormal vectors. This
+    # process could amplify any residual component of C still in span(X); so
+    # we insert a perpendicular projection step in between two SVQB steps.
+    # Note that, in _lobpcg_one_iter(), B' = V.T@B@V is not explicitly assumed to
+    # be equal to I; therefore, it is more important for this function to ensure
+    # the M-orthogonality between span(C) and span(X) (i.e., linear independent
+    # of the search directions) than the M-orthonormality of the columns of C itself.
+    c, _ = _m_orthonormalize_one_iter(c, m_double)
+    # If c has more columns than needed (unlikely, since m >> n typically), then
+    # only pick enough columns to fill the complement_rank. We would prefer to
+    # pick orthonormalized column vectors that were maximally linearly independent
+    # initially; these corresponding to the largest eigenvalues of the gram matrix
+    # inside _m_orthonormalize_one_iter(), and, conveniently, the column vectors
+    # outputted by this function is ordered by eigenvalues in ascending order.
+    if c.size(1) > complement_rank:
+        c = c[:, -complement_rank:]
+    c = _m_orthogonalize(x_double, c, m_double, mx)
+    c, _ = _m_orthonormalize_one_iter(c, m_double)
+
+    return c.to(x_dtype)
+
+
 def _lobpcg_one_iter(
     t_op: SparseDecoupledTensorLike,
     m_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
+    m_double: Float[SparseDecoupledTensor, "m m"] | IdOp,
     s_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
     res: Float[Tensor, "m n"],
     x_current: Float[Tensor, "m n"],
     x_prev: Float[Tensor, "m n"],
+    tx_current: Float[Tensor, "m n"],
     precond: LOBPCGPreconditioner,
     largest: bool,
     tol_current: Float[Tensor, " n"],
-    generator: torch.Generator | None,
 ) -> tuple[Float[Tensor, " n"], Float[Tensor, "m n"], Float[Tensor, "m n"]]:
     n = x_current.size(-1)
 
@@ -57,19 +141,25 @@ def _lobpcg_one_iter(
 
     # Compute the momentum/conjugate directions P. During the first iteration,
     # X_current = X_prev so P = 0. Perform the same soft locking on the momentum.
-    # Note that, as the algorithm converges, the difference between x_current
-    # and x_prev effectively approaches zero and the algorithm downgrades to
-    # gradient descent; this is likely acceptable since the loss of momentum
-    # only happens near the very end of the optimization when the solution is
-    # already close to the true values.
+    # Eigenvector signs and basis rotations can keep this difference large even
+    # near convergence; remove its current-space component before using it.
     conj_dir = (x_current - x_prev) * mask
 
-    # Assemble the new trial subspace and enforce M-orthonormality condition on
-    # the subspace basis vectors.
-    v = torch.hstack((x_current, search_dir, conj_dir))
+    # Ensure that the new search directions consist of M-orthonormal vectors that
+    # are outside of span(X).
+    new_dir = torch.hstack((search_dir, conj_dir))
+    new_dir_ortho = _orthonormalize_search_directions(new_dir, x_current, m_double)
 
-    v_ortho = m_orthonormalize(v, m_op, n_min=n, generator=generator, max_iter=3)
-    tv_ortho = t_op @ v_ortho
+    # The new Ritz block/trial eigenvectors consist of the existing eigenvectors
+    # plus the processed new search directions. The union of these two sets should
+    # still form an M-orthonormal set of vectors.
+    v_ortho = torch.hstack((x_current, new_dir_ortho))
+
+    # Apply T to the new set of trial eigenvectors in V_ortho. Since X_current
+    # has not been changed, the existing T@X_current can be reused instead of
+    # applying T to the entire V_ortho.
+    tc_ortho = t_op @ new_dir_ortho
+    tv_ortho = torch.hstack((tx_current, tc_ortho))
 
     # Perform the Rayleigh-Ritz projection.
     #
@@ -98,7 +188,7 @@ def _lobpcg_one_iter(
     # GEP, we achieve the same thing by "whitening" the GEP. Let B' = L@L.T be the
     # Cholesky decomposition of B', and write the reduced GEP as
     #
-    # inv(L)@T'@(inv(L).T@L.T) = inv(L)(L@L.T)@C@Λ
+    # inv(L)@T'@inv(L).T@(L.T@C) = (L.T@C)@Λ.
     #
     # Then, the operator T'' = inv(L)@T'@inv(L).T satisfies a standard eigenvalue
     # problem T''@Y = Y@Λ and Y = L.T@C.
@@ -152,8 +242,15 @@ def _lobpcg_loop(
     niter: int,
     generator: torch.Generator | None,
 ) -> tuple[Float[Tensor, " n"], Float[Tensor, "m n"]]:
+    # If m_op is not in double precision, create a double copy for numerical
+    # routines that demand double precision to avoid repeated dtype casting.
+    if getattr(m_op, "dtype", torch.float64) == torch.float64:
+        m_double = m_op
+    else:
+        m_double = m_op.to(torch.float64)
+
     x_current = m_orthonormalize(
-        x_0, m_op, n_min=x_0.size(-1), generator=generator, max_iter=3
+        x_0, m_double, n_min=x_0.size(-1), generator=generator, max_iter=3
     )
     x_prev = x_current
 
@@ -207,7 +304,7 @@ def _lobpcg_loop(
         # Note that the RHS is the true residue vector in the absence of SI. That
         # is
         #
-        # ||R_true_i||_2 = ||A - σM||_2||R_i||_2/|μ_i|
+        # ||R_true_i||_2 <= ||A - σM||_2||R_i||_2/|μ_i|
         #
         # By the triangle inequality, ||A - σM||_2 <= ||A||_2 + |σ|*||M||_2. If
         # we require that ||R_i||_2 < tol*|μ_i|*||X_i||_2 and assume that σ is
@@ -272,14 +369,15 @@ def _lobpcg_loop(
         lambda_next, x_next, tx_next = _lobpcg_one_iter(
             t_op,
             m_op,
+            m_double,
             s_op,
             res,
             x_current,
             x_prev,
+            tx_current,
             precond,
             largest,
             tol_current,
-            generator,
         )
 
         x_prev = x_current
