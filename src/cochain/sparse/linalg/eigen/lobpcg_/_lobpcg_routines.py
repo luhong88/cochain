@@ -75,43 +75,43 @@ def _orthonormalize_search_directions(
     if rtol is None:
         rtol = x_double.size(0) * torch.finfo(torch.float64).eps
 
-    # M-normalize the search direction column vectors to produce the matrix C;
+    # M-normalize the search direction column vectors to produce the matrix D;
     # exactly-zero (soft-locked) columns are removed.
-    c, _, _, _ = _m_normalize(new_dir_double, m_double)
-    if c.size(1) == 0:
+    d, _, _, _ = _m_normalize(new_dir_double, m_double)
+    if d.size(1) == 0:
         return empty
 
-    # Find the components of C that are perpendicular to span(X). It is safe to
+    # Find the components of D that are perpendicular to span(X). It is safe to
     # assume that X satisfies the M-orthonormality condition, which is required
     # by _m_orthogonalize().
     mx = m_double @ x_double
-    c = _m_orthogonalize(x_double, c, m_double, mx)
+    d = _m_orthogonalize(x_double, d, m_double, mx)
 
-    # Drop columns of C whose M-norm is < rtol, and M-normalize the rest of
+    # Drop columns of D whose M-norm is < rtol, and M-normalize the rest of
     # the column vectors.
-    c, _, col_norms, _ = _m_normalize(c, m_double)
-    c = c[:, col_norms > rtol]
+    d, _, col_norms, _ = _m_normalize(d, m_double)
+    d = d[:, col_norms > rtol]
 
-    # Ensure that the columns of C form a set of M-orthonormal vectors. This
-    # process could amplify any residual component of C still in span(X); so
+    # Ensure that the columns of D form a set of M-orthonormal vectors. This
+    # process could amplify any residual component of D still in span(X); so
     # we insert a perpendicular projection step in between two SVQB steps.
     # Note that, in _lobpcg_one_iter(), B' = V.T@B@V is not explicitly assumed to
     # be equal to I; therefore, it is more important for this function to ensure
-    # the M-orthogonality between span(C) and span(X) (i.e., linear independent
-    # of the search directions) than the M-orthonormality of the columns of C itself.
-    c, _ = _m_orthonormalize_one_iter(c, m_double)
-    # If c has more columns than needed (unlikely, since m >> n typically), then
+    # the M-orthogonality between span(D) and span(X) (i.e., linear independent
+    # of the search directions) than the M-orthonormality of the columns of D itself.
+    d, _ = _m_orthonormalize_one_iter(d, m_double)
+    # If D has more columns than needed (unlikely, since m >> n typically), then
     # only pick enough columns to fill the complement_rank. We would prefer to
     # pick orthonormalized column vectors that were maximally linearly independent
     # initially; these corresponding to the largest eigenvalues of the gram matrix
     # inside _m_orthonormalize_one_iter(), and, conveniently, the column vectors
     # outputted by this function is ordered by eigenvalues in ascending order.
-    if c.size(1) > complement_rank:
-        c = c[:, -complement_rank:]
-    c = _m_orthogonalize(x_double, c, m_double, mx)
-    c, _ = _m_orthonormalize_one_iter(c, m_double)
+    if d.size(1) > complement_rank:
+        d = d[:, -complement_rank:]
+    d = _m_orthogonalize(x_double, d, m_double, mx)
+    d, _ = _m_orthonormalize_one_iter(d, m_double)
 
-    return c.to(x_dtype)
+    return d.to(x_dtype)
 
 
 def _lobpcg_one_iter(
@@ -121,8 +121,8 @@ def _lobpcg_one_iter(
     s_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
     res: Float[Tensor, "m n"],
     x_current: Float[Tensor, "m n"],
-    x_prev: Float[Tensor, "m n"],
     tx_current: Float[Tensor, "m n"],
+    p_current: Float[Tensor, "m n"],
     precond: LOBPCGPreconditioner,
     largest: bool,
     tol_current: Float[Tensor, " n"],
@@ -139,11 +139,8 @@ def _lobpcg_one_iter(
     # W = Pr@R for the residual vectors R.
     search_dir = precond @ res_masked
 
-    # Compute the momentum/conjugate directions P. During the first iteration,
-    # X_current = X_prev so P = 0. Perform the same soft locking on the momentum.
-    # Eigenvector signs and basis rotations can keep this difference large even
-    # near convergence; remove its current-space component before using it.
-    conj_dir = (x_current - x_prev) * mask
+    # Perform the same soft locking on the momentum/conjugate directions.
+    conj_dir = p_current * mask
 
     # Ensure that the new search directions consist of M-orthonormal vectors that
     # are outside of span(X).
@@ -223,7 +220,26 @@ def _lobpcg_one_iter(
     x_next = v_ortho @ x_next_reduced
     tx_next = tv_ortho @ x_next_reduced
 
-    return lambda_next, x_next, tx_next
+    # Determine the next momentum/conjugate direction block P.
+    #
+    # Since X_next = V_ortho @ X_next_reduced and V_ortho = [X_current, D_ortho],
+    # We can similarly split X_next_reduced into two blocks of the appropriate
+    # shape X_next_reduced= [C_current C_correct].T, such that X_next can be decomposed
+    # into X_next = X_current@C_current + D_ortho@C_correct, where the first
+    # matmul describes linear combinations within span(X_current), while the
+    # second matmul describes corrections coming from the new search directions.
+    # Therefore, instead of computing P_next = X_next - X_current, which can
+    # suffer from catastrophic cancellations, we directly set P_next = D_ortho@C_correct.
+    # This is similar to just taking the residual X_next - X_current, but we
+    # ignore contributions to the residual coming from linear recombination within
+    # span(X_current) itself, which does not provide new search directions anyways.
+    #
+    # Tensor shapes:
+    # X_current: [m, n], D_ortho: [m, l] (l in [0, 2*n]) => V_ortho: [m, n+l]
+    # X_next_reduced: [n+l, n] => C_current: [n, n], C_correct: [l, n]
+    p_next = v_ortho[:, n:] @ x_next_reduced[n:, :]
+
+    return lambda_next, x_next, tx_next, p_next
 
 
 def _lobpcg_loop(
@@ -252,9 +268,13 @@ def _lobpcg_loop(
     x_current = m_orthonormalize(
         x_0, m_double, n_min=x_0.size(-1), generator=generator, max_iter=3
     )
-    x_prev = x_current
 
     tx_current = t_op @ x_current
+
+    # Initialize the momentum/conjugate search direction P as zero. Naively,
+    # one can compute P = X_next - X_current; therefore, for the first iter,
+    # P can be initialized as identically zero.
+    p_current = torch.zeros_like(x_current)
 
     if a_norm is None:
         if op_scale == "auto":
@@ -366,23 +386,23 @@ def _lobpcg_loop(
         if i == niter:
             break
 
-        lambda_next, x_next, tx_next = _lobpcg_one_iter(
+        lambda_next, x_next, tx_next, p_next = _lobpcg_one_iter(
             t_op,
             m_op,
             m_double,
             s_op,
             res,
             x_current,
-            x_prev,
             tx_current,
+            p_current,
             precond,
             largest,
             tol_current,
         )
 
-        x_prev = x_current
         x_current = x_next
         tx_current = tx_next
+        p_current = p_next
         lambda_current = lambda_next
 
     if not converged:
