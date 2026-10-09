@@ -11,11 +11,10 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ....decoupled_tensor import SparseDecoupledTensor
+from ....decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
 from ...solvers import DirectSolverConfig
 from ..base.utils import (
     _m_normalize,
-    _m_orthogonalize,
     _m_orthonormalize_one_iter,
     m_orthonormalize,
 )
@@ -34,6 +33,25 @@ SparseDecoupledTensorLike: TypeAlias = (
     | Float[ShiftInvSymSpOp, "m m"]
     | Float[ShiftInvSymGEPSpOp, "m m"]
 )
+
+
+def _m_orthogonalize_safe(
+    v: Float[Tensor, "m n"],
+    u: Float[Tensor, "m l"],
+    mv: Float[Tensor, "m n"] | None = None,
+    l: Float[Tensor, "m m"] | None = None,
+):
+    """
+    Find the vector components perpendicular from an M-orthonormal vector set.
+
+    Assuming that V contains column vectors that are approximately M-orthonormal.
+    Let G = V^T@M@V be a Gram matrix. This function computes the perpendicular
+    projection U_perp = U - V@inv(G)@(V.T@M@U).
+    """
+    u_perp = u - v @ torch.cholesky_solve(mv.T @ u, l)
+    u_perp_again = u_perp - v @ torch.cholesky_solve(mv.T @ u_perp, l)
+
+    return u_perp_again
 
 
 def _orthonormalize_search_directions(
@@ -81,11 +99,17 @@ def _orthonormalize_search_directions(
     if d.size(1) == 0:
         return empty
 
+    # Find the Cholesky decomposition of G = X.T@M@X for use with the
+    # _m_orthogonalize() function.
+    mx = m_double @ x_double
+    g = x_double.T @ mx
+    g = (g + g.T) / 2.0
+    l = torch.linalg.cholesky(g)
+
     # Find the components of D that are perpendicular to span(X). It is safe to
     # assume that X satisfies the M-orthonormality condition, which is required
     # by _m_orthogonalize().
-    mx = m_double @ x_double
-    d = _m_orthogonalize(x_double, d, m_double, mx)
+    d = _m_orthogonalize_safe(x_double, d, mx, l)
 
     # Drop columns of D whose M-norm is < rtol, and M-normalize the rest of
     # the column vectors.
@@ -108,7 +132,7 @@ def _orthonormalize_search_directions(
     # outputted by this function is ordered by eigenvalues in ascending order.
     if d.size(1) > complement_rank:
         d = d[:, -complement_rank:]
-    d = _m_orthogonalize(x_double, d, m_double, mx)
+    d = _m_orthogonalize_safe(x_double, d, mx, l)
     d, _ = _m_orthonormalize_one_iter(d, m_double)
 
     return d.to(x_dtype)
@@ -126,7 +150,12 @@ def _lobpcg_one_iter(
     precond: LOBPCGPreconditioner,
     largest: bool,
     tol_current: Float[Tensor, " n"],
-) -> tuple[Float[Tensor, " n"], Float[Tensor, "m n"], Float[Tensor, "m n"]]:
+) -> tuple[
+    Float[Tensor, " n"],
+    Float[Tensor, "m n"],
+    Float[Tensor, "m n"],
+    Float[Tensor, "m n"],
+]:
     n = x_current.size(-1)
 
     # Perform soft locking/deflation to lock in converged eigenvectors by zeroing
