@@ -219,20 +219,27 @@ def _lobpcg_one_iter(
     # Then, the operator T'' = inv(L)@T'@inv(L).T satisfies a standard eigenvalue
     # problem T''@Y = Y@Λ and Y = L.T@C.
     b_reduced = v_ortho.T @ (m_op @ v_ortho)
+    b_reduced = (b_reduced + b_reduced.T) / 2.0
     b_lower = torch.linalg.cholesky(b_reduced, upper=False)
-    # Applying solve_triangular() to L with I as the RHS is equivalent to finding
-    # the inverse of L.
-    b_lower_inv = torch.linalg.solve_triangular(
-        b_lower,
-        torch.eye(v_ortho.size(-1), dtype=b_lower.dtype, device=b_lower.device),
-        upper=False,
-    )
 
     t_reduced = v_ortho.T @ (s_op @ tv_ortho)
-    t_sym = b_lower_inv @ t_reduced @ b_lower_inv.T
+    t_reduced = (t_reduced + t_reduced.T) / 2.0
+    # Effectively compute inv(b_lower) @ t_reduced @ inv(b_lower).T
+    # The inner solve_triangular() computes y = inv(b_lower) @ t_reduced, and the
+    # outer solve_triangular() computes y @ inv(b_lower).T
+    t_sym = torch.linalg.solve_triangular(
+        b_lower.T,
+        torch.linalg.solve_triangular(b_lower, t_reduced, upper=False),
+        upper=True,
+        left=False,
+    )
+    t_sym = 0.5 * (t_sym + t_sym.T)
 
     lambda_next_all, y_next_reduced_all = torch.linalg.eigh(t_sym)
-    x_next_reduced_all = b_lower_inv.T @ y_next_reduced_all
+    # Effectively compute inv(b_lower).T @ y_next_reduced_all
+    x_next_reduced_all = torch.linalg.solve_triangular(
+        b_lower.T, y_next_reduced_all, upper=True
+    )
 
     # Extract the n largest (or smallest) eigenvalue-eigenvector pairs.
     # Note that torch.linalg.eigh() returns eigenvalues in ascending order.
