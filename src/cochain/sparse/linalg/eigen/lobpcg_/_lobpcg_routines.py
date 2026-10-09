@@ -39,7 +39,7 @@ def _m_orthogonalize_safe(
     v: Float[Tensor, "m n"],
     u: Float[Tensor, "m l"],
     mv: Float[Tensor, "m n"],
-    l: Float[Tensor, "n n"],
+    g_lower: Float[Tensor, "n n"],
 ) -> Float[Tensor, "m l"]:
     """
     Find the vector components perpendicular from a linearly independent vector set.
@@ -48,8 +48,8 @@ def _m_orthogonalize_safe(
     be a Gram matrix. This function computes the perpendicular projection
     U_perp = U - V@inv(G)@(V.T@M@U).
     """
-    u_perp = u - v @ torch.cholesky_solve(mv.T @ u, l)
-    u_perp_again = u_perp - v @ torch.cholesky_solve(mv.T @ u_perp, l)
+    u_perp = u - v @ torch.cholesky_solve(mv.T @ u, g_lower)
+    u_perp_again = u_perp - v @ torch.cholesky_solve(mv.T @ u_perp, g_lower)
 
     return u_perp_again
 
@@ -144,6 +144,7 @@ def _lobpcg_one_iter(
     m_double: Float[SparseDecoupledTensor, "m m"] | IdOp,
     s_op: Float[SparseDecoupledTensor, "m m"] | IdOp,
     res: Float[Tensor, "m n"],
+    res_norm: Float[Tensor, " n"],
     x_current: Float[Tensor, "m n"],
     tx_current: Float[Tensor, "m n"],
     p_current: Float[Tensor, "m n"],
@@ -160,8 +161,7 @@ def _lobpcg_one_iter(
 
     # Perform soft locking/deflation to lock in converged eigenvectors by zeroing
     # out the corresponding residual vectors.
-    res_norm = torch.linalg.norm(res, dim=0, keepdim=True)
-    mask = (res_norm > tol_current).to(res_norm.dtype)
+    mask = (res_norm > tol_current).to(res_norm.dtype).view(1, -1)
     res_masked = res * mask
 
     # For a given preconditioner Pr, the new search directions W is given by
@@ -427,6 +427,7 @@ def _lobpcg_loop(
             m_double,
             s_op,
             res,
+            res_norm,
             x_current,
             tx_current,
             p_current,

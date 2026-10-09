@@ -80,9 +80,9 @@ class MixedWeakLaplacianBlocks:
     mass_km1: [km1_splx, km1_splx]
         The consistent mass matrix for discrete $(k-1)$-forms.
     mass_k: [k_splx, k_splx]
-        The consistent mass matrix for discrete $k$-forms.
+        The consistent mass matrix or diagonal Hodge star for discrete $k$-forms.
     mass_kp1: [kp1_splx, kp1_splx]
-        The consistent mass matrix for discrete $(k+1)$-forms.
+        The consistent mass matrix or diagonal Hodge star for discrete $(k+1)$-forms.
 
     Notes
     -----
@@ -333,7 +333,7 @@ class MixedWeakLaplacianBlocks:
     def get_codiff_system(
         self, x: Float[Tensor, " k_splx *ch"]
     ) -> tuple[
-        Float[BaseDecoupledTensor, "km1_splx km1_splx"],
+        Float[SparseDecoupledTensor, "km1_splx km1_splx"],
         Float[Tensor, " km1_splx *ch"],
     ]:
         r"""

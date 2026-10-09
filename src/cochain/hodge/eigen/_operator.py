@@ -31,10 +31,10 @@ class MassKm1Solver:
         if not isinstance(self.solver_config, DirectSolverConfig):
             raise TypeError("'solver_config' must be a DirectSolverConfig object.")
 
-        # Solve a linear system with a channel dim of at most 3n size.
+        # Solve a linear system with a channel dim of at most 2n size.
         b_dummy = to_col_major(
             torch.zeros(
-                (self.mass_km1.size(-1), 3 * self.n),
+                (self.mass_km1.size(-1), 2 * self.n),
                 dtype=self.mass_km1.dtype,
                 device=self.mass_km1.device,
             ),
@@ -71,9 +71,9 @@ class MassKm1Solver:
     def _solve_via_nvmath_direct_solver(
         self, b: Float[Tensor, " km1_splx *ch"]
     ) -> Float[Tensor, " km1_splx *ch"]:
-        # Pad channel dim up to size 3n.
+        # Pad channel dim up to size 2n.
         l = b.size(-1)
-        pad = 3 * self.n - l
+        pad = 2 * self.n - l
 
         rhs_padded_col_major = to_col_major(
             torch.nn.functional.pad(b, (0, pad, 0, 0)), batch_first=False

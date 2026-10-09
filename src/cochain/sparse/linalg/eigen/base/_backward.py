@@ -101,8 +101,7 @@ def compute_dLdM_val(
         eig_vecs_row = eig_vecs[m_pattern.idx_coo[0]]
         eig_vecs_col = eig_vecs[m_pattern.idx_coo[1]]
 
-    # If the loss does not depend on the eigenvectors, then the eigenvalue
-    # component of the gradient is given by
+    # The eigenvalue component of the gradient is given by
     # dLdM_ij = -sum_k[λ_k * dLdλ_k * V_ik * V_jk]
     dLdM_eig_vals = -einsum(
         eig_vals,

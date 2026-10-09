@@ -94,7 +94,7 @@ def _mean_generalized_eigenvalues(
     matrix with a Hodge star, and then scale the mean with the `scale` scalar.
     """
     n_splx = inv_star_k.size(0)
-    mean = (inv_star_k @ weak_laplacian).tr / n_splx
+    mean = (inv_star_k.values * weak_laplacian.diagonal()).sum() / n_splx
     return scale * mean
 
 
@@ -103,9 +103,9 @@ class ShiftedUpPrecond(LOBPCGPreconditioner):
     A mixed Hodge Laplacian LOBPCG preconditioner using the sparse up-component.
 
     This preconditioner computes the search direction by effectively applying
-    $(S_k^\up + \tau M_k)^{-1}$ to the residual vector. Because the down-component
-    is omitted, this is most useful in cases where the desired eigenmode is
-    dominated by the up component.
+    $(S_k^\text{up} + \tau M_k)^{-1}$ to the residual vector. Because the
+    down-component is omitted, this is most useful in cases where the desired
+    eigenmode is dominated by the up component.
 
     Here, `tau` controls the strength of regularization and has the same unit as
     the eigenvalues. When `tau` is not provided, it is computed as the approximate
@@ -131,10 +131,10 @@ class ShiftedUpPrecond(LOBPCGPreconditioner):
 
         self.n = n
 
-        # Solve a linear system with a channel dim of at most 3n size.
+        # Solve a linear system with a channel dim of at most n size.
         b_dummy = to_col_major(
             torch.zeros(
-                (weak_up_laplacian.size(-1), 3 * n),
+                (weak_up_laplacian.size(-1), n),
                 dtype=weak_up_laplacian.dtype,
                 device=weak_up_laplacian.device,
             ),
@@ -152,9 +152,9 @@ class ShiftedUpPrecond(LOBPCGPreconditioner):
         )
 
     def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
-        # Pad up to 3n channel dims
+        # Pad up to n channel dims
         k = res.size(-1)
-        pad = 3 * self.n - k
+        pad = self.n - k
 
         res_padded_col_major = to_col_major(
             torch.nn.functional.pad(res, (0, pad, 0, 0)), batch_first=False
@@ -171,8 +171,8 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
     r"""
     A mixed Hodge Laplacian LOBPCG preconditioner using the mass-lumped down-component.
 
-    It is recommended to compute `inv_star_km1` using the barycentric dual so
-    that the resulting operator remains strictly SPD regardless of mesh quality.
+    It is recommended to compute `star_km1` using the barycentric dual so that
+    the resulting operator remains strictly SPD regardless of mesh quality.
 
     This preconditioner computes the search direction by effectively applying
     $(S_k' + \tau M_k)^{-1}$ to the residual vector, where $S_k'$ is a mass-lumped
@@ -225,10 +225,10 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
 
             op = SparseDecoupledTensor.assemble(weak_laplacian, tau * mass_k)
 
-        # Solve a linear system with a channel dim of at most 3n size.
+        # Solve a linear system with a channel dim of at most n size.
         b_dummy = to_col_major(
             torch.zeros(
-                (op.size(-1), 3 * n),
+                (op.size(-1), n),
                 dtype=op.dtype,
                 device=op.device,
             ),
@@ -244,9 +244,9 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
         )
 
     def __matmul__(self, res: Float[Tensor, "m k"]) -> Float[Tensor, "m k"]:
-        # Pad up to 3n channel dims
+        # Pad up to n channel dims
         k = res.size(-1)
-        pad = 3 * self.n - k
+        pad = self.n - k
 
         res_padded_col_major = to_col_major(
             torch.nn.functional.pad(res, (0, pad, 0, 0)), batch_first=False

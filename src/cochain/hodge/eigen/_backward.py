@@ -13,14 +13,14 @@ def compute_dLdM_km1_val(
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
     eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
-    cauchy: Float[Tensor, "k_splx k_splx"] | None,
+    cauchy: Float[Tensor, "eig eig"] | None,
 ) -> Float[Tensor, " nz"]:
     """
     Compute the gradient with respect to the nonzero values of $M_{k-1}$.
 
     Note that $dL/dM_{k-1}$ essentially reuses the same logic as implemented in
-    compute_dLdA_val(), but with the codifferential of the eigenvectors in place
-    of the eigenvectors.
+    compute_dLdA_val(), but with a minus sign and the codifferential of the
+    eigenvectors in place of the eigenvectors.
     """
     return -compute_dLdA_val(
         a_pattern=mass_km1_pattern,
@@ -41,8 +41,8 @@ def compute_dLdM_k_val(
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
     eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
-    cauchy: Float[Tensor, "k_splx k_splx"] | None,
-):
+    cauchy: Float[Tensor, "eig eig"] | None,
+) -> Float[Tensor, " nz"]:
     """Compute the gradient with respect to the nonzero values of $M_k$."""
     # For the eigenvalue problem S_k@v_i = λ_i@M_k@v_i, we compute separately
     # the gradient w.r.t. M_k through the left-hand side path (via its contribution
@@ -63,8 +63,7 @@ def compute_dLdM_k_val(
         d_eig_vec_codiffs_col = d_eig_vec_codiffs[mass_k_pattern.idx_coo[1]]
         d_eig_vec_codiffs_row = d_eig_vec_codiffs[mass_k_pattern.idx_coo[0]]
 
-    # If the loss does not depend on the eigenvectors, then the eigenvalue
-    # component of the gradient is given by
+    # The eigenvalue component of the gradient is given by
     #
     # dLdM = V@dLdλ@(d_{k-1}@W).T + (d_{k-1}@W)@dLdλ@V.T
     #
@@ -110,7 +109,7 @@ def compute_dLdM_k_val(
         # Sum together the eigenvalue and eigenvector components of the gradient.
         dLdM_lhs = dLdM_eig_vals + dLdM_eig_vals_T + dLdM_eig_vecs + dLdM_eig_vecs_T
 
-    # The RHS path resues the compute_dLdM_val() logic exactly.
+    # The RHS path reuses the compute_dLdM_val() logic exactly.
     dLdM_rhs = compute_dLdM_val(
         m_pattern=mass_k_pattern,
         eig_vals=eig_vals,
@@ -131,7 +130,7 @@ def compute_dLdM_kp1_val(
     dLdl: Float[Tensor, " eig"],
     dLdv: Float[Tensor, "k_splx eig"] | None,
     eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
-    cauchy: Float[Tensor, "k_splx k_splx"] | None,
+    cauchy: Float[Tensor, "eig eig"] | None,
 ) -> Float[Tensor, " nz"]:
     """
     Compute the gradient with respect to the nonzero values of $M_{k+1}$.

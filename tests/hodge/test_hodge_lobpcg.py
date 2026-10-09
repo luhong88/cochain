@@ -540,7 +540,6 @@ def test_lorentzian_regularization_smoke(asym_sc_mesh, device):
 
     l = 3
 
-    # Test both largest=True and largest=False
     eig_vals, eig_vecs = mixed_weak_laplacian_lobpcg(
         mixed_laplacian,
         n=2 * l,

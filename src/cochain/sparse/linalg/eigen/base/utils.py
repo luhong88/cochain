@@ -16,7 +16,7 @@ def _m_normalize(
     Float[Tensor, "m l"],
     Float[Tensor, "m l"],
     Float[Tensor, " l"],
-    Float[Tensor, " l"],
+    Float[Tensor, " n"],
 ]:
     r"""
     M-normalize the nonzero column vectors of a matrix.
@@ -38,7 +38,7 @@ def _m_normalize(
         A dense 2D matrix computed as `m @ v_normed`.
     col_norm: [l,]
         The M-norms of the nonzero column vectors of `v`.
-    col_mask: [l,]
+    col_mask: [n,]
         A boolean mask marking the nonzero columns of `v`.
 
     Notes
@@ -83,7 +83,7 @@ def _m_orthogonalize(
     mv: Float[Tensor, "m n"] | None = None,
 ) -> Float[Tensor, "m l"]:
     """
-    Find the vector components perpendicular from an M-orthonormal vector set.
+    Find the vector components perpendicular to an M-orthonormal vector set.
 
     Assuming that V contains column vectors that are M-orthonormal, then this
     function computes the perpendicular projection U_perp = U - V@(V.T@M@U). This
@@ -537,7 +537,7 @@ def compute_lorentzian_eps_via_eigs(eig_vals: Float[Tensor, " eig"]) -> float:
     Select the strength of Lorentzian broadening from resolved eigenvalues.
 
     This function is similar to `compute_lorentzian_eps_via_norm()`, but it
-    estimate the spectral scale from the computed eigenvalues directly, which is
+    estimates the spectral scale from the computed eigenvalues directly, which is
     useful for matrix-free linear operators.
     """
     scale = eig_vals.abs().max().item()

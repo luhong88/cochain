@@ -27,7 +27,6 @@ from ...sparse.linalg.eigen.base._backward import (
 from ...sparse.linalg.eigen.base.utils import compute_lorentzian_eps_via_eigs
 from ...sparse.linalg.eigen.lobpcg_._lobpcg_preconditioners import (
     IdentityPrecond,
-    LOBPCGPrecondConfig,
     LOBPCGPreconditioner,
 )
 from ...sparse.linalg.eigen.lobpcg_._lobpcg_routines import lobpcg_forward
@@ -353,8 +352,7 @@ def mixed_weak_laplacian_lobpcg(
     lobpcg_config
         Additional optional LOBPCG configurations.
     precond_config
-        Additional optional arguments for LOBPCG preconditioners. Note that the
-        preconditioner config is ignored in the shift-invert mode.
+        Additional optional arguments for LOBPCG preconditioners.
 
     Returns
     -------
@@ -366,21 +364,21 @@ def mixed_weak_laplacian_lobpcg(
 
     Notes
     -----
-    Block-diagonal batching and the shift-invert mode is not supported.
+    Block-diagonal batching and the shift-invert mode are not supported.
 
     Automatic operator-scale estimation uses only the initial trial eigenvectors
     and can fail for operators with very large nullspaces, where the initial vectors
     are likely to lie in or near the nullspace. The estimated scale can then
-    be too small, making the convergence criteria unattainably. In such cases,
+    be too small, making the convergence criteria unattainable. In such cases,
     supply a positive `op_scale` representative of the weak Laplacian matrix norm
     instead of using "auto".
 
-    The autograd through eigenvectors do not account for contributions from the
+    The autograd through eigenvectors does not account for contributions from the
     unresolved eigenvectors. Currently, only first-order derivatives are supported.
     The coboundary operators are treated as nondifferentiable.
 
     This implementation accepts specific preconditioners, including: identity,
-    "shifted up" ($(S_k^up + \tau M_k)^{-1}$), and "shifted lumped"
+    "shifted up" ($(S_k^\text{up} + \tau M_k)^{-1}$), and "shifted lumped"
     (approximately, $(S_k + \tau M_k)^{-1}$) preconditioners; in particular, the
     "shifted up" preconditioner is not applicable for down-component only
     `MixedWeakLaplacianBlocks`. The preconditioner can be configured using a
@@ -394,7 +392,12 @@ def mixed_weak_laplacian_lobpcg(
     if lobpcg_config is None:
         lobpcg_config = LOBPCGConfig()
     if precond_config is None:
-        precond_config = LOBPCGPrecondConfig()
+        precond_config = LaplacianLOBPCGPrecondConfig()
+
+    if lobpcg_config.sigma is not None:
+        raise NotImplementedError(
+            "The shift-invert mode for mixed weak Laplacians is not implemented."
+        )
 
     if solver_config is None:
         match solver_type:
@@ -422,7 +425,7 @@ def mixed_weak_laplacian_lobpcg(
             raise ValueError("v0 must have shape (k, n).")
 
     if n < l or n > n_k_splx:
-        raise ValueError("n must be in the range [l, k].")
+        raise ValueError("n must be in the range [l, k_splx].")
 
     if lobpcg_config.v0 is None:
         v0 = torch.randn(
