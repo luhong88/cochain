@@ -1,11 +1,10 @@
 import pytest
-import pytetwild
-import pyvista as pv
 import torch
 from jaxtyping import Float
 from torch import Tensor
 
 from cochain.complex import SimplicialMesh
+from cochain.datasets import synthetic_tet_meshes
 from cochain.hodge.eigen import (
     LaplacianLOBPCGPrecondConfig,
     LOBPCGConfig,
@@ -41,32 +40,22 @@ itemize_backends = pytest.mark.parametrize(
 
 
 @pytest.fixture(scope="module")
-def bunny_tet_mesh() -> SimplicialMesh:
-    # Load the mesh from pyvista.
-    bunny_pv_tri = (
-        pv.examples.download_bunny_coarse()
-        .clean()
-        .triangulate()
-        .decimate_pro(0.7, preserve_topology=True, splitting=False)
+def asym_sc_mesh() -> SimplicialMesh:
+    """
+    Generate an asymmetric version of the simple cubic lattice tet mesh.
+
+    This fixture removes the symmetry/degeneracy in the Laplacian eigenvalue
+    spectrum of the SC mesh in two ways: anisotropic scaling removes the cubic-symmetry
+    eigenvalue degeneracies; fixed-seed jitter breaks the mirror symmetries that
+    create sign ties in canonicalize_eig_vec_signs().
+    """
+    mesh = synthetic_tet_meshes.load_sc_mesh(dim=3)
+    mesh.vert_coords.mul_(torch.tensor([1.0, 1.3, 1.7]))
+    gen = torch.Generator().manual_seed(0)
+    mesh.vert_coords.add_(
+        0.1 * (2 * torch.rand(mesh.vert_coords.shape, generator=gen) - 1)
     )
-
-    # Tetrahedralize the bunny tri mesh
-    v_tet, t_tet = pytetwild.tetrahedralize(
-        bunny_pv_tri.points,
-        bunny_pv_tri.faces.reshape(-1, 4)[:, 1:],
-        edge_length_fac=0.9,
-    )
-
-    # Scale the mesh size and recenter.
-    bunny = SimplicialMesh.from_tet_mesh(
-        vert_coords=15.0 * torch.from_numpy(v_tet).to(dtype=torch.float32),
-        tets=torch.from_numpy(t_tet).to(dtype=torch.int64),
-    )
-
-    # Center the mesh
-    bunny.vert_coords.sub_(bunny.vert_coords.mean(dim=0, keepdim=True))
-
-    return bunny
+    return mesh
 
 
 def get_mixed_weak_down_2_laplacian(
@@ -126,8 +115,8 @@ def dense_gep(
     return eig_vals_true, eig_vecs_true
 
 
-def test_v0_shape_validation(bunny_tet_mesh, device):
-    mesh = bunny_tet_mesh.to(device)
+def test_v0_shape_validation(asym_sc_mesh, device):
+    mesh = asym_sc_mesh.to(device)
 
     laplacian = get_mixed_weak_down_2_laplacian(mesh)
     v0 = torch.randn(
@@ -152,8 +141,8 @@ def test_v0_shape_validation(bunny_tet_mesh, device):
 
 
 @itemize_backends
-def test_full_laplacian_forward(bunny_tet_mesh, backend, device):
-    mesh = bunny_tet_mesh.to(device, torch.float64)
+def test_full_laplacian_forward(asym_sc_mesh, backend, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
 
     mixed_laplacian = get_mixed_weak_1_laplacian(mesh)
     schur_complement = get_schur_complement_weak_1_laplacian(mesh)
@@ -201,8 +190,8 @@ def test_full_laplacian_forward(bunny_tet_mesh, backend, device):
     )
 
 
-def test_down_laplacian_forward(bunny_tet_mesh, device):
-    mesh = bunny_tet_mesh.to(device, torch.float64)
+def test_down_laplacian_forward(asym_sc_mesh, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
 
     mixed_laplacian = get_mixed_weak_down_2_laplacian(mesh)
 
@@ -241,8 +230,8 @@ def test_down_laplacian_forward(bunny_tet_mesh, device):
 
 @pytest.mark.gpu_only
 @pytest.mark.requires_nvmath
-def test_full_laplacian_forward_shifted_up_precond(bunny_tet_mesh, device):
-    mesh = bunny_tet_mesh.to(device, torch.float64)
+def test_full_laplacian_forward_shifted_up_precond(asym_sc_mesh, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
 
     mixed_laplacian = get_mixed_weak_1_laplacian(mesh)
     schur_complement = get_schur_complement_weak_1_laplacian(mesh)
@@ -275,8 +264,8 @@ def test_full_laplacian_forward_shifted_up_precond(bunny_tet_mesh, device):
 
 @pytest.mark.gpu_only
 @pytest.mark.requires_nvmath
-def test_full_laplacian_forward_shifted_lumped_precond(bunny_tet_mesh, device):
-    mesh = bunny_tet_mesh.to(device, torch.float64)
+def test_full_laplacian_forward_shifted_lumped_precond(asym_sc_mesh, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
 
     mixed_laplacian = get_mixed_weak_1_laplacian(mesh)
     schur_complement = get_schur_complement_weak_1_laplacian(mesh)
@@ -309,8 +298,8 @@ def test_full_laplacian_forward_shifted_lumped_precond(bunny_tet_mesh, device):
     )
 
 
-def test_full_laplacian_eig_vals_backward(bunny_tet_mesh, device):
-    mesh = bunny_tet_mesh.to(device, torch.float64)
+def test_full_laplacian_eig_vals_backward(asym_sc_mesh, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
     mesh.requires_grad_()
 
     l = 3
@@ -359,8 +348,8 @@ def test_full_laplacian_eig_vals_backward(bunny_tet_mesh, device):
     )
 
 
-def test_full_laplacian_eig_vecs_backward(bunny_tet_mesh, device):
-    mesh = bunny_tet_mesh.to(device, torch.float64)
+def test_full_laplacian_eig_vecs_backward(asym_sc_mesh, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
     l = 3
 
     # dense path
@@ -447,8 +436,8 @@ def test_full_laplacian_eig_vecs_backward(bunny_tet_mesh, device):
     torch.testing.assert_close(dLdM_kp1, dLdM_kp1_sp, atol=1e-5, rtol=0.0)
 
 
-def test_full_laplacian_combined_backward(bunny_tet_mesh, device):
-    mesh = bunny_tet_mesh.to(device, torch.float64)
+def test_full_laplacian_combined_backward(asym_sc_mesh, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
     l = 3
 
     # dense path
@@ -543,8 +532,8 @@ def test_full_laplacian_combined_backward(bunny_tet_mesh, device):
     torch.testing.assert_close(dLdM_kp1, dLdM_kp1_sp, atol=1e-5, rtol=0.0)
 
 
-def test_lorentzian_regularization_smoke(bunny_tet_mesh, device):
-    mesh = bunny_tet_mesh.to(device, torch.float64)
+def test_lorentzian_regularization_smoke(asym_sc_mesh, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
     mesh.requires_grad_()
 
     mixed_laplacian = get_mixed_weak_down_2_laplacian(mesh)
