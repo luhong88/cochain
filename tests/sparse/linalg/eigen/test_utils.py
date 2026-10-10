@@ -1,12 +1,13 @@
 import pytest
 import torch
 
-from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
+from cochain.sparse.decoupled_tensor import DiagDecoupledTensor, SparseDecoupledTensor
 from cochain.sparse.linalg.eigen import (
     canonicalize_eig_vec_signs,
     grassmann_proj_dists,
     m_orthonormalize,
 )
+from cochain.sparse.linalg.eigen.base.utils import _m_orthonormalize_one_iter
 
 
 @pytest.fixture

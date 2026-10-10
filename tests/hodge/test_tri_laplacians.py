@@ -5,7 +5,7 @@ import torch
 from jaxtyping import Float
 
 from cochain.complex import SimplicialMesh
-from cochain.metric.hodge_laplacians import codifferential
+from cochain.hodge.laplacians import codifferential
 from cochain.metric.tri import tri_hodge_stars
 from cochain.metric.tri.tri_stiffness import stiffness_matrix
 from cochain.sparse.decoupled_tensor import SparseDecoupledTensor

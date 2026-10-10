@@ -9,12 +9,31 @@ import torch
 from jaxtyping import Float, Integer
 from torch import Tensor
 
-from ....decoupled_tensor import SparseDecoupledTensor, SparsityPattern
+from ....decoupled_tensor import (
+    BaseDecoupledTensor,
+    DiagDecoupledTensor,
+    SparseDecoupledTensor,
+    SparsityPattern,
+)
 from ...solvers import DirectSolverConfig
 from ..base._backward import dLdA_backward, dLdA_dLdM_backward
-from ..base.utils import compute_lorentzian_eps, matrix_inf_norm
-from ._lobpcg_preconditioners import LOBPCGPrecondConfig
+from ..base.utils import compute_lorentzian_eps_via_norm, matrix_inf_norm
+from ._lobpcg_preconditioners import (
+    ChoPrecond,
+    IdentityPrecond,
+    ILUPrecond,
+    JacobiPrecond,
+    LOBPCGPrecondConfig,
+    LOBPCGPreconditioner,
+)
 from ._lobpcg_routines import lobpcg_forward
+
+# In general, the generic `lobpcg()` function implemented here will only accept
+# matrix-explicit `a`, even though the backend numerical routines/util functions
+# can support `a` as a matrix-free LinearOp object. This limitation is due to the
+# difficulty of implementing a custom autograd function for arbitrary linear operators.
+# Therefore, the matrix-free backends are reserved exclusively for operator-specific
+# LOBPCG frontends that they implement operator-specific autograd functions.
 
 
 @dataclass
@@ -44,7 +63,7 @@ class LOBPCGConfig:
     """
 
     sigma: float | int | None = None
-    v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "coord n"] | None] | None = None
+    v0: Float[Tensor, "m n"] | Sequence[Float[Tensor, "coord n"]] | None = None
     largest: bool = False
     tol: float | Literal["auto"] = "auto"
     maxiter: int = 1000
@@ -78,6 +97,45 @@ class LOBPCGConfig:
 
 class LOBPCGAutogradFunction(torch.autograd.Function):
     @staticmethod
+    def _dispatch_precond(
+        a: Float[SparseDecoupledTensor, "m m"],
+        lobpcg_config: LOBPCGConfig,
+        precond_config: LOBPCGPrecondConfig,
+    ) -> LOBPCGPreconditioner:
+        if lobpcg_config.sigma is not None:
+            # If doing shift-invert mode, always use the identity preconditioner and
+            # ignore the user inputs.
+            precond = IdentityPrecond()
+        else:
+            match precond_config.method:
+                case "identity":
+                    precond = IdentityPrecond()
+                case "jacobi":
+                    # a_op is not required to be int32-safe.
+                    precond = JacobiPrecond(a_sdt=a)
+                case "ilu":
+                    # a_op is required to be int32-safe.
+                    precond = ILUPrecond(
+                        a_sdt=a,
+                        diag_damp=precond_config.diag_damp,
+                        spilu_kwargs=precond_config.spilu_kwargs,
+                    )
+                case "cholesky":
+                    # a_op is required to be int32-safe.
+                    precond = ChoPrecond(
+                        a_sdt=a,
+                        n=lobpcg_config.v0.size(-1),
+                        diag_damp=precond_config.diag_damp,
+                        nvmath_config=precond_config.nvmath_config,
+                    )
+                case _:
+                    raise ValueError(
+                        f"Unknown preconditioner '{precond_config.method}'."
+                    )
+
+        return precond
+
+    @staticmethod
     def forward(
         a_val: Float[Tensor, " a_nz"],
         a_pattern: Integer[SparsityPattern, "m m"],
@@ -92,6 +150,9 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
         nvmath_config: DirectSolverConfig,
     ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
         a_op = SparseDecoupledTensor(a_pattern, a_val)
+        precond = LOBPCGAutogradFunction._dispatch_precond(
+            a_op, lobpcg_config, precond_config
+        )
 
         if (m_val is None) and (m_pattern is None):
             m_op = None
@@ -105,8 +166,9 @@ class LOBPCGAutogradFunction(torch.autograd.Function):
             m_op=m_op,
             a_norm=a_norm,
             m_norm=m_norm,
+            op_scale="auto",  # op_scale is only relevant for matrix-free linear operators
+            precond=precond,
             nvmath_config=nvmath_config,
-            precond_config=precond_config,
             **asdict(lobpcg_config),
         )
 
@@ -247,7 +309,7 @@ def _lobpcg_batch(
 
 def lobpcg(
     a: Float[SparseDecoupledTensor, "m m"],
-    m: Float[SparseDecoupledTensor, "m m"] | None = None,
+    m: Float[BaseDecoupledTensor, "m m"] | None = None,
     block_diag_batch: bool = False,
     n: int | None = None,
     k: int = 6,
@@ -279,7 +341,8 @@ def lobpcg(
     m : [m, m]
         A real, symmetric positive definite square matrix that induces an inner
         product on the column space of `a`. If `m` is provided, solve a generalized
-        eigenvalue problem.
+        eigenvalue problem. Note that, if `block_diag_batch=True`, then `m` cannot
+        be a `DiagDecoupledTensor`.
     block_diag_batch
         Whether the input `a` matrix (and `m` if not `None`) is block-diagonal.
         If `a` and `m` are block-diagonal, then they must both have valid and
@@ -342,7 +405,7 @@ def lobpcg(
     incomplete LU, and Cholesky preconditioners are defined soly in terms of `a`.
     For generalized eigenvalue problems, this works reasonably well when searching
     for the smallest eigenvalues, which suppresses the effect of `m`, but performance
-    will degrade for the largest  eigenvalues; the shift-invert mode does not take
+    will degrade for the largest eigenvalues; the shift-invert mode does not take
     preconditioners.
 
     This implementation employs a rank-adaptive, iterative, canonical/PCA
@@ -359,6 +422,14 @@ def lobpcg(
     # the operator and preconditioner constructors, rather than performing a
     # top-level check.
 
+    if isinstance(m, DiagDecoupledTensor):
+        if block_diag_batch:
+            raise TypeError(
+                "'m' cannot be a DiagDecoupledTensor when 'block_diag_batch' is True."
+            )
+        else:
+            m = m.to_sdt()
+
     if lobpcg_config is None:
         lobpcg_config = LOBPCGConfig()
     if precond_config is None:
@@ -368,24 +439,47 @@ def lobpcg(
 
     if block_diag_batch:
         a_list = a.unpack_block_diag()
+        block_sizes = [a_.size(0) for a_ in a_list]
+    else:
+        block_sizes = [a.size(0)]
 
     # Process raw LOBPCG config.
     if lobpcg_config.v0 is None:
         if n is None:
             n = k
-        else:
-            if n < k or n > a.size(-1):
-                raise ValueError("n must be in the range [k, m].")
+    else:
+        v0 = lobpcg_config.v0
 
+        if block_diag_batch:
+            if not isinstance(v0, Sequence) or len(v0) != len(block_sizes):
+                raise ValueError("Batched v0 must contain one tensor per matrix block.")
+            if n is None:
+                n = v0[0].size(-1)
+            for v0_, block_size in zip(v0, block_sizes):
+                if v0_.ndim != 2 or v0_.shape != (block_size, n):
+                    raise ValueError("Each batched v0 must have shape (block size, n).")
+
+        else:
+            if not isinstance(v0, Tensor):
+                raise ValueError("Unbatched v0 must be a tensor.")
+            if n is None:
+                n = v0.size(-1)
+            if v0.ndim != 2 or v0.shape != (a.size(0), n):
+                raise ValueError("Unbatched v0 must have shape (matrix size, n).")
+
+    if n < k or any(n > block_size for block_size in block_sizes):
+        raise ValueError("n must be in the range [k, size of each matrix block].")
+
+    if lobpcg_config.v0 is None:
         if block_diag_batch:
             v0 = [
                 torch.randn(
-                    (a.size(0), n),
+                    (block_size, n),
                     generator=lobpcg_config.generator,
                     dtype=a.dtype,
                     device=a.device,
                 )
-                for a in a_list
+                for block_size in block_sizes
             ]
         else:
             v0 = torch.randn(
@@ -394,9 +488,6 @@ def lobpcg(
                 dtype=a.dtype,
                 device=a.device,
             )
-
-    else:
-        v0 = lobpcg_config.v0
 
     tol = (
         torch.finfo(a.dtype).eps ** 0.5
@@ -407,7 +498,7 @@ def lobpcg(
     processed_lobpcg_config = replace(lobpcg_config, v0=v0, tol=tol)
 
     if eps == "auto":
-        eps = compute_lorentzian_eps(a, m)
+        eps = compute_lorentzian_eps_via_norm(a, m)
 
     if block_diag_batch:
         eig_vals, eig_vecs = _lobpcg_batch(

@@ -6,12 +6,107 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from ....decoupled_tensor import SparseDecoupledTensor
+from ....decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+
+
+def _m_normalize(
+    v: Float[Tensor, "m n"],
+    m: Float[BaseDecoupledTensor, "m m"],
+) -> tuple[
+    Float[Tensor, "m l"],
+    Float[Tensor, "m l"],
+    Float[Tensor, " l"],
+    Float[Tensor, " n"],
+]:
+    r"""
+    M-normalize the nonzero column vectors of a matrix.
+
+    Parameters
+    ----------
+    v : [m, n]
+        A dense 2D matrix whose columns are to be M-normalized.
+    m : [m, m]
+        A sparse 2D symmetric positive definite matrix that induces an inner product
+        on the column space of $V$.
+
+    Returns
+    -------
+    v_normed : [m, l]
+        A dense 2D matrix whose columns consist of the M-normalized, nonzero
+        column vectors of `v`.
+    mv_normed: [m, l]
+        A dense 2D matrix computed as `m @ v_normed`.
+    col_norm: [l,]
+        The M-norms of the nonzero column vectors of `v`.
+    col_mask: [n,]
+        A boolean mask marking the nonzero columns of `v`.
+
+    Notes
+    -----
+    This function considers a column vector to be zero if every elements in that
+    column is identically zero. The calculation of column vector norms after
+    scaling by `1/col_max` avoids potential numerical issues for very large or
+    small column vectors.
+    """
+    empty = torch.empty((v.size(0), 0), dtype=v.dtype, device=v.device)
+
+    if v.numel() == 0:
+        return empty, empty, v.new_empty(0), v.new_empty(0)
+
+    # Normalize the length of each column of V by dividing each column by its
+    # absolute max entry, which gives V_scaled.
+    col_max = v.abs().amax(dim=0)
+    col_mask = col_max > 0
+
+    if not col_mask.any():
+        return empty, empty, v.new_empty(0), v.new_empty(0)
+
+    v_scaled = v[:, col_mask] / col_max[col_mask]
+    mv_scaled = m @ v_scaled
+
+    # Compute the M-norms of the columns of V_scaled.
+    col_norm2 = (v_scaled * mv_scaled).sum(dim=0)
+    col_norm = torch.sqrt(col_norm2)
+
+    return (
+        v_scaled / col_norm,
+        mv_scaled / col_norm,
+        col_norm * col_max[col_mask],
+        col_mask,
+    )
+
+
+def _m_orthogonalize(
+    v: Float[Tensor, "m n"],
+    u: Float[Tensor, "m l"],
+    m: Float[BaseDecoupledTensor, "m m"],
+    mv: Float[Tensor, "m n"] | None = None,
+) -> Float[Tensor, "m l"]:
+    """
+    Find the vector components perpendicular to an M-orthonormal vector set.
+
+    Assuming that V contains column vectors that are M-orthonormal, then this
+    function computes the perpendicular projection U_perp = U - V@(V.T@M@U). This
+    projection is performed twice to guard against the possibility that U lies
+    almost entirely in span(V). It is possible to perform this iterative
+    refinement selectively by checking the change in vector norm after the
+    first projection, but that would require computing U.T@M@U, which is usually
+    more expensive than just projecting again.
+
+    Note that this function does not guard against input V that deviates from
+    the M-orthonormality condition or an input M that is ill-conditioned.
+    """
+    if mv is None:
+        mv = m @ v
+
+    u_perp = u - v @ (mv.T @ u)
+    u_perp_again = u_perp - v @ (mv.T @ u_perp)
+    return u_perp_again
 
 
 def m_orthonormalize(
     v: Float[Tensor, "m n"],
-    m: Float[SparseDecoupledTensor, "m m"],
+    m: Float[BaseDecoupledTensor, "m m"],
     *,
     rtol: float | None = None,
     n_min: int | None = None,
@@ -29,7 +124,9 @@ def m_orthonormalize(
         A sparse 2D symmetric positive definite matrix that induces an inner product
         on the column space of $V$.
     rtol
-        A relative tolerance threshold for checking linearly dependent vectors.
+        A relative tolerance threshold on the normalized Gram eigenvalues for
+        checking linearly dependent vectors. Defaults to `m` times the double
+        precision machine epsilon.
     n_min
         The minimum number of column vectors to be returned.
     max_iter
@@ -39,8 +136,10 @@ def m_orthonormalize(
     -------
     v_ortho : [m, l]
         A dense 2D matrix whose columns form an $M$-orthonormal basis for the column
-        space of V. The number of column vectors `l` should be between `n_min` and
-        `n`, depending on the number of linearly independent column vectors in $V$.
+        space of V, up to the relative rank tolerance. Without a soft restart,
+        the number of columns satisfies $0 \le l \le n$; an all-zero or empty
+        input returns an empty basis. A soft restart can supplement this basis
+        with vectors outside the input column space.
 
     Notes
     -----
@@ -57,7 +156,7 @@ def m_orthonormalize(
     **Canonical orthogonalization**
     Consider a matrix $V$ whose column vectors are to be M-orthonormalized. Let us
     denote this unknown $M$-orthogonal matrix as $U$, which satisfies the condition
-    $U^T M U = I$. Since the column vectors of $V$ and $U$ spans the same space,
+    $U^T M U = I$. Since the column vectors of $V$ and $U$ span the same space,
     there is a linear transformation, represented by the whitening matrix $W$,
     such that $U = V W$.
 
@@ -118,7 +217,7 @@ def m_orthonormalize(
     = U^T M R - (U^T M U) U^T M R = 0
     $$
 
-    which shows that the column vectors of U and $R^\perp$ are $M$-orthogonal, and
+    which shows that the column vectors of $U$ and $R^\perp$ are $M$-orthogonal, and
     thus the column space of $R^\perp$ is $M$-orthogonal to the column space of $U$.
 
     **Jacobi preconditioning**
@@ -128,26 +227,23 @@ def m_orthonormalize(
     it is numerically preferable to perform the orthogonalization after the column
     vectors of $V$ have been normalized.
 
-    Instead of directly modifying $V$, we can achieve the same normalization by
-    preconditioning the Gram matrix $G$, which tends to be computationally cheaper.
-    To do so, let us define a diagonal matrix $D$ whose diagonal elements
-    correspond to the norms of the column vectors of $V$. Since the Gram matrix
-    $G$ contains all pairwise inner products of the column vectors of $V$,
-    we can define $D$ in terms of $G$ as $D_{ii} = 1/\sqrt{G_{ii}}$.
+    To avoid underflow/overflow from computing the norms of very small or large
+    column entries, first discard exactly zero columns and divide each remaining
+    column by its largest absolute entry,
 
-    With the matrix $D$, we define the normalized matrix $\bar V$ as $\bar V = VD$.
-    The Gram matrix $\bar G$ of $\bar V$ is then given by
+    $$s_j = \max_i |V_{ij}|, \qquad B_j = V_j / s_j$$
 
-    $$\bar G = \bar V^T M \bar V = D^T V^T M V D = D^T G D = D G D$$
+    Then compute the squared metric norms of the scaled columns and normalize
+    explicitly,
 
-    Given the eigendecomposition $\bar G = \bar Q \bar\Lambda \bar Q^T$, we define
-    the whitening matrix $\bar W = D \bar Q \bar \Lambda^{-1/2}$, such that
+    $$q_j = B_j^T M B_j, \qquad C_j = B_j / \sqrt{q_j}$$
 
-    $$
-    U^T M U
-    = (D \bar Q \bar \Lambda^{-1/2})^T (V^T M V) (D \bar Q \bar \Lambda^{-1/2})
-    = (\bar Q \bar \Lambda^{-1/2})^T \bar G (\bar Q \bar \Lambda^{-1/2}) = I
-    $$
+    The normalized Gram matrix is $\bar G = C^T M C$. Given its eigendecomposition
+    $\bar G = \bar Q \bar\Lambda \bar Q^T$, retain eigenvalues greater than
+    `rtol` times the largest eigenvalue and construct the output directly from
+    the normalized columns
+
+    $$U = C \bar Q_\text{kept} \bar\Lambda^{-1/2}_\text{kept}$$
 
     **Iterative refinement**
     Since $G = V^T M V$, the condition number of $G$ is roughly the square of the
@@ -160,7 +256,13 @@ def m_orthonormalize(
     # Force double precision to further suppress the condition number issue.
     v_dtype = v.dtype
     v_double = v.to(torch.float64)
-    m_double = m.to(torch.float64)
+
+    # In LOBPCG this function may be called with m as an IdOp object, which does
+    # not have the dtype attribute.
+    if getattr(m, "dtype", torch.float64) == torch.float64:
+        m_double = m
+    else:
+        m_double = m.to(torch.float64)
 
     v_current = v_double
     for _ in range(max_iter):
@@ -179,9 +281,7 @@ def m_orthonormalize(
 
             # The padded vectors need to form a subspace that is orthogonal to
             # the current V_ortho column space.
-            pad_overlap = v_ortho_double.T @ (m_double @ pad)
-            pad_proj = v_ortho_double @ pad_overlap
-            pad_perp = pad - pad_proj
+            pad_perp = _m_orthogonalize(v_ortho_double, pad, m_double)
 
             # The padded vectors need to be M-orthonormal.
             pad_res_ortho, pad_cond = _m_orthonormalize_one_iter(
@@ -205,7 +305,7 @@ def m_orthonormalize(
 
 def _m_orthonormalize_one_iter(
     v: Float[Tensor, "m n"],
-    m: Float[SparseDecoupledTensor, "m m"],
+    m: Float[BaseDecoupledTensor, "m m"],
     rtol: float | None = None,
 ) -> tuple[Float[Tensor, "m l"], Float[Tensor, ""]]:
     """Perform one iteration of M-orthonormalization."""
@@ -214,22 +314,18 @@ def _m_orthonormalize_one_iter(
     if rtol is None:
         rtol = v.size(0) * eps
 
-    # Compute the M-orthogonal gram matrix.
-    gram: Float[Tensor, "n n"] = v.T @ (m @ v)
+    # Compute V_normed, which contains the M-normalized nonzero column vectors of V.
+    v_normed, mv_normed, _, _ = _m_normalize(v, m)
+    if v_normed.size(1) == 0:
+        return torch.zeros_like(v[:, :0]), v.new_tensor(0.0)
 
-    # Implicit normalization of G. Let D be a diagonal matrix whose diagonal
-    # elements are the inverse square roots of the diagonal elements of G; then
-    # the normalized G is G' = D@G@D. This is equivalent to normalizing the columns
-    # of V, but computationally cheaper. This scaling improves the condition number
-    # of G for eigh(). Note that columns of V that are zero or very close to
-    # zero are not length-normalized.
-    v_col_norm2 = torch.diag(gram).clamp(min=0.0)
-    diag = 1.0 / torch.sqrt(v_col_norm2)
+    # Form the M-orthogonal gram matrix G using V_normed, the M-normalized V.
+    g_scaled = v_normed.T @ mv_normed
+    if not torch.isfinite(g_scaled).all():
+        raise ValueError("The normalized Gram matrix must be finite.")
 
-    zero_col_mask = (~torch.isfinite(diag)) | (v_col_norm2 < eps * 10)
-    diag[zero_col_mask] = 1.0
-
-    g_scaled = torch.einsum("i,ij,j->ij", diag, gram, diag)
+    # Enforce symmetry on G.
+    g_scaled = (g_scaled + g_scaled.T) / 2.0
 
     # Perform an eigendecomposition of G = Q @ Λ @ Q.T.
     eig_vals, eig_vecs = torch.linalg.eigh(g_scaled)
@@ -238,27 +334,21 @@ def _m_orthonormalize_one_iter(
     eps = rtol * eig_vals.max()
     mask = eig_vals > eps
 
-    # If V is basically zero, return a single zero vector and a condition number of 0.
+    # If V is basically zero, return an empty basis zero and a condition number of 0.
     if not mask.any():
-        return torch.zeros_like(v[:, :1]), torch.tensor(
-            0.0, dtype=v.dtype, device=v.device
-        )
+        return torch.empty(
+            (v.size(0), 0), dtype=v.dtype, device=v.device
+        ), v.new_tensor(0.0)
 
     eig_vals_masked = eig_vals[mask]
-    inv_eig_vals_masked = 1.0 / torch.sqrt(eig_vals_masked)
     eig_vecs_masked = eig_vecs[:, mask]
 
     # Check the condition number using the masked eigenvalues, for assessing
     # progress of iterative refinement.
-    cond = torch.sqrt(eig_vals_masked.max() / eig_vals_masked.min())
+    cond = torch.sqrt(eig_vals_masked.max()) / torch.sqrt(eig_vals_masked.min())
 
-    # Compute the whitening matrix W = D @ Q @ Λ^(-1/2) as the inverse square root
-    # of G. Need to apply the D vector here to undo the implicit normalization.
-    whiten = torch.einsum("i,ij,j->ij", diag, eig_vecs_masked, inv_eig_vals_masked)
-
-    # Find V_ortho = V @ W, the M-orthonormal version of V. With some algebra,
-    # one can check that V_ortho.T @ M @ V_ortho = I.
-    v_ortho = v @ whiten
+    # Find V_ortho = V_normed @ Q @ Λ^(-1/2) using the retained eigenpairs.
+    v_ortho = (v_normed @ eig_vecs_masked) / torch.sqrt(eig_vals_masked)
 
     return v_ortho, cond
 
@@ -408,12 +498,12 @@ def matrix_inf_norm(sdt: Float[SparseDecoupledTensor, "m m"] | None) -> float:
         return row_sum.max().item()
 
 
-def compute_lorentzian_eps(
+def compute_lorentzian_eps_via_norm(
     a: Float[SparseDecoupledTensor, "m m"],
     m: Float[SparseDecoupledTensor, "m m"] | None,
 ) -> float:
     """
-    Automatically select the strength of Lorentzian broadening/regularization.
+    Select the strength of Lorentzian broadening from matrix norms.
 
     The parameter `eps` should be small enough to allow accurate gradients through
     the eigenvectors of near-degenerate eigenvalues, but large enough to stabilize
@@ -439,4 +529,17 @@ def compute_lorentzian_eps(
 
     lorentz_eps = 10.0 * machine_eps * max(1.0, (a_norm / safe_m_norm) ** 2.0)
 
+    return lorentz_eps
+
+
+def compute_lorentzian_eps_via_eigs(eig_vals: Float[Tensor, " eig"]) -> float:
+    """
+    Select the strength of Lorentzian broadening from resolved eigenvalues.
+
+    This function is similar to `compute_lorentzian_eps_via_norm()`, but it
+    estimates the spectral scale from the computed eigenvalues directly, which is
+    useful for matrix-free linear operators.
+    """
+    scale = eig_vals.abs().max().item()
+    lorentz_eps = 10.0 * torch.finfo(eig_vals.dtype).eps * max(1.0, scale**2)
     return lorentz_eps

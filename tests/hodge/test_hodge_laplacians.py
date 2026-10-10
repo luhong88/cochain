@@ -3,7 +3,7 @@ import torch
 from torch import Tensor
 
 from cochain.complex import SimplicialMesh
-from cochain.metric.hodge_laplacians import (
+from cochain.hodge.laplacians import (
     codifferential,
     weak_down_laplacian,
     weak_up_laplacian,

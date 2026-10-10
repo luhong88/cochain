@@ -32,7 +32,7 @@ def compute_cauchy_matrix(
 
 
 def compute_dLdA_val(
-    a_pattern: Integer[SparsityPattern, "r c"],
+    a_pattern: Integer[SparsityPattern, "r c"] | None,
     eig_vecs: Float[Tensor, "c k"],
     dLdl: Float[Tensor, " k"],
     dLdv: Float[Tensor, "c k"] | None,
@@ -44,9 +44,14 @@ def compute_dLdA_val(
 
     Note that the formula implemented in this function is applicable to both
     standard and generalized eigenvalue problems.
+
+    If `a_pattern` is None, then it is assumed that A is a `DiagDecoupledTensor`.
     """
-    eig_vecs_row = eig_vecs[a_pattern.idx_coo[0]]
-    eig_vecs_col = eig_vecs[a_pattern.idx_coo[1]]
+    if a_pattern is None:
+        eig_vecs_row = eig_vecs_col = eig_vecs
+    else:
+        eig_vecs_row = eig_vecs[a_pattern.idx_coo[0]]
+        eig_vecs_col = eig_vecs[a_pattern.idx_coo[1]]
 
     # If the loss does not depend on the eigenvectors, then the eigenvalue
     # component of the gradient is given by dLdA_ij = sum_k[dLdλ_k * V_ik * V_jk]
@@ -57,7 +62,7 @@ def compute_dLdA_val(
         "nz eig, nz eig, eig -> nz",
     )
 
-    if dLdv is None:
+    if (dLdv is None) or (not torch.any(dLdv)):
         dLdA_val = dLdA_eig_vals
 
     else:
@@ -82,7 +87,7 @@ def compute_dLdA_val(
 
 
 def compute_dLdM_val(
-    m_pattern: Integer[SparsityPattern, "r c"],
+    m_pattern: Integer[SparsityPattern, "r c"] | None,
     eig_vals: Float[Tensor, " k"],
     eig_vecs: Float[Tensor, "c k"],
     dLdl: Float[Tensor, " k"],
@@ -90,11 +95,13 @@ def compute_dLdM_val(
     eig_vec_grad_proj: Float[Tensor, "k k"] | None,
     cauchy: Float[Tensor, "k k"] | None,
 ) -> Float[Tensor, " nz"]:
-    eig_vecs_row = eig_vecs[m_pattern.idx_coo[0]]
-    eig_vecs_col = eig_vecs[m_pattern.idx_coo[1]]
+    if m_pattern is None:
+        eig_vecs_row = eig_vecs_col = eig_vecs
+    else:
+        eig_vecs_row = eig_vecs[m_pattern.idx_coo[0]]
+        eig_vecs_col = eig_vecs[m_pattern.idx_coo[1]]
 
-    # If the loss does not depend on the eigenvectors, then the eigenvalue
-    # component of the gradient is given by
+    # The eigenvalue component of the gradient is given by
     # dLdM_ij = -sum_k[λ_k * dLdλ_k * V_ik * V_jk]
     dLdM_eig_vals = -einsum(
         eig_vals,
@@ -104,7 +111,7 @@ def compute_dLdM_val(
         "eig, eig, nz eig, nz eig -> nz",
     )
 
-    if dLdv is None:
+    if (dLdv is None) or (not torch.any(dLdv)):
         dLdM_val = dLdM_eig_vals
 
     else:
@@ -143,7 +150,7 @@ def dLdA_backward(
     if eig_vecs is None:
         raise ValueError("Eigenvectors are required for backward().")
 
-    if dLdv is None:
+    if (dLdv is None) or (not torch.any(dLdv)):
         eig_vec_grad_proj = None
         cauchy = None
     else:
@@ -179,7 +186,7 @@ def dLdA_dLdM_backward(
         if eig_vecs is None:
             raise ValueError("Eigenvectors are required for backward().")
 
-        if dLdv is None:
+        if (dLdv is None) or (not torch.any(dLdv)):
             eig_vec_grad_proj = None
             cauchy = None
         else:
