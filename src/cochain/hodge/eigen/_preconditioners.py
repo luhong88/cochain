@@ -26,6 +26,12 @@ except ImportError:
     _HAS_NVMATH = False
 
 
+# TODO: better heuristic for picking tau. Currently, way tau is chosen is not
+# invariant to mesh refinement, since the largest and smallest eigenvalues scale
+# differently to mesh scale. tau should roughly track the magnitude of the target
+# eigenvalue.
+
+
 @dataclass
 class LaplacianLOBPCGPrecondConfig:
     """
@@ -109,7 +115,7 @@ class ShiftedUpPrecond(LOBPCGPreconditioner):
 
     Here, `tau` controls the strength of regularization and has the same unit as
     the eigenvalues. When `tau` is not provided, it is computed as the approximate
-    mean of the generalized eigenvalues of $S_k^\up$, scaled down by a factor of
+    mean of the generalized eigenvalues of $S_k^\text{up}$, scaled down by a factor of
     0.01; specifically, `star_k` is used to approximate $M_k^{-1}$ when `tau` is
     not provided.
     """

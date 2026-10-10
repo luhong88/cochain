@@ -180,12 +180,7 @@ def _lobpcg_one_iter(
     # plus the processed new search directions. The union of these two sets should
     # still form an M-orthonormal set of vectors.
     v_ortho = torch.hstack((x_current, new_dir_ortho))
-
-    # Apply T to the new set of trial eigenvectors in V_ortho. Since X_current
-    # has not been changed, the existing T@X_current can be reused instead of
-    # applying T to the entire V_ortho.
-    tc_ortho = t_op @ new_dir_ortho
-    tv_ortho = torch.hstack((tx_current, tc_ortho))
+    tv_ortho = t_op @ v_ortho
 
     # Perform the Rayleigh-Ritz projection.
     #

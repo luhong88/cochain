@@ -367,11 +367,12 @@ def mixed_weak_laplacian_lobpcg(
     Block-diagonal batching and the shift-invert mode are not supported.
 
     Automatic operator-scale estimation uses only the initial trial eigenvectors
-    and can fail for operators with very large nullspaces, where the initial vectors
-    are likely to lie in or near the nullspace. The estimated scale can then
-    be too small, making the convergence criteria unattainable. In such cases,
-    supply a positive `op_scale` representative of the weak Laplacian matrix norm
-    instead of using "auto".
+    and can fail when the initial vectors lie in or near the nullspace; this can
+    happen for operators with very a large nullspace (e.g., down-Laplacians), or
+    when the initial vectors are good approximations for the zero eigenmode. The
+    estimated scale can then be too small, making the convergence criteria unattainable.
+    In such cases, supply a positive `op_scale` representative of the weak Laplacian
+    matrix norm instead of using "auto".
 
     The autograd through eigenvectors does not account for contributions from the
     unresolved eigenvectors. Currently, only first-order derivatives are supported.
