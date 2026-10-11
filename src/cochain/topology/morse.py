@@ -230,7 +230,7 @@ def _process_lower_stars(
     max_n_cofaces: int,
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
-) -> Integer[Tensor, " splx"]:
+) -> Integer[np.ndarray, " splx"]:
     r"""
     Construct an acyclic partial matching using lower star filtration.
 
@@ -547,7 +547,6 @@ def _construct_morse_cbds(
                     # For the paired coface, find all of its faces.
                     start = cbd_offset[paired_coface - global_splx_offset]
                     end = cbd_offset[paired_coface + 1 - global_splx_offset]
-                    n_coface_faces = end - start
 
                     coface_faces_idx = cbd_idx[start:end]
                     coface_faces_sign = bd_signs[start:end]
@@ -556,18 +555,17 @@ def _construct_morse_cbds(
                     # the current_sign using the (negative of the) boundary sign
                     # of the current_face in the paired_coface; a negative sign
                     # is required because we are moving up the coface relation.
-                    for i in range(n_coface_faces):
-                        coface_face_idx = coface_faces_idx[i]
+                    for coface_face_idx, coface_face_sign in zip(
+                        coface_faces_idx, coface_faces_sign
+                    ):
                         if coface_face_idx == current_face_idx:
-                            coface_face_sign = coface_faces_sign[i]
                             current_face_sign *= -1.0 * coface_face_sign
 
                     # Push the new faces of the paired_coface to the search queue.
-                    for i in range(n_coface_faces):
-                        coface_face_idx = coface_faces_idx[i]
+                    for coface_face_idx, coface_face_sign in zip(
+                        coface_faces_idx, coface_faces_sign
+                    ):
                         if coface_face_idx != current_face_idx:
-                            coface_face_sign = coface_faces_sign[i]
-
                             next_splx_idx = coface_face_idx
                             next_splx_sign = current_face_sign * coface_face_sign
 
@@ -628,6 +626,7 @@ def _construct_sdt(
     return tuple(morse_cbd_list), tuple(crit_splx_by_dim_torch)
 
 
+@torch.no_grad()
 def compute_morse_complex(
     mesh: SimplicialMesh,
     scalar_field: Float[Tensor, " vert"] | None = None,
@@ -680,77 +679,76 @@ def compute_morse_complex(
     * If no `scalar_field` is provided, the vertices must be associated with
       coordinate vectors.
     """
-    with torch.no_grad():
-        # If no scalar_field is provided, compute a simple one that measures the
-        # distance from the center of the mesh.
-        if scalar_field is None:
-            mesh_center = torch.mean(mesh.vert_coords, dim=0, keepdim=True)
-            verts_from_center = mesh.vert_coords - mesh_center
-            scalar_field = torch.linalg.norm(verts_from_center, dim=-1)
+    # If no scalar_field is provided, compute a simple one that measures the
+    # distance from the center of the mesh.
+    if scalar_field is None:
+        mesh_center = torch.mean(mesh.vert_coords, dim=0, keepdim=True)
+        verts_from_center = mesh.vert_coords - mesh_center
+        scalar_field = torch.linalg.norm(verts_from_center, dim=-1)
 
-        # Record the mesh cbd int dtype and determine the safe numpy int dtype.
-        torch_int_dtype = mesh.cbd[0].pattern.dtype
-        torch_float_dtype = mesh.dtype
-        torch_device = mesh.device
+    # Record the mesh cbd int dtype and determine the safe numpy int dtype.
+    torch_int_dtype = mesh.cbd[0].pattern.dtype
+    torch_float_dtype = mesh.dtype
+    torch_device = mesh.device
 
-        if sum(mesh.n_splx) < np.iinfo(np.int32).max:
-            np_int_dtype = np.int32
-        else:
-            np_int_dtype = np.int64
+    if sum(mesh.n_splx) < np.iinfo(np.int32).max:
+        np_int_dtype = np.int32
+    else:
+        np_int_dtype = np.int64
 
-        # Execute subroutines.
-        (
-            ordered_verts,
-            vert_ranks,
-            splx_vert_rank_max,
-            splx_scalar_sum,
-            vert_coface_indices,
-            vert_coface_offset,
-            codim1_coface_indices,
-            codim1_coface_offset,
-            codim1_face_indices,
-            codim1_face_offset,
-            codim1_face_signs,
-            max_n_cofaces,
-            pairing_map,
-            splx_dim_offsets,
-        ) = _prepare_inputs(mesh, scalar_field, np_int_dtype)
+    # Execute subroutines.
+    (
+        ordered_verts,
+        vert_ranks,
+        splx_vert_rank_max,
+        splx_scalar_sum,
+        vert_coface_indices,
+        vert_coface_offset,
+        codim1_coface_indices,
+        codim1_coface_offset,
+        codim1_face_indices,
+        codim1_face_offset,
+        codim1_face_signs,
+        max_n_cofaces,
+        pairing_map,
+        splx_dim_offsets,
+    ) = _prepare_inputs(mesh, scalar_field, np_int_dtype)
 
-        pairing_map = _process_lower_stars(
-            ordered_verts,
-            vert_ranks,
-            splx_vert_rank_max,
-            splx_scalar_sum,
-            vert_coface_indices,
-            vert_coface_offset,
-            codim1_coface_indices,
-            codim1_coface_offset,
-            max_n_cofaces,
-            pairing_map,
-            splx_dim_offsets,
-        )
+    pairing_map = _process_lower_stars(
+        ordered_verts,
+        vert_ranks,
+        splx_vert_rank_max,
+        splx_scalar_sum,
+        vert_coface_indices,
+        vert_coface_offset,
+        codim1_coface_indices,
+        codim1_coface_offset,
+        max_n_cofaces,
+        pairing_map,
+        splx_dim_offsets,
+    )
 
-        crit_splx_by_dim, crit_splx_reduced_idx = _find_critical_splx(
-            pairing_map, splx_dim_offsets
-        )
+    crit_splx_by_dim, crit_splx_reduced_idx = _find_critical_splx(
+        pairing_map, splx_dim_offsets
+    )
 
-        cbd_idx_coo, cbd_val = _construct_morse_cbds(
-            codim1_face_indices,
-            codim1_face_offset,
-            codim1_face_signs,
-            pairing_map,
-            splx_dim_offsets,
-            crit_splx_by_dim,
-            crit_splx_reduced_idx,
-        )
+    cbd_idx_coo, cbd_val = _construct_morse_cbds(
+        codim1_face_indices,
+        codim1_face_offset,
+        codim1_face_signs,
+        pairing_map,
+        splx_dim_offsets,
+        crit_splx_by_dim,
+        crit_splx_reduced_idx,
+    )
 
-        morse_cbd, crit_splx = _construct_sdt(
-            cbd_idx_coo,
-            cbd_val,
-            crit_splx_by_dim,
-            torch_int_dtype,
-            torch_float_dtype,
-            torch_device,
-        )
+    morse_cbd, crit_splx = _construct_sdt(
+        cbd_idx_coo,
+        cbd_val,
+        crit_splx_by_dim,
+        torch_int_dtype,
+        torch_float_dtype,
+        torch_device,
+    )
 
-        return morse_cbd, crit_splx
+    return morse_cbd, crit_splx
