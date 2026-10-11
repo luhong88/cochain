@@ -6,9 +6,10 @@ import numpy as np
 import numpy.typing as npt
 import torch
 from einops import reduce
-from jaxtyping import Float, Integer
+from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
+from ..boundary.selection import BoundarySelection
 from ..complex import SimplicialMesh
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
 from ..utils.parsing import to_np
@@ -21,6 +22,12 @@ EXCLUDED = -2
 def _prepare_inputs(
     mesh: SimplicialMesh,
     scalar_field: Float[Tensor, " vert"],
+    constrained_masks: tuple[
+        Bool[Tensor, " vert"],
+        Bool[Tensor, " edge"],
+        Bool[Tensor, " tri"],
+        Bool[Tensor, " tet"],
+    ],
     int_dtype: np.dtype,
 ):
     """
@@ -203,6 +210,12 @@ def _prepare_inputs(
     # then p[τ] = σ and p[σ] = τ.
     pairing_map = np.full(sum(mesh.n_splx), CRITICAL, dtype=int_dtype)
 
+    # For simplices in the tangential boundary subcomplex, use a different
+    # sentinel value to indicate that they will be excluded.
+    for i, mask in enumerate(constrained_masks):
+        mask_np = to_np(mask, dtype=np.bool)
+        pairing_map[splx_dim_offsets[i] : splx_dim_offsets[i + 1]][mask_np] = EXCLUDED
+
     return (
         ordered_verts_np,
         vert_ranks_np,
@@ -240,13 +253,14 @@ def _process_lower_stars(
 
     Let $f(v)$ be a scalar field associated with each vertex on a mesh. For each
     vert $v$ in the mesh, we define the lower star $L(v)$ of $v$ to be the set of
-    all simplices $\sigma$ such that $v \le \sigma$ and $f(v) > f(v')$ for all
-    other vert faces $v'$ of $\sigma$; in case of a tie where $f(v) = f(v')$,
-    $\sigma \in L(v)$ if the index of $v$ is lower than that of $v'$.
+    all simplices $\sigma$ such that (1) $\sigma$ is not in the tangential boundary
+    subcomplex, (2) $v \le \sigma$, and (3) $f(v) > f(v')$ for all other vert faces
+    $v'$ of $\sigma$; in case of a tie where $f(v) = f(v')$, $\sigma \in L(v)$ if
+    the index of $v$ is lower than that of $v'$.
 
     For each simplex $\sigma \in L(v)$, identify all of its cofaces $\tau$ of
-    codimension 1. We pair/match $\sigma$ with $\tau$ if all following three
-    conditions are met:
+    codimension 1 outside of the tangential boundary subcomplex. We pair/match
+    $\sigma$ with $\tau$ if all following three conditions are met:
 
     * $\tau \in L(v)$,
     * $\tau$ has not been paired/matched, and
@@ -254,14 +268,16 @@ def _process_lower_stars(
       codim 1 cofaces of $\sigma$ (in case of a tie, the first coface after a
       lex sort is picked.)
 
-    Simplices that remain unpaired after this process are called critical.
+    Simplices outside of the tangential boundary subcomplex that remain unpaired
+    after this process are called critical.
 
     This function returns a `pairing_map` array, where `pairing_map[i] = j` for
-    `i, j >= 0` indicates that the simplices `i` and `j` are paired, and
-    `pairing_map[i] = -1` indicates that simplex `i` is critical. Here, the simplices
-    are 0-indexed consecutively, where the lower-dimensional simplices are placed
-    before higher-dimensional ones, and simplices of the same dimension are
-    lex-sorted.
+    `i, j >= 0` indicates that the simplices `i` and `j` are paired, `pairing_map[i] = -1`
+    indicates that simplex `i` is critical, and `pairing_map[i] = -2` indicates
+    that the simplex `i` is excluded due to tangential boundary subcomplex
+    membership. Here, the simplices are 0-indexed consecutively, where the
+    lower-dimensional simplices are placed before higher-dimensional ones, and
+    simplices of the same dimension are lex-sorted.
     """
     # For accessing the lower star simplex indices, we use a pre-allocated
     # lower_star_buffer; for checking membership in the lower star, we use a flat
@@ -276,10 +292,13 @@ def _process_lower_stars(
         vert_rank = vert_ranks[vert]
 
         # For each vert, there is only one coface of codimension 0: the vert itself.
-        lower_star_idx_buffer[lower_star_size] = vert
-        lower_star_dim_buffer[lower_star_size] = 0
-        lower_star_mask[vert] = True
-        lower_star_size += 1
+        # Note that, for a v in the tangential boundary subcomplex, even though
+        # v cannot be a member of L(v), we still need to determine L(v) itself.
+        if pairing_map[vert] != EXCLUDED:
+            lower_star_idx_buffer[lower_star_size] = vert
+            lower_star_dim_buffer[lower_star_size] = 0
+            lower_star_mask[vert] = True
+            lower_star_size += 1
 
         for coface_dim in [1, 2, 3]:
             # Find the coface indices via the cbd csc indices.
@@ -292,9 +311,10 @@ def _process_lower_stars(
             # we ensure that the vert has the max scalar field value (and, in
             # the event of ties, the vert has lower index). This ensures that
             # the lower stars of the verts form a partition of the simplicial
-            # complex.
-            coface_vert_rank_max = splx_vert_rank_max[cofaces]
-            lower_mask = coface_vert_rank_max <= vert_rank
+            # complex (excluding the tangential boundary subcomplex).
+            cofaces_are_lower = splx_vert_rank_max[cofaces] <= vert_rank
+            cofaces_are_not_excluded = pairing_map[cofaces] != EXCLUDED
+            lower_mask = cofaces_are_lower & cofaces_are_not_excluded
 
             lower_cofaces = cofaces[lower_mask]
             n_lower_cofaces = lower_mask.sum()
@@ -409,9 +429,10 @@ def _construct_morse_cbds(
     Construct the reduced Morse coboundary operators.
 
     Consider the $k$-th Morse coboundary operator $d$. The element $d_{ij}$ is
-    nonzero iff there is at least one gradient path connecting the $(k+1)$-simplex
-    $\tau_i$ to the $k$-simplex $\sigma_j$, and $d_{ij}$ is the sum of the weights
-    associated with all such gradient paths.
+    nonzero iff there is at least one gradient path outside of the tangential
+    boundary subcomplex of the original mesh that connects the critical $(k+1)$-simplex
+    $\tau_i$ to the critical $k$-simplex $\sigma_j$, and $d_{ij}$ is the sum of
+    the weights associated with all such gradient paths.
 
     A gradient path $\rho$ between $\tau_i$ and $\sigma_j$ is a sequence of
     alternating $(k+1)$- and $k$-dimensional simplices that satisfies either of
@@ -419,8 +440,9 @@ def _construct_morse_cbds(
 
     * The sequence contains only $\tau_i$ and $\sigma_j$, where $\sigma_j \le \tau_i$, or
     * The $\sigma_j$ is not a face of $\tau_i$ and the sequence contains additional
-      simplices, whereby every "step-down" satisfies a face relation and every
-      "step-up" is part of an acyclic partial matching.
+      simplices outside of the tangential boundary subcomplex, whereby every
+      "step-down" satisfies a face relation and every "step-up" is part of an
+      acyclic partial matching.
 
     We assign each step of the gradient path a weight: a step-down is assigned
     a weight equal to the boundary sign of the face, and a step-up is assigned
@@ -479,10 +501,16 @@ def _construct_morse_cbds(
             # them to the search queue.
             start = cbd_offset[crit_splx - global_splx_offset]
             end = cbd_offset[crit_splx + 1 - global_splx_offset]
-            n_faces = end - start
 
-            face_idx = cbd_idx[start:end]
-            face_sign = bd_signs[start:end]
+            all_face_idx = cbd_idx[start:end]
+            all_face_sign = bd_signs[start:end]
+
+            # Exclude any faces in the tangential boundary subcomplex.
+            include_mask = pairing_map[all_face_idx] != EXCLUDED
+            face_idx = all_face_idx[include_mask]
+            face_sign = all_face_sign[include_mask]
+
+            n_faces = len(face_idx)
 
             # Before adding the faces to the search queue, check if at the stack
             # size limit; if so, double the stack size before proceeding.
@@ -636,6 +664,7 @@ def _construct_sdt(
 def compute_morse_complex(
     mesh: SimplicialMesh,
     scalar_field: Float[Tensor, " vert"] | None = None,
+    bc_sel: BoundarySelection | None = None,
 ) -> tuple[
     tuple[
         Float[SparseDecoupledTensor, "crit_edge crit_vert"],
@@ -652,7 +681,7 @@ def compute_morse_complex(
     """
     Compute the Morse coboundary operators for a mesh.
 
-    This function construct an acyclic partial matching induced by the lower
+    This function constructs an acyclic partial matching induced by the lower
     star filtration of a scalar field, and then construct the reduced coboundary
     operators using a depth-first search strategy. The core algorithms are
     accelerated by Numba.
@@ -665,6 +694,10 @@ def compute_morse_complex(
     scalar_field : [vert,]
         A scalar field associated/sampled at the mesh vertices. If not provided,
         then associate each vert with its distance to the center of the mesh.
+    bc_sel
+        An optional BoundarySelection object, used to mark the tangential
+        boundary subcomplex of the mesh. If set to `None`, assume that the mesh
+        either has no boundaries or is subject to absolute boundary conditions.
 
     Returns
     -------
@@ -685,6 +718,10 @@ def compute_morse_complex(
     * If no `scalar_field` is provided, the vertices must be associated with
       coordinate vectors.
     """
+    # If no bc_sel is provided, assuming absolute BC/no boundary.
+    if bc_sel is None:
+        bc_sel = BoundarySelection.from_absolute_bc(mesh)
+
     # If no scalar_field is provided, compute a simple one that measures the
     # distance from the center of the mesh.
     if scalar_field is None:
@@ -718,7 +755,7 @@ def compute_morse_complex(
         max_n_cofaces,
         pairing_map,
         splx_dim_offsets,
-    ) = _prepare_inputs(mesh, scalar_field, np_int_dtype)
+    ) = _prepare_inputs(mesh, scalar_field, bc_sel.constrained_mask, np_int_dtype)
 
     pairing_map = _process_lower_stars(
         ordered_verts,
