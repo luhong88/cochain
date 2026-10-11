@@ -13,6 +13,10 @@ from ..complex import SimplicialMesh
 from ..sparse.decoupled_tensor import SparseDecoupledTensor
 from ..utils.parsing import to_np
 
+# Define negative sentinel values for the pairing map.
+CRITICAL = -1
+EXCLUDED = -2
+
 
 def _prepare_inputs(
     mesh: SimplicialMesh,
@@ -30,7 +34,7 @@ def _prepare_inputs(
         A scalar function defined/sampled at the verts of the mesh.
     int_dtype
         The integer dtype used to represent simplex indices, typically either
-        np.int32 or np.int64. Must be a signed dtype because -1 will be used
+        np.int32 or np.int64. Must be a signed dtype because -1/-2 will be used
         to flag certain simplices.
 
     Returns
@@ -75,7 +79,7 @@ def _prepare_inputs(
         lower star membership for acyclic partial matching.
     pairing_map
         An integer array for tracking acyclic partial matching; initialized to
-        -1 everywhere; see _process_lower_stars() for more details.
+        -1 and -2; see _process_lower_stars() for more details.
     splx_dim_offsets
         An integer array containing cumulative simplex counts; more explicitly,
         it is [0, V, V+E, V+E+F, V+E+F+T].
@@ -197,7 +201,7 @@ def _prepare_inputs(
 
     # Prepare the pairing map; if σ is a codim 1 face of τ and they are paired/matched,
     # then p[τ] = σ and p[σ] = τ.
-    pairing_map = np.full(sum(mesh.n_splx), -1, dtype=int_dtype)
+    pairing_map = np.full(sum(mesh.n_splx), CRITICAL, dtype=int_dtype)
 
     return (
         ordered_verts_np,
@@ -312,7 +316,7 @@ def _process_lower_stars(
             vert_coface = lower_star_idx_buffer[i]
 
             # If a vert coface is already paired, do nothing.
-            if pairing_map[vert_coface] != -1:
+            if pairing_map[vert_coface] != CRITICAL:
                 continue
 
             # If a vert coface is a tet, it is the highest possible dimensional
@@ -338,7 +342,7 @@ def _process_lower_stars(
             min_sum = np.inf
             for coface_coface in coface_cofaces:
                 in_lower_star = lower_star_mask[coface_coface]
-                is_unpaired = pairing_map[coface_coface] == -1
+                is_unpaired = pairing_map[coface_coface] == CRITICAL
 
                 if in_lower_star and is_unpaired:
                     coface_coface_sum = splx_scalar_sum[coface_coface]
@@ -374,13 +378,15 @@ def _find_critical_splx(
     simplex `i` is not a critical simplex.
     """
     # Find all the critical simplices by identifying the unpaired simplices.
-    crit_splx = np.argwhere(pairing_map == -1).flatten()
+    crit_splx = np.argwhere(pairing_map == CRITICAL).flatten()
 
     # Split the list of critical simplices by their dimensions.
     split_points = np.searchsorted(crit_splx, splx_dim_offsets[1:-1])
     crit_splx_by_dim = np.split(crit_splx, split_points)
 
-    crit_splx_reduced_idx = np.full(splx_dim_offsets[-1], -1, dtype=pairing_map.dtype)
+    crit_splx_reduced_idx = np.full(
+        splx_dim_offsets[-1], CRITICAL, dtype=pairing_map.dtype
+    )
     for crit_splx in crit_splx_by_dim:
         crit_splx_local_idx = np.arange(crit_splx.size, dtype=pairing_map.dtype)
         crit_splx_reduced_idx[crit_splx] = crit_splx_local_idx
@@ -507,7 +513,7 @@ def _construct_morse_cbds(
                 paired_coface = pairing_map[current_face_idx]
 
                 # Check whether the current_face is paired.
-                is_paired = paired_coface != -1
+                is_paired = paired_coface != CRITICAL
                 # Check whether the current_face is paired with one of its faces
                 # or one of its cofaces.
                 is_paired_up = paired_coface > current_face_idx
