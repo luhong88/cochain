@@ -7,6 +7,7 @@ from scipy.sparse import coo_array
 from scipy.sparse.csgraph import minimum_spanning_tree
 from torch import Tensor
 
+from ..boundary.selection import BoundarySelection
 from ..sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
 from ..utils.parsing import to_np
 from ..utils.search import splx_search
@@ -64,8 +65,11 @@ def _minimum_spanning_tree(
     idx_coo_rows_full = to_np(idx_coo_full[0])
     idx_coo_cols_full = to_np(idx_coo_full[1])
 
+    # TODO: understand why float64
     # If provided, the weights overwrite the adjacency matrix data.
-    coo_data_full = to_np(adjacency.values) if weights is None else to_np(weights)
+    coo_data_full = to_np(
+        adjacency.values if weights is None else weights, dtype=np.float64
+    )
 
     # If provided, use the exclusion mask to remove banned edges.
     if exclusion_mask is None:
@@ -88,7 +92,7 @@ def _minimum_spanning_tree(
         # If the root(s) of the tree is specified, add a new "super node" to the
         # graph and connect the super node to all root nodes with a small weight.
         super_node_idx = n_nodes
-        root_idx = np.argwhere(root_mask_np).flatten().astype(idx_dtype)
+        root_idx = np.flatnonzero(root_mask_np).astype(idx_dtype)
 
         # Augment the adjacency matrix by adding in edges connecting the super node.
         new_rows = np.full(len(root_idx), super_node_idx, dtype=idx_dtype)
@@ -136,12 +140,11 @@ def _minimum_spanning_tree(
     return tree_edges
 
 
-# TODO: update to accommodate tet meshes
 def compute_tree_mask(
     topo_laplacian_0: Float[SparseDecoupledTensor, "global_vert global_vert"],
     canon_edges: Integer[Tensor, "global_edge local_vert=2"],
     mass_1: Float[BaseDecoupledTensor, "global_edge global_edge"] | None = None,
-    vert_rel_bc_mask: Bool[Tensor, " global_vert"] | None = None,
+    bc_sel: BoundarySelection | None = None,
     cotree_mask: Bool[Tensor, " global_edge"] | None = None,
 ) -> Bool[Tensor, " global_edge"]:
     """
@@ -149,7 +152,7 @@ def compute_tree_mask(
 
     The forest can be used to fix the gauge freedom of the down/grad-div component
     of the weak 1-Laplacian. Note that, if this function is used as part of the
-    tree-cotree decomposition for the full 1-Laplacian guage fixing, the
+    tree-cotree decomposition for the full 1-Laplacian gauge fixing, the
     `compute_cotree_mask()` function needs to be called first, and its result
     should be passed to the `cotree_mask` argument of this function. This order
     of operation ensures that the tree and cotree remain disjoint.
@@ -162,19 +165,36 @@ def compute_tree_mask(
         The list of canonical edges in the mesh (mesh.edges).
     mass_1 : [global_edge, global_edge]
         The Hodge 1-star or consistent 1-mass operator. If provided, this function
-        will compute a maximum spanning forest using the the diagonal elements
-        of the matrix as weights/edge masses, which should result in a better condition
-        number for the gauge fixed linear system.
-    vert_rel_bc_mask : [global_vert,]
-        A boolean mask that mark vertices subject to relative boundary condition(s).
+        will compute a maximum spanning forest using its diagonal as edge masses,
+        which may result in a better condition number for the gauge fixed linear system.
+    bc_sel
+        The tangential boundary subcomplex of the tri mesh. Vertices in the subcomplex
+        are connected to a virtual super node, and edges in the subcomplex are
+        excluded. If omitted, assume that the mesh has no boundaries or subject
+        to absolute boundary conditions.
     cotree_mask : [global_edge,]
-        A boolean mask that mark edges that belong to the cotree.
+        A boolean mask that marks edges that belong to the cotree.
 
     Returns
     -------
     tree_mask : [global_edge,]
         A boolean mask that mark edges that belong to the spanning forest.
     """
+    # Verts in the tangential boundary subcomplex need to be the roots of the
+    # spanning forest.
+    root_mask = None if bc_sel is None else bc_sel.constrained_mask[0]
+    # Edges in the cotree or the tangential boundary subcomplex need to be excluded
+    # from the trees.
+    match cotree_mask, bc_sel:
+        case None, None:
+            exclusion_mask = None
+        case _, None:
+            exclusion_mask = cotree_mask
+        case None, _:
+            exclusion_mask = bc_sel.constrained_mask[1]
+        case _, _:
+            exclusion_mask = cotree_mask | bc_sel.constrained_mask[1]
+
     # Compute the vertex adjacency matrix from the (topological) 0-Laplacian
     # Use the upper diagonal portion of the adjacency matrix.
     adjacency = topo_laplacian_0.triu(diagonal=1).abs()
@@ -207,8 +227,8 @@ def compute_tree_mask(
     # edge list.
     mst = _minimum_spanning_tree(
         adjacency=adjacency,
-        root_mask=vert_rel_bc_mask,
-        exclusion_mask=cotree_mask,
+        root_mask=root_mask,
+        exclusion_mask=None if exclusion_mask is None else exclusion_mask[edge_idx],
         weights=edge_weights,
         keep_super_node=False,
     ).T
