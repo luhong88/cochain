@@ -86,7 +86,7 @@ def _betti_via_morse(mesh: SimplicialMesh) -> tuple[int, int, int]:
 
 
 def compute_betti_numbers(
-    mesh: SimplicialMesh, manifold: bool = False
+    mesh: SimplicialMesh, orientable_manifold: bool = False
 ) -> tuple[int, int, int]:
     """
     Compute the first three Betti numbers for a mesh.
@@ -95,10 +95,11 @@ def compute_betti_numbers(
     ----------
     mesh
         A tri or tet mesh.
-    manifold
-        If the input mesh is 2D and manifold, compute the betti numbers via
-        tree-cotree decomposition; otherwise compute the betti numbers via
-        discrete Morse complex.
+    orientable_manifold
+        If the input mesh is 2D and an orientable manifold, compute the Betti
+        numbers via tree-cotree decomposition; otherwise compute the Betti numbers
+        via discrete Morse complex. Note that, for a 2D, non-orientable manifold,
+        the tree-cotree decomposition computes the Betti numbers over the Z_2 field.
 
     Returns
     -------
@@ -109,7 +110,7 @@ def compute_betti_numbers(
     b_2
         The 2nd Betti number, which measures the number of voids.
     """
-    if manifold and (mesh.dim == 2):
+    if orientable_manifold and (mesh.dim == 2):
         return _tri_manifold_betti_via_trees(mesh)
     else:
         return _betti_via_morse(mesh)
