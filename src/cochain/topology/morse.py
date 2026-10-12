@@ -1,6 +1,8 @@
 __all__ = ["compute_morse_complex"]
 
 
+import heapq
+
 import numba
 import numpy as np
 import numpy.typing as npt
@@ -17,6 +19,8 @@ from ..utils.parsing import to_np
 # Define negative sentinel values for the pairing map.
 CRITICAL = -1
 EXCLUDED = -2
+UNPROCESSED = -3
+NOT_CRITICAL = -4
 
 
 def _prepare_inputs(
@@ -39,10 +43,13 @@ def _prepare_inputs(
         A simplicial complex.
     scalar_field
         A scalar function defined/sampled at the verts of the mesh.
+    constrained_masks
+        A tuple of boolean masks. `constrained_mask[k]` marks the k-simplices
+        in the tangential boundary subcomplex.
     int_dtype
         The integer dtype used to represent simplex indices, typically either
-        np.int32 or np.int64. Must be a signed dtype because -1/-2 will be used
-        to flag certain simplices.
+        np.int32 or np.int64. Must be a signed dtype because the negative sentinel
+        values will be used to flag certain simplices.
 
     Returns
     -------
@@ -69,7 +76,7 @@ def _prepare_inputs(
     codim1_coface_offset
         The csc nonzero element ccol indices of the coboundary operators $d_0$,
         $d_1$, and $d_2$, which contains information on the number of codimension
-        1 cofaces for each simplex..
+        1 cofaces for each simplex.
     codim1_face_indices
         The csr nonzero element col indices of the coboundary operators $d_0$,
         $d_1$, and $d_2$, which contains codimension 1 face global indices.
@@ -86,7 +93,8 @@ def _prepare_inputs(
         lower star membership for acyclic partial matching.
     pairing_map
         An integer array for tracking acyclic partial matching; initialized to
-        -1 and -2; see _process_lower_stars() for more details.
+        UNPROCESSED for retained simplices and EXCLUDED for constrained simplices;
+        see _process_lower_stars() for more details.
     splx_dim_offsets
         An integer array containing cumulative simplex counts; more explicitly,
         it is [0, V, V+E, V+E+F, V+E+F+T].
@@ -199,7 +207,7 @@ def _prepare_inputs(
     # and sum them together, and take the max of this value over the list of verts.
     # Note that the difference between consecutive elements in the ccol index
     # tensor of a coboundary operator gives the number of nonzero elements in each
-    # column of the operator, which is equal to the number of faces.
+    # column of the operator, which is equal to the number of cofaces.
     n_cofaces = np.stack(
         [idx_ccol[1:] - idx_ccol[:-1] for idx_ccol in vert_coface_offset]
     )
@@ -208,7 +216,7 @@ def _prepare_inputs(
 
     # Prepare the pairing map; if σ is a codim 1 face of τ and they are paired/matched,
     # then p[τ] = σ and p[σ] = τ.
-    pairing_map = np.full(sum(mesh.n_splx), CRITICAL, dtype=int_dtype)
+    pairing_map = np.full(sum(mesh.n_splx), UNPROCESSED, dtype=int_dtype)
 
     # For simplices in the tangential boundary subcomplex, use a different
     # sentinel value to indicate that they will be excluded.
@@ -236,6 +244,7 @@ def _prepare_inputs(
 
 @numba.jit(nopython=True, cache=True)
 def _process_lower_stars(
+    mesh_dim: int,
     ordered_verts: npt.NDArray,
     vert_ranks: npt.NDArray,
     splx_vert_rank_max: npt.NDArray,
@@ -244,6 +253,8 @@ def _process_lower_stars(
     vert_coface_offset: tuple[npt.NDArray, ...],
     codim1_coface_indices: tuple[npt.NDArray, ...],
     codim1_coface_offset: tuple[npt.NDArray, ...],
+    codim1_face_indices: tuple[npt.NDArray, ...],
+    codim1_face_offset: tuple[npt.NDArray, ...],
     max_n_cofaces: int,
     pairing_map: npt.NDArray,
     splx_dim_offsets: npt.NDArray,
@@ -256,37 +267,62 @@ def _process_lower_stars(
     all simplices $\sigma$ such that (1) $\sigma$ is not in the tangential boundary
     subcomplex, (2) $v \le \sigma$, and (3) $f(v) > f(v')$ for all other vert faces
     $v'$ of $\sigma$; in case of a tie where $f(v) = f(v')$, $\sigma \in L(v)$ if
-    the index of $v$ is lower than that of $v'$.
+    the index of $v$ is higher than that of $v'$.
 
-    For each simplex $\sigma \in L(v)$, identify all of its cofaces $\tau$ of
-    codimension 1 outside of the tangential boundary subcomplex. We pair/match
-    $\sigma$ with $\tau$ if all following three conditions are met:
+    To construct the acyclic partial matching, use the two-queue lower-star strategy
+    of Robins, Wood & Sheppard, TPAMI (2011). Initially, all simplices in $L(v)$
+    are marked as unprocessed, and the goal of the strategy is to mark all simplices
+    in $L(v)$ as either paired/matched or critical. A simplex enters the "one-face
+    queue" if it has exactly one unprocessed codim-1 face in $L(v)$, and the
+    "zero-face queue" if it has no unprocessed codim-1 face in $L(v)$. At each
+    iteration, if the one-face queue is not empty, pair a simplex in the one-face
+    queue with its unique unprocessed codim-1 face, otherwise mark a simplex from
+    the zero-face queue as critical. In either case, matched or critical simplices
+    lower the face counts of their cofaces; both queues prioritize processing
+    simplices with the lowest sum of $f$ over their verts, with ties broken by
+    dimension and global simplex index.
 
-    * $\tau \in L(v)$,
-    * $\tau$ has not been paired/matched, and
-    * The sum of $f$ over the vert faces of $\tau$ is the smallest among all
-      codim 1 cofaces of $\sigma$ (in case of a tie, the first coface after a
-      lex sort is picked.)
-
-    Simplices outside of the tangential boundary subcomplex that remain unpaired
-    after this process are called critical.
+    When $\sigma$ is matched with its face $\tau$, every other face of $\sigma$
+    in $L(v)$ has already been processed. Hence along any gradient path, the pair
+    (max vertex rank, processing time) strictly decreases lexicographically, so
+    the matching is guaranteed to be acyclic.
 
     This function returns a `pairing_map` array, where `pairing_map[i] = j` for
-    `i, j >= 0` indicates that the simplices `i` and `j` are paired, `pairing_map[i] = -1`
-    indicates that simplex `i` is critical, and `pairing_map[i] = -2` indicates
-    that the simplex `i` is excluded due to tangential boundary subcomplex
-    membership. Here, the simplices are 0-indexed consecutively, where the
-    lower-dimensional simplices are placed before higher-dimensional ones, and
-    simplices of the same dimension are lex-sorted.
+    `i, j >= 0` indicates that the simplices `i` and `j` are paired,
+    `pairing_map[i] = CRITICAL` indicates that simplex `i` is critical, and
+    `pairing_map[i] = EXCLUDED` indicates that the simplex `i` is excluded due to
+    tangential boundary subcomplex membership. Here, the simplices are 0-indexed
+    consecutively, where the lower-dimensional simplices are placed before
+    higher-dimensional ones, and simplices of the same dimension maintain the
+    ordering in the mesh definition.
     """
-    # For accessing the lower star simplex indices, we use a pre-allocated
-    # lower_star_buffer; for checking membership in the lower star, we use a flat
-    # bool mask.
+    # Set up buffers to be reused across lower stars.
+
+    # Buffers for keeping track of simplices in a given lower star.
     lower_star_idx_buffer = np.empty(max_n_cofaces, dtype=pairing_map.dtype)
     lower_star_dim_buffer = np.empty(max_n_cofaces, dtype=pairing_map.dtype)
-    lower_star_mask = np.zeros(splx_dim_offsets[-1], dtype=np.bool)
+
+    # A buffer that keeps track of how many unprocessed codim 1 faces of a given
+    # simplex are in a lower star.
+    unprocessed_faces_count = np.zeros(splx_dim_offsets[-1], dtype=np.int8)
+
+    # Buffers for keeping track of simplices to be removed from consideration
+    # in unprocessed_faces_count. At any given time, at most two such simplices
+    # need to be tracked.
+    removed_idx_buffer = np.empty(2, dtype=pairing_map.dtype)
+    removed_dim_buffer = np.empty(2, dtype=pairing_map.dtype)
+
+    # Initialize the zero-face and one-face queues; the queues should automatically
+    # be empty at the end of processing the L(v) of each vertex v. The zero-length
+    # list comprehension allows numba to infer element dtypes at compile time;
+    # Scalar field value, simplex dimension, and simplex index are casted to
+    # float64, int8, and int64, regardless of the input dtypes.
+    zero_face_queue = [(np.float64(0), np.int8(0), np.int64(0)) for _ in range(0)]
+    one_face_queue = [(np.float64(0), np.int8(0), np.int64(0)) for _ in range(0)]
 
     for vert in ordered_verts:
+        # First, for each vertex v, determine its lower star L(v).
+
         # A "pointer" that keeps track of the size of the lower star of a vert.
         lower_star_size = 0
         vert_rank = vert_ranks[vert]
@@ -294,10 +330,9 @@ def _process_lower_stars(
         # For each vert, there is only one coface of codimension 0: the vert itself.
         # Note that, for a v in the tangential boundary subcomplex, even though
         # v cannot be a member of L(v), we still need to determine L(v) itself.
-        if pairing_map[vert] != EXCLUDED:
+        if pairing_map[vert] == UNPROCESSED:
             lower_star_idx_buffer[lower_star_size] = vert
             lower_star_dim_buffer[lower_star_size] = 0
-            lower_star_mask[vert] = True
             lower_star_size += 1
 
         for coface_dim in [1, 2, 3]:
@@ -309,15 +344,15 @@ def _process_lower_stars(
             # Check whether the identified cofaces are in the lower star. By
             # checking that the vert rank is equal to the coface rank score,
             # we ensure that the vert has the max scalar field value (and, in
-            # the event of ties, the vert has lower index). This ensures that
+            # the event of ties, the vert has higher index). This ensures that
             # the lower stars of the verts form a partition of the simplicial
             # complex (excluding the tangential boundary subcomplex).
-            cofaces_are_lower = splx_vert_rank_max[cofaces] <= vert_rank
-            cofaces_are_not_excluded = pairing_map[cofaces] != EXCLUDED
-            lower_mask = cofaces_are_lower & cofaces_are_not_excluded
+            cofaces_are_lower = splx_vert_rank_max[cofaces] == vert_rank
+            cofaces_are_not_excluded = pairing_map[cofaces] == UNPROCESSED
+            lower_star_mask = cofaces_are_lower & cofaces_are_not_excluded
 
-            lower_cofaces = cofaces[lower_mask]
-            n_lower_cofaces = lower_mask.sum()
+            lower_cofaces = cofaces[lower_star_mask]
+            n_lower_cofaces = lower_star_mask.sum()
 
             # Get the index range for registering the cofaces in the buffer.
             start = lower_star_size
@@ -325,58 +360,159 @@ def _process_lower_stars(
 
             lower_star_idx_buffer[start:end] = lower_cofaces
             lower_star_dim_buffer[start:end] = coface_dim
-            lower_star_mask[cofaces[lower_mask]] = True
             lower_star_size += n_lower_cofaces
 
-        # For each simplex σ in the lower star of v, attempt to pair it with a
-        # coface τ of codimension 1 greedily by finding an unpaired coface τ that
-        # has the lowest sum of scalar field over its vertices ("steepest descent").
+        # Second, for each L(v), mark each simplex in L(v) as either matched/paired
+        # or critical.
+
+        # For each (unprocessed) simplex σ in L(v), first determine how many codim
+        # 1 faces of σ in L(v) remains unprocessed. In particular, keep track of
+        # σ with either one or zero such faces in the one_face_queue and
+        # zero_face_queue, respectively.
         for i in range(lower_star_size):
-            coface_dim = lower_star_dim_buffer[i]
-            vert_coface = lower_star_idx_buffer[i]
+            splx = lower_star_idx_buffer[i]
+            splx_dim = lower_star_dim_buffer[i]
+            n_faces = 0
 
-            # If a vert coface is already paired, do nothing.
-            if pairing_map[vert_coface] != CRITICAL:
-                continue
+            if splx_dim > 0:
+                # Find the face indices via the cbd csr indices. Note that face_idx
+                # is in global index, while face_offset is in local, per-dim index.
+                face_idx = codim1_face_indices[splx_dim - 1]
+                face_offset = codim1_face_offset[splx_dim - 1]
+                face_local_idx = splx - splx_dim_offsets[splx_dim]
+                for face in face_idx[
+                    face_offset[face_local_idx] : face_offset[face_local_idx + 1]
+                ]:
+                    if (
+                        splx_vert_rank_max[face] == vert_rank
+                        and pairing_map[face] == UNPROCESSED
+                    ):
+                        n_faces += 1
 
-            # If a vert coface is a tet, it is the highest possible dimensional
-            # simplex and doesn't have cofaces of codim 1.
-            if coface_dim == 3:
-                continue
+            unprocessed_faces_count[splx] = n_faces
 
-            # For each vert coface σ, find all of its cofaces (of codim 1) τ's.
-            cbd_idx = codim1_coface_indices[coface_dim]
-            cbd_offset = codim1_coface_offset[coface_dim]
-            # Note that the offset index still operates on the local index
-            # scheme (0-index for all splx of a given dim), so we need to first
-            # convert the global vert_coface index back to the local 0-index.
-            vert_coface_local = vert_coface - splx_dim_offsets[coface_dim]
-            coface_cofaces = cbd_idx[
-                cbd_offset[vert_coface_local] : cbd_offset[vert_coface_local + 1]
-            ]
+            entry = (
+                np.float64(splx_scalar_sum[splx]),
+                np.int8(splx_dim),
+                np.int64(splx),
+            )
+            if n_faces == 0:
+                heapq.heappush(zero_face_queue, entry)
+            elif n_faces == 1:
+                heapq.heappush(one_face_queue, entry)
 
-            # Iterate over all the τ's, ignore any τ that is not in the
-            # lower star or already paired, find the τ with the lowest
-            # sum of scalar field and pair this τ with σ.
-            best_coface_coface = -1
-            min_sum = np.inf
-            for coface_coface in coface_cofaces:
-                in_lower_star = lower_star_mask[coface_coface]
-                is_unpaired = pairing_map[coface_coface] == CRITICAL
+        # Start processing simplices in L(v); keep track of how many simplices in
+        # L(v) have been processed (i.e., marked as paired or critical in pairing_map);
+        # by the end of the while-loop, all simplices in L(v) should be processed.
+        n_processed = 0
+        while one_face_queue or zero_face_queue:
+            # Process one σ from the one_face_queue if it is not empty; otherwise
+            # process one σ from the zero_face_queue. Always prioritize σ with the
+            # lowest sum of f over the vert faces when picking which simplex to
+            # process.
+            if one_face_queue:
+                _, splx_dim, splx = heapq.heappop(one_face_queue)
+                # Make sure that σ is still eligible to be in the one_face_queue.
+                # A simplex can become ineligible if (1) it has been paired as a
+                # face (it is no longer UNPROCESSED), or (2) its last face was
+                # paired with another simplex in L(v) (its unprocessed_faces_count
+                # is 0).
+                if (
+                    pairing_map[splx] != UNPROCESSED
+                    or unprocessed_faces_count[splx] != 1
+                ):
+                    continue
 
-                if in_lower_star and is_unpaired:
-                    coface_coface_sum = splx_scalar_sum[coface_coface]
-                    if coface_coface_sum < min_sum:
-                        best_coface_coface = coface_coface
-                        min_sum = coface_coface_sum
+                # Find the index of τ, the only remaining face of σ.
+                face_idx = codim1_face_indices[splx_dim - 1]
+                face_offset = codim1_face_offset[splx_dim - 1]
+                face_local_idx = splx - splx_dim_offsets[splx_dim]
+                unique_face = -1
+                for face in face_idx[
+                    face_offset[face_local_idx] : face_offset[face_local_idx + 1]
+                ]:
+                    if (
+                        splx_vert_rank_max[face] == vert_rank
+                        and pairing_map[face] == UNPROCESSED
+                    ):
+                        unique_face = face
+                        break
 
-            # If a coface in the lower star is critical, then it cannot be paired.
-            if best_coface_coface != -1:
-                pairing_map[vert_coface] = best_coface_coface
-                pairing_map[best_coface_coface] = vert_coface
+                if unique_face == -1:
+                    raise RuntimeError("One-face queue has no unprocessed face.")
 
-        # Reset the lower_star_mask for the next vert.
-        lower_star_mask[lower_star_idx_buffer[:lower_star_size]] = False
+                # register τ and σ as a matched pair.
+                pairing_map[splx] = unique_face
+                pairing_map[unique_face] = splx
+
+                # register τ and σ for removal from unprocessed_faces_count so that
+                # they are no longer considered as unprocessed faces of other
+                # unprocessed simplices.
+                removed_idx_buffer[0] = unique_face
+                removed_dim_buffer[0] = splx_dim - 1
+                removed_idx_buffer[1] = splx
+                removed_dim_buffer[1] = splx_dim
+                n_removed = 2
+
+            else:
+                # For σ in the zero_face_queue, check that it has not been paired
+                # as the face of another simplex; if so, mark it as critical and
+                # remove it from unprocessed_faces_count.
+                _, splx_dim, splx = heapq.heappop(zero_face_queue)
+                if pairing_map[splx] != UNPROCESSED:
+                    continue
+
+                pairing_map[splx] = CRITICAL
+                removed_idx_buffer[0] = splx
+                removed_dim_buffer[0] = splx_dim
+                n_removed = 1
+
+            # For simplices registered for removal, check if they are counted as
+            # unprocessed faces of any other unprocessed simplices in L(v); if so,
+            # remove them from consideration.
+            for i in range(n_removed):
+                removed_splx = removed_idx_buffer[i]
+                removed_dim = removed_dim_buffer[i]
+                # If a simplex being removed is a top-level simplex of the mesh,
+                # then by definition it cannot be the face of another simplex;
+                # so nothing needs to be done here.
+                if removed_dim == mesh_dim:
+                    continue
+
+                coface_idx = codim1_coface_indices[removed_dim]
+                coface_offset = codim1_coface_offset[removed_dim]
+                coface_local_idx = removed_splx - splx_dim_offsets[removed_dim]
+                for coface in coface_idx[
+                    coface_offset[coface_local_idx] : coface_offset[
+                        coface_local_idx + 1
+                    ]
+                ]:
+                    if (
+                        splx_vert_rank_max[coface] != vert_rank
+                        or pairing_map[coface] != UNPROCESSED
+                    ):
+                        continue
+
+                    unprocessed_faces_count[coface] -= 1
+                    entry = (
+                        np.float64(splx_scalar_sum[coface]),
+                        np.int8(removed_dim + 1),
+                        np.int64(coface),
+                    )
+
+                    if unprocessed_faces_count[coface] == 0:
+                        heapq.heappush(zero_face_queue, entry)
+                    elif unprocessed_faces_count[coface] == 1:
+                        heapq.heappush(one_face_queue, entry)
+
+            # Count the removed simplices as having been processed.
+            n_processed += n_removed
+
+        if n_processed != lower_star_size:
+            raise RuntimeError("Lower star was not fully processed.")
+
+    if np.any(pairing_map == UNPROCESSED):
+        raise RuntimeError("Lower-star matching left unprocessed simplices.")
 
     return pairing_map
 
@@ -394,18 +530,17 @@ def _find_critical_splx(
     each dimension, and (2) it returns a `crit_splx_reduced_idx` array, where
     `crit_splx_reduced_idx[i] = j` indicates that simplex `i` (indexed globally)
     is the `j`th critical simplex among all critical simplices of the same
-    dimension as simplex `i`, and `crit_splx_reduced_idx[i] = -1` indicates that
-    simplex `i` is not a critical simplex.
+    dimension as simplex `i`, and `crit_splx_reduced_idx[i] = NOT_CRITICAL` indicates
+    that simplex `i` is not a critical simplex.
     """
-    # Find all the critical simplices by identifying the unpaired simplices.
-    crit_splx = np.argwhere(pairing_map == CRITICAL).flatten()
+    crit_splx = np.flatnonzero(pairing_map == CRITICAL)
 
     # Split the list of critical simplices by their dimensions.
     split_points = np.searchsorted(crit_splx, splx_dim_offsets[1:-1])
     crit_splx_by_dim = np.split(crit_splx, split_points)
 
     crit_splx_reduced_idx = np.full(
-        splx_dim_offsets[-1], CRITICAL, dtype=pairing_map.dtype
+        splx_dim_offsets[-1], NOT_CRITICAL, dtype=pairing_map.dtype
     )
     for crit_splx in crit_splx_by_dim:
         crit_splx_local_idx = np.arange(crit_splx.size, dtype=pairing_map.dtype)
@@ -415,6 +550,7 @@ def _find_critical_splx(
 
 
 # TODO: option to save the gradient paths
+# TODO: consider dynamic programming approach that avoids explicit path enumeration
 @numba.jit(nopython=True, cache=True)
 def _construct_morse_cbds(
     codim1_face_indices: tuple[npt.NDArray, ...],
@@ -429,10 +565,10 @@ def _construct_morse_cbds(
     Construct the reduced Morse coboundary operators.
 
     Consider the $k$-th Morse coboundary operator $d$. The element $d_{ij}$ is
-    nonzero iff there is at least one gradient path outside of the tangential
+    the signed sum of the weights of all gradient paths outside of the tangential
     boundary subcomplex of the original mesh that connects the critical $(k+1)$-simplex
-    $\tau_i$ to the critical $k$-simplex $\sigma_j$, and $d_{ij}$ is the sum of
-    the weights associated with all such gradient paths.
+    $\tau_i$ to the critical $k$-simplex $\sigma_j$; it is zero if no such paths
+    exist, or the weights associated with all such paths cancel exactly.
 
     A gradient path $\rho$ between $\tau_i$ and $\sigma_j$ is a sequence of
     alternating $(k+1)$- and $k$-dimensional simplices that satisfies either of
@@ -453,9 +589,9 @@ def _construct_morse_cbds(
     In this function, we perform the path search using a depth-first search
     approach.
 
-    Note that, while the Morse complex is chain homotopic to the original simplicial
-    complex, the Morse complex itself is a CW complex, rather than a simplicial
-    complex.
+    Note that, while the Morse complex is chain homotopic to the original (relative)
+    simplicial cochain complex, the Morse complex itself is a CW complex, rather
+    than a simplicial complex.
     """
     int_dtype = pairing_map.dtype
     float_dtype = codim1_face_signs[0].dtype
@@ -473,11 +609,11 @@ def _construct_morse_cbds(
         # Pre allocate the memories for the morse coboundary operator coo indices
         # and values. Since we don't actually know how many non-coalesced nonzero
         # elements there are per reduced coboundary operator ahead of time, we
-        # use a heuristic that allocates 50*n_row*n_col nonzero slots. If this
+        # use a heuristic that allocates 4*(splx_dim+1)*n_row nonzero slots. If this
         # is not enough, the buffer gets doubled dynamically (we set a minimum
         # buffer size of 10,000 to avoid potential, repeated size adjustments).
-        cbd_size = crit_splx_by_dim[splx_dim].size * crit_splx_by_dim[splx_dim - 1].size
-        cbd_buffer_size = max(10_000, cbd_size * 50)
+        cbd_n_rows = crit_splx_by_dim[splx_dim].size
+        cbd_buffer_size = max(10_000, 4 * (splx_dim + 1) * cbd_n_rows)
         idx_coo = np.empty(
             (2, cbd_buffer_size),
             dtype=int_dtype,
@@ -505,7 +641,9 @@ def _construct_morse_cbds(
             all_face_idx = cbd_idx[start:end]
             all_face_sign = bd_signs[start:end]
 
-            # Exclude any faces in the tangential boundary subcomplex.
+            # Exclude any faces in the tangential boundary subcomplex. This way,
+            # any path that reaches the tangential boundary subcomplex contributes
+            # 0, as required by the relative cohomology.
             include_mask = pairing_map[all_face_idx] != EXCLUDED
             face_idx = all_face_idx[include_mask]
             face_sign = all_face_sign[include_mask]
@@ -540,8 +678,6 @@ def _construct_morse_cbds(
 
                 paired_coface = pairing_map[current_face_idx]
 
-                # Check whether the current_face is paired.
-                is_paired = paired_coface != CRITICAL
                 # Check whether the current_face is paired with one of its faces
                 # or one of its cofaces.
                 is_paired_up = paired_coface > current_face_idx
@@ -549,7 +685,7 @@ def _construct_morse_cbds(
                 # If the current_face is critical, then the path terminates.
                 # Add the current_face_sign to (crit_splx, current_face_idx)
                 # position of the coboundary operator.
-                if not is_paired:
+                if paired_coface == CRITICAL:
                     # Before adding the entry to the coboundary operator, check
                     # if at the buffer size limit; if so, double the buffer size
                     # before proceeding.
@@ -582,8 +718,13 @@ def _construct_morse_cbds(
                     start = cbd_offset[paired_coface - global_splx_offset]
                     end = cbd_offset[paired_coface + 1 - global_splx_offset]
 
-                    coface_faces_idx = cbd_idx[start:end]
-                    coface_faces_sign = bd_signs[start:end]
+                    coface_all_faces_idx = cbd_idx[start:end]
+                    coface_all_faces_sign = bd_signs[start:end]
+
+                    # Exclude any faces in the tangential boundary subcomplex.
+                    include_mask = pairing_map[coface_all_faces_idx] != EXCLUDED
+                    coface_faces_idx = coface_all_faces_idx[include_mask]
+                    coface_faces_sign = coface_all_faces_sign[include_mask]
 
                     # As the path moves from current_face to paired_coface, update
                     # the current_sign using the (negative of the) boundary sign
@@ -621,6 +762,16 @@ def _construct_morse_cbds(
                             stack_sign[stack_top] = next_splx_sign
                             stack_top += 1
 
+                # If the current_face is paired downward, then the path does not
+                # satisfy the definition of a gradient path (i.e., two step down
+                # in a row) and is dropped here implicitly. Similarly, if the
+                # current_face gets paired with an excluded simplex in the
+                # tangential boundary subcomplex, it is dropped here implicitly
+                # as well, because is_paired_up evals to False if paired_coface
+                # is negative; although this shouldn't happen in practice, since
+                # _process_lower_stars() should not allow an excluded simplex to
+                # be paired with a retained simplex.
+
         # Once the search queue has been exhausted, return the reduced cbd.
         cbd_idx_coo.append(idx_coo[:, :nnz])
         cbd_val.append(val[:nnz])
@@ -646,6 +797,16 @@ def _construct_sdt(
         cbd_coo = torch.sparse_coo_tensor(
             indices=idx_coo_torch, values=val_torch, size=shape
         ).coalesce()
+
+        # Remove entries that are close to zero due to cancellation of gradient
+        # path weights.
+        nz_mask = ~torch.isclose(cbd_coo.values(), torch.zeros_like(cbd_coo.values()))
+        cbd_coo = torch.sparse_coo_tensor(
+            indices=cbd_coo.indices()[:, nz_mask],
+            values=cbd_coo.values()[nz_mask],
+            size=shape,
+        ).coalesce()
+
         cbd_sdt = SparseDecoupledTensor.from_tensor(cbd_coo)
 
         morse_cbd_list.append(cbd_sdt)
@@ -681,10 +842,10 @@ def compute_morse_complex(
     """
     Compute the Morse coboundary operators for a mesh.
 
-    This function constructs an acyclic partial matching induced by the lower
-    star filtration of a scalar field, and then construct the reduced coboundary
-    operators using a depth-first search strategy. The core algorithms are
-    accelerated by Numba.
+    This function constructs an acyclic partial matching using the two-queue
+    lower-star strategy of Robins, Wood & Sheppard, TPAMI (2011), then constructs
+    the reduced coboundary operators using depth-first search. The core algorithms
+    are accelerated by Numba.
 
     Parameters
     ----------
@@ -758,6 +919,7 @@ def compute_morse_complex(
     ) = _prepare_inputs(mesh, scalar_field, bc_sel.constrained_mask, np_int_dtype)
 
     pairing_map = _process_lower_stars(
+        mesh.dim,
         ordered_verts,
         vert_ranks,
         splx_vert_rank_max,
@@ -766,6 +928,8 @@ def compute_morse_complex(
         vert_coface_offset,
         codim1_coface_indices,
         codim1_coface_offset,
+        codim1_face_indices,
+        codim1_face_offset,
         max_n_cofaces,
         pairing_map,
         splx_dim_offsets,
