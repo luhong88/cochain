@@ -21,18 +21,13 @@ def _tri_manifold_betti_via_trees(
     if bc_sel is None:
         bc_sel = BoundarySelection.from_absolute_bc(tri_mesh)
 
-    # Determine the number of retained simplices of each dimension.
-    n_verts, n_edges, n_tris = [
-        int(mask.sum().item()) for mask in bc_sel.retained_mask[:3]
-    ]
-
     # Construct the dual spanning tree over the dual 1-skeleton, which identifies
     # |F_retained| - b_2 edges, which is the rank of d_1 over the retained complex.
     dual_l0 = laplacian_k(tri_mesh, k=0, component="up", dual_complex=True)
     cotree = compute_cotree_mask(dual_l0, tri_mesh.cbd[1], bc_sel=bc_sel)
 
     rank_1 = int(cotree.sum().item())
-    b_2 = n_tris - rank_1
+    b_2 = bc_sel.n_retained_tris - rank_1
 
     # Construct the spanning tree on the 1-skeleton, which identifies
     # |V_retained| - b_0 edges, which is the rank of d_0 over the retained complex.
@@ -40,14 +35,14 @@ def _tri_manifold_betti_via_trees(
     tree = compute_tree_mask(l0, tri_mesh.edges, cotree_mask=cotree, bc_sel=bc_sel)
 
     rank_0 = int(tree.sum().item())
-    b_0 = n_verts - rank_0
+    b_0 = bc_sel.n_retained_verts - rank_0
 
     # Note that the Euler characteristic χ can be expressed in two ways for a
     # tri mesh:
     #     χ = |V_retained| - |E_retained| + |F_retained|
     #     χ = b_0 - b_1 + b_2
     # it follows that b_1 = |E_retained| - (|V_retained| - b_0) - (|F_retained| - b_2).
-    b_1 = n_edges - rank_0 - rank_1
+    b_1 = bc_sel.n_retained_edges - rank_0 - rank_1
 
     return b_0, b_1, b_2
 
