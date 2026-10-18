@@ -11,9 +11,9 @@ from .topo_laplacians import laplacian_k
 
 def _tri_manifold_betti_via_trees(
     tri_mesh: SimplicialMesh, bc_sel: BoundarySelection | None = None
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     """
-    Compute the first three real (relative) Betti numbers for a tri mesh.
+    Compute the first four real (relative) Betti numbers for a tri mesh.
 
     This function uses the tree-cotree decomposition to compute the Betti numbers.
     The input mesh is assumed to be an orientable manifold tri mesh.
@@ -44,14 +44,17 @@ def _tri_manifold_betti_via_trees(
     # it follows that b_1 = |E_retained| - (|V_retained| - b_0) - (|F_retained| - b_2).
     b_1 = bc_sel.n_retained_edges - rank_0 - rank_1
 
-    return b_0, b_1, b_2
+    # For a tri mesh immersed in R^3, b_3 is always trivial.
+    b_3 = 0
+
+    return b_0, b_1, b_2, b_3
 
 
 def _betti_via_morse(
     mesh: SimplicialMesh, bc_sel: BoundarySelection | None = None
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     """
-    Compute the first three real (relative) Betti numbers for a tri/tet mesh.
+    Compute the first four real (relative) Betti numbers for a tri/tet mesh.
 
     This function uses the discrete Morse complex to compute the Betti numbers,
     and works on arbitrary immersed meshes.
@@ -69,17 +72,19 @@ def _betti_via_morse(
     b_1 = n_crit_splx[1] - cbd_rank[0] - cbd_rank[1]
     # b_2 = |K_2| - rank(d_1) - rank(d_2)
     b_2 = n_crit_splx[2] - cbd_rank[1] - cbd_rank[2]
+    # b_3 = |K_3| - rank(d_2)
+    b_3 = n_crit_splx[3] - cbd_rank[2]
 
-    return b_0, b_1, b_2
+    return b_0, b_1, b_2, b_3
 
 
 def compute_betti_numbers(
     mesh: SimplicialMesh,
     bc_sel: BoundarySelection | None = None,
     orientable_manifold: bool = False,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     r"""
-    Compute the first three Betti numbers over the real numbers.
+    Compute the first four Betti numbers over the real numbers.
 
     Parameters
     ----------
@@ -106,6 +111,8 @@ def compute_betti_numbers(
         The dimension of real degree-one (relative) cohomology.
     b_2
         The dimension of real degree-two (relative) cohomology.
+    b_3
+        The dimension of real degree-three (relative cohomology).
     """
     if orientable_manifold and (mesh.dim == 2):
         return _tri_manifold_betti_via_trees(mesh, bc_sel=bc_sel)
