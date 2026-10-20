@@ -47,6 +47,20 @@ def test_tri_manifold_relative_betti_via_trees(mesh, betti_true, request, device
         assert b == b_true
 
 
+def test_two_tris_mesh_relative_betti_with_mixed_bc_via_trees(two_tris_mesh, device):
+    mesh = two_tris_mesh.to(device)
+
+    disjoint_edges_mask = torch.tensor(
+        [True, False, False, False, True], device=mesh.device
+    )
+    bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, disjoint_edges_mask)
+
+    betti = _tri_manifold_betti_via_trees(mesh, bc_sel)
+
+    for b, b_true in zip(betti, [0, 1, 0, 0]):
+        assert b == b_true
+
+
 def test_two_disjoint_tri_mesh_relative_betti_with_mixed_bc_via_trees(
     two_disjoint_tris_mesh, device
 ):
@@ -139,6 +153,21 @@ def test_solid_spherical_shell_mesh_relative_betti_with_mixed_bc_via_morse(
 
         for b, b_true in zip(betti, [0, 0, 0, 0]):
             assert b == b_true
+
+
+def test_simple_sc_mesh_relative_betti_with_mixed_bc_via_trees(simple_sc_mesh, device):
+    mesh = simple_sc_mesh.to(device)
+
+    disjoint_tris_mask = torch.zeros_like(mesh.bd_tri_mask, dtype=torch.bool)
+    disjoint_tris_mask[1] = True
+    disjoint_tris_mask[27] = True
+
+    bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, disjoint_tris_mask)
+
+    betti = _betti_via_morse(mesh, bc_sel)
+
+    for b, b_true in zip(betti, [0, 1, 0, 0]):
+        assert b == b_true
 
 
 def test_betti_on_nonmanifold_crease_tri_mesh(device):
