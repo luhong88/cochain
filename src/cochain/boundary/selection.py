@@ -35,6 +35,17 @@ class BoundarySelection:
         Complements of `constrained_mask` in each degree.
     retained_idx
         Indices selected by `retained_mask` in global simplex order.
+    n_retained_verts
+        The number of retained vertices.
+    n_retained_edges
+        The number of retained canonical edges.
+    n_retained_tris
+        The number of retained canonical triangles.
+    n_retained_tets
+        The number of retained canonical tetrahedra.
+    n_retained_splx
+        A tuple where `n_retained_splx[k]` is the number of retained canonical
+        k-simplices.
 
     Notes
     -----
@@ -93,6 +104,31 @@ class BoundarySelection:
         Integer[Tensor, " retained_tet"],
     ]:
         return tuple(torch.argwhere(mask).flatten() for mask in self.retained_mask)
+
+    @property
+    def n_retained_verts(self) -> int:
+        return self.retained_idx[0].shape[0]
+
+    @property
+    def n_retained_edges(self) -> int:
+        return self.retained_idx[1].shape[0]
+
+    @property
+    def n_retained_tris(self) -> int:
+        return self.retained_idx[2].shape[0]
+
+    @property
+    def n_retained_tets(self) -> int:
+        return self.retained_idx[3].shape[0]
+
+    @property
+    def n_retained_splx(self) -> tuple[int, int, int, int]:
+        return (
+            self.n_retained_verts,
+            self.n_retained_edges,
+            self.n_retained_tris,
+            self.n_retained_tets,
+        )
 
     @classmethod
     def from_absolute_bc(cls, mesh: SimplicialMesh):

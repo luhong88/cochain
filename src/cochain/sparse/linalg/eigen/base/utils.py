@@ -144,7 +144,7 @@ def m_orthonormalize(
     Notes
     -----
     The method implemented in this function follows the SVQB method (Singular Value
-    QR Blocking) from Stathopoulos & Wu., SIAM J. Sci. Comput. (2002). This function
+    QR Blocking) from Stathopoulos & Wu, SIAM J. Sci. Comput. (2002). This function
     differs from SVQB in that it is rank-adaptive; i.e., instead of clamping,
     linearly dependent columns of $V$ are dropped and the function returns fewer
     orthonormalized vectors ($l \le n$). If `n_min` is provided and the returned $V$
