@@ -2,7 +2,6 @@ import pytest
 import torch
 
 from cochain.boundary.selection import BoundarySelection
-from cochain.topology.betti import _betti_via_morse
 from cochain.topology.morse import compute_morse_complex
 
 

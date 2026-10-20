@@ -155,7 +155,7 @@ def test_solid_spherical_shell_mesh_relative_betti_with_mixed_bc_via_morse(
             assert b == b_true
 
 
-def test_simple_sc_mesh_relative_betti_with_mixed_bc_via_trees(simple_sc_mesh, device):
+def test_simple_sc_mesh_relative_betti_with_mixed_bc_via_morse(simple_sc_mesh, device):
     mesh = simple_sc_mesh.to(device)
 
     disjoint_tris_mask = torch.zeros_like(mesh.bd_tri_mask, dtype=torch.bool)
