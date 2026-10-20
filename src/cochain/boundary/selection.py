@@ -44,7 +44,8 @@ class BoundarySelection:
     n_retained_tets
         The number of retained canonical tetrahedra.
     n_retained_splx
-        A tuple where `n_splx[k]` is the number of retained canonical k-simplices.
+        A tuple where `n_retained_splx[k]` is the number of retained canonical
+        k-simplices.
 
     Notes
     -----

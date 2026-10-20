@@ -345,7 +345,7 @@ def compute_cotree_mask(
     """
     device = dual_topo_laplacian_0.device
     int_dtype = torch.int64
-    float_dtype = inv_mass_1.dtype if inv_mass_1 else cbd_1.dtype
+    float_dtype = inv_mass_1.dtype if inv_mass_1 is not None else cbd_1.dtype
 
     n_tris, n_edges = cbd_1.shape
 
