@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 __all__ = ["BoundarySelection"]
 
 from dataclasses import dataclass
@@ -9,6 +11,7 @@ from torch import Tensor
 
 from ..complex import SimplicialMesh
 from ..topology.boundaries import detect_mesh_boundaries
+from ..utils.parsing import parse_to
 
 
 @dataclass(frozen=True, eq=False)
@@ -263,3 +266,47 @@ class BoundarySelection:
         )
         full_cochain[self.constrained_idx[k]] = k_cochain
         return full_cochain
+
+    def to(self, *args, **kwargs) -> BoundarySelection:
+        """
+        Perform device conversion.
+
+        This function ignores dtype conversions and `memory_format` arguments and
+        apply the rest to all tensor attributes attached to the `BoundarySelection`,
+        including any cached index and mask tensors.
+        """
+        # Parse input arguments.
+        device, dtype, copy_flag, non_blocking, memory_format = parse_to(
+            *args, **kwargs
+        )
+
+        # If no device change occurs and copy=False, then return self, since
+        # the other to() arguments are irrelevant to boundary selection.
+        device_unchanged = (device is None) or (torch.device(device) == self.device)
+        if device_unchanged and not copy_flag:
+            return self
+
+        # Ignore the copy_flag for constrained_mask since this tuple of tensors
+        # are force copied in post init.
+        new_constrained_mask = tuple(
+            mask.to(device=device, non_blocking=non_blocking)
+            for mask in self.constrained_mask
+        )
+
+        new_bc_sel = BoundarySelection(new_constrained_mask)
+
+        # Handle the cached index and mask tensors.
+        cached_tensor_tuples = [
+            "constrained_idx",
+            "retained_mask",
+            "retained_idx",
+        ]
+
+        for attr in cached_tensor_tuples:
+            if attr in self.__dict__:
+                new_bc_sel.__dict__[attr] = tuple(
+                    tensor.to(device=device, copy=copy_flag, non_blocking=non_blocking)
+                    for tensor in self.__dict__[attr]
+                )
+
+        return new_bc_sel
