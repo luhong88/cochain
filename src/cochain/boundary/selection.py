@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import cached_property
 
 import torch
-from jaxtyping import Bool, Float, Integer
+from jaxtyping import Bool, Float, Int64
 from torch import Tensor
 
 from ..complex import SimplicialMesh
@@ -79,10 +79,10 @@ class BoundarySelection:
     def constrained_idx(
         self,
     ) -> tuple[
-        Integer[Tensor, " constrained_vert"],
-        Integer[Tensor, " constrained_edge"],
-        Integer[Tensor, " constrained_tri"],
-        Integer[Tensor, " constrained_tet"],
+        Int64[Tensor, " constrained_vert"],
+        Int64[Tensor, " constrained_edge"],
+        Int64[Tensor, " constrained_tri"],
+        Int64[Tensor, " constrained_tet"],
     ]:
         return tuple(torch.argwhere(mask).flatten() for mask in self.constrained_mask)
 
@@ -101,10 +101,10 @@ class BoundarySelection:
     def retained_idx(
         self,
     ) -> tuple[
-        Integer[Tensor, " retained_vert"],
-        Integer[Tensor, " retained_edge"],
-        Integer[Tensor, " retained_tri"],
-        Integer[Tensor, " retained_tet"],
+        Int64[Tensor, " retained_vert"],
+        Int64[Tensor, " retained_edge"],
+        Int64[Tensor, " retained_tri"],
+        Int64[Tensor, " retained_tet"],
     ]:
         return tuple(torch.argwhere(mask).flatten() for mask in self.retained_mask)
 
