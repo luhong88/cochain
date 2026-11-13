@@ -19,11 +19,11 @@ from .selection import BoundarySelection
 @dataclass(frozen=True, eq=False)
 class BoundaryRestrictionCache:
     """
-    A convenience class that manages restricted operators.
+    A convenience class for managing the construction of restricted operators.
 
     For a given `SimplicialMesh` and `BoundarySelection` specification, this class
     holds the restricted coboundary operators, and acts as a cache for managing
-    the construction of other restricted operators (e.g., the consistent mass
+    the `SubmatPlan`s of other restricted operators (e.g., the consistent mass
     matrices and the diagonal Hodge star operators).
 
     Parameters
@@ -48,8 +48,24 @@ class BoundaryRestrictionCache:
 
     @classmethod
     def from_mesh(
-        mesh: SimplicialMesh, bc_sel: BoundarySelection
+        cls, mesh: SimplicialMesh, bc_sel: BoundarySelection
     ) -> BoundaryRestrictionCache:
+        """
+        Construct a cache from a mesh with a given boundary condition.
+
+        Parameters
+        ----------
+        mesh
+            A simplicial mesh.
+        bc_sel
+            A boundary condition defined on the input `mesh` object.
+
+        Returns
+        -------
+        cache
+            A `BoundaryRestrictionCache` object for managing the construction of
+            restricted operators for the input mesh and the given boundary condition.
+        """
         restricted_cbd = tuple(
             cbd.submatrix(
                 bc_sel.retained_mask[deg + 1], bc_sel.retained_mask[deg]
