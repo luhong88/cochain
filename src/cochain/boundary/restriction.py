@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+__all__ = ["BoundaryRestrictionCache"]
+
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TypeVar
 
 from jaxtyping import Float
 
@@ -14,6 +17,8 @@ from ..sparse.decoupled_tensor import (
     SubmatPlan,
 )
 from .selection import BoundarySelection
+
+T = TypeVar("T", bound=BaseDecoupledTensor)
 
 
 @dataclass(frozen=True, eq=False)
@@ -66,17 +71,24 @@ class BoundaryRestrictionCache:
             A `BoundaryRestrictionCache` object for managing the construction of
             restricted operators for the input mesh and the given boundary condition.
         """
+        # Check that the bc_sel is compatible with the mesh.
+        if tuple(mask.numel() for mask in bc_sel.constrained_mask) != mesh.n_splx:
+            raise ValueError("The input 'mesh' and 'bc_sel' has incompatible shapes.")
+
+        if mesh.device != bc_sel.device:
+            raise RuntimeError(
+                "The input 'mesh' and 'bc_sel' are not on the same device."
+            )
+
         restricted_cbd = tuple(
             cbd.submatrix(
                 bc_sel.retained_mask[deg + 1], bc_sel.retained_mask[deg]
             ).tensor
             for deg, cbd in enumerate(mesh.cbd)
         )
-        return BoundaryRestrictionCache(restricted_cbd, bc_sel, {})
+        return cls(restricted_cbd, bc_sel, {})
 
-    def restrict_op(
-        self, deg: int | tuple[int, ...], op: BaseDecoupledTensor
-    ) -> BaseDecoupledTensor:
+    def restrict_op(self, deg: int | tuple[int, ...], op: T) -> T:
         """
         Enforce boundary restriction on an operator to extract its submatrix.
 
@@ -89,12 +101,11 @@ class BoundaryRestrictionCache:
             The degrees of the (co)chain groups over which the domain and image
             of the operator is defined. For example, for a k-coboundary operator,
             `deg = (k+1, k)`; for a consistent k-mass matrix, `deg = (k, k)`.
-            If provided as an integer, it is assumed that the degrees of the domain
-            and image are the same.
+            If the degrees of the domain and image are the same, `deg` can be
+            provided simply as an integer (which is preferred).
         op
             The operator over which to enforce boundary restriction. The operator
-            must be either as a `SparseDecoupledTensor` or a `DiagDecoupledTensor`
-            of two dimensions.
+            must be either as a `SparseDecoupledTensor` or a `DiagDecoupledTensor`.
 
         Returns
         -------
@@ -120,6 +131,12 @@ class BoundaryRestrictionCache:
             case _:
                 raise TypeError("Unknown 'deg' argument datatype.")
 
+        if isinstance(op, DiagDecoupledTensor):
+            if len(set(deg)) > 1:
+                raise ValueError(
+                    "Specifying different domain/image degrees for a DiagDecoupledTensor is not supported."
+                )
+
         match op:
             case DiagDecoupledTensor():
                 key = (deg, "diag")
@@ -138,20 +155,3 @@ class BoundaryRestrictionCache:
             self.cache[key] = res.plan
 
         return res.tensor
-
-    def to(self, *args, **kwargs) -> BoundaryRestrictionCache:
-        """
-        Perform dtype and/or device conversion.
-
-        This method applies its input arguments to the corresponding `to()` methods
-        of the `SparseDecoupledTensor`, `BoundarySelection`, and `SubmatPlan`
-        attributes attached to self, which perform dtype and/or device conversions
-        according to the rules of those classes.
-        """
-        return BoundaryRestrictionCache(
-            restricted_cbd=tuple(
-                cbd.to(*args, **kwargs) for cbd in self.restricted_cbd
-            ),
-            bc_sel=self.bc_sel.to(*args, **kwargs),
-            cache={k: v.to(*args, **kwargs) for k, v in self.cache.items()},
-        )

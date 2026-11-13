@@ -284,7 +284,7 @@ class BoundarySelection:
         Perform device conversion.
 
         This function ignores dtype conversions and `memory_format` arguments and
-        apply the rest to all tensor attributes attached to the `BoundarySelection`,
+        applies the rest to all tensor attributes attached to the `BoundarySelection`,
         including any cached index and mask tensors.
         """
         # Parse input arguments.
