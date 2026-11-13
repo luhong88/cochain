@@ -49,6 +49,8 @@ class BoundarySelection:
     n_retained_splx
         A tuple where `n_retained_splx[k]` is the number of retained canonical
         k-simplices.
+    device
+        The device of the `constrained_mask` tensors.
 
     Notes
     -----
@@ -74,6 +76,11 @@ class BoundarySelection:
                 mask.to(dtype=torch.bool, copy=True) for mask in self.constrained_mask
             ),
         )
+
+        # Check device/dtype consistency.
+        for mask in self.constrained_mask[1:]:
+            assert mask.dtype == self.constrained_mask[0].dtype
+            assert mask.device == self.constrained_mask[0].device
 
     @cached_property
     def constrained_idx(
@@ -132,6 +139,11 @@ class BoundarySelection:
             self.n_retained_tris,
             self.n_retained_tets,
         )
+
+    @property
+    def device(self) -> torch.device:
+        """The device of the `constrained_mask` tensors."""
+        return self.constrained_mask[0].device
 
     @classmethod
     def from_absolute_bc(cls, mesh: SimplicialMesh):
