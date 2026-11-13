@@ -20,7 +20,7 @@ class SubmatPlan:
     submat_pattern: SparsityPattern | None
     submat_mask: Bool[Tensor, " nz"]
 
-    def to(self, *args, **kwargs) -> "SubmatPlan":
+    def to(self, *args, **kwargs) -> SubmatPlan:
         device, dtype, copy_flag, non_blocking, memory_format = parse_to(
             *args, **kwargs
         )

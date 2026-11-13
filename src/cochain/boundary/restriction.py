@@ -138,3 +138,20 @@ class BoundaryRestrictionCache:
             self.cache[key] = res.plan
 
         return res.tensor
+
+    def to(self, *args, **kwargs) -> BoundaryRestrictionCache:
+        """
+        Perform dtype and/or device conversion.
+
+        This method applies its input arguments to the corresponding `to()` methods
+        of the `SparseDecoupledTensor`, `BoundarySelection`, and `SubmatPlan`
+        attributes attached to self, which perform dtype and/or device conversions
+        according to the rules of those classes.
+        """
+        return BoundaryRestrictionCache(
+            restricted_cbd=tuple(
+                cbd.to(*args, **kwargs) for cbd in self.restricted_cbd
+            ),
+            bc_sel=self.bc_sel.to(*args, **kwargs),
+            cache={k: v.to(*args, **kwargs) for k, v in self.cache.items()},
+        )
