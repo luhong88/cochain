@@ -73,7 +73,7 @@ class BoundaryRestrictionCache:
         """
         # Check that the bc_sel is compatible with the mesh.
         if tuple(mask.numel() for mask in bc_sel.constrained_mask) != mesh.n_splx:
-            raise ValueError("The input 'mesh' and 'bc_sel' has incompatible shapes.")
+            raise ValueError("The input 'mesh' and 'bc_sel' have incompatible shapes.")
 
         if mesh.device != bc_sel.device:
             raise RuntimeError(
@@ -105,7 +105,7 @@ class BoundaryRestrictionCache:
             provided simply as an integer (which is preferred).
         op
             The operator over which to enforce boundary restriction. The operator
-            must be either as a `SparseDecoupledTensor` or a `DiagDecoupledTensor`.
+            must be either a `SparseDecoupledTensor` or a `DiagDecoupledTensor`.
 
         Returns
         -------
@@ -131,14 +131,13 @@ class BoundaryRestrictionCache:
             case _:
                 raise TypeError("Unknown 'deg' argument datatype.")
 
-        if isinstance(op, DiagDecoupledTensor):
-            if len(set(deg)) > 1:
-                raise ValueError(
-                    "Specifying different domain/image degrees for a DiagDecoupledTensor is not supported."
-                )
-
         match op:
             case DiagDecoupledTensor():
+                if len(set(deg)) > 1:
+                    raise ValueError(
+                        "Specifying different domain/image degrees for a "
+                        "DiagDecoupledTensor is not supported."
+                    )
                 key = (deg, "diag")
             case SparseDecoupledTensor():
                 key = (deg, op.pattern)
