@@ -1,14 +1,17 @@
+from __future__ import annotations
+
 __all__ = ["BoundarySelection"]
 
 from dataclasses import dataclass
 from functools import cached_property
 
 import torch
-from jaxtyping import Bool, Float, Integer
+from jaxtyping import Bool, Float, Int64
 from torch import Tensor
 
 from ..complex import SimplicialMesh
 from ..topology.boundaries import detect_mesh_boundaries
+from ..utils.parsing import parse_to
 
 
 @dataclass(frozen=True, eq=False)
@@ -46,6 +49,8 @@ class BoundarySelection:
     n_retained_splx
         A tuple where `n_retained_splx[k]` is the number of retained canonical
         k-simplices.
+    device
+        The device of the `constrained_mask` tensors.
 
     Notes
     -----
@@ -72,14 +77,19 @@ class BoundarySelection:
             ),
         )
 
+        # Check device/dtype consistency.
+        for mask in self.constrained_mask[1:]:
+            assert mask.dtype == self.constrained_mask[0].dtype
+            assert mask.device == self.constrained_mask[0].device
+
     @cached_property
     def constrained_idx(
         self,
     ) -> tuple[
-        Integer[Tensor, " constrained_vert"],
-        Integer[Tensor, " constrained_edge"],
-        Integer[Tensor, " constrained_tri"],
-        Integer[Tensor, " constrained_tet"],
+        Int64[Tensor, " constrained_vert"],
+        Int64[Tensor, " constrained_edge"],
+        Int64[Tensor, " constrained_tri"],
+        Int64[Tensor, " constrained_tet"],
     ]:
         return tuple(torch.argwhere(mask).flatten() for mask in self.constrained_mask)
 
@@ -98,10 +108,10 @@ class BoundarySelection:
     def retained_idx(
         self,
     ) -> tuple[
-        Integer[Tensor, " retained_vert"],
-        Integer[Tensor, " retained_edge"],
-        Integer[Tensor, " retained_tri"],
-        Integer[Tensor, " retained_tet"],
+        Int64[Tensor, " retained_vert"],
+        Int64[Tensor, " retained_edge"],
+        Int64[Tensor, " retained_tri"],
+        Int64[Tensor, " retained_tet"],
     ]:
         return tuple(torch.argwhere(mask).flatten() for mask in self.retained_mask)
 
@@ -129,6 +139,11 @@ class BoundarySelection:
             self.n_retained_tris,
             self.n_retained_tets,
         )
+
+    @property
+    def device(self) -> torch.device:
+        """The device of the `constrained_mask` tensors."""
+        return self.constrained_mask[0].device
 
     @classmethod
     def from_absolute_bc(cls, mesh: SimplicialMesh):
@@ -263,3 +278,47 @@ class BoundarySelection:
         )
         full_cochain[self.constrained_idx[k]] = k_cochain
         return full_cochain
+
+    def to(self, *args, **kwargs) -> BoundarySelection:
+        """
+        Perform device conversion.
+
+        This function ignores dtype conversions and `memory_format` arguments and
+        applies the rest to all tensor attributes attached to the `BoundarySelection`,
+        including any cached index and mask tensors.
+        """
+        # Parse input arguments.
+        device, dtype, copy_flag, non_blocking, memory_format = parse_to(
+            *args, **kwargs
+        )
+
+        # If no device change occurs and copy=False, then return self, since
+        # the other to() arguments are irrelevant to boundary selection.
+        device_unchanged = (device is None) or (torch.device(device) == self.device)
+        if device_unchanged and not copy_flag:
+            return self
+
+        # Ignore the copy_flag for constrained_mask since this tuple of tensors
+        # are force copied in post init.
+        new_constrained_mask = tuple(
+            mask.to(device=device, non_blocking=non_blocking)
+            for mask in self.constrained_mask
+        )
+
+        new_bc_sel = BoundarySelection(new_constrained_mask)
+
+        # Handle the cached index and mask tensors.
+        cached_tensor_tuples = [
+            "constrained_idx",
+            "retained_mask",
+            "retained_idx",
+        ]
+
+        for attr in cached_tensor_tuples:
+            if attr in self.__dict__:
+                new_bc_sel.__dict__[attr] = tuple(
+                    tensor.to(device=device, copy=copy_flag, non_blocking=non_blocking)
+                    for tensor in self.__dict__[attr]
+                )
+
+        return new_bc_sel
