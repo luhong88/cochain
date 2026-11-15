@@ -10,8 +10,8 @@ from jaxtyping import Bool, Float, Int64
 from torch import Tensor
 
 from ..complex import SimplicialMesh
-from ..topology.boundaries import detect_mesh_boundaries
 from ..utils.parsing import parse_to
+from .detection import detect_mesh_boundaries
 
 
 @dataclass(frozen=True, eq=False)

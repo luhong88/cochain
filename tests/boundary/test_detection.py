@@ -1,6 +1,6 @@
 import torch
 
-from cochain.topology.boundaries import detect_mesh_boundaries
+from cochain.boundary import detect_mesh_boundaries
 
 
 def test_tent_mesh_boundaries(tent_mesh, device):
