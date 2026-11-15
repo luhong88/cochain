@@ -86,7 +86,7 @@ class MixedWeakLaplacianBlocks:
 
     Notes
     -----
-    Consider a weak k-Laplacian
+    Consider a weak $k$-Laplacian
 
     $$S_k = d_k^T M_{k+1} d_k + M_k d_{k-1} M_{k-1}^{-1} d_{k-1}^T M_k$$
 
@@ -148,10 +148,11 @@ class MixedWeakLaplacianBlocks:
     and pass this system to a sparse linear solver to find the $(k-1)$-cochain
     $y$, then, call `get_forward_pass()` to compute $b = M_k d_{k-1} y + d_k^T M_{k+1} d_k x$.
     
-    * Solve the generalized eigenvalue problem $S_k x = \lambda M_k x$: use the
-    specialized LOBPCG solver `mixed_weak_laplacian_lobpcg()`. In general, the
-    mixed formulation results in positive semidefinite mass matrices that are
-    not suitable for generic generalized eigenvalue problem solvers.
+    * Solve the generalized eigenvalue problem $S_k x = \lambda M_k x$: pass the
+    `MixedWeakLaplacianBlocks` object to the specialized LOBPCG solver 
+    `mixed_weak_laplacian_lobpcg()`. In general, the mixed formulation results in 
+    positive semidefinite mass matrices that are not suitable for generic generalized 
+    eigenvalue problem solvers.
     """
 
     cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"]
@@ -161,6 +162,12 @@ class MixedWeakLaplacianBlocks:
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
 
     def __post_init__(self):
+        if self.cbd_km1.values.numel() == 0:
+            raise ValueError(
+                "If 'cbd_km1' is an empty tensor, form the weak up component "
+                "directly using weak_up_laplacian()."
+            )
+
         null_cbd_k = self.cbd_k is None
         null_mass_kp1 = self.mass_kp1 is None
 
