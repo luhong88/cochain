@@ -5,6 +5,7 @@ __all__ = [
     "weak_down_laplacian",
 ]
 
+import math
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
@@ -83,6 +84,12 @@ class MixedWeakLaplacianBlocks:
         The consistent mass matrix or diagonal Hodge star for discrete $k$-forms.
     mass_kp1: [kp1_splx, kp1_splx]
         The consistent mass matrix or diagonal Hodge star for discrete $(k+1)$-forms.
+    down_scale
+        An optional positive scaler that multiplies the down component of the Laplacian;
+        useful as a hyperparameter for gauge-fixing the up-only subsystem.
+    up_scale
+        An optional positive scalar that multiplies the up component of the Laplacian;
+        useful as a hyperparameter for gauge-fixing the down-only subsystem.
 
     Notes
     -----
@@ -160,6 +167,8 @@ class MixedWeakLaplacianBlocks:
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
     mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
+    down_scale: float | Float[Tensor, ""] = 1.0
+    up_scale: float | Float[Tensor, ""] = 1.0
 
     def __post_init__(self):
         if self.cbd_km1.values.numel() == 0:
@@ -217,7 +226,12 @@ class MixedWeakLaplacianBlocks:
 
     @cached_property
     def _block_10(self) -> Float[SparseDecoupledTensor, " k_splx km1_splx"]:
-        return self.mass_k @ self.cbd_km1
+        down_scale_sqrt = (
+            torch.sqrt(self.down_scale)
+            if isinstance(self.down_scale, Tensor)
+            else math.sqrt(self.down_scale)
+        )
+        return down_scale_sqrt * self.mass_k @ self.cbd_km1
 
     @property
     def _block_01(self) -> Float[SparseDecoupledTensor, "km1_splx k_splx"]:
@@ -228,7 +242,7 @@ class MixedWeakLaplacianBlocks:
         if self.down_only:
             return None
         else:
-            return self.cbd_k.T @ self.mass_kp1 @ self.cbd_k
+            return self.up_scale * self.cbd_k.T @ self.mass_kp1 @ self.cbd_k
 
     @property
     def _n_km1_splx(self) -> int:
