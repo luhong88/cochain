@@ -58,7 +58,7 @@ def asym_sc_mesh() -> SimplicialMesh:
     return mesh
 
 
-def get_mixed_weak_down_2_laplacian(
+def _get_mixed_weak_down_2_laplacian(
     tet_mesh: SimplicialMesh,
 ) -> Float[MixedWeakLaplacianBlocks, "tri tri"]:
     return MixedWeakLaplacianBlocks(
@@ -70,7 +70,7 @@ def get_mixed_weak_down_2_laplacian(
     )
 
 
-def get_mixed_weak_1_laplacian(
+def _get_mixed_weak_1_laplacian(
     tet_mesh: SimplicialMesh,
 ) -> Float[MixedWeakLaplacianBlocks, "edge edge"]:
     return MixedWeakLaplacianBlocks(
@@ -82,7 +82,7 @@ def get_mixed_weak_1_laplacian(
     )
 
 
-def get_schur_complement_weak_1_laplacian(
+def _get_schur_complement_weak_1_laplacian(
     tet_mesh: SimplicialMesh,
 ) -> Float[Tensor, "edge edge"]:
     up_laplacian = weak_up_laplacian(
@@ -101,7 +101,7 @@ def get_schur_complement_weak_1_laplacian(
     return laplacian
 
 
-def dense_gep(
+def _dense_gep(
     a: Float[Tensor, "m m"], m: Float[Tensor, "m m"]
 ) -> tuple[Float[Tensor, " k"], Float[Tensor, "m k"]]:
     # Since torch.linalg.eigh() does not support GEP, need to perform Cholesky
@@ -118,7 +118,7 @@ def dense_gep(
 def test_v0_shape_validation(asym_sc_mesh, device):
     mesh = asym_sc_mesh.to(device)
 
-    laplacian = get_mixed_weak_down_2_laplacian(mesh)
+    laplacian = _get_mixed_weak_down_2_laplacian(mesh)
     v0 = torch.randn(
         (laplacian.size(-1), 3), dtype=laplacian.dtype, device=laplacian.device
     )
@@ -144,10 +144,10 @@ def test_v0_shape_validation(asym_sc_mesh, device):
 def test_full_laplacian_forward(asym_sc_mesh, backend, device):
     mesh = asym_sc_mesh.to(device, torch.float64)
 
-    mixed_laplacian = get_mixed_weak_1_laplacian(mesh)
-    schur_complement = get_schur_complement_weak_1_laplacian(mesh)
+    mixed_laplacian = _get_mixed_weak_1_laplacian(mesh)
+    schur_complement = _get_schur_complement_weak_1_laplacian(mesh)
 
-    eig_vals_true, eig_vecs_true = dense_gep(
+    eig_vals_true, eig_vecs_true = _dense_gep(
         schur_complement, mixed_laplacian.mass_k.to_dense()
     )
 
@@ -193,7 +193,7 @@ def test_full_laplacian_forward(asym_sc_mesh, backend, device):
 def test_down_laplacian_forward(asym_sc_mesh, device):
     mesh = asym_sc_mesh.to(device, torch.float64)
 
-    mixed_laplacian = get_mixed_weak_down_2_laplacian(mesh)
+    mixed_laplacian = _get_mixed_weak_down_2_laplacian(mesh)
 
     mass_km1 = SuperLU(tet_masses.mass_1(mesh), backend="scipy")
     schur_complement = weak_down_laplacian(
@@ -202,7 +202,7 @@ def test_down_laplacian_forward(asym_sc_mesh, device):
         mass_km1=mass_km1,
     )
 
-    eig_vals_true, eig_vecs_true = dense_gep(
+    eig_vals_true, eig_vecs_true = _dense_gep(
         schur_complement, mixed_laplacian.mass_k.to_dense()
     )
 
@@ -233,10 +233,10 @@ def test_down_laplacian_forward(asym_sc_mesh, device):
 def test_full_laplacian_forward_shifted_up_precond(asym_sc_mesh, device):
     mesh = asym_sc_mesh.to(device, torch.float64)
 
-    mixed_laplacian = get_mixed_weak_1_laplacian(mesh)
-    schur_complement = get_schur_complement_weak_1_laplacian(mesh)
+    mixed_laplacian = _get_mixed_weak_1_laplacian(mesh)
+    schur_complement = _get_schur_complement_weak_1_laplacian(mesh)
 
-    eig_vals_true, eig_vecs_true = dense_gep(
+    eig_vals_true, eig_vecs_true = _dense_gep(
         schur_complement, mixed_laplacian.mass_k.to_dense()
     )
 
@@ -267,10 +267,10 @@ def test_full_laplacian_forward_shifted_up_precond(asym_sc_mesh, device):
 def test_full_laplacian_forward_shifted_lumped_precond(asym_sc_mesh, device):
     mesh = asym_sc_mesh.to(device, torch.float64)
 
-    mixed_laplacian = get_mixed_weak_1_laplacian(mesh)
-    schur_complement = get_schur_complement_weak_1_laplacian(mesh)
+    mixed_laplacian = _get_mixed_weak_1_laplacian(mesh)
+    schur_complement = _get_schur_complement_weak_1_laplacian(mesh)
 
-    eig_vals_true, eig_vecs_true = dense_gep(
+    eig_vals_true, eig_vecs_true = _dense_gep(
         schur_complement, mixed_laplacian.mass_k.to_dense()
     )
 
@@ -317,7 +317,7 @@ def test_full_laplacian_eig_vals_backward(asym_sc_mesh, device):
         + d_k.T @ mass_kp1 @ d_k
     )
 
-    eig_vals_true_all, eig_vecs_true_all = dense_gep(schur_complement, mass_k)
+    eig_vals_true_all, eig_vecs_true_all = _dense_gep(schur_complement, mass_k)
     eig_vals_true = eig_vals_true_all[:l]
 
     eig_vals_rand = torch.randn_like(eig_vals_true)
@@ -327,7 +327,7 @@ def test_full_laplacian_eig_vals_backward(asym_sc_mesh, device):
 
     # sparse path
     mesh.grad = None
-    mixed_laplacian = get_mixed_weak_1_laplacian(mesh)
+    mixed_laplacian = _get_mixed_weak_1_laplacian(mesh)
 
     # Help the forward pass by using the dense path eigenvectors as initial guess.
     v0 = eig_vecs_true_all[:, : 2 * l].detach().clone()
@@ -374,7 +374,7 @@ def test_full_laplacian_eig_vecs_backward(asym_sc_mesh, device):
     schur_complement.requires_grad_()
     mass_k.requires_grad_()
 
-    eig_vals_true_all, eig_vecs_true_all = dense_gep(schur_complement, mass_k)
+    eig_vals_true_all, eig_vecs_true_all = _dense_gep(schur_complement, mass_k)
     eig_vecs_true = eig_vecs_true_all[:, :l]
 
     eig_vecs_rand = torch.randn_like(eig_vecs_true)
@@ -407,7 +407,7 @@ def test_full_laplacian_eig_vecs_backward(asym_sc_mesh, device):
         dLdM_km1_sp = dLdM_km1_trunc[torch.unbind(mass_km1_sp.pattern.idx_coo, dim=0)]
 
     # sparse path
-    laplacian = get_mixed_weak_1_laplacian(mesh)
+    laplacian = _get_mixed_weak_1_laplacian(mesh)
 
     # Set the mass matrices as the leaf tensors for accumulating grad
     laplacian.mass_km1.requires_grad_()
@@ -462,7 +462,7 @@ def test_full_laplacian_combined_backward(asym_sc_mesh, device):
     schur_complement.requires_grad_()
     mass_k.requires_grad_()
 
-    eig_vals_true_all, eig_vecs_true_all = dense_gep(schur_complement, mass_k)
+    eig_vals_true_all, eig_vecs_true_all = _dense_gep(schur_complement, mass_k)
     eig_vals_true = eig_vals_true_all[:l]
     eig_vecs_true = eig_vecs_true_all[:, :l]
 
@@ -500,7 +500,7 @@ def test_full_laplacian_combined_backward(asym_sc_mesh, device):
         dLdM_km1_sp = dLdM_km1_trunc[torch.unbind(mass_km1_sp.pattern.idx_coo, dim=0)]
 
     # sparse path
-    laplacian = get_mixed_weak_1_laplacian(mesh)
+    laplacian = _get_mixed_weak_1_laplacian(mesh)
 
     # Set the mass matrices as the leaf tensors for accumulating grad
     laplacian.mass_km1.requires_grad_()
@@ -536,7 +536,7 @@ def test_lorentzian_regularization_smoke(asym_sc_mesh, device):
     mesh = asym_sc_mesh.to(device, torch.float64)
     mesh.requires_grad_()
 
-    mixed_laplacian = get_mixed_weak_down_2_laplacian(mesh)
+    mixed_laplacian = _get_mixed_weak_down_2_laplacian(mesh)
 
     l = 3
 
