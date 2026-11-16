@@ -6,6 +6,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from cochain.boundary import BoundaryRestrictionCache, BoundarySelection
 from cochain.complex import SimplicialMesh
 from cochain.hodge.laplacians import (
     MixedWeakLaplacianBlocks,
@@ -576,6 +577,50 @@ def test_codiff_3_adjoint_relation(two_tets_mesh: SimplicialMesh, device):
     dot_2 = torch.dot(x2, m2 @ (codiff_3 @ x3))
 
     torch.testing.assert_close(dot_1, dot_2)
+
+
+def test_laplacian_1_boundary_restriction_routes(
+    solid_torus_mesh: SimplicialMesh, device
+):
+    mesh = solid_torus_mesh.to(device)
+    bc_sel = BoundarySelection.from_relative_bc(mesh)
+
+    l1_down = _weak_laplacian_1_grad_div(mesh)
+    l1_up = _weak_laplacian_1_curl_curl(mesh)
+
+    s0 = tet_hodge_stars.star_0(mesh)
+    m1 = tet_masses.mass_1(mesh)
+    m2 = tet_masses.mass_2(mesh)
+
+    bc_cache = BoundaryRestrictionCache.from_mesh(mesh, bc_sel)
+
+    s0_restricted = bc_cache.restrict_op(0, s0)
+    m1_restricted = bc_cache.restrict_op(1, m1)
+    m2_restricted = bc_cache.restrict_op(2, m2)
+
+    # The restricted down component must be assembled from restricted coboundaries
+    # and mass matrices directly.
+    l1_down_restricted = bc_cache.restrict_op(1, l1_down)
+    l1_down_restricted_true = (
+        m1_restricted
+        @ bc_cache.restricted_cbd[0]
+        @ s0_restricted.inv
+        @ bc_cache.restricted_cbd[0].T
+        @ m1_restricted
+    )
+    assert not torch.allclose(
+        l1_down_restricted.to_dense(), l1_down_restricted_true.to_dense()
+    )
+
+    # The restricted up component can be constructed by restricting the full
+    # up component after the fact.
+    l1_up_restricted = bc_cache.restrict_op(1, l1_up)
+    l1_up_restricted_true = (
+        bc_cache.restricted_cbd[1].T @ m2_restricted @ bc_cache.restricted_cbd[1]
+    )
+    torch.testing.assert_close(
+        l1_up_restricted.to_dense(), l1_up_restricted_true.to_dense()
+    )
 
 
 @pytest.mark.parametrize(
