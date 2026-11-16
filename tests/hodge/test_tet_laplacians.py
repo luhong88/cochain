@@ -601,12 +601,10 @@ def test_laplacian_1_boundary_restriction_routes(
     # The restricted down component must be assembled from restricted coboundaries
     # and mass matrices directly.
     l1_down_restricted = bc_cache.restrict_op(1, l1_down)
-    l1_down_restricted_true = (
-        m1_restricted
-        @ bc_cache.restricted_cbd[0]
-        @ s0_restricted.inv
-        @ bc_cache.restricted_cbd[0].T
-        @ m1_restricted
+    l1_down_restricted_true = weak_down_laplacian(
+        cbd_km1=bc_cache.restricted_cbd[0],
+        mass_k=m1_restricted,
+        inv_mass_km1=s0_restricted.inv,
     )
     assert not torch.allclose(
         l1_down_restricted.to_dense(), l1_down_restricted_true.to_dense()
@@ -615,8 +613,8 @@ def test_laplacian_1_boundary_restriction_routes(
     # The restricted up component can be constructed by restricting the full
     # up component after the fact.
     l1_up_restricted = bc_cache.restrict_op(1, l1_up)
-    l1_up_restricted_true = (
-        bc_cache.restricted_cbd[1].T @ m2_restricted @ bc_cache.restricted_cbd[1]
+    l1_up_restricted_true = weak_up_laplacian(
+        cbd_k=bc_cache.restricted_cbd[1], mass_kp1=m2_restricted
     )
     torch.testing.assert_close(
         l1_up_restricted.to_dense(), l1_up_restricted_true.to_dense()
