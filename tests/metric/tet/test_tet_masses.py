@@ -5,6 +5,7 @@ import torch
 from einops import repeat
 from skfem.helpers import dot
 
+from cochain.boundary import BoundarySelection
 from cochain.cochain.discretize import DeRhamMap
 from cochain.complex import SimplicialMesh
 from cochain.metric.tet import tet_hodge_stars, tet_masses
@@ -153,6 +154,43 @@ def test_mass_matrix_positive_definite(
     eigs = torch.linalg.eigvalsh(mass)
 
     assert eigs.min() >= 1e-6
+
+
+@pytest.mark.parametrize(
+    "deg, mass_matrix",
+    [
+        (0, tet_masses.mass_0),
+        (1, tet_masses.mass_1),
+        (2, tet_masses.mass_2),
+        (3, tet_masses.mass_3),
+    ],
+)
+def test_mass_matrix_spd_with_boundary_conditions(
+    deg, mass_matrix, solid_spherical_shell_mesh: SimplicialMesh, device
+):
+    mesh = solid_spherical_shell_mesh.to(device)
+    mass = mass_matrix(mesh)
+
+    bc_sels = [
+        BoundarySelection.from_relative_bc(mesh),
+        BoundarySelection.from_absolute_bc(mesh),
+    ]
+
+    for comp in [torch.le, torch.ge]:
+        inner_surface_mask = mesh.bd_tri_mask & comp(
+            torch.linalg.norm(mesh.vert_coords[mesh.tris], dim=-1), 1.5
+        ).all(dim=-1)
+        bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_surface_mask)
+        bc_sels.append(bc_sel)
+
+    for bc_sel in bc_sels:
+        mass_restricted = mass.submatrix(bc_sel.retained_mask[deg]).tensor.to_dense()
+
+        if mass_restricted.numel() > 0:
+            torch.testing.assert_close(mass_restricted, mass_restricted.T)
+
+            eigs = torch.linalg.eigvalsh(mass_restricted)
+            assert eigs.min() >= 1e-6
 
 
 @pytest.mark.parametrize(
