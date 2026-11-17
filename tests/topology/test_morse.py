@@ -140,7 +140,7 @@ def test_morse_betti_invariance_to_scalar_field(mesh, betti_true, request, devic
         ("icosphere_mesh", [1, 0, 1, 0]),
         ("two_tris_mesh", [0, 0, 1, 0]),
         ("two_disjoint_tris_mesh", [0, 0, 2, 0]),
-        ("finer_flat_annulus_mesh", [0, 1, 1, 0]),
+        ("flat_annulus_mesh", [0, 1, 1, 0]),
         ("two_tets_mesh", [0, 0, 0, 1]),
         ("solid_torus_mesh", [0, 0, 1, 1]),
         ("solid_spherical_shell_mesh", [0, 1, 0, 1]),
