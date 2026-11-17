@@ -105,6 +105,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         mass_k_pattern: Integer[SparsityPattern, "k_splx k_splx"] | None,
         mass_kp1_val: Float[Tensor, " kp1_nz"] | None,
         mass_kp1_pattern: Integer[SparsityPattern, "kp1_splx kp1_splx"] | None,
+        down_scale: float,
+        up_scale: float,
         n: int,
         l: int,
         eps: float | int | Literal["auto"],
@@ -122,7 +124,9 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         else:
             mass_kp1 = _reconstruct_op(mass_kp1_val, mass_kp1_pattern)
 
-        laplacian = MixedWeakLaplacianBlocks(cbd_km1, cbd_k, mass_km1, mass_k, mass_kp1)
+        laplacian = MixedWeakLaplacianBlocks(
+            cbd_km1, cbd_k, mass_km1, mass_k, mass_kp1, down_scale, up_scale
+        )
         precond = MixedWeakLaplacianLOBPCGAutogradFunction._dispatch_precond(
             laplacian, lobpcg_config, precond_config
         )
@@ -158,6 +162,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             mass_k_pattern,
             mass_kp1_val,
             mass_kp1_pattern,
+            down_scale,
+            up_scale,
             n,
             l,
             eps,
@@ -201,6 +207,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         Float[Tensor, " k_nz"] | None,
         None,
         Float[Tensor, " kp1_nz"] | None,
+        None,
+        None,
         None,
         None,
         None,
@@ -283,6 +291,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             dLdM_k,
             None,
             dLdM_kp1,
+            None,
+            None,
             None,
             None,
             None,
@@ -453,6 +463,8 @@ def mixed_weak_laplacian_lobpcg(
         getattr(mixed_weak_laplacian.mass_k, "pattern", None),
         getattr(mixed_weak_laplacian.mass_kp1, "values", None),
         getattr(mixed_weak_laplacian.mass_kp1, "pattern", None),
+        mixed_weak_laplacian.down_scale,
+        mixed_weak_laplacian.up_scale,
         n,
         l,
         eps,

@@ -85,11 +85,12 @@ class MixedWeakLaplacianBlocks:
     mass_kp1: [kp1_splx, kp1_splx]
         The consistent mass matrix or diagonal Hodge star for discrete $(k+1)$-forms.
     down_scale
-        An optional positive scaler that multiplies the down component of the Laplacian;
+        An optional positive scalar that multiplies the down component of the Laplacian;
         useful as a hyperparameter for gauge-fixing the up-only subsystem.
     up_scale
         An optional positive scalar that multiplies the up component of the Laplacian;
-        useful as a hyperparameter for gauge-fixing the down-only subsystem.
+        useful as a hyperparameter for gauge-fixing the down-only subsystem. This
+        argument is ignored if the mixed system contains the down component only.
 
     Notes
     -----
@@ -167,11 +168,11 @@ class MixedWeakLaplacianBlocks:
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
     mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
-    down_scale: float | Float[Tensor, ""] = 1.0
-    up_scale: float | Float[Tensor, ""] = 1.0
+    down_scale: float = 1.0
+    up_scale: float = 1.0
 
     def __post_init__(self):
-        if self.cbd_km1.values.numel() == 0:
+        if self.cbd_km1._nnz() == 0:
             raise ValueError(
                 "If 'cbd_km1' is an empty tensor, form the weak up component "
                 "directly using weak_up_laplacian()."
@@ -225,13 +226,16 @@ class MixedWeakLaplacianBlocks:
         return -self.mass_km1
 
     @cached_property
+    def _unscaled_block_10(self) -> Float[SparseDecoupledTensor, " k_splx km1_splx"]:
+        return self.mass_k @ self.cbd_km1
+
+    @cached_property
     def _block_10(self) -> Float[SparseDecoupledTensor, " k_splx km1_splx"]:
-        down_scale_sqrt = (
-            torch.sqrt(self.down_scale)
-            if isinstance(self.down_scale, Tensor)
-            else math.sqrt(self.down_scale)
-        )
-        return down_scale_sqrt * self.mass_k @ self.cbd_km1
+        return math.sqrt(self.down_scale) * self._unscaled_block_10
+
+    @property
+    def _unscaled_block_01(self) -> Float[SparseDecoupledTensor, "km1_splx k_splx"]:
+        return self._unscaled_block_10.T
 
     @property
     def _block_01(self) -> Float[SparseDecoupledTensor, "km1_splx k_splx"]:
@@ -313,7 +317,7 @@ class MixedWeakLaplacianBlocks:
             The codifferential of $x$ (i.e., $y = \delta x$)
         """
         x = x_full[self._n_km1_splx :]
-        y = x_full[: self._n_km1_splx]
+        y = x_full[: self._n_km1_splx] / math.sqrt(self.down_scale)
 
         return x, y
 
@@ -377,7 +381,7 @@ class MixedWeakLaplacianBlocks:
             The RHS of the subsystem.
         """
         lhs = self.mass_km1
-        rhs = self._block_01 @ x  # cbd_km1.T @ mass_k @ x
+        rhs = self._unscaled_block_01 @ x  # cbd_km1.T @ mass_k @ x
         return lhs, rhs
 
     def get_forward_pass(
@@ -400,11 +404,13 @@ class MixedWeakLaplacianBlocks:
             The vector $b$ in $S_k x = b$.
         """
         if self.down_only:
-            return self._block_10 @ y  # mass_k @ cbd_km1 @ y
+            return self.down_scale * (
+                self._unscaled_block_10 @ y
+            )  # mass_k @ cbd_km1 @ y
 
         else:
             return (
-                self._block_10 @ y  # mass_k @ cbd_km1 @ y
+                self.down_scale * (self._unscaled_block_10 @ y)  # mass_k @ cbd_km1 @ y
                 + self._block_11 @ x  # cbd_k.T @ mass_kp1 @ cbd_k @ x
             )
 
