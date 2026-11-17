@@ -4,6 +4,7 @@ import pytest
 import torch
 from jaxtyping import Float
 
+from cochain.boundary import BoundaryRestrictionCache, BoundarySelection
 from cochain.complex import SimplicialMesh
 from cochain.hodge.laplacians import codifferential
 from cochain.metric.tri import tri_hodge_stars
@@ -14,68 +15,115 @@ from cochain.sparse.decoupled_tensor import SparseDecoupledTensor
 def _codifferential_1(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "vert edge"]:
     """Codifferential on discrete 1-forms for a tri mesh."""
-    return codifferential(
-        cbd_km1=tri_mesh.cbd[0],
-        mass_k=tri_hodge_stars.star_1(tri_mesh, dual_complex),
-        inv_mass_km1=tri_hodge_stars.star_0(tri_mesh).inv,
-    )
+    if bc_cache is None:
+        return codifferential(
+            cbd_km1=tri_mesh.cbd[0],
+            mass_k=tri_hodge_stars.star_1(tri_mesh, dual_complex),
+            inv_mass_km1=tri_hodge_stars.star_0(tri_mesh).inv,
+        )
+    else:
+        return codifferential(
+            cbd_km1=bc_cache.restricted_cbd[0],
+            mass_k=bc_cache.restrict_op(
+                1, tri_hodge_stars.star_1(tri_mesh, dual_complex)
+            ),
+            inv_mass_km1=bc_cache.restrict_op(0, tri_hodge_stars.star_0(tri_mesh).inv),
+        )
 
 
 def _codifferential_2(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "edge tri"]:
     """Codifferential on discrete 2-forms for a tri mesh."""
-    return codifferential(
-        cbd_km1=tri_mesh.cbd[1],
-        mass_k=tri_hodge_stars.star_2(tri_mesh),
-        inv_mass_km1=tri_hodge_stars.star_1(tri_mesh, dual_complex).inv,
-    )
+    if bc_cache is None:
+        return codifferential(
+            cbd_km1=tri_mesh.cbd[1],
+            mass_k=tri_hodge_stars.star_2(tri_mesh),
+            inv_mass_km1=tri_hodge_stars.star_1(tri_mesh, dual_complex).inv,
+        )
+    else:
+        return codifferential(
+            cbd_km1=bc_cache.restricted_cbd[1],
+            mass_k=bc_cache.restrict_op(2, tri_hodge_stars.star_2(tri_mesh)),
+            inv_mass_km1=bc_cache.restrict_op(
+                1, tri_hodge_stars.star_1(tri_mesh, dual_complex).inv
+            ),
+        )
 
 
 def _hodge_laplacian_0(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "vert vert"]:
     """Classical Hodge 0-Laplacian for a tri mesh."""
-    return _codifferential_1(tri_mesh, dual_complex) @ tri_mesh.cbd[0]
+    if bc_cache is None:
+        return _codifferential_1(tri_mesh, dual_complex) @ tri_mesh.cbd[0]
+    else:
+        return (
+            _codifferential_1(tri_mesh, dual_complex, bc_cache)
+            @ bc_cache.restricted_cbd[0]
+        )
 
 
 def _hodge_laplacian_1_grad_div(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """Grad-div component of the classical 1-Laplacian for a tri mesh."""
-    return tri_mesh.cbd[0] @ _codifferential_1(tri_mesh, dual_complex)
+    if bc_cache is None:
+        return tri_mesh.cbd[0] @ _codifferential_1(tri_mesh, dual_complex)
+    else:
+        return bc_cache.restricted_cbd[0] @ _codifferential_1(
+            tri_mesh, dual_complex, bc_cache
+        )
 
 
 def _hodge_laplacian_1_curl_curl(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """Curl-curl component of the classical 1-Laplacian for a tri mesh."""
-    return _codifferential_2(tri_mesh, dual_complex) @ tri_mesh.cbd[1]
+    if bc_cache is None:
+        return _codifferential_2(tri_mesh, dual_complex) @ tri_mesh.cbd[1]
+    else:
+        return (
+            _codifferential_2(tri_mesh, dual_complex, bc_cache)
+            @ bc_cache.restricted_cbd[1]
+        )
 
 
 def _hodge_laplacian_1(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """Classical Hodge 1-Laplacian for a tri mesh."""
     return SparseDecoupledTensor.assemble(
-        _hodge_laplacian_1_grad_div(tri_mesh, dual_complex),
-        _hodge_laplacian_1_curl_curl(tri_mesh, dual_complex),
+        _hodge_laplacian_1_grad_div(tri_mesh, dual_complex, bc_cache),
+        _hodge_laplacian_1_curl_curl(tri_mesh, dual_complex, bc_cache),
     )
 
 
 def _hodge_laplacian_2(
     tri_mesh: SimplicialMesh,
     dual_complex: Literal["circumcentric", "barycentric"] = "barycentric",
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "tri tri"]:
     """Classical Hodge 2-Laplacian for a tri mesh."""
-    return tri_mesh.cbd[1] @ _codifferential_2(tri_mesh, dual_complex)
+    if bc_cache is None:
+        return tri_mesh.cbd[1] @ _codifferential_2(tri_mesh, dual_complex)
+    else:
+        return bc_cache.restricted_cbd[1] @ _codifferential_2(
+            tri_mesh, dual_complex, bc_cache
+        )
 
 
 def test_l0_stiffness_relation(two_tris_mesh: SimplicialMesh, device):
@@ -146,6 +194,47 @@ def test_annulus_homology_group_dims(
     operator = laplacian_factory(mesh, dual_complex).to_dense()
     dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
     torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
+
+
+@pytest.mark.parametrize(
+    "laplacian_factory, dual_complex, abs_betti, rel_betti, mixed_rel_betti",
+    [
+        (_hodge_laplacian_0, "barycentric", 1, 0, 0),
+        (_hodge_laplacian_1, "barycentric", 1, 1, 0),
+        (_hodge_laplacian_2, "barycentric", 0, 1, 0),
+    ],
+)
+def test_annulus_absolute_and_relative_homology_group_dims(
+    laplacian_factory,
+    dual_complex,
+    abs_betti,
+    rel_betti,
+    mixed_rel_betti,
+    finer_flat_annulus_mesh,
+    device,
+):
+    mesh = finer_flat_annulus_mesh.to(device)
+
+    bc_sels = [
+        BoundarySelection.from_absolute_bc(mesh),
+        BoundarySelection.from_relative_bc(mesh),
+    ]
+
+    for comp in [torch.le, torch.ge]:
+        inner_edge_mask = mesh.bd_edge_mask & comp(
+            torch.linalg.norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
+        ).all(dim=-1)
+        bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_edge_mask)
+        bc_sels.append(bc_sel)
+
+    for bc_sel, betti in zip(
+        bc_sels, (abs_betti, rel_betti, mixed_rel_betti, mixed_rel_betti)
+    ):
+        bc_cache = BoundaryRestrictionCache.from_mesh(mesh, bc_sel)
+
+        operator = laplacian_factory(mesh, dual_complex, bc_cache).to_dense()
+        dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+        torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
 
 
 @pytest.mark.parametrize(
