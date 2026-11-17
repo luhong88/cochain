@@ -324,31 +324,6 @@ def test_torus_homology_group_dims(
 
 
 @pytest.mark.parametrize(
-    "weak_laplacian, betti",
-    [
-        (partial(_weak_laplacian_0, method="cotan"), 1),
-        (partial(_weak_laplacian_0, method="consistent"), 1),
-        (_weak_laplacian_1, 0),
-        (partial(_weak_laplacian_2, method="dense"), 1),
-        (partial(_weak_laplacian_2, method="inv_star"), 1),
-        (partial(_weak_laplacian_2, method="solver"), 1),
-        (partial(_weak_laplacian_3, method="dense"), 0),
-        (partial(_weak_laplacian_3, method="inv_star"), 0),
-        (partial(_weak_laplacian_3, method="solver"), 0),
-    ],
-)
-def test_spherical_shell_homology_group_dims(
-    weak_laplacian, betti, solid_spherical_shell_mesh: SimplicialMesh, device
-):
-    mesh = solid_spherical_shell_mesh.to(dtype=torch.float64, device=device)
-
-    operator = weak_laplacian(mesh).to_dense()
-    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
-
-    torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
-
-
-@pytest.mark.parametrize(
     "weak_laplacian, abs_betti, rel_betti, mixed_rel_betti",
     [
         (partial(_weak_laplacian_0, method="cotan"), 1, 0, 0),
@@ -372,6 +347,8 @@ def test_spherical_shell_absolute_and_relative_homology_group_dims(
 ):
     mesh = solid_spherical_shell_mesh.to(dtype=torch.float64, device=device)
 
+    abs_operator = weak_laplacian(mesh).to_dense()
+
     bc_sels = [
         BoundarySelection.from_absolute_bc(mesh),
         BoundarySelection.from_relative_bc(mesh),
@@ -385,14 +362,19 @@ def test_spherical_shell_absolute_and_relative_homology_group_dims(
 
         bc_sels.append(bc_sel)
 
-    for bc_sel, betti in zip(
-        bc_sels, (abs_betti, rel_betti, mixed_rel_betti, mixed_rel_betti)
+    for idx, (bc_sel, betti) in enumerate(
+        zip(bc_sels, (abs_betti, rel_betti, mixed_rel_betti, mixed_rel_betti))
     ):
         bc_cache = BoundaryRestrictionCache.from_mesh(mesh, bc_sel)
 
         operator = weak_laplacian(mesh, bc_cache=bc_cache).to_dense()
         dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
         torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
+
+        # For the absolute BC, also check that the unrestricted original weak
+        # Laplacian is identical to the restricted operator.
+        if idx == 0:
+            torch.testing.assert_close(operator, abs_operator)
 
 
 def test_laplacian_0_equivalence(two_tets_mesh: SimplicialMesh, device):

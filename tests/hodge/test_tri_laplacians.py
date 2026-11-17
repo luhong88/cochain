@@ -177,30 +177,13 @@ def test_disk_homology_group_dims(
 
 
 @pytest.mark.parametrize(
-    "laplacian_factory, dual_complex, betti",
-    [
-        (_hodge_laplacian_0, "circumcentric", 1),
-        (_hodge_laplacian_0, "barycentric", 1),
-        (_hodge_laplacian_1, "circumcentric", 1),
-        (_hodge_laplacian_1, "barycentric", 1),
-        (_hodge_laplacian_2, "circumcentric", 0),
-        (_hodge_laplacian_2, "barycentric", 0),
-    ],
-)
-def test_annulus_homology_group_dims(
-    laplacian_factory, dual_complex, betti, flat_annulus_mesh: SimplicialMesh, device
-):
-    mesh = flat_annulus_mesh.to(device)
-    operator = laplacian_factory(mesh, dual_complex).to_dense()
-    dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
-    torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
-
-
-@pytest.mark.parametrize(
     "laplacian_factory, dual_complex, abs_betti, rel_betti, mixed_rel_betti",
     [
+        (_hodge_laplacian_0, "circumcentric", 1, 0, 0),
         (_hodge_laplacian_0, "barycentric", 1, 0, 0),
+        (_hodge_laplacian_1, "circumcentric", 1, 1, 0),
         (_hodge_laplacian_1, "barycentric", 1, 1, 0),
+        (_hodge_laplacian_2, "circumcentric", 0, 1, 0),
         (_hodge_laplacian_2, "barycentric", 0, 1, 0),
     ],
 )
@@ -215,6 +198,8 @@ def test_annulus_absolute_and_relative_homology_group_dims(
 ):
     mesh = finer_flat_annulus_mesh.to(device)
 
+    abs_operator = laplacian_factory(mesh, dual_complex).to_dense()
+
     bc_sels = [
         BoundarySelection.from_absolute_bc(mesh),
         BoundarySelection.from_relative_bc(mesh),
@@ -227,14 +212,19 @@ def test_annulus_absolute_and_relative_homology_group_dims(
         bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_edge_mask)
         bc_sels.append(bc_sel)
 
-    for bc_sel, betti in zip(
-        bc_sels, (abs_betti, rel_betti, mixed_rel_betti, mixed_rel_betti)
+    for idx, (bc_sel, betti) in enumerate(
+        zip(bc_sels, (abs_betti, rel_betti, mixed_rel_betti, mixed_rel_betti))
     ):
         bc_cache = BoundaryRestrictionCache.from_mesh(mesh, bc_sel)
 
         operator = laplacian_factory(mesh, dual_complex, bc_cache).to_dense()
         dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
         torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
+
+        # For the absolute BC, also check that the unrestricted original Laplacian
+        # is identical to the restricted operator.
+        if idx == 0:
+            torch.testing.assert_close(operator, abs_operator)
 
 
 @pytest.mark.parametrize(
