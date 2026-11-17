@@ -180,6 +180,9 @@ class MixedWeakLaplacianBlocks:
                 "if it is not empty."
             )
 
+        if (self.down_scale <= 0) or (self.up_scale <= 0):
+            raise ValueError("'down_scale' and 'up_scale' must be positive floats.")
+
         null_cbd_k = self.cbd_k is None
         null_mass_kp1 = self.mass_kp1 is None
 
