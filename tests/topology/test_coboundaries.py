@@ -27,9 +27,9 @@ def test_exactness_on_two_tets(two_tets_mesh: SimplicialMesh, device):
 
 
 def test_exactness_on_annulus_with_boundary_conditions(
-    finer_flat_annulus_mesh: SimplicialMesh, device
+    flat_annulus_mesh: SimplicialMesh, device
 ):
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
 
     bc_sels = [
         BoundarySelection.from_relative_bc(mesh),

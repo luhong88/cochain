@@ -152,13 +152,6 @@ def icosphere_mesh() -> SimplicialMesh:
 @pytest.fixture(scope="session")
 def flat_annulus_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_flat_annulus_mesh(
-        r_in=0.5, r_out=1.0, n_segments_in=5, n_segments_out=10
-    )
-
-
-@pytest.fixture(scope="session")
-def finer_flat_annulus_mesh() -> SimplicialMesh:
-    return synthetic_tri_meshes.load_finer_flat_annulus_mesh(
         r_in=0.5,
         r_out=1.0,
         radial_res=3,

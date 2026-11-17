@@ -40,9 +40,9 @@ def test_mass_matrix_positive_definite(
     [(0, tri_masses.mass_0), (1, tri_masses.mass_1), (2, tri_masses.mass_2)],
 )
 def test_mass_matrix_spd_with_boundary_conditions(
-    deg, mass_matrix, finer_flat_annulus_mesh: SimplicialMesh, device
+    deg, mass_matrix, flat_annulus_mesh: SimplicialMesh, device
 ):
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
     mass = mass_matrix(mesh)
 
     bc_sels = [
@@ -96,7 +96,8 @@ def test_mass_0_with_skfem(flat_annulus_mesh: SimplicialMesh, device):
 
 
 def test_mass_1_with_skfem(flat_annulus_mesh: SimplicialMesh, device):
-    mesh = flat_annulus_mesh.to(device)
+    # This test requires double precision to pass.
+    mesh = flat_annulus_mesh.to(dtype=torch.float64, device=device)
 
     skfem_mesh = skfem.MeshTri(
         mesh.vert_coords[:, [0, 1]].T.cpu().detach().numpy(),

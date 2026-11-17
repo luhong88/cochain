@@ -193,10 +193,10 @@ def test_annulus_absolute_and_relative_homology_group_dims(
     abs_betti,
     rel_betti,
     mixed_rel_betti,
-    finer_flat_annulus_mesh,
+    flat_annulus_mesh,
     device,
 ):
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
 
     abs_operator = laplacian_factory(mesh, dual_complex).to_dense()
 
