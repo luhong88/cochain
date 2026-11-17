@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from cochain.boundary.selection import BoundarySelection
+from cochain.boundary import BoundarySelection
 from cochain.topology.morse import compute_morse_complex
 
 

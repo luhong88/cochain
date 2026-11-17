@@ -1,7 +1,7 @@
 import torch
 from jaxtyping import Float
 
-from cochain.boundary.selection import BoundarySelection
+from cochain.boundary import BoundarySelection
 from cochain.complex import SimplicialMesh
 from cochain.hodge import laplacians
 from cochain.metric.tri import tri_hodge_stars
