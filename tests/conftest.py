@@ -191,5 +191,5 @@ def solid_torus_mesh() -> SimplicialMesh:
 @pytest.fixture(scope="session")
 def solid_spherical_shell_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_spherical_shell(
-        outer_r=2.0, inner_r=1.0, theta_res=6, phi_res=6, edge_length_frac=1.0
+        outer_r=2.0, inner_r=1.0, theta_res=6, phi_res=6, edge_length_frac=0.3
     )

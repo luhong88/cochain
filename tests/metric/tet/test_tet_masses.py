@@ -185,12 +185,10 @@ def test_mass_matrix_spd_with_boundary_conditions(
 
     for bc_sel in bc_sels:
         mass_restricted = mass.submatrix(bc_sel.retained_mask[deg]).tensor.to_dense()
+        torch.testing.assert_close(mass_restricted, mass_restricted.T)
 
-        if mass_restricted.numel() > 0:
-            torch.testing.assert_close(mass_restricted, mass_restricted.T)
-
-            eigs = torch.linalg.eigvalsh(mass_restricted)
-            assert eigs.min() >= 1e-6
+        eigs = torch.linalg.eigvalsh(mass_restricted)
+        assert eigs.min() >= 1e-6
 
 
 @pytest.mark.parametrize(
