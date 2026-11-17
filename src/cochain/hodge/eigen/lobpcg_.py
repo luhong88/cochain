@@ -85,6 +85,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
                     mass_k=mixed_weak_laplacian.mass_k,
                     star_k=precond_config.star_k,
                     mass_kp1=mixed_weak_laplacian.mass_kp1,
+                    down_scale=mixed_weak_laplacian.down_scale,
+                    up_scale=mixed_weak_laplacian.up_scale,
                     tau=precond_config.tau,
                     n=lobpcg_config.v0.size(-1),
                     nvmath_config=precond_config.nvmath_config,
@@ -187,6 +189,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         ctx.mass_km1_pattern = mass_km1_pattern
         ctx.mass_k_pattern = mass_k_pattern
         ctx.mass_kp1_pattern = mass_kp1_pattern
+        ctx.down_scale = down_scale
+        ctx.up_scale = up_scale
         ctx.eps = compute_lorentzian_eps_via_eigs(eig_vals) if eps == "auto" else eps
 
         if needs_codiff:
@@ -232,6 +236,8 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
         mass_km1_pattern: SparsityPattern = ctx.mass_km1_pattern
         mass_k_pattern: SparsityPattern | None = ctx.mass_k_pattern
         mass_kp1_pattern: SparsityPattern | None = ctx.mass_kp1_pattern
+        down_scale: float = ctx.down_scale
+        up_scale: float = ctx.up_scale
 
         # This error should never be triggered if the user-facing wrapper does its job.
         if eig_vecs is None:
@@ -254,7 +260,13 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
 
         if needs_grad_mass_km1_val:
             dLdM_km1 = compute_dLdM_km1_val(
-                mass_km1_pattern, eig_vec_codiffs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+                mass_km1_pattern,
+                eig_vec_codiffs,
+                dLdl,
+                dLdv,
+                eig_vec_grad_proj,
+                cauchy,
+                down_scale,
             )
         else:
             dLdM_km1 = None
@@ -270,6 +282,7 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
                 dLdv,
                 eig_vec_grad_proj,
                 cauchy,
+                down_scale,
             )
         else:
             dLdM_k = None
@@ -278,7 +291,14 @@ class MixedWeakLaplacianLOBPCGAutogradFunction(torch.autograd.Function):
             cbd_k: SparseDecoupledTensor = ctx.cbd_k
 
             dLdM_kp1 = compute_dLdM_kp1_val(
-                cbd_k, mass_kp1_pattern, eig_vecs, dLdl, dLdv, eig_vec_grad_proj, cauchy
+                cbd_k,
+                mass_kp1_pattern,
+                eig_vecs,
+                dLdl,
+                dLdv,
+                eig_vec_grad_proj,
+                cauchy,
+                up_scale,
             )
         else:
             dLdM_kp1 = None

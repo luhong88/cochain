@@ -174,8 +174,10 @@ class MixedWeakLaplacianBlocks:
     def __post_init__(self):
         if self.cbd_km1._nnz() == 0:
             raise ValueError(
-                "If 'cbd_km1' is an empty tensor, form the weak up component "
-                "directly using weak_up_laplacian()."
+                "MixedWeakLaplacianBlocks is not the appropriate representation "
+                "for the Hodge Laplacian when 'cbd_km1' is an empty tensor; consider "
+                "forming the weak up component directly using weak_up_laplacian() "
+                "if it is not empty."
             )
 
         null_cbd_k = self.cbd_k is None
@@ -246,7 +248,7 @@ class MixedWeakLaplacianBlocks:
         if self.down_only:
             return None
         else:
-            return self.up_scale * self.cbd_k.T @ self.mass_kp1 @ self.cbd_k
+            return self.up_scale * (self.cbd_k.T @ self.mass_kp1 @ self.cbd_k)
 
     @property
     def _n_km1_splx(self) -> int:
