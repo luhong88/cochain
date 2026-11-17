@@ -588,7 +588,7 @@ def test_lorentzian_regularization_smoke(asym_sc_mesh, device):
 
 
 @itemize_backends
-def test_asym_sc_mesh_abs_and_rel_homology_group_dims(asym_sc_mesh, backend, device):
+def test_asym_sc_mesh_abs_and_rel_homology_group(asym_sc_mesh, backend, device):
     mesh = asym_sc_mesh.to(device, torch.float64)
 
     disjoint_tris_mask = torch.zeros_like(mesh.bd_tri_mask, dtype=torch.bool)
@@ -605,11 +605,13 @@ def test_asym_sc_mesh_abs_and_rel_homology_group_dims(asym_sc_mesh, backend, dev
     for bc_sel, expected_betti in zip(bc_sels, expected_bettis):
         bc_cache = BoundaryRestrictionCache.from_mesh(mesh, bc_sel)
 
+        m1 = bc_cache.restrict_op(1, tet_masses.mass_1(mesh))
+
         mixed_l1 = MixedWeakLaplacianBlocks(
             cbd_km1=bc_cache.restricted_cbd[0],
             cbd_k=bc_cache.restricted_cbd[1],
             mass_km1=bc_cache.restrict_op(0, tet_masses.mass_0(mesh)),
-            mass_k=bc_cache.restrict_op(1, tet_masses.mass_1(mesh)),
+            mass_k=m1,
             mass_kp1=bc_cache.restrict_op(2, tet_masses.mass_2(mesh)),
         )
 
@@ -622,10 +624,34 @@ def test_asym_sc_mesh_abs_and_rel_homology_group_dims(asym_sc_mesh, backend, dev
             lobpcg_config=LOBPCGConfig(largest=False),
         )
 
-        betti = torch.isclose(
+        # Check that the multiplicity of the zero eigenvalue is correct.
+        zero_mask = torch.isclose(
             eig_vals,
             torch.zeros_like(eig_vals),
             atol=1e-5,
             rtol=0.0,
-        ).sum()
+        )
+        betti = zero_mask.sum()
         torch.testing.assert_close(betti, torch.tensor(expected_betti, device=device))
+
+        # Check that the zero eigenvectors are in the correct null spaces.
+        if betti > 0:
+            harmonic_basis = eig_vecs[:, zero_mask]
+
+            d_H = torch.linalg.norm(bc_cache.restricted_cbd[1] @ harmonic_basis)
+            torch.testing.assert_close(
+                d_H,
+                torch.zeros_like(d_H),
+                atol=1e-5,
+                rtol=0.0,
+            )
+
+            d_M_H = torch.linalg.norm(
+                bc_cache.restricted_cbd[0].T @ m1 @ harmonic_basis
+            )
+            torch.testing.assert_close(
+                d_M_H,
+                torch.zeros_like(d_M_H),
+                atol=1e-5,
+                rtol=0.0,
+            )
