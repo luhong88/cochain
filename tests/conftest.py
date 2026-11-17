@@ -162,7 +162,7 @@ def finer_flat_annulus_mesh() -> SimplicialMesh:
         r_in=0.5,
         r_out=1.0,
         radial_res=3,
-        circum_res=20,
+        circum_res=24,
     )
 
 
