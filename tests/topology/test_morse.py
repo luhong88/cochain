@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from cochain.boundary.selection import BoundarySelection
+from cochain.boundary import BoundarySelection
 from cochain.topology.morse import compute_morse_complex
 
 
@@ -10,7 +10,7 @@ from cochain.topology.morse import compute_morse_complex
     [
         "two_tris_mesh",
         "hollow_tet_mesh",
-        "finer_flat_annulus_mesh",
+        "flat_annulus_mesh",
     ],
 )
 def test_morse_cbd_exactness_on_tri_mesh(mesh, request, device):
@@ -57,7 +57,7 @@ def test_morse_cbd_exactness_on_tet_mesh(mesh, request, device):
     [
         "two_tris_mesh",
         "hollow_tet_mesh",
-        "finer_flat_annulus_mesh",
+        "flat_annulus_mesh",
         "two_tets_mesh",
         "solid_torus_mesh",
         "solid_spherical_shell_mesh",
@@ -106,7 +106,7 @@ def test_euler_characteristics(mesh, request, device):
         ("icosphere_mesh", [1, 0, 1, 0]),
         ("two_tris_mesh", [1, 0, 0, 0]),
         ("two_disjoint_tris_mesh", [2, 0, 0, 0]),
-        ("finer_flat_annulus_mesh", [1, 1, 0, 0]),
+        ("flat_annulus_mesh", [1, 1, 0, 0]),
         ("two_tets_mesh", [1, 0, 0, 0]),
         ("solid_torus_mesh", [1, 1, 0, 0]),
         ("solid_spherical_shell_mesh", [1, 0, 1, 0]),
@@ -140,7 +140,7 @@ def test_morse_betti_invariance_to_scalar_field(mesh, betti_true, request, devic
         ("icosphere_mesh", [1, 0, 1, 0]),
         ("two_tris_mesh", [0, 0, 1, 0]),
         ("two_disjoint_tris_mesh", [0, 0, 2, 0]),
-        ("finer_flat_annulus_mesh", [0, 1, 1, 0]),
+        ("flat_annulus_mesh", [0, 1, 1, 0]),
         ("two_tets_mesh", [0, 0, 0, 1]),
         ("solid_torus_mesh", [0, 0, 1, 1]),
         ("solid_spherical_shell_mesh", [0, 1, 0, 1]),

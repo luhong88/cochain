@@ -14,6 +14,7 @@ def compute_dLdM_km1_val(
     dLdv: Float[Tensor, "k_splx eig"] | None,
     eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
     cauchy: Float[Tensor, "eig eig"] | None,
+    down_scale: float,
 ) -> Float[Tensor, " nz"]:
     """
     Compute the gradient with respect to the nonzero values of $M_{k-1}$.
@@ -22,7 +23,7 @@ def compute_dLdM_km1_val(
     compute_dLdA_val(), but with a minus sign and the codifferential of the
     eigenvectors in place of the eigenvectors.
     """
-    return -compute_dLdA_val(
+    return -down_scale * compute_dLdA_val(
         a_pattern=mass_km1_pattern,
         eig_vecs=eig_vec_codiffs,
         dLdl=dLdl,
@@ -42,6 +43,7 @@ def compute_dLdM_k_val(
     dLdv: Float[Tensor, "k_splx eig"] | None,
     eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
     cauchy: Float[Tensor, "eig eig"] | None,
+    down_scale: float,
 ) -> Float[Tensor, " nz"]:
     """Compute the gradient with respect to the nonzero values of $M_k$."""
     # For the eigenvalue problem S_k@v_i = λ_i@M_k@v_i, we compute separately
@@ -120,7 +122,7 @@ def compute_dLdM_k_val(
         cauchy=cauchy,
     )
 
-    return dLdM_lhs + dLdM_rhs
+    return down_scale * dLdM_lhs + dLdM_rhs
 
 
 def compute_dLdM_kp1_val(
@@ -131,6 +133,7 @@ def compute_dLdM_kp1_val(
     dLdv: Float[Tensor, "k_splx eig"] | None,
     eig_vec_grad_proj: Float[Tensor, "eig eig"] | None,
     cauchy: Float[Tensor, "eig eig"] | None,
+    up_scale: float,
 ) -> Float[Tensor, " nz"]:
     """
     Compute the gradient with respect to the nonzero values of $M_{k+1}$.
@@ -138,7 +141,7 @@ def compute_dLdM_kp1_val(
     Note that $dL/dM_{k+1}$ essentially reuses the same logic as implemented in
     compute_dLdA_val(), but with $d_k V$ in place of $V$.
     """
-    return compute_dLdA_val(
+    return up_scale * compute_dLdA_val(
         a_pattern=mass_kp1_pattern,
         eig_vecs=cbd_k @ eig_vecs,
         dLdl=dLdl,

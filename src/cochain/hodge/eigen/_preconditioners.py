@@ -198,6 +198,8 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
         mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"],
         star_k: Float[DiagDecoupledTensor, "k_splx k_splx"] | None,
         mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None,
+        down_scale: float,
+        up_scale: float,
         tau: float | Literal["auto"],
         n: int,
         nvmath_config: DirectSolverConfig,
@@ -212,7 +214,9 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
 
         self.n = n
 
-        weak_down_laplacian = mass_k @ cbd_km1 @ star_km1.inv @ cbd_km1.T @ mass_k
+        weak_down_laplacian = down_scale * (
+            mass_k @ cbd_km1 @ star_km1.inv @ cbd_km1.T @ mass_k
+        )
 
         if mass_kp1 is None:
             if tau == "auto":
@@ -221,7 +225,7 @@ class ShiftedLumpedPrecond(LOBPCGPreconditioner):
             op = SparseDecoupledTensor.assemble(weak_down_laplacian, tau * mass_k)
 
         else:
-            weak_up_laplacian = cbd_k.T @ mass_kp1 @ cbd_k
+            weak_up_laplacian = up_scale * (cbd_k.T @ mass_kp1 @ cbd_k)
             weak_laplacian = SparseDecoupledTensor.assemble(
                 weak_down_laplacian, weak_up_laplacian
             )

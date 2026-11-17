@@ -7,6 +7,7 @@ from jaxtyping import Float
 from skfem.helpers import dot
 from torch import Tensor
 
+from cochain.boundary import BoundarySelection
 from cochain.cochain import music_ops
 from cochain.complex import SimplicialMesh
 from cochain.metric.tri import tri_masses
@@ -32,6 +33,36 @@ def test_mass_matrix_positive_definite(
     eigs = torch.linalg.eigvalsh(mass)
 
     assert eigs.min() >= 1e-6
+
+
+@pytest.mark.parametrize(
+    "deg, mass_matrix",
+    [(0, tri_masses.mass_0), (1, tri_masses.mass_1), (2, tri_masses.mass_2)],
+)
+def test_mass_matrix_spd_with_boundary_conditions(
+    deg, mass_matrix, flat_annulus_mesh: SimplicialMesh, device
+):
+    mesh = flat_annulus_mesh.to(device)
+    mass = mass_matrix(mesh)
+
+    bc_sels = [
+        BoundarySelection.from_relative_bc(mesh),
+        BoundarySelection.from_absolute_bc(mesh),
+    ]
+
+    for comp in [torch.le, torch.ge]:
+        inner_edge_mask = mesh.bd_edge_mask & comp(
+            torch.linalg.norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
+        ).all(dim=-1)
+        bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_edge_mask)
+        bc_sels.append(bc_sel)
+
+    for bc_sel in bc_sels:
+        mass_restricted = mass.submatrix(bc_sel.retained_mask[deg]).tensor.to_dense()
+        torch.testing.assert_close(mass_restricted, mass_restricted.T)
+
+        eigs = torch.linalg.eigvalsh(mass_restricted)
+        assert eigs.min() >= 1e-6
 
 
 def test_mass_0_with_skfem(flat_annulus_mesh: SimplicialMesh, device):
@@ -65,7 +96,8 @@ def test_mass_0_with_skfem(flat_annulus_mesh: SimplicialMesh, device):
 
 
 def test_mass_1_with_skfem(flat_annulus_mesh: SimplicialMesh, device):
-    mesh = flat_annulus_mesh.to(device)
+    # This test requires double precision to pass.
+    mesh = flat_annulus_mesh.to(dtype=torch.float64, device=device)
 
     skfem_mesh = skfem.MeshTri(
         mesh.vert_coords[:, [0, 1]].T.cpu().detach().numpy(),

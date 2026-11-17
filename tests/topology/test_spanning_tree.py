@@ -1,7 +1,7 @@
 import torch
 from jaxtyping import Float
 
-from cochain.boundary.selection import BoundarySelection
+from cochain.boundary import BoundarySelection
 from cochain.complex import SimplicialMesh
 from cochain.hodge import laplacians
 from cochain.metric.tri import tri_hodge_stars
@@ -60,7 +60,7 @@ def _weak_laplacian_1(
     )
 
 
-def test_cbd_0_rank(finer_flat_annulus_mesh: SimplicialMesh, device):
+def test_cbd_0_rank(flat_annulus_mesh: SimplicialMesh, device):
     """
     Check that the rank of the down 1-Laplacian is equal to that of the 0-cbd.
 
@@ -68,7 +68,7 @@ def test_cbd_0_rank(finer_flat_annulus_mesh: SimplicialMesh, device):
     down 1-Laplacian of a tri mesh, which is the same as the rank of the 0-coboundary
     operator (assuming that the mesh has no relative boundary conditions).
     """
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
 
     cbd_0 = mesh.cbd[0].to_dense()
     cbd_0_rank = torch.linalg.matrix_rank(cbd_0)
@@ -162,11 +162,9 @@ def test_l1_up_positive_definite_no_bc(icosphere_mesh: SimplicialMesh, device):
     assert min_eig > 0.0
 
 
-def test_l1_positive_definite_absolute_bc(
-    finer_flat_annulus_mesh: SimplicialMesh, device
-):
+def test_l1_positive_definite_absolute_bc(flat_annulus_mesh: SimplicialMesh, device):
     """Check that L-1 after tree-cotree guage fixing is SPD on a mesh with absolute BC."""
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
@@ -189,10 +187,10 @@ def test_l1_positive_definite_absolute_bc(
 
 
 def test_l1_down_positive_definite_absolute_bc(
-    finer_flat_annulus_mesh: SimplicialMesh, device
+    flat_annulus_mesh: SimplicialMesh, device
 ):
     """Check that L-1 down after tree guage fixing is SPD on a mesh with absolute BC."""
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
 
     l0 = laplacian_k(mesh, k=0, component="up")
     tree_mask = compute_tree_mask(topo_laplacian_0=l0, canon_edges=mesh.edges)
@@ -205,11 +203,9 @@ def test_l1_down_positive_definite_absolute_bc(
     assert min_eig > 0.0
 
 
-def test_l1_up_positive_definite_absolute_bc(
-    finer_flat_annulus_mesh: SimplicialMesh, device
-):
+def test_l1_up_positive_definite_absolute_bc(flat_annulus_mesh: SimplicialMesh, device):
     """Check that L-1 up after cotree guage fixing is SPD on a mesh with absolute BC."""
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
 
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
     cotree_mask = compute_cotree_mask(dual_topo_laplacian_0=dual_l0, cbd_1=mesh.cbd[1])
@@ -222,11 +218,9 @@ def test_l1_up_positive_definite_absolute_bc(
     assert min_eig > 0.0
 
 
-def test_l1_positive_definite_relative_bc(
-    finer_flat_annulus_mesh: SimplicialMesh, device
-):
+def test_l1_positive_definite_relative_bc(flat_annulus_mesh: SimplicialMesh, device):
     """Check that L-1 after tree-cotree guage fixing is SPD on a mesh with relative BC."""
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
     bc_sel = BoundarySelection.from_relative_bc(mesh)
 
     l0 = laplacian_k(mesh, k=0, component="up")
@@ -258,10 +252,10 @@ def test_l1_positive_definite_relative_bc(
 
 
 def test_l1_down_positive_definite_relative_bc(
-    finer_flat_annulus_mesh: SimplicialMesh, device
+    flat_annulus_mesh: SimplicialMesh, device
 ):
     """Check that L-1 down after tree guage fixing is SPD on a mesh with relative BC."""
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
     bc_sel = BoundarySelection.from_relative_bc(mesh)
 
     l0 = laplacian_k(mesh, k=0, component="up")
@@ -280,11 +274,9 @@ def test_l1_down_positive_definite_relative_bc(
     assert min_eig > 0.0
 
 
-def test_l1_up_positive_definite_relative_bc(
-    finer_flat_annulus_mesh: SimplicialMesh, device
-):
+def test_l1_up_positive_definite_relative_bc(flat_annulus_mesh: SimplicialMesh, device):
     """Check that L-1 up after cotree guage fixing is SPD on a mesh with relative BC."""
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
     bc_sel = BoundarySelection.from_relative_bc(mesh)
 
     dual_l0 = laplacian_k(mesh, k=0, component="up", dual_complex=True)
@@ -303,13 +295,13 @@ def test_l1_up_positive_definite_relative_bc(
     assert min_eig > 0.0
 
 
-def test_l1_weighted_gauge_fix(finer_flat_annulus_mesh: SimplicialMesh, device):
+def test_l1_weighted_gauge_fix(flat_annulus_mesh: SimplicialMesh, device):
     """
     Check weighted and unweighted gauge fixes on the true relative Laplacian.
 
     Mass weighting is a conditioning heuristic; improvement is not guaranteed.
     """
-    mesh = finer_flat_annulus_mesh.to(device)
+    mesh = flat_annulus_mesh.to(device)
     bc_sel = BoundarySelection.from_relative_bc(mesh)
 
     l0 = laplacian_k(mesh, k=0, component="up")

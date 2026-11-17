@@ -13,7 +13,7 @@ from .sparse.decoupled_tensor import (
     SparseDecoupledTensor,
     SparsityPattern,
 )
-from .topology import boundaries, coboundaries
+from .topology import coboundaries
 from .utils.faces import GlobalFaces, enumerate_global_faces
 from .utils.parsing import parse_to
 from .utils.search import splx_search
@@ -534,7 +534,10 @@ class SimplicialMesh:
         `bd_mask[k]` returns a boolean mask marking the boundary k-simplices
         among the canonical k-simplices.
         """
-        return boundaries.detect_mesh_boundaries(self.cbd)
+        # Put the import statement here to avoid circular import from the boundary module.
+        from .boundary.detection import detect_mesh_boundaries
+
+        return detect_mesh_boundaries(self.cbd)
 
     @property
     def bd_vert_mask(self) -> Bool[Tensor, " vert"]:

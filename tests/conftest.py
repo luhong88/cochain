@@ -152,17 +152,10 @@ def icosphere_mesh() -> SimplicialMesh:
 @pytest.fixture(scope="session")
 def flat_annulus_mesh() -> SimplicialMesh:
     return synthetic_tri_meshes.load_flat_annulus_mesh(
-        r_in=0.5, r_out=1.0, n_segments_in=5, n_segments_out=10
-    )
-
-
-@pytest.fixture(scope="session")
-def finer_flat_annulus_mesh() -> SimplicialMesh:
-    return synthetic_tri_meshes.load_finer_flat_annulus_mesh(
         r_in=0.5,
         r_out=1.0,
         radial_res=3,
-        circum_res=20,
+        circum_res=24,
     )
 
 
@@ -191,5 +184,5 @@ def solid_torus_mesh() -> SimplicialMesh:
 @pytest.fixture(scope="session")
 def solid_spherical_shell_mesh() -> SimplicialMesh:
     return synthetic_tet_meshes.load_spherical_shell(
-        outer_r=2.0, inner_r=1.0, theta_res=6, phi_res=6, edge_length_frac=1.0
+        outer_r=2.0, inner_r=1.0, theta_res=6, phi_res=6, edge_length_frac=0.3
     )

@@ -5,6 +5,7 @@ __all__ = [
     "weak_down_laplacian",
 ]
 
+import math
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
@@ -83,10 +84,17 @@ class MixedWeakLaplacianBlocks:
         The consistent mass matrix or diagonal Hodge star for discrete $k$-forms.
     mass_kp1: [kp1_splx, kp1_splx]
         The consistent mass matrix or diagonal Hodge star for discrete $(k+1)$-forms.
+    down_scale
+        An optional positive scalar that multiplies the down component of the Laplacian;
+        useful as a hyperparameter for gauge-fixing the up-only subsystem.
+    up_scale
+        An optional positive scalar that multiplies the up component of the Laplacian;
+        useful as a hyperparameter for gauge-fixing the down-only subsystem. This
+        argument is ignored if the mixed system contains the down component only.
 
     Notes
     -----
-    Consider a weak k-Laplacian
+    Consider a weak $k$-Laplacian
 
     $$S_k = d_k^T M_{k+1} d_k + M_k d_{k-1} M_{k-1}^{-1} d_{k-1}^T M_k$$
 
@@ -148,10 +156,11 @@ class MixedWeakLaplacianBlocks:
     and pass this system to a sparse linear solver to find the $(k-1)$-cochain
     $y$, then, call `get_forward_pass()` to compute $b = M_k d_{k-1} y + d_k^T M_{k+1} d_k x$.
     
-    * Solve the generalized eigenvalue problem $S_k x = \lambda M_k x$: use the
-    specialized LOBPCG solver `mixed_weak_laplacian_lobpcg()`. In general, the
-    mixed formulation results in positive semidefinite mass matrices that are
-    not suitable for generic generalized eigenvalue problem solvers.
+    * Solve the generalized eigenvalue problem $S_k x = \lambda M_k x$: pass the
+    `MixedWeakLaplacianBlocks` object to the specialized LOBPCG solver 
+    `mixed_weak_laplacian_lobpcg()`. In general, the mixed formulation results in 
+    positive semidefinite mass matrices that are not suitable for generic generalized 
+    eigenvalue problem solvers.
     """
 
     cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"]
@@ -159,8 +168,21 @@ class MixedWeakLaplacianBlocks:
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
     mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
+    down_scale: float = 1.0
+    up_scale: float = 1.0
 
     def __post_init__(self):
+        if self.cbd_km1._nnz() == 0:
+            raise ValueError(
+                "MixedWeakLaplacianBlocks is not the appropriate representation "
+                "for the Hodge Laplacian when 'cbd_km1' is an empty tensor; consider "
+                "forming the weak up component directly using weak_up_laplacian() "
+                "if it is not empty."
+            )
+
+        if (self.down_scale <= 0) or (self.up_scale <= 0):
+            raise ValueError("'down_scale' and 'up_scale' must be positive floats.")
+
         null_cbd_k = self.cbd_k is None
         null_mass_kp1 = self.mass_kp1 is None
 
@@ -209,8 +231,16 @@ class MixedWeakLaplacianBlocks:
         return -self.mass_km1
 
     @cached_property
-    def _block_10(self) -> Float[SparseDecoupledTensor, " k_splx km1_splx"]:
+    def _unscaled_block_10(self) -> Float[SparseDecoupledTensor, " k_splx km1_splx"]:
         return self.mass_k @ self.cbd_km1
+
+    @cached_property
+    def _block_10(self) -> Float[SparseDecoupledTensor, " k_splx km1_splx"]:
+        return math.sqrt(self.down_scale) * self._unscaled_block_10
+
+    @property
+    def _unscaled_block_01(self) -> Float[SparseDecoupledTensor, "km1_splx k_splx"]:
+        return self._unscaled_block_10.T
 
     @property
     def _block_01(self) -> Float[SparseDecoupledTensor, "km1_splx k_splx"]:
@@ -221,7 +251,7 @@ class MixedWeakLaplacianBlocks:
         if self.down_only:
             return None
         else:
-            return self.cbd_k.T @ self.mass_kp1 @ self.cbd_k
+            return self.up_scale * (self.cbd_k.T @ self.mass_kp1 @ self.cbd_k)
 
     @property
     def _n_km1_splx(self) -> int:
@@ -292,7 +322,7 @@ class MixedWeakLaplacianBlocks:
             The codifferential of $x$ (i.e., $y = \delta x$)
         """
         x = x_full[self._n_km1_splx :]
-        y = x_full[: self._n_km1_splx]
+        y = x_full[: self._n_km1_splx] / math.sqrt(self.down_scale)
 
         return x, y
 
@@ -356,7 +386,7 @@ class MixedWeakLaplacianBlocks:
             The RHS of the subsystem.
         """
         lhs = self.mass_km1
-        rhs = self._block_01 @ x  # cbd_km1.T @ mass_k @ x
+        rhs = self._unscaled_block_01 @ x  # cbd_km1.T @ mass_k @ x
         return lhs, rhs
 
     def get_forward_pass(
@@ -379,11 +409,13 @@ class MixedWeakLaplacianBlocks:
             The vector $b$ in $S_k x = b$.
         """
         if self.down_only:
-            return self._block_10 @ y  # mass_k @ cbd_km1 @ y
+            return self.down_scale * (
+                self._unscaled_block_10 @ y
+            )  # mass_k @ cbd_km1 @ y
 
         else:
             return (
-                self._block_10 @ y  # mass_k @ cbd_km1 @ y
+                self.down_scale * (self._unscaled_block_10 @ y)  # mass_k @ cbd_km1 @ y
                 + self._block_11 @ x  # cbd_k.T @ mass_kp1 @ cbd_k @ x
             )
 

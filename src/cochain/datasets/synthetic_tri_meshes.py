@@ -96,78 +96,15 @@ def load_hollow_tet_mesh() -> SimplicialMesh:
 def load_flat_annulus_mesh(
     r_in: float = 0.5,
     r_out: float = 1.0,
-    n_segments_in: int = 5,
-    n_segments_out: int = 10,
+    radial_res: int = 3,
+    circum_res: int = 24,
 ) -> SimplicialMesh:
     """
-    Generate a coarse annulus mesh from points on two concentric circles.
+    Generate a finer Delaunay annulus mesh with interior triangles.
 
-    Parameters
-    ----------
-    r_in
-        The inner radius of the annulus.
-    r_out
-        The outer radius of the annulus.
-    n_segments_in
-        The number of points on the inner circle.
-    n_segments_out
-        The number of points on the outer circle.
-
-    Returns
-    -------
-    mesh
-        A `SimplicialMesh` object representing the annulus mesh.
-    """
-    if r_in >= r_out:
-        raise ValueError("Inner radius (r_in) must be less than outer radius (r_out).")
-    if n_segments_in < 3:
-        raise ValueError("Number of segments must be at least 3.")
-    if n_segments_out < 3:
-        raise ValueError("Number of segments must be at least 3.")
-
-    # Calculate inner circle coordinates.
-    # Use endpoint=False to avoid duplicating the 0 and 2*pi point.
-    theta_in = np.linspace(0, 2 * np.pi, n_segments_in, endpoint=False)
-    x_in = r_in * np.cos(theta_in)
-    y_in = r_in * np.sin(theta_in)
-    points_in = np.vstack((x_in, y_in)).T
-
-    # Calculate outer circle coordinates.
-    theta_out = np.linspace(0, 2 * np.pi, n_segments_out, endpoint=False)
-    x_out = r_out * np.cos(theta_out)
-    y_out = r_out * np.sin(theta_out)
-    points_out = np.vstack((x_out, y_out)).T
-
-    # Combine inner and outer points.
-    vert_coords = np.vstack((points_in, points_out))
-    vert_coords_3d = np.hstack((vert_coords, np.zeros((vert_coords.shape[0], 1))))
-
-    # Perform Delaunay triangulation.
-    tri = Delaunay(vert_coords)
-
-    # The Delaunay triangulation fills in the center "hole", which need to be
-    # removed. A triangle is in the "hole" if all its vertex indices are < n_segments;
-    # i.e., if all of its vertices are on the inner circle.
-    all_triangles = tri.simplices
-    keep_mask = np.any(all_triangles >= n_segments_in, axis=1)
-    annulus_tris = all_triangles[keep_mask]
-
-    annulus_mesh = SimplicialMesh.from_tri_mesh(
-        torch.from_numpy(vert_coords_3d).to(dtype=torch.float32),
-        torch.from_numpy(annulus_tris).to(dtype=torch.int64),
-    )
-
-    return annulus_mesh
-
-
-def load_finer_flat_annulus_mesh(
-    r_in: float = 0.5,
-    r_out: float = 1.0,
-    radial_res: int = 3,
-    circum_res: int = 20,
-):
-    """
-    Generate a finer annulus mesh with interior triangles.
+    Concentric vertex rings are staggered by half an angular step on alternating
+    rings before Delaunay triangulation to avoid co-circular cyclic quads (which
+    would produce zero-length circumcentric dual edges).
 
     Parameters
     ----------
@@ -176,30 +113,42 @@ def load_finer_flat_annulus_mesh(
     r_out
         The outer radius of the annulus.
     radial_res
-        The number of cells in radial direction.
+        The number of radial layers between `r_in` and `r_out`.
     circum_res
-        The number of cells in circumferential direction.
+        The number of vertices on each concentric circle.
 
     Returns
     -------
     mesh
         A `SimplicialMesh` object representing the annulus mesh.
     """
-    if not _HAS_PYVISTA:
-        raise ImportError("PyVista backend required.")
+    if r_in >= r_out:
+        raise ValueError("Inner radius (r_in) must be less than outer radius (r_out).")
+    if radial_res < 2:
+        raise ValueError("Radial resolution (radial_res) must be at least 2.")
+    if circum_res < 3:
+        raise ValueError("Circumferential resolution (circum_res) must be at least 3.")
 
-    pv_mesh = pv.Disc(
-        center=(0.0, 0.0, 0.0),
-        inner=r_in,
-        outer=r_out,
-        normal=(0.0, 0.0, 1.0),
-        r_res=radial_res,
-        c_res=circum_res,
-    ).triangulate()
+    radii = np.linspace(r_in, r_out, radial_res + 1)
+    rings = []
+    for ring_idx, r in enumerate(radii):
+        angle_offset = (ring_idx % 2) * (np.pi / circum_res)
+        theta = np.linspace(0, 2 * np.pi, circum_res, endpoint=False) + angle_offset
+        rings.append(np.column_stack((r * np.cos(theta), r * np.sin(theta))))
+
+    vert_coords = np.vstack(rings)
+    vert_coords_3d = np.hstack((vert_coords, np.zeros((vert_coords.shape[0], 1))))
+
+    tri = Delaunay(vert_coords)
+
+    # Remove triangles filling the inner hole (all three vertices on the innermost ring).
+    all_triangles = tri.simplices
+    keep_mask = np.any(all_triangles >= circum_res, axis=1)
+    annulus_tris = all_triangles[keep_mask]
 
     mesh = SimplicialMesh.from_tri_mesh(
-        torch.from_numpy(np.array(pv_mesh.points)).to(dtype=torch.float32),
-        torch.from_numpy(np.array(pv_mesh.regular_faces)).to(dtype=torch.int64),
+        torch.from_numpy(vert_coords_3d).to(dtype=torch.float32),
+        torch.from_numpy(annulus_tris).to(dtype=torch.int64),
     )
 
     return mesh

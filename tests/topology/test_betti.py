@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from cochain.boundary.selection import BoundarySelection
+from cochain.boundary import BoundarySelection
 from cochain.complex import SimplicialMesh
 from cochain.topology.betti import (
     _betti_via_morse,
@@ -16,7 +16,7 @@ from cochain.topology.betti import (
         ("icosphere_mesh", [1, 0, 1, 0]),
         ("two_tris_mesh", [1, 0, 0, 0]),
         ("two_disjoint_tris_mesh", [2, 0, 0, 0]),
-        ("finer_flat_annulus_mesh", [1, 1, 0, 0]),
+        ("flat_annulus_mesh", [1, 1, 0, 0]),
     ],
 )
 def test_tri_manifold_betti_via_trees(mesh, betti_true, request, device):
@@ -34,7 +34,7 @@ def test_tri_manifold_betti_via_trees(mesh, betti_true, request, device):
         ("icosphere_mesh", [1, 0, 1, 0]),
         ("two_tris_mesh", [0, 0, 1, 0]),
         ("two_disjoint_tris_mesh", [0, 0, 2, 0]),
-        ("finer_flat_annulus_mesh", [0, 1, 1, 0]),
+        ("flat_annulus_mesh", [0, 1, 1, 0]),
     ],
 )
 def test_tri_manifold_relative_betti_via_trees(mesh, betti_true, request, device):
@@ -77,10 +77,8 @@ def test_two_disjoint_tri_mesh_relative_betti_with_mixed_bc_via_trees(
         assert b == b_true
 
 
-def test_annulus_relative_betti_with_mixed_bc_via_trees(
-    finer_flat_annulus_mesh, device
-):
-    mesh = finer_flat_annulus_mesh.to(device)
+def test_annulus_relative_betti_with_mixed_bc_via_trees(flat_annulus_mesh, device):
+    mesh = flat_annulus_mesh.to(device)
 
     # Put the relative BC on either the inner or outer edge.
     for comp in [torch.le, torch.ge]:
@@ -101,7 +99,7 @@ def test_annulus_relative_betti_with_mixed_bc_via_trees(
         ("icosphere_mesh", [1, 0, 1, 0]),
         ("two_tris_mesh", [1, 0, 0, 0]),
         ("two_disjoint_tris_mesh", [2, 0, 0, 0]),
-        ("finer_flat_annulus_mesh", [1, 1, 0, 0]),
+        ("flat_annulus_mesh", [1, 1, 0, 0]),
         ("two_tets_mesh", [1, 0, 0, 0]),
         ("solid_torus_mesh", [1, 1, 0, 0]),
         ("solid_spherical_shell_mesh", [1, 0, 1, 0]),
@@ -122,7 +120,7 @@ def test_betti_via_morse(mesh, betti_true, request, device):
         ("icosphere_mesh", [1, 0, 1, 0]),
         ("two_tris_mesh", [0, 0, 1, 0]),
         ("two_disjoint_tris_mesh", [0, 0, 2, 0]),
-        ("finer_flat_annulus_mesh", [0, 1, 1, 0]),
+        ("flat_annulus_mesh", [0, 1, 1, 0]),
         ("two_tets_mesh", [0, 0, 0, 1]),
         ("solid_torus_mesh", [0, 0, 1, 1]),
         ("solid_spherical_shell_mesh", [0, 1, 0, 1]),
