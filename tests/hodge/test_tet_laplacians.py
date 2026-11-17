@@ -23,48 +23,75 @@ from cochain.sparse.linalg.solvers import SuperLU
 def _weak_laplacian_0(
     tet_mesh: SimplicialMesh,
     method: Literal["cotan", "consistent"] = "cotan",
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "vert vert"]:
     """Weak 0-Laplacian / stiffness matrix for a tet mesh."""
     match method:
         case "cotan":
-            return tet_stiffness_matrix(tet_mesh)
+            if bc_cache is None:
+                return tet_stiffness_matrix(tet_mesh)
+            else:
+                return bc_cache.restrict_op(0, tet_stiffness_matrix(tet_mesh))
         case "consistent":
-            return weak_up_laplacian(tet_mesh.cbd[0], tet_masses.mass_1(tet_mesh))
+            if bc_cache is None:
+                return weak_up_laplacian(tet_mesh.cbd[0], tet_masses.mass_1(tet_mesh))
+            else:
+                return weak_up_laplacian(
+                    bc_cache.restricted_cbd[0],
+                    bc_cache.restrict_op(1, tet_masses.mass_1(tet_mesh)),
+                )
         case _:
             raise ValueError(f"Unknown method '{method}'.")
 
 
 def _weak_laplacian_1_grad_div(
     tet_mesh: SimplicialMesh,
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor | Tensor, "edge edge"]:
     """Grad-div component of the weak 1-Laplacian for a tet mesh."""
-    return weak_down_laplacian(
-        cbd_km1=tet_mesh.cbd[0],
-        mass_k=tet_masses.mass_1(tet_mesh),
-        inv_mass_km1=tet_hodge_stars.star_0(tet_mesh).inv,
-    )
+    if bc_cache is None:
+        return weak_down_laplacian(
+            cbd_km1=tet_mesh.cbd[0],
+            mass_k=tet_masses.mass_1(tet_mesh),
+            inv_mass_km1=tet_hodge_stars.star_0(tet_mesh).inv,
+        )
+    else:
+        return weak_down_laplacian(
+            cbd_km1=bc_cache.restricted_cbd[0],
+            mass_k=bc_cache.restrict_op(1, tet_masses.mass_1(tet_mesh)),
+            inv_mass_km1=bc_cache.restrict_op(0, tet_hodge_stars.star_0(tet_mesh).inv),
+        )
 
 
 def _weak_laplacian_1_curl_curl(
     tet_mesh: SimplicialMesh,
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "edge edge"]:
     """Curl-curl component of the weak 1-Laplacian for a tet mesh."""
-    return weak_up_laplacian(tet_mesh.cbd[1], tet_masses.mass_2(tet_mesh))
+    if bc_cache is None:
+        return weak_up_laplacian(tet_mesh.cbd[1], tet_masses.mass_2(tet_mesh))
+    else:
+        return weak_up_laplacian(
+            bc_cache.restricted_cbd[1],
+            bc_cache.restrict_op(2, tet_masses.mass_2(tet_mesh)),
+        )
 
 
 def _weak_laplacian_1(
     tet_mesh: SimplicialMesh,
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor | Tensor, "edge edge"]:
     """Weak hybrid 1-Laplacian for a tet mesh."""
     return SparseDecoupledTensor.assemble(
-        _weak_laplacian_1_grad_div(tet_mesh),
-        _weak_laplacian_1_curl_curl(tet_mesh),
+        _weak_laplacian_1_grad_div(tet_mesh, bc_cache),
+        _weak_laplacian_1_curl_curl(tet_mesh, bc_cache),
     )
 
 
 def _weak_laplacian_2_curl_curl(
     tet_mesh: SimplicialMesh,
     method: Literal["dense", "inv_star", "solver", "mixed"] = "dense",
+    bc_cache: BoundaryRestrictionCache | None = None,
     *,
     solver_kwargs: dict[str, Any] | None = None,
 ) -> (
@@ -73,17 +100,24 @@ def _weak_laplacian_2_curl_curl(
     | MixedWeakLaplacianBlocks
 ):
     """Curl-curl component of the weak 2-Laplacian for a tet mesh."""
-    d1 = tet_mesh.cbd[1]
-    m1 = tet_masses.mass_1(tet_mesh)
-    m2 = tet_masses.mass_2(tet_mesh)
+    if bc_cache is None:
+        d1 = tet_mesh.cbd[1]
+        m1 = tet_masses.mass_1(tet_mesh)
+        m2 = tet_masses.mass_2(tet_mesh)
+    else:
+        d1 = bc_cache.restricted_cbd[1]
+        m1 = bc_cache.restrict_op(1, tet_masses.mass_1(tet_mesh))
+        m2 = bc_cache.restrict_op(2, tet_masses.mass_2(tet_mesh))
 
     match method:
         case "dense":
             return weak_down_laplacian(d1, m2, mass_km1=m1)
         case "inv_star":
-            return weak_down_laplacian(
-                d1, m2, inv_mass_km1=tet_hodge_stars.star_1(tet_mesh).inv
-            )
+            if bc_cache is None:
+                s1_inv = tet_hodge_stars.star_1(tet_mesh).inv
+            else:
+                s1_inv = bc_cache.restrict_op(1, tet_hodge_stars.star_1(tet_mesh).inv)
+            return weak_down_laplacian(d1, m2, inv_mass_km1=s1_inv)
         case "solver":
             return weak_down_laplacian(
                 d1,
@@ -105,14 +139,22 @@ def _weak_laplacian_2_curl_curl(
 
 def _weak_laplacian_2_grad_div(
     tet_mesh: SimplicialMesh,
+    bc_cache: BoundaryRestrictionCache | None = None,
 ) -> Float[SparseDecoupledTensor, "tri tri"]:
     """Grad-div component of the weak 2-Laplacian for a tet mesh."""
-    return weak_up_laplacian(tet_mesh.cbd[2], tet_masses.mass_3(tet_mesh))
+    if bc_cache is None:
+        return weak_up_laplacian(tet_mesh.cbd[2], tet_masses.mass_3(tet_mesh))
+    else:
+        return weak_up_laplacian(
+            bc_cache.restricted_cbd[2],
+            bc_cache.restrict_op(3, tet_masses.mass_3(tet_mesh)),
+        )
 
 
 def _weak_laplacian_2(
     tet_mesh: SimplicialMesh,
     method: Literal["dense", "inv_star", "solver", "mixed"] = "dense",
+    bc_cache: BoundaryRestrictionCache | None = None,
     *,
     solver_kwargs: dict[str, Any] | None = None,
 ) -> (
@@ -123,30 +165,39 @@ def _weak_laplacian_2(
     """Weak 2-Laplacian for a tet mesh."""
     match method:
         case "dense":
-            curl_curl = _weak_laplacian_2_curl_curl(tet_mesh, "dense")
-            grad_div = _weak_laplacian_2_grad_div(tet_mesh).to_dense()
+            curl_curl = _weak_laplacian_2_curl_curl(tet_mesh, "dense", bc_cache)
+            grad_div = _weak_laplacian_2_grad_div(tet_mesh, bc_cache).to_dense()
             return curl_curl + grad_div
 
         case "inv_star":
-            curl_curl = _weak_laplacian_2_curl_curl(tet_mesh, "inv_star")
-            grad_div = _weak_laplacian_2_grad_div(tet_mesh)
+            curl_curl = _weak_laplacian_2_curl_curl(tet_mesh, "inv_star", bc_cache)
+            grad_div = _weak_laplacian_2_grad_div(tet_mesh, bc_cache)
             return SparseDecoupledTensor.assemble(grad_div, curl_curl)
 
         case "solver":
             curl_curl = _weak_laplacian_2_curl_curl(
-                tet_mesh, "solver", solver_kwargs=solver_kwargs
+                tet_mesh, "solver", bc_cache, solver_kwargs=solver_kwargs
             )
-            grad_div = _weak_laplacian_2_grad_div(tet_mesh).to_dense()
+            grad_div = _weak_laplacian_2_grad_div(tet_mesh, bc_cache).to_dense()
             return curl_curl + grad_div
 
         case "mixed":
-            return MixedWeakLaplacianBlocks(
-                cbd_km1=tet_mesh.cbd[1],
-                cbd_k=tet_mesh.cbd[2],
-                mass_km1=tet_masses.mass_1(tet_mesh),
-                mass_k=tet_masses.mass_2(tet_mesh),
-                mass_kp1=tet_masses.mass_3(tet_mesh),
-            )
+            if bc_cache is None:
+                return MixedWeakLaplacianBlocks(
+                    cbd_km1=tet_mesh.cbd[1],
+                    cbd_k=tet_mesh.cbd[2],
+                    mass_km1=tet_masses.mass_1(tet_mesh),
+                    mass_k=tet_masses.mass_2(tet_mesh),
+                    mass_kp1=tet_masses.mass_3(tet_mesh),
+                )
+            else:
+                return MixedWeakLaplacianBlocks(
+                    cbd_km1=bc_cache.restricted_cbd[1],
+                    cbd_k=bc_cache.restricted_cbd[2],
+                    mass_km1=bc_cache.restrict_op(1, tet_masses.mass_1(tet_mesh)),
+                    mass_k=bc_cache.restrict_op(2, tet_masses.mass_2(tet_mesh)),
+                    mass_kp1=bc_cache.restrict_op(3, tet_masses.mass_3(tet_mesh)),
+                )
 
         case _:
             raise ValueError(f"Unknown method '{method}'.")
@@ -155,6 +206,7 @@ def _weak_laplacian_2(
 def _weak_laplacian_3(
     tet_mesh: SimplicialMesh,
     method: Literal["dense", "inv_star", "solver", "mixed"] = "dense",
+    bc_cache: BoundaryRestrictionCache | None = None,
     *,
     solver_kwargs: dict[str, Any] | None = None,
 ) -> (
@@ -163,16 +215,24 @@ def _weak_laplacian_3(
     | MixedWeakLaplacianBlocks
 ):
     """Weak 3-Laplacian for a tet mesh."""
-    d2 = tet_mesh.cbd[2]
-    m2 = tet_masses.mass_2(tet_mesh)
-    m3 = tet_masses.mass_3(tet_mesh)
+    if bc_cache is None:
+        d2 = tet_mesh.cbd[2]
+        m2 = tet_masses.mass_2(tet_mesh)
+        m3 = tet_masses.mass_3(tet_mesh)
+    else:
+        d2 = bc_cache.restricted_cbd[2]
+        m2 = bc_cache.restrict_op(2, tet_masses.mass_2(tet_mesh))
+        m3 = bc_cache.restrict_op(3, tet_masses.mass_3(tet_mesh))
 
     match method:
         case "dense":
             return weak_down_laplacian(d2, m3, mass_km1=m2)
 
         case "inv_star":
-            inv_m2 = tet_hodge_stars.star_2(tet_mesh).inv
+            if bc_cache is None:
+                inv_m2 = tet_hodge_stars.star_2(tet_mesh).inv
+            else:
+                inv_m2 = bc_cache.restrict_op(2, tet_hodge_stars.star_2(tet_mesh).inv)
             return weak_down_laplacian(d2, m3, inv_mass_km1=inv_m2)
 
         case "solver":
@@ -271,6 +331,53 @@ def test_spherical_shell_homology_group_dims(
     dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
 
     torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
+
+
+@pytest.mark.parametrize(
+    "weak_laplacian, abs_betti, rel_betti, mixed_rel_betti",
+    [
+        (partial(_weak_laplacian_0, method="cotan"), 1, 0, 0),
+        (partial(_weak_laplacian_0, method="consistent"), 1, 0, 0),
+        (_weak_laplacian_1, 0, 1, 0),
+        (partial(_weak_laplacian_2, method="dense"), 1, 0, 0),
+        (partial(_weak_laplacian_2, method="inv_star"), 1, 0, 0),
+        (partial(_weak_laplacian_2, method="solver"), 1, 0, 0),
+        (partial(_weak_laplacian_3, method="dense"), 0, 1, 0),
+        (partial(_weak_laplacian_3, method="inv_star"), 0, 1, 0),
+        (partial(_weak_laplacian_3, method="solver"), 0, 1, 0),
+    ],
+)
+def test_spherical_shell_absolute_and_relative_homology_group_dims(
+    weak_laplacian,
+    abs_betti,
+    rel_betti,
+    mixed_rel_betti,
+    solid_spherical_shell_mesh,
+    device,
+):
+    mesh = solid_spherical_shell_mesh.to(device)
+
+    bc_sels = [
+        BoundarySelection.from_absolute_bc(mesh),
+        BoundarySelection.from_relative_bc(mesh),
+    ]
+
+    for comp in [torch.le, torch.ge]:
+        inner_surface_mask = mesh.bd_tri_mask & comp(
+            torch.linalg.norm(mesh.vert_coords[mesh.tris], dim=-1), 1.5
+        ).all(dim=-1)
+        bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_surface_mask)
+
+        bc_sels.append(bc_sel)
+
+    for bc_sel, betti in zip(
+        bc_sels, (abs_betti, rel_betti, mixed_rel_betti, mixed_rel_betti)
+    ):
+        bc_cache = BoundaryRestrictionCache.from_mesh(mesh, bc_sel)
+
+        operator = weak_laplacian(mesh, bc_cache=bc_cache).to_dense()
+        dim_ker = operator.shape[0] - torch.linalg.matrix_rank(operator)
+        torch.testing.assert_close(dim_ker, torch.tensor(betti, device=device))
 
 
 def test_laplacian_0_equivalence(two_tets_mesh: SimplicialMesh, device):
