@@ -250,8 +250,6 @@ def _weak_laplacian_3(
             return down_scale * weak_down_laplacian(d2, m3, inv_mass_km1=inv_m2)
 
         case "solver":
-            from cochain.sparse.linalg.solvers import SuperLU
-
             return down_scale * weak_down_laplacian(
                 d2,
                 m3,
@@ -495,14 +493,14 @@ def test_mixed_formulation_forward_pass(
 
 
 @pytest.mark.parametrize(
-    "weak_laplacian",
+    "weak_laplacian, k",
     [
-        _weak_laplacian_2,
-        _weak_laplacian_3,
+        (_weak_laplacian_2, 2),
+        (_weak_laplacian_3, 3),
     ],
 )
 def test_mixed_formulation_linear_solve(
-    weak_laplacian, solid_torus_mesh: SimplicialMesh, device
+    weak_laplacian, k, solid_torus_mesh: SimplicialMesh, device
 ):
     down_scale = 0.5 + random.random()
     up_scale = 0.5 + random.random()
@@ -523,9 +521,18 @@ def test_mixed_formulation_linear_solve(
     l_mix, b_mix = l_block.get_full_system(b)
     solver = SuperLU(l_mix, backend="scipy")
     x_full = solver(b_mix)
-    x_mix, _ = l_block.unpack_mixed_cochain(x_full)
+    x_mix, y_mix = l_block.unpack_mixed_cochain(x_full)
 
     torch.testing.assert_close(x_mix, x_dense)
+
+    codiff = codifferential(
+        cbd_km1=mesh.cbd[k - 1],
+        mass_k=getattr(tet_masses, f"mass_{k}")(mesh),
+        mass_km1=getattr(tet_masses, f"mass_{k - 1}")(mesh),
+    )
+    y_dense = codiff @ x_dense
+
+    torch.testing.assert_close(y_mix, y_dense)
 
 
 @pytest.mark.parametrize(
