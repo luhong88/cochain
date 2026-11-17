@@ -3,6 +3,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from cochain.boundary import BoundaryRestrictionCache, BoundarySelection
 from cochain.complex import SimplicialMesh
 from cochain.datasets import synthetic_tet_meshes
 from cochain.hodge.eigen import (
@@ -553,3 +554,42 @@ def test_lorentzian_regularization_smoke(asym_sc_mesh, device):
     assert mesh.grad is not None
     assert not torch.isnan(mesh.grad).any()
     assert not torch.all(mesh.grad == 0)
+
+
+@itemize_backends
+def test_asym_sc_mesh_abs_and_rel_homology_group_dims(asym_sc_mesh, backend, device):
+    mesh = asym_sc_mesh.to(device, torch.float64)
+
+    disjoint_tris_mask = torch.zeros_like(mesh.bd_tri_mask, dtype=torch.bool)
+    disjoint_tris_mask[1] = True
+    disjoint_tris_mask[27] = True
+
+    bc_sels = [
+        BoundarySelection.from_absolute_bc(mesh),
+        BoundarySelection.from_relative_bc(mesh),
+        BoundarySelection.from_tangential_bd_mask(mesh, disjoint_tris_mask),
+    ]
+    expected_bettis = [0, 0, 1]
+
+    for bc_sel, expected_betti in zip(bc_sels, expected_bettis):
+        bc_cache = BoundaryRestrictionCache.from_mesh(mesh, bc_sel)
+
+        mixed_l1 = MixedWeakLaplacianBlocks(
+            cbd_km1=bc_cache.restricted_cbd[0],
+            cbd_k=bc_cache.restricted_cbd[1],
+            mass_km1=bc_cache.restrict_op(0, tet_masses.mass_0(mesh)),
+            mass_k=bc_cache.restrict_op(1, tet_masses.mass_1(mesh)),
+            mass_kp1=bc_cache.restrict_op(2, tet_masses.mass_2(mesh)),
+        )
+
+        l = 3
+        eig_vals, eig_vecs = mixed_weak_laplacian_lobpcg(
+            mixed_l1,
+            n=2 * l,
+            l=l,
+            solver_type=backend,
+            lobpcg_config=LOBPCGConfig(largest=False),
+        )
+
+        betti = torch.isclose(eig_vals, torch.zeros_like(eig_vals)).sum()
+        torch.testing.assert_close(betti, torch.tensor(expected_betti, device=device))
