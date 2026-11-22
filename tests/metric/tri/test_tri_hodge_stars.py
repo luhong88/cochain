@@ -72,14 +72,14 @@ def test_star_1_barycentric_on_tent(tent_mesh: SimplicialMesh, device):
     side_edge_bary = (
         torch.tensor([0.5, 0.5, 1.0], dtype=mesh.dtype, device=device) / 2.0
     )
-    dual_side_edge_len = 2.0 * torch.linalg.norm(face_bary - side_edge_bary)
-    side_edge_len = torch.linalg.norm(2.0 * side_edge_bary)
+    dual_side_edge_len = 2.0 * torch.linalg.vector_norm(face_bary - side_edge_bary)
+    side_edge_len = torch.linalg.vector_norm(2.0 * side_edge_bary)
     dual_side_edge_ratio = dual_side_edge_len / side_edge_len
 
     base_edge_barycenter = (
         torch.tensor([1.0, 0.0, 0.0], dtype=mesh.dtype, device=device) / 2.0
     )
-    dual_base_edge_ratio = torch.linalg.norm(face_bary - base_edge_barycenter)
+    dual_base_edge_ratio = torch.linalg.vector_norm(face_bary - base_edge_barycenter)
 
     true_s1 = torch.tensor(
         [dual_side_edge_ratio] * 4 + [dual_base_edge_ratio] * 4,

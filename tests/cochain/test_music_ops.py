@@ -59,8 +59,8 @@ def test_local_vertex_based_const_vec_field_reconstruction(mesh, request, device
     )
 
     vec_field_cos_dist = torch.sum(vec_field * vec_field_reconstructed, dim=-1) / (
-        torch.linalg.norm(vec_field, dim=-1)
-        * torch.linalg.norm(vec_field_reconstructed, dim=-1)
+        torch.linalg.vector_norm(vec_field, dim=-1)
+        * torch.linalg.vector_norm(vec_field_reconstructed, dim=-1)
     )
 
     assert (vec_field_cos_dist > 0.95).all()
@@ -107,7 +107,7 @@ def test_local_element_based_const_vec_field_reconstruction(
                 tri_verts[:, 2] - tri_verts[:, 0],
                 dim=-1,
             )
-            area_unormal = area_normal / torch.linalg.norm(
+            area_unormal = area_normal / torch.linalg.vector_norm(
                 area_normal, dim=-1, keepdim=True
             )
 
@@ -260,7 +260,7 @@ def test_galerkin_element_based_const_vec_field_reconstruction(mesh, request, de
                     tri_verts[:, 2] - tri_verts[:, 0],
                     dim=-1,
                 )
-                area_unormal = area_normal / torch.linalg.norm(
+                area_unormal = area_normal / torch.linalg.vector_norm(
                     area_normal, dim=-1, keepdim=True
                 )
 
@@ -443,7 +443,7 @@ def test_local_sharp_backward(mesh, location, mode, request, device):
         cochain_1=cochain, mesh=mesh, mode=mode, location=location
     )
 
-    output = torch.linalg.norm(vec_field, dim=-1).sum()
+    output = torch.linalg.vector_norm(vec_field, dim=-1).sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -480,7 +480,7 @@ def test_local_sharp_gradcheck(mesh, location, mode, request, device):
             cochain_1=test_cochain, mesh=test_mesh, mode=mode, location=location
         )
 
-        output = torch.linalg.norm(vec_field, dim=-1).sum()
+        output = torch.linalg.vector_norm(vec_field, dim=-1).sum()
         return output
 
     assert torch.autograd.gradcheck(
@@ -671,7 +671,7 @@ def test_galerkin_sharp_backward(mesh, mode, diagonal, request, device):
         mode=mode,
     )
 
-    output = torch.linalg.norm(vec_field, dim=-1).sum()
+    output = torch.linalg.vector_norm(vec_field, dim=-1).sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -701,7 +701,7 @@ def test_galerkin_sharp_solver_backward(mesh, request, device):
         mode="vertex",
     )
 
-    output = torch.linalg.norm(vec_field, dim=-1).sum()
+    output = torch.linalg.vector_norm(vec_field, dim=-1).sum()
     output.backward()
 
     mesh_grad_true = mesh.grad.detach().clone()
@@ -723,7 +723,7 @@ def test_galerkin_sharp_solver_backward(mesh, request, device):
         mode="vertex",
     )
 
-    output = torch.linalg.norm(vec_field_with_op, dim=-1).sum()
+    output = torch.linalg.vector_norm(vec_field_with_op, dim=-1).sum()
     output.backward()
 
     mesh_grad = mesh.grad.detach().clone()
@@ -765,7 +765,7 @@ def test_galerkin_sharp_gradcheck(mesh, mode, diagonal, request, device):
             mode=mode,
         )
 
-        output = torch.linalg.norm(vec_field, dim=-1).sum()
+        output = torch.linalg.vector_norm(vec_field, dim=-1).sum()
         return output
 
     assert torch.autograd.gradcheck(

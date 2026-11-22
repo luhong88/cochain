@@ -382,7 +382,7 @@ def test_1_form_interpolate_discretize_right_project(mesh, request, device):
                 tri_verts[:, 2] - tri_verts[:, 0],
                 dim=-1,
             )
-            area_unormal = area_normal / torch.linalg.norm(
+            area_unormal = area_normal / torch.linalg.vector_norm(
                 area_normal, dim=-1, keepdim=True
             )
             form_1_perp_comp = einsum(
@@ -446,7 +446,7 @@ def test_2_form_interpolate_discretize_right_project(mesh, request, device):
                 tri_verts[:, 2] - tri_verts[:, 0],
                 dim=-1,
             )
-            area_unormal = area_normal / torch.linalg.norm(
+            area_unormal = area_normal / torch.linalg.vector_norm(
                 area_normal, dim=-1, keepdim=True
             )
             form_2_perp_comp = einsum(
@@ -650,7 +650,7 @@ def test_interpolate_backward(mesh, k, quad, device, request):
         boundary_reduction="mean",
     )
 
-    output = torch.linalg.norm(k_form, dim=-1).sum()
+    output = torch.linalg.vector_norm(k_form, dim=-1).sum()
     output.backward()
 
     assert mesh.grad is not None
@@ -694,7 +694,7 @@ def test_interpolate_gradcheck(mesh, k, quad, device, request):
             boundary_reduction="mean",
         )
 
-        output = torch.linalg.norm(k_form, dim=-1).sum()
+        output = torch.linalg.vector_norm(k_form, dim=-1).sum()
         return output
 
     assert torch.autograd.gradcheck(

@@ -52,7 +52,7 @@ def test_mass_matrix_spd_with_boundary_conditions(
 
     for comp in [torch.le, torch.ge]:
         inner_edge_mask = mesh.bd_edge_mask & comp(
-            torch.linalg.norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
+            torch.linalg.vector_norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
         ).all(dim=-1)
         bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_edge_mask)
         bc_sels.append(bc_sel)
@@ -200,7 +200,7 @@ def test_mass_1_linear_potential_dirichlet_energy(
     edge_ik = vert_s_coord[:, 2] - vert_s_coord[:, 0]
 
     area_vec = torch.cross(edge_ij, edge_ik, dim=-1)
-    two_area = torch.linalg.norm(area_vec, dim=-1)
+    two_area = torch.linalg.vector_norm(area_vec, dim=-1)
 
     area_vec_norm = area_vec / two_area.view(-1, 1)
     area = two_area / 2.0

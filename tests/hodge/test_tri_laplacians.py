@@ -207,7 +207,7 @@ def test_annulus_absolute_and_relative_homology_group_dims(
 
     for comp in [torch.le, torch.ge]:
         inner_edge_mask = mesh.bd_edge_mask & comp(
-            torch.linalg.norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
+            torch.linalg.vector_norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
         ).all(dim=-1)
         bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_edge_mask)
         bc_sels.append(bc_sel)

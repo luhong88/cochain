@@ -178,7 +178,7 @@ def test_mass_matrix_spd_with_boundary_conditions(
 
     for comp in [torch.le, torch.ge]:
         inner_surface_mask = mesh.bd_tri_mask & comp(
-            torch.linalg.norm(mesh.vert_coords[mesh.tris], dim=-1), 1.5
+            torch.linalg.vector_norm(mesh.vert_coords[mesh.tris], dim=-1), 1.5
         ).all(dim=-1)
         bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_surface_mask)
         bc_sels.append(bc_sel)
