@@ -45,7 +45,7 @@ class LoadCompatibility:
 
     @property
     def all_compatible(self) -> Bool[Tensor, ""]:
-        """Whether all column vectors of `kernel_proj` fall below the `tol`."""
+        """Whether all column vectors of `kernel_proj` are at or below `tol`."""
         return torch.all(self.compatible)
 
 
@@ -58,6 +58,9 @@ def _check_primary_load_compatibility(
     incompatibility: Literal["raise", "warn", "project"] = "warn",
 ) -> LoadCompatibility:
     """Check whether the operator + the load vector constitute a consistent linear system."""
+    if incompatibility not in ("raise", "warn", "project"):
+        raise ValueError(f"Unknown 'incompatibility' argument '{incompatibility}'.")
+
     if b_k == 0:
         ch_dims = primary_load.shape[1:]
 
@@ -65,7 +68,7 @@ def _check_primary_load_compatibility(
             kernel_proj=primary_load.new_zeros((b_k, *ch_dims)),
             norm=primary_load.new_zeros(ch_dims),
             tol=atol,
-            compatible=primary_load.new_ones(ch_dims, dype=torch.bool),
+            compatible=primary_load.new_ones(ch_dims, dtype=torch.bool),
         )
 
     else:
@@ -73,7 +76,7 @@ def _check_primary_load_compatibility(
             rtol = torch.finfo(primary_load.dtype).eps ** 0.5
 
         # Define the tolerance threshold to be atol + rtol * ||H||_F * ||r_k||_2.
-        kernel_fro_norm = torch.sqrt(torch.linalg.matrix_norm(kernel, ord="fro"))
+        kernel_fro_norm = torch.linalg.matrix_norm(kernel, ord="fro")
         primary_load_l2_norm = torch.linalg.vector_norm(primary_load, dim=0)
         tol = atol + rtol * kernel_fro_norm * primary_load_l2_norm
 
@@ -107,10 +110,6 @@ def _check_primary_load_compatibility(
                     warnings.warn(msg, UserWarning)
                 case "project":
                     pass
-                case _:
-                    raise ValueError(
-                        f"Unknown 'incompatibility' argument '{incompatibility}'."
-                    )
 
     return load_compatibility
 
@@ -344,17 +343,17 @@ class MixedGaugeFixedSystem:
             incompatibility=incompatibility,
         )
 
+        if aux_load is None:
+            n_km1_splx = self.mixed_block.mass_km1.size(-1)
+            ch_dims = primary_load.shape[1:]
+            scaled_aux_load = primary_load.new_zeros((n_km1_splx, *ch_dims))
+        else:
+            scaled_aux_load = aux_load * math.sqrt(self.mixed_block.down_scale)
+
         if self.b_k == 0:
-            rhs = self.mixed_block._pad_k_cochain(primary_load)
+            rhs = torch.cat([scaled_aux_load, primary_load], dim=0)
 
         else:
-            if aux_load is None:
-                n_km1_splx = self.mixed_block.mass_km1.size(-1)
-                ch_dims = primary_load.shape[1:]
-                scaled_aux_load = primary_load.new_zeros((n_km1_splx, *ch_dims))
-            else:
-                scaled_aux_load = aux_load * math.sqrt(self.mixed_block.down_scale)
-
             if gauge_constraint is None:
                 b_k = self.kernel.size(-1)
                 ch_dims = primary_load.shape[1:]
@@ -367,8 +366,8 @@ class MixedGaugeFixedSystem:
     def unpack_sol(
         self, sol: Float[Tensor, " km1_splx+k_splx+b_k *ch"]
     ) -> tuple[
-        Float[Tensor, " km1_splx *ch"],
         Float[Tensor, " k_splx *ch"],
+        Float[Tensor, " km1_splx *ch"],
         Float[Tensor, " b_k *ch"],
     ]:
         """
