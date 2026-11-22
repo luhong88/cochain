@@ -33,7 +33,11 @@ class MassKm1Solver:
 
         # Solve a linear system with a channel dim of at most 3n size.
         b_dummy = to_col_major(
-            self.mass_km1.new_zeros((self.mass_km1.size(-1), 3 * self.n)),
+            torch.zeros(
+                (self.mass_km1.size(-1), 3 * self.n),
+                dtype=self.mass_km1.dtype,
+                device=self.mass_km1.device,
+            ),
             batch_first=False,
         )
 
