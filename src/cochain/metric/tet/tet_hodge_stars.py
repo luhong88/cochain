@@ -74,7 +74,9 @@ def star_2(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "tri tri"]:
     )
 
     dual_edges = tet_bcs - tet_tri_face_bcs
-    dual_edge_lens: Float[Tensor, "tet 4"] = torch.linalg.norm(dual_edges, dim=-1)
+    dual_edge_lens: Float[Tensor, "tet 4"] = torch.linalg.vector_norm(
+        dual_edges, dim=-1
+    )
 
     # For each tri, find all tet containing the tri as a face, and sum together
     # the tet-tri pair dual edge lengths.
@@ -164,14 +166,14 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
         (tet_mesh.n_tets, 6), dtype=tet_mesh.dtype, device=tet_mesh.device
     )
     bc_tris_areas.add_(
-        torch.linalg.norm(
+        torch.linalg.vector_norm(
             torch.cross(tet_edge_vec, tet_tri_vec[:, edge_coface_1], dim=-1),
             dim=-1,
         )
         / 2.0
     )
     bc_tris_areas.add_(
-        torch.linalg.norm(
+        torch.linalg.vector_norm(
             torch.cross(tet_edge_vec, tet_tri_vec[:, edge_coface_2], dim=-1),
             dim=-1,
         )
@@ -194,7 +196,7 @@ def star_1(tet_mesh: SimplicialMesh) -> Float[DiagDecoupledTensor, "edge edge"]:
     )
 
     # Divide the dual area sums by the primal edge lengths to get the Hodge 1-star.
-    edge_lens = torch.linalg.norm(
+    edge_lens = torch.linalg.vector_norm(
         tet_mesh.vert_coords[tet_mesh.edges[:, 1]]
         - tet_mesh.vert_coords[tet_mesh.edges[:, 0]],
         dim=-1,

@@ -48,7 +48,7 @@ def _m_normalize(
     scaling by `1/col_max` avoids potential numerical issues for very large or
     small column vectors.
     """
-    empty = torch.empty((v.size(0), 0), dtype=v.dtype, device=v.device)
+    empty = v.new_empty((v.size(0), 0))
 
     if v.numel() == 0:
         return empty, empty, v.new_empty(0), v.new_empty(0)
@@ -336,9 +336,7 @@ def _m_orthonormalize_one_iter(
 
     # If V is basically zero, return an empty basis zero and a condition number of 0.
     if not mask.any():
-        return torch.empty(
-            (v.size(0), 0), dtype=v.dtype, device=v.device
-        ), v.new_tensor(0.0)
+        return v.new_empty((v.size(0), 0)), v.new_tensor(0.0)
 
     eig_vals_masked = eig_vals[mask]
     eig_vecs_masked = eig_vecs[:, mask]

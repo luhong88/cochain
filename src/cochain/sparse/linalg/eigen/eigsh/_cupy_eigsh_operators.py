@@ -51,9 +51,7 @@ class CuPyShiftInvSymOp(cp_sp_linalg.LinearOperator):
         )
         a_shift_inv = SparseDecoupledTensor.assemble(a_sdt, -sigma * eye)
 
-        b_dummy = torch.zeros(
-            a_pattern.size(-1), dtype=a_val.dtype, device=a_val.device
-        )
+        b_dummy = a_val.new_zeros(a_pattern.size(-1))
 
         self.solver = _NVMathSparseSolver(
             a_shift_inv.values,

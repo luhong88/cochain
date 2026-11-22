@@ -32,7 +32,7 @@ def compute_tri_areas(
     edge_ij = vert_s_coord[:, 1] - vert_s_coord[:, 0]
     edge_ik = vert_s_coord[:, 2] - vert_s_coord[:, 0]
 
-    area = 0.5 * torch.linalg.norm(torch.cross(edge_ij, edge_ik, dim=-1), dim=-1)
+    area = 0.5 * torch.linalg.vector_norm(torch.cross(edge_ij, edge_ik, dim=-1), dim=-1)
 
     return area
 
@@ -68,7 +68,7 @@ def compute_d_tri_areas_d_vert_coords(
     edge_np = vert_s_coord[:, [2, 0, 1], :] - vert_s_coord[:, [1, 2, 0], :]
 
     norm_s: Float[Tensor, "tri 3"] = torch.cross(edge_sn, edge_sp, dim=-1)
-    norm_s_len = torch.linalg.norm(norm_s, dim=-1, keepdim=True)
+    norm_s_len = torch.linalg.vector_norm(norm_s, dim=-1, keepdim=True)
     unorm_s = repeat(norm_s / norm_s_len, "tri coord -> tri vert coord", vert=3)
 
     dAdV = torch.cross(unorm_s, edge_np, dim=-1) / 2.0

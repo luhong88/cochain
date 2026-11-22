@@ -225,10 +225,8 @@ class BoundarySelection:
         full_cochain : [k_splx, *ch]
             Full cochain with zeros on constrained k-simplices.
         """
-        full_cochain = torch.zeros(
-            (self.constrained_mask[k].size(0), *k_cochain.shape[1:]),
-            dtype=k_cochain.dtype,
-            device=k_cochain.device,
+        full_cochain = k_cochain.new_zeros(
+            (self.constrained_mask[k].size(0), *k_cochain.shape[1:])
         )
         full_cochain[self.retained_idx[k]] = k_cochain
         return full_cochain
@@ -271,10 +269,8 @@ class BoundarySelection:
         full_cochain : [k_splx, *ch]
             Full cochain with zeros on retained k-simplices.
         """
-        full_cochain = torch.zeros(
-            (self.constrained_mask[k].size(0), *k_cochain.shape[1:]),
-            dtype=k_cochain.dtype,
-            device=k_cochain.device,
+        full_cochain = k_cochain.new_zeros(
+            (self.constrained_mask[k].size(0), *k_cochain.shape[1:])
         )
         full_cochain[self.constrained_idx[k]] = k_cochain
         return full_cochain

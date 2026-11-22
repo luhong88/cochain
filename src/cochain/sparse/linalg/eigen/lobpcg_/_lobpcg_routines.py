@@ -71,11 +71,7 @@ def _orthonormalize_search_directions(
     else:
         m_double = m_op.to(torch.float64)
 
-    empty = torch.empty(
-        (x_current.size(0), 0),
-        dtype=x_current.dtype,
-        device=x_current.device,
-    )
+    empty = x_current.new_empty((x_current.size(0), 0))
 
     # Compute the rank of the complement of span(X). We can assume that the column
     # vectors of X are linearly independent, and the number of column vectors/trial
@@ -310,8 +306,8 @@ def _lobpcg_loop(
             # Compute a lower bound estimate of the matrix norm ||A||_2, used
             # later as part of the matrix-free convergence criteria.
             a_norm_lower_bound = (
-                torch.linalg.norm(tx_current, dim=0)
-                / torch.linalg.norm(x_current, dim=0)
+                torch.linalg.vector_norm(tx_current, dim=0)
+                / torch.linalg.vector_norm(x_current, dim=0)
             ).max()
         else:
             a_norm_lower_bound = op_scale
@@ -328,8 +324,8 @@ def _lobpcg_loop(
         # Compute the residual vectors R = T@X - B@X@Λ.
         bx_current = b_op @ x_current
         res = tx_current - bx_current * lambda_current.view(1, -1)
-        res_norm = torch.linalg.norm(res, dim=0)
-        x_norm = torch.linalg.norm(x_current, dim=0)
+        res_norm = torch.linalg.vector_norm(res, dim=0)
+        x_norm = torch.linalg.vector_norm(x_current, dim=0)
 
         # The PyTorch implementation of LOBPCG uses the tolerance threshold
         #
@@ -397,9 +393,9 @@ def _lobpcg_loop(
             # The absolute floor makes convergence attainable for harmonic modes,
             # whose individual ||Ax|| and |lambda| ||Mx|| both approach zero.
             abs_floor = a_norm_lower_bound * x_norm
-            rel_criterion = torch.linalg.norm(
+            rel_criterion = torch.linalg.vector_norm(
                 tx_current, dim=0
-            ) + lambda_current.abs() * torch.linalg.norm(bx_current, dim=0)
+            ) + lambda_current.abs() * torch.linalg.vector_norm(bx_current, dim=0)
             tol_current = tol * (abs_floor + rel_criterion)
 
         elif sigma is None:

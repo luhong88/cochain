@@ -83,7 +83,7 @@ def test_annulus_relative_betti_with_mixed_bc_via_trees(flat_annulus_mesh, devic
     # Put the relative BC on either the inner or outer edge.
     for comp in [torch.le, torch.ge]:
         inner_edge_mask = mesh.bd_edge_mask & comp(
-            torch.linalg.norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
+            torch.linalg.vector_norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
         ).all(dim=-1)
         bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_edge_mask)
 
@@ -143,7 +143,7 @@ def test_solid_spherical_shell_mesh_relative_betti_with_mixed_bc_via_morse(
 
     for comp in [torch.le, torch.ge]:
         inner_surface_mask = mesh.bd_tri_mask & comp(
-            torch.linalg.norm(mesh.vert_coords[mesh.tris], dim=-1), 1.5
+            torch.linalg.vector_norm(mesh.vert_coords[mesh.tris], dim=-1), 1.5
         ).all(dim=-1)
         bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_surface_mask)
 

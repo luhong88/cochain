@@ -888,7 +888,7 @@ def compute_morse_complex(
     if scalar_field is None:
         mesh_center = torch.mean(mesh.vert_coords, dim=0, keepdim=True)
         verts_from_center = mesh.vert_coords - mesh_center
-        scalar_field = torch.linalg.norm(verts_from_center, dim=-1)
+        scalar_field = torch.linalg.vector_norm(verts_from_center, dim=-1)
 
     # Record the mesh cbd int dtype and determine the safe numpy int dtype.
     torch_int_dtype = mesh.cbd[0].pattern.dtype
