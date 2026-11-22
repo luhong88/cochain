@@ -638,7 +638,9 @@ def test_asym_sc_mesh_abs_and_rel_homology_group(asym_sc_mesh, backend, device):
         if betti > 0:
             harmonic_basis = eig_vecs[:, zero_mask]
 
-            d_H = torch.linalg.vector_norm(bc_cache.restricted_cbd[1] @ harmonic_basis)
+            d_H = torch.linalg.vector_norm(
+                bc_cache.restricted_cbd[1] @ harmonic_basis, dim=0
+            )
             torch.testing.assert_close(
                 d_H,
                 torch.zeros_like(d_H),
@@ -647,7 +649,7 @@ def test_asym_sc_mesh_abs_and_rel_homology_group(asym_sc_mesh, backend, device):
             )
 
             d_M_H = torch.linalg.vector_norm(
-                bc_cache.restricted_cbd[0].T @ m1 @ harmonic_basis
+                bc_cache.restricted_cbd[0].T @ m1 @ harmonic_basis, dim=0
             )
             torch.testing.assert_close(
                 d_M_H,
