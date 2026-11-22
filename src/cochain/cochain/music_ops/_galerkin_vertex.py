@@ -32,8 +32,8 @@ def vertex_based_tri_mixed_mass_matrix(
     # Note that, for this calculation, the local, per-triangle mass matrix is
     # required instead of the global mass matrices computed in metric.tri.
     ref_local_mass_0 = (
-        torch.ones(3, 3).to(dtype=mesh.dtype, device=mesh.device)
-        + torch.eye(3).to(dtype=mesh.dtype, device=mesh.device)
+        torch.ones((3, 3), dtype=mesh.dtype, device=mesh.device)
+        + torch.eye(3, dtype=mesh.dtype, device=mesh.device)
     ) / 12.0
     local_mass_0: Float[Tensor, "tri vert=3 vert=3"] = einsum(
         tri_areas, ref_local_mass_0, "tri, v_i v_j -> tri v_i v_j"
@@ -115,8 +115,8 @@ def vertex_based_tet_mixed_mass_matrix(
     # Note that, for this calculation, the local, per-tet mass matrix is
     # required instead of the global mass matrices computed in metric.tet.
     ref_local_mass_0 = (
-        torch.ones(4, 4).to(dtype=mesh.dtype, device=mesh.device)
-        + torch.eye(4).to(dtype=mesh.dtype, device=mesh.device)
+        torch.ones((4, 4), dtype=mesh.dtype, device=mesh.device)
+        + torch.eye(4, dtype=mesh.dtype, device=mesh.device)
     ) / 20.0
     local_mass_0: Float[Tensor, "tet vert=4 vert=4"] = einsum(
         tet_unsigned_vols, ref_local_mass_0, "tet, v_i v_j -> tet v_i v_j"

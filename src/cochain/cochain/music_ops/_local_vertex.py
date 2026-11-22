@@ -1,4 +1,3 @@
-import torch
 from einops import einsum, repeat
 from jaxtyping import Float, Integer
 from torch import Tensor
