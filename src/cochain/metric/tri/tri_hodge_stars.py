@@ -87,7 +87,9 @@ def _star_1_barycentric(
     )
 
     dual_edges = tri_bcs - tri_edge_face_bcs
-    dual_edge_lens: Float[Tensor, "tri edge=3"] = torch.linalg.norm(dual_edges, dim=-1)
+    dual_edge_lens: Float[Tensor, "tri edge=3"] = torch.linalg.vector_norm(
+        dual_edges, dim=-1
+    )
 
     # For each edge, find all tri containing the edge as a face, and add together
     # all the dual edge lengths from the (tri, primal edge) pairs.
@@ -105,7 +107,7 @@ def _star_1_barycentric(
     )
 
     # Divide the dual edge length sum by the primal edge length to get the Hodge 1-star.
-    edge_lens = torch.linalg.norm(
+    edge_lens = torch.linalg.vector_norm(
         vert_coords[edges[:, 1]] - vert_coords[edges[:, 0]],
         dim=-1,
     )

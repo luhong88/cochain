@@ -230,11 +230,7 @@ class WhitneyWedgeL2Projector(torch.nn.Module):
                 raise ValueError(f"Unknown pairing method '{pairing}'.")
 
         ch_out_shape = m_cochain_at_m_face.shape[2:]
-        load = torch.zeros(
-            (self.n_m_splx,) + ch_out_shape,
-            device=self.triple_prod_with_parity.device,
-            dtype=self.triple_prod_with_parity.dtype,
-        )
+        load = self.triple_prod_with_parity.new_zeros((self.n_m_splx,) + ch_out_shape)
 
         # load[m_face_idx[i], ...] = m_cochain_at_m_face[i, ...]
         load.index_add_(

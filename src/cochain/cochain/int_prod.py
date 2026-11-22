@@ -107,10 +107,8 @@ def galerkin_contract(
 
     # Compute the RHS W(v, *).T@M_k@η as a reverse-mode gradient using the
     # functional VJP implemented in torch.func.vjp().
-    dummy_cochain_km1: Float[Tensor, " km1_splx *ch"] = torch.zeros(
-        (n_km1_splx, *ch_dims),
-        dtype=cochain_k.dtype,
-        device=cochain_k.device,
+    dummy_cochain_km1: Float[Tensor, " km1_splx *ch"] = cochain_k.new_zeros(
+        (n_km1_splx, *ch_dims)
     )
 
     def _wedge_forward(cochain_km1: Tensor) -> Tensor:

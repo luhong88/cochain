@@ -145,7 +145,7 @@ class FixedTopoSpSpMMAutogradFunction(torch.autograd.Function):
         b_val: Float[Tensor, " b_nz"],
         plan: SpSpMMPlan,
     ) -> Float[Tensor, " c_nz"]:
-        c_val = torch.zeros(plan.fwd_plan.c_nnz, dtype=a_val.dtype, device=a_val.device)
+        c_val = a_val.new_zeros(plan.fwd_plan.c_nnz)
         c_val.scatter_add_(
             dim=0,
             index=plan.fwd_plan.c_idx,
@@ -193,9 +193,7 @@ class FixedTopoSpSpMMAutogradFunction(torch.autograd.Function):
         # A, will need to be discarded).
 
         if needs_dLdA:
-            dLdA_val = torch.zeros(
-                plan.bwd_plan_A.a_nnz, dtype=a_val.dtype, device=a_val.device
-            )
+            dLdA_val = a_val.new_zeros(plan.bwd_plan_A.a_nnz)
             dLdA_val.scatter_add_(
                 dim=0,
                 index=plan.bwd_plan_A.dLdA_idx,
@@ -203,9 +201,7 @@ class FixedTopoSpSpMMAutogradFunction(torch.autograd.Function):
             )
 
         if needs_dLdB:
-            dLdB_val = torch.zeros(
-                plan.bwd_plan_B.b_nnz, dtype=b_val.dtype, device=b_val.device
-            )
+            dLdB_val = b_val.new_zeros(plan.bwd_plan_B.b_nnz)
             dLdB_val.scatter_add_(
                 dim=0,
                 index=plan.bwd_plan_B.dLdB_idx,

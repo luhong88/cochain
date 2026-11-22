@@ -127,7 +127,7 @@ def _csr_to_csc(
     csc_to_coo_map = torch.argsort(idx_col, dim=0, stable=True)
 
     # Compute CSC ccol index
-    idx_ccol = torch.zeros(n_cols + 1, dtype=idx_crow.dtype, device=idx_crow.device)
+    idx_ccol = idx_crow.new_zeros(n_cols + 1)
     idx_ccol[1:] = torch.bincount(idx_col, minlength=n_cols).cumsum(dim=0)
 
     # Compute CSC row index

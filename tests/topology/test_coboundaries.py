@@ -38,7 +38,7 @@ def test_exactness_on_annulus_with_boundary_conditions(
 
     for comp in [torch.le, torch.ge]:
         inner_edge_mask = mesh.bd_edge_mask & comp(
-            torch.linalg.norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
+            torch.linalg.vector_norm(mesh.vert_coords[mesh.edges], dim=-1), 0.75
         ).all(dim=-1)
         bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_edge_mask)
         bc_sels.append(bc_sel)
@@ -61,7 +61,7 @@ def test_exactness_on_solid_spherical_shell_with_boundary_conditions(
 
     for comp in [torch.le, torch.ge]:
         inner_surface_mask = mesh.bd_tri_mask & comp(
-            torch.linalg.norm(mesh.vert_coords[mesh.tris], dim=-1), 1.5
+            torch.linalg.vector_norm(mesh.vert_coords[mesh.tris], dim=-1), 1.5
         ).all(dim=-1)
         bc_sel = BoundarySelection.from_tangential_bd_mask(mesh, inner_surface_mask)
         bc_sels.append(bc_sel)
