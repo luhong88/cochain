@@ -699,9 +699,7 @@ class SimplicialMesh:
             return sdt
 
         else:
-            coalesced_values = torch.zeros(
-                pattern._nnz(), dtype=values.dtype, device=values.device
-            )
+            coalesced_values = values.new_zeros(pattern._nnz())
             coalesced_values.scatter_add_(
                 dim=0, index=pattern._coalesce_idx_map, src=values
             )

@@ -98,11 +98,7 @@ class ShiftInvSymSpOp:
 
         # Solve a linear system with a channel dim of at most 3n size.
         b_dummy = to_col_major(
-            torch.zeros(
-                (a_shift_inv.size(-1), 3 * n),
-                dtype=a_shift_inv.dtype,
-                device=a_shift_inv.device,
-            ),
+            a_shift_inv.new_zeros((a_shift_inv.size(-1), 3 * n)),
             batch_first=False,
         )
 

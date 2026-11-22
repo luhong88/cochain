@@ -64,11 +64,7 @@ def _compute_inv_metric_det(
     """
     match form_deg:
         case 0:
-            d_bc_wedge_dot = torch.ones(
-                bc_grad_dot.shape[0],
-                dtype=bc_grad_dot.dtype,
-                device=bc_grad_dot.device,
-            )
+            d_bc_wedge_dot = bc_grad_dot.new_ones(bc_grad_dot.shape[0])
 
         case 1:
             d_bc_wedge_dot = bc_grad_dot
@@ -78,14 +74,8 @@ def _compute_inv_metric_det(
             n_splx = bc_grad_dot.size(0)
             n_vert = bc_grad_dot.size(-1)
 
-            d_bc_wedge_dot = torch.zeros(
-                n_splx,
-                n_vert,
-                n_vert,
-                n_vert,
-                n_vert,
-                dtype=bc_grad_dot.dtype,
-                device=bc_grad_dot.device,
+            d_bc_wedge_dot = bc_grad_dot.new_zeros(
+                (n_splx, n_vert, n_vert, n_vert, n_vert)
             )
 
             # <dλ_i, dλ_k><dλ_j, dλ_l>

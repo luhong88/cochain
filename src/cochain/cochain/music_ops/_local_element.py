@@ -71,9 +71,7 @@ def element_based_tri_local_flat(
         tri_edge_idx, "tri edge -> (tri edge) coord", coord=n_coords
     )
 
-    vec_field_mean = torch.zeros(
-        (n_edges, n_coords), dtype=vec_field.dtype, device=vec_field.device
-    )
+    vec_field_mean = vec_field.new_zeros((n_edges, n_coords))
 
     # self[idx[tri_by_edge][coord]][coord] += src[tri_by_edge][coord]
     vec_field_mean.scatter_reduce_(
@@ -117,9 +115,7 @@ def element_based_tet_local_flat(
         tet_edge_idx, "tet edge -> (tet edge) coord", coord=n_coords
     )
 
-    vec_field_mean = torch.zeros(
-        (n_edges, n_coords), dtype=vec_field.dtype, device=vec_field.device
-    )
+    vec_field_mean = vec_field.new_zeros((n_edges, n_coords))
 
     # self[idx[tet_by_edge][coord]][coord] += src[tet_by_edge][coord]
     vec_field_mean.scatter_reduce_(

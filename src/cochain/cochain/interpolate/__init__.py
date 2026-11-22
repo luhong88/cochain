@@ -165,13 +165,8 @@ def _bary_embed(
         pt=n_pts,
     )
 
-    bary_coords_embedded = torch.zeros(
-        n_m_splx,
-        n_k_faces_per_m_splx,
-        n_pts,
-        n_m_verts,
-        dtype=k_splx_bary_coords.dtype,
-        device=k_splx_bary_coords.device,
+    bary_coords_embedded = k_splx_bary_coords.new_zeros(
+        (n_m_splx, n_k_faces_per_m_splx, n_pts, n_m_verts)
     )
 
     # bary_coords_embedded[m][k][p][k_faces_local_vert_idx_shaped[m][k][p][v]] =
@@ -258,10 +253,8 @@ def _barycentric_whitney_map_boundary(
                 .expand_as(k_forms_shaped)
             )
 
-            canon_k_forms: Float[Tensor, "k_splx pt *ch coord"] = torch.zeros(
-                (n_k_splx, *k_forms_shaped.shape[1:]),
-                dtype=k_cochain.dtype,
-                device=k_cochain.device,
+            canon_k_forms: Float[Tensor, "k_splx pt *ch coord"] = k_cochain.new_zeros(
+                (n_k_splx, *k_forms_shaped.shape[1:])
             )
             canon_k_forms.scatter_reduce_(
                 dim=0,

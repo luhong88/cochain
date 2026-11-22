@@ -291,9 +291,7 @@ class MixedWeakLaplacianBlocks:
         self, b: Float[Tensor, " k_splx *ch"]
     ) -> Float[Tensor, " km1_splx+k_splx *ch"]:
         """Pad the RHS vector b with zeros into its mixed formulation representation."""
-        b_pad = torch.zeros(
-            (self._n_km1_splx, *b.shape[1:]), dtype=b.dtype, device=b.device
-        )
+        b_pad = b.new_zeros((self._n_km1_splx, *b.shape[1:]))
         b_full = torch.cat((b_pad, b), dim=0)
 
         return b_full

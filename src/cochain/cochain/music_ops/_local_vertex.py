@@ -78,9 +78,7 @@ def vertex_based_tri_local_sharp(
         area_weighted_form_1, "tri coord -> (tri vert) coord", vert=3
     )
 
-    area_weighted_form_1_on_verts = torch.zeros(
-        (n_global_verts, n_coords), dtype=cochain_1.dtype, device=cochain_1.device
-    )
+    area_weighted_form_1_on_verts = cochain_1.new_zeros((n_global_verts, n_coords))
 
     # self[idx[tri_by_vert][coord]][coord] += src[tri_by_vert][coord]
     area_weighted_form_1_on_verts.scatter_add_(
@@ -135,9 +133,7 @@ def vertex_based_tet_local_sharp(
         vol_weighted_form_1, "tet coord -> (tet vert) coord", vert=4
     )
 
-    vol_weighted_form_1_on_verts = torch.zeros(
-        (n_global_verts, n_coords), dtype=cochain_1.dtype, device=cochain_1.device
-    )
+    vol_weighted_form_1_on_verts = cochain_1.new_zeros((n_global_verts, n_coords))
 
     # self[idx[tet_by_vert][coord]][coord] += src[tet_by_vert][coord]
     vol_weighted_form_1_on_verts.scatter_add_(

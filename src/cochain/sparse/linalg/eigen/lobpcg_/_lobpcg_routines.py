@@ -71,11 +71,7 @@ def _orthonormalize_search_directions(
     else:
         m_double = m_op.to(torch.float64)
 
-    empty = torch.empty(
-        (x_current.size(0), 0),
-        dtype=x_current.dtype,
-        device=x_current.device,
-    )
+    empty = x_current.new_empty((x_current.size(0), 0))
 
     # Compute the rank of the complement of span(X). We can assume that the column
     # vectors of X are linearly independent, and the number of column vectors/trial
