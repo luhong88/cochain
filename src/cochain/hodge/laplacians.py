@@ -65,6 +65,7 @@ def _inv_mass_matmul(
         return torch.linalg.solve(mass.to_dense(), rhs.to_dense())
 
 
+# TODO: update variable naming to be consistent with gauge and affine
 @dataclass(frozen=True)
 class MixedWeakLaplacianBlocks:
     r"""

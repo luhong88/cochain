@@ -16,6 +16,7 @@ from .laplacians import MixedWeakLaplacianBlocks
 # TODO: docstring comment on difference with topo tree-cotree utils
 
 
+# TODO: consider similar convergence report for LOBPCG
 @dataclass(frozen=True)
 class LoadCompatibility:
     """
@@ -141,9 +142,28 @@ class GaugeFixedSystem:
         object.__setattr__(self, "kernel", self.kernel.detach())
 
     @property
+    def dtype(self) -> torch.dtype:
+        return self.op.dtype
+
+    @property
+    def device(self) -> torch.device:
+        return self.op.device
+
+    @property
     def b_k(self) -> int:
         """The dimension of the kernel of `self.op`."""
         return self.kernel.size(-1)
+
+    @property
+    def shape(self) -> torch.Size:
+        lhs_dim = self.op.size(-1) + self.b_k
+        return torch.Size([lhs_dim, lhs_dim])
+
+    def size(self, dim: int | None = None) -> int | torch.Size:
+        if dim is None:
+            return self.shape
+        else:
+            return self.shape[dim]
 
     @property
     def lhs(self) -> Float[SparseDecoupledTensor, "k_splx+b_k k_splx+b_k"]:
@@ -267,9 +287,32 @@ class MixedGaugeFixedSystem:
         object.__setattr__(self, "kernel", self.kernel.detach())
 
     @property
+    def dtype(self) -> torch.dtype:
+        return self.mixed_block.dtype
+
+    @property
+    def device(self) -> torch.device:
+        return self.mixed_block.device
+
+    @property
     def b_k(self) -> int:
         """The dimension of the kernel of `self.mixed_block`."""
         return self.kernel.size(-1)
+
+    @property
+    def shape(self) -> torch.Size:
+        lhs_dim = (
+            self.mixed_block.mass_k.size(-1)
+            + self.mixed_block.mass_km1.size(-1)
+            + self.b_k
+        )
+        return torch.Size([lhs_dim, lhs_dim])
+
+    def size(self, dim: int | None = None) -> int | torch.Size:
+        if dim is None:
+            return self.shape
+        else:
+            return self.shape[dim]
 
     @property
     def lhs(
