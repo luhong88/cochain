@@ -153,7 +153,7 @@ class AffineGaugeFixedSystem:
         The degree of the original linear system.
     bc_sel
         Specification of the tangential boundary subcomplex.
-    gauge_sys
+    gauge_sys : [retained_k_splx+b_k, retained_k_splx+b_k]
         The KKT gauge fixing system.
     cbd_k : [kp1_splx, k_splx]
         The $k$-th coboundary operator.
@@ -165,13 +165,15 @@ class AffineGaugeFixedSystem:
 
     k: int
     bc_sel: BoundarySelection
-    gauge_sys: Float[GaugeFixedSystem, "k_splx+b_k k_splx+b_k"]
+    gauge_sys: Float[GaugeFixedSystem, "retained_k_splx+b_k retained_k_splx+b_k"]
     cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"]
     mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"]
 
     @property
-    def lhs(self) -> Float[SparseDecoupledTensor, "k_splx+b_k k_splx+b_k"]:
+    def lhs(
+        self,
+    ) -> Float[SparseDecoupledTensor, "retained_k_splx+b_k retained_k_splx+b_k"]:
         """The LHS block matrix of the KKT system."""
         return self.gauge_sys.lhs
 
@@ -183,7 +185,7 @@ class AffineGaugeFixedSystem:
         atol: Float[Tensor, "*ch"] | float = 0.0,
         rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
         incompatibility: Literal["raise", "warn", "project"] = "warn",
-    ) -> Float[AffineLoad, " k_splx+b_k *ch"]:
+    ) -> Float[AffineLoad, " retained_k_splx+b_k *ch"]:
         """
         Construct the RHS load vector of the KKT system.
 
@@ -204,7 +206,7 @@ class AffineGaugeFixedSystem:
 
         Returns
         -------
-        affine_load : [k_splx+b_k, *ch]
+        affine_load : [retained_k_splx+b_k, *ch]
             The prepared affine right-hand side load information.
         """
         if bc_data is None:
@@ -238,7 +240,7 @@ class AffineGaugeFixedSystem:
             )
 
         if len(primary_load_terms) > 0:
-            primary_load = self.bc_sel.embed_retained(
+            primary_load = self.bc_sel.extract_retained(
                 self.k, sum(primary_load_terms[1:], primary_load_terms[0])
             )
         else:
@@ -255,7 +257,7 @@ class AffineGaugeFixedSystem:
                 self.bc_sel.extract_retained(
                     self.k, self.mass_k @ resolved_primary_lift
                 ),
-                "k_splx b_k, k_splx ... -> b_k ...",
+                "retained_k_splx b_k, retained_k_splx ... -> b_k ...",
             )
         else:
             gauge_constraint = None
@@ -270,22 +272,22 @@ class AffineGaugeFixedSystem:
 
     def reconstruct_sol(
         self,
-        sol: Float[Tensor, " k_splx+b_k *ch"],
-        affine_load: Float[AffineLoad, " k_splx+b_k *ch"],
-    ) -> tuple[Float[Tensor, " full_k_splx *ch"], Float[Tensor, " b_k *ch"]]:
+        sol: Float[Tensor, " retained_k_splx+b_k *ch"],
+        affine_load: Float[AffineLoad, " retained_k_splx+b_k *ch"],
+    ) -> tuple[Float[Tensor, " k_splx *ch"], Float[Tensor, " b_k *ch"]]:
         """
         Reconstruct the full solution to the KKT system.
 
         Parameters
         ----------
-        sol : [k_splx+b_k, *ch]
+        sol : [retained_k_splx+b_k, *ch]
             A solution to the shifted KKT system.
-        affine_load : [k_splx+b_k, *ch]
+        affine_load : [retained_k_splx+b_k, *ch]
             The prepared affine right-hand side load information.
 
         Returns
         -------
-        primary_sol : [full_k_splx, *ch]
+        primary_sol : [k_splx, *ch]
             The solution to the original linear system; if the primary load is
             incompatible, this is the solution to the range-projected linear
             system.
@@ -318,7 +320,7 @@ class AffineMixedGaugeFixedSystem:
         The degree of the original linear system.
     bc_sel
         Specification of the tangential boundary subcomplex.
-    gauge_sys
+    gauge_sys : [retained_km1_splx+retained_k_splx+b_k, retained_km1_splx+retained_k_splx+b_k]
         The KKT gauge-fixed Hodge system.
     cbd_km1: [k_splx, km1_splx]
         The $(k-1)$-coboundary operator.
@@ -334,7 +336,10 @@ class AffineMixedGaugeFixedSystem:
 
     k: int
     bc_sel: BoundarySelection
-    gauge_sys: Float[MixedGaugeFixedSystem, "km1_splx+k_splx+b_k km1_splx+k_splx+b_k"]
+    gauge_sys: Float[
+        MixedGaugeFixedSystem,
+        "retained_km1_splx+retained_k_splx+b_k retained_km1_splx+retained_k_splx+b_k",
+    ]
     cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"]
     cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
@@ -361,7 +366,10 @@ class AffineMixedGaugeFixedSystem:
     @property
     def lhs(
         self,
-    ) -> Float[SparseDecoupledTensor, "km1_splx+k_splx+b_k km1_splx+k_splx+b_k"]:
+    ) -> Float[
+        SparseDecoupledTensor,
+        "retained_km1_splx+retained_k_splx+b_k retained_km1_splx+retained_k_splx+b_k",
+    ]:
         """The LHS block matrix of the KKT system."""
         return self.gauge_sys.lhs
 
@@ -373,7 +381,7 @@ class AffineMixedGaugeFixedSystem:
         atol: Float[Tensor, "*ch"] | float = 0.0,
         rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
         incompatibility: Literal["raise", "warn", "project"] = "warn",
-    ) -> Float[AffineLoad, " km1_splx+k_splx+b_k *ch"]:
+    ) -> Float[AffineLoad, " retained_km1_splx+retained_k_splx+b_k *ch"]:
         """
         Construct the RHS load vector of the KKT system.
 
@@ -394,7 +402,7 @@ class AffineMixedGaugeFixedSystem:
 
         Returns
         -------
-        affine_load : [km1_splx+k_splx+b_k, *ch]
+        affine_load : [retained_km1_splx+retained_k_splx+b_k, *ch]
             The prepared affine right-hand side load information.
         """
         if bc_data is None:
@@ -440,7 +448,7 @@ class AffineMixedGaugeFixedSystem:
             )
 
         if len(primary_load_terms) > 0:
-            primary_load = self.bc_sel.embed_retained(
+            primary_load = self.bc_sel.extract_retained(
                 self.k, sum(primary_load_terms[1:], primary_load_terms[0])
             )
         else:
@@ -467,7 +475,7 @@ class AffineMixedGaugeFixedSystem:
             )
 
         if len(aux_load_terms) > 0:
-            aux_load = self.bc_sel.embed_retained(
+            aux_load = self.bc_sel.extract_retained(
                 self.k - 1, sum(aux_load_terms[1:], aux_load_terms[0])
             )
         else:
@@ -480,7 +488,7 @@ class AffineMixedGaugeFixedSystem:
                 self.bc_sel.extract_retained(
                     self.k, self.mass_k @ resolved_primary_lift
                 ),
-                "k_splx b_k, k_splx ... -> b_k ...",
+                "retained_k_splx b_k, retained_k_splx ... -> b_k ...",
             )
         else:
             gauge_constraint = None
@@ -497,11 +505,11 @@ class AffineMixedGaugeFixedSystem:
 
     def reconstruct_sol(
         self,
-        sol: Float[Tensor, " km1_splx+k_splx+b_k *ch"],
-        affine_load: Float[AffineLoad, " km1_splx+k_splx+b_k *ch"],
+        sol: Float[Tensor, " retained_km1_splx+retained_k_splx+b_k *ch"],
+        affine_load: Float[AffineLoad, " retained_km1_splx+retained_k_splx+b_k *ch"],
     ) -> tuple[
-        Float[Tensor, " full_k_splx *ch"],
-        Float[Tensor, " full_km1_splx *ch"],
+        Float[Tensor, " k_splx *ch"],
+        Float[Tensor, " km1_splx *ch"],
         Float[Tensor, " b_k *ch"],
     ]:
         """
@@ -509,18 +517,18 @@ class AffineMixedGaugeFixedSystem:
 
         Parameters
         ----------
-        sol : [km1_splx+k_splx+b_k, *ch]
+        sol : [retained_km1_splx+retained_k_splx+b_k, *ch]
             A solution to the shifted KKT system.
-        affine_load : [km1_splx+k_splx+b_k, *ch]
+        affine_load : [retained_km1_splx+retained_k_splx+b_k, *ch]
             The prepared affine right-hand side load information.
 
         Returns
         -------
-        primary_sol : [full_k_splx, *ch]
+        primary_sol : [k_splx, *ch]
             The solution to the original linear system; if the primary load is
             incompatible, this is the solution to the range-projected linear
             system.
-        aux_sol : [full_km1_splx, *ch]
+        aux_sol : [km1_splx, *ch]
             The codifferential of the `primary_sol` when the auxiliary load
             vector is zero, or the reconstructed full auxiliary cochain.
         kernel_proj : [b_k, *ch]
