@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import torch
+from einops import einsum
 from jaxtyping import Float
 from torch import Tensor
 
@@ -66,14 +67,20 @@ class HodgeBoundaryData:
         lift : [k_splx, *ch]
             A chosen coefficient lift of `essential_bd_coef` from the tangential
             boundary subcomplex to the full complex.
+
+        Returns
+        -------
+        resolved_lift : [k_splx, *ch]
+            The resolved coefficient lift.
         """
         match essential_bd_coef, lift:
             case Tensor(), Tensor():
                 # If both the essential boundary coefficients and a lift are
                 # provided, check that they agree on the tangential boundary
                 # subcomplex, and then return the lift as is.
-                if not torch.allclose(
-                    bc_sel.extract_constrained(k, lift), essential_bd_coef
+                lift_constrained = bc_sel.extract_constrained(k, lift)
+                if (lift_constrained.shape != essential_bd_coef.shape) or (
+                    not torch.allclose(lift_constrained, essential_bd_coef)
                 ):
                     raise ValueError(
                         "The essential boundary coefficient is inconsistent with the "
@@ -138,7 +145,7 @@ class AffineLoad:
 @dataclass(frozen=True)
 class AffineGaugeFixedSystem:
     """
-    Construct a KKT gauge fixing system with inhomogeneous boundary data.
+    Construct a KKT gauge-fixed Hodge up Laplacian system with inhomogeneous boundary data.
 
     Parameters
     ----------
@@ -150,6 +157,8 @@ class AffineGaugeFixedSystem:
         The KKT gauge fixing system.
     cbd_k : [kp1_splx, k_splx]
         The $k$-th coboundary operator.
+    mass_k : [k_splx, k_splx]
+        The $k$-mass matrix.
     mass_kp1 : [kp1_splx, kp1_splx]
         The $(k+1)$-mass matrix.
     """
@@ -158,12 +167,8 @@ class AffineGaugeFixedSystem:
     bc_sel: BoundarySelection
     gauge_sys: Float[GaugeFixedSystem, "k_splx+b_k k_splx+b_k"]
     cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"]
+    mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"]
-
-    @property
-    def mass_k(self) -> Float[BaseDecoupledTensor, "k_splx k_splx"]:
-        """The $k$-mass matrix."""
-        return self.gauge_sys.mass
 
     @property
     def lhs(self) -> Float[SparseDecoupledTensor, "k_splx+b_k k_splx+b_k"]:
@@ -202,6 +207,18 @@ class AffineGaugeFixedSystem:
         affine_load : [k_splx+b_k, *ch]
             The prepared affine right-hand side load information.
         """
+        if bc_data is None:
+            bc_data = HodgeBoundaryData()
+
+        if (
+            (bc_data.aux_essential_bd_coef is not None)
+            or (bc_data.aux_natural_bd_load is not None)
+            or (bc_data.aux_lift is not None)
+        ):
+            raise ValueError(
+                "Auxiliary boundary data is not supported for an AffineGaugeFixedSystem."
+            )
+
         resolved_primary_lift = bc_data.resolve_lift(
             self.k,
             self.bc_sel,
@@ -217,24 +234,28 @@ class AffineGaugeFixedSystem:
             primary_load_terms.append(bc_data.primary_natural_bd_load)
         if resolved_primary_lift is not None:
             primary_load_terms.append(
-                -self.cbd_k.T @ self.mass_kp1 @ self.cbd_k @ resolved_primary_lift
+                -(self.cbd_k.T @ (self.mass_kp1 @ (self.cbd_k @ resolved_primary_lift)))
             )
 
         if len(primary_load_terms) > 0:
-            primary_load = sum(primary_load_terms)
+            primary_load = self.bc_sel.embed_retained(
+                self.k, sum(primary_load_terms[1:], primary_load_terms[0])
+            )
         else:
             primary_load = torch.zeros(
-                self.bc_sel.n_retained_splx[self.k],
+                self.mass_k.size(-1),
                 dtype=self.gauge_sys.dtype,
                 device=self.gauge_sys.device,
             )
 
         # Construct the gauge constraint.
-        if resolved_primary_lift is not None:
-            gauge_constraint = (
-                -self.bc_sel.embed_retained(self.gauge_sys.kernel).T
-                @ self.mass_k
-                @ resolved_primary_lift
+        if (resolved_primary_lift is not None) and (self.gauge_sys.b_k > 0):
+            gauge_constraint = -einsum(
+                self.gauge_sys.kernel,
+                self.bc_sel.extract_retained(
+                    self.k, self.mass_k @ resolved_primary_lift
+                ),
+                "k_splx b_k, k_splx ... -> b_k ...",
             )
         else:
             gauge_constraint = None
@@ -243,9 +264,7 @@ class AffineGaugeFixedSystem:
         rhs, load_compatibility = self.gauge_sys.build_rhs(
             primary_load, gauge_constraint, atol, rtol, incompatibility
         )
-        affine_load = AffineLoad(
-            rhs, load_compatibility, bc_data.primary_lift, bc_data.aux_lift
-        )
+        affine_load = AffineLoad(rhs, load_compatibility, resolved_primary_lift, None)
 
         return affine_load
 
@@ -301,41 +320,43 @@ class AffineMixedGaugeFixedSystem:
         Specification of the tangential boundary subcomplex.
     gauge_sys
         The KKT gauge-fixed Hodge system.
+    cbd_km1: [k_splx, km1_splx]
+        The $(k-1)$-coboundary operator.
+    cbd_k: [kp1_splx, k_splx]
+        The $k$-coboundary operator.
+    mass_km1: [km1_splx, km1_splx]
+        The consistent mass matrix for discrete $(k-1)$-forms.
+    mass_k: [k_splx, k_splx]
+        The consistent mass matrix or diagonal Hodge star for discrete $k$-forms.
+    mass_kp1: [kp1_splx, kp1_splx]
+        The consistent mass matrix or diagonal Hodge star for discrete $(k+1)$-forms.
     """
 
     k: int
     bc_sel: BoundarySelection
     gauge_sys: Float[MixedGaugeFixedSystem, "km1_splx+k_splx+b_k km1_splx+k_splx+b_k"]
+    cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"]
+    cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None
+    mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
+    mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
+    mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
 
-    @property
-    def cbd_km1(self) -> Float[SparseDecoupledTensor, "k_splx km1_splx"]:
-        """The $(k-1)$-th coboundary operator."""
-        return self.gauge_sys.mixed_block.cbd_km1
+    def __post_init__(self):
+        null_cbd_k = self.cbd_k is None
+        null_mass_kp1 = self.mass_kp1 is None
 
-    @property
-    def cbd_k(self) -> Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None:
-        """The $k$-th coboundary operator."""
-        return self.gauge_sys.mixed_block.cbd_k
+        if null_cbd_k != null_mass_kp1:
+            raise ValueError(
+                "'cbd_k' and 'mass_kp1' must both be None or neither be None."
+            )
 
-    @property
-    def mass_km1(self) -> Float[SparseDecoupledTensor, "km1_splx km1_splx"]:
-        """The $(k-1)$-mass matrix."""
-        return self.gauge_sys.mixed_block.mass_km1
+        object.__setattr__(self, "down_only", null_cbd_k)
 
-    @property
-    def mass_k(self) -> Float[BaseDecoupledTensor, "k_splx k_splx"]:
-        """The $k$-mass matrix."""
-        return self.gauge_sys.mixed_block.mass_k
-
-    @property
-    def mass_kp1(self) -> Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None:
-        """The $(k+1)-mass matrix."""
-        return self.gauge_sys.mixed_block.mass_kp1
-
-    @property
-    def down_only(self) -> bool:
-        """Whether the underlying weak Laplacian contains the down component only."""
-        return self.gauge_sys.mixed_block.down_only
+        if self.down_only != self.gauge_sys.mixed_block.down_only:
+            raise ValueError(
+                "The input 'cbd_k' and 'mass_kp1' arguments are inconsistent with "
+                "the underlying mixed Hodge Laplacian block system."
+            )
 
     @property
     def lhs(
@@ -373,9 +394,18 @@ class AffineMixedGaugeFixedSystem:
 
         Returns
         -------
-        affine_load : [k_splx+b_k, *ch]
+        affine_load : [km1_splx+k_splx+b_k, *ch]
             The prepared affine right-hand side load information.
         """
+        if bc_data is None:
+            bc_data = HodgeBoundaryData()
+
+        if self.down_only and (bc_data.primary_natural_bd_load is not None):
+            raise ValueError(
+                "A non-trivial Primary natural boundary load is incompatible with "
+                "a weak down Hodge Laplacian system."
+            )
+
         resolved_primary_lift = bc_data.resolve_lift(
             self.k,
             self.bc_sel,
@@ -383,57 +413,79 @@ class AffineMixedGaugeFixedSystem:
             bc_data.primary_lift,
         )
         resolved_aux_lift = bc_data.resolve_lift(
-            self.k,
+            self.k - 1,
             self.bc_sel,
             bc_data.aux_essential_bd_coef,
             bc_data.aux_lift,
         )
 
+        # Construct the primary load.
         primary_load_terms = []
         if volume_load is not None:
             primary_load_terms.append(volume_load)
         if bc_data.primary_natural_bd_load is not None:
             primary_load_terms.append(bc_data.primary_natural_bd_load)
         if resolved_aux_lift is not None:
-            primary_load_terms.append(-self.mass_k @ self.cbd_km1 @ resolved_aux_lift)
+            primary_load_terms.append(
+                -(self.mass_k @ (self.cbd_km1 @ resolved_aux_lift))
+            )
         if (not self.down_only) and (resolved_primary_lift is not None):
             primary_load_terms.append(
-                -self.cbd_k.T @ self.mass_kp1 @ self.cbd_k @ resolved_primary_lift
+                -(self.cbd_k.T @ (self.mass_kp1 @ (self.cbd_k @ resolved_primary_lift)))
             )
 
         if len(primary_load_terms) > 0:
-            primary_load = sum(primary_load_terms)
+            primary_load = self.bc_sel.embed_retained(
+                self.k, sum(primary_load_terms[1:], primary_load_terms[0])
+            )
         else:
+            ch_dims = ()
+            for attr in bc_data.__dict__.values():
+                if isinstance(attr, Tensor):
+                    ch_dims = attr.shape[1:]
+
             primary_load = torch.zeros(
-                self.bc_sel.n_retained_splx[self.k],
+                (self.mass_k.size(-1), *ch_dims),
                 dtype=self.gauge_sys.dtype,
                 device=self.gauge_sys.device,
             )
 
+        # Construct the auxiliary load.
         aux_load_terms = []
         if bc_data.aux_natural_bd_load is not None:
             aux_load_terms.append(bc_data.aux_natural_bd_load)
         if resolved_aux_lift is not None:
             aux_load_terms.append(self.mass_km1 @ resolved_aux_lift)
         if resolved_primary_lift is not None:
-            aux_load_terms.append(-self.cbd_km1.T @ self.mass_k @ resolved_primary_lift)
+            aux_load_terms.append(
+                -(self.cbd_km1.T @ (self.mass_k @ resolved_primary_lift))
+            )
 
-        aux_load = sum(aux_load_terms) if len(aux_load_terms) > 0 else None
+        if len(aux_load_terms) > 0:
+            aux_load = self.bc_sel.embed_retained(
+                self.k - 1, sum(aux_load_terms[1:], aux_load_terms[0])
+            )
+        else:
+            aux_load = None
 
-        if resolved_primary_lift is not None:
-            gauge_constraint = (
-                -self.bc_sel.embed_retained(self.gauge_sys.kernel).T
-                @ self.mass_k
-                @ resolved_primary_lift
+        # Construct the gauge constraint
+        if (resolved_primary_lift is not None) and (self.gauge_sys.b_k > 0):
+            gauge_constraint = -einsum(
+                self.gauge_sys.kernel,
+                self.bc_sel.extract_retained(
+                    self.k, self.mass_k @ resolved_primary_lift
+                ),
+                "k_splx b_k, k_splx ... -> b_k ...",
             )
         else:
             gauge_constraint = None
 
+        # Assemble the RHS.
         rhs, load_compatibility = self.gauge_sys.build_rhs(
             primary_load, aux_load, gauge_constraint, atol, rtol, incompatibility
         )
         affine_load = AffineLoad(
-            rhs, load_compatibility, bc_data.primary_lift, bc_data.aux_lift
+            rhs, load_compatibility, resolved_primary_lift, resolved_aux_lift
         )
 
         return affine_load
@@ -482,10 +534,10 @@ class AffineMixedGaugeFixedSystem:
             )
 
         if affine_load.aux_lift is None:
-            full_aux_sol = self.bc_sel.embed_retained(self.k, aux_sol)
+            full_aux_sol = self.bc_sel.embed_retained(self.k - 1, aux_sol)
         else:
             full_aux_sol = (
-                self.bc_sel.embed_retained(self.k, aux_sol) + affine_load.aux_lift
+                self.bc_sel.embed_retained(self.k - 1, aux_sol) + affine_load.aux_lift
             )
 
         return full_primary_sol, full_aux_sol, kernel_proj
