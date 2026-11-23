@@ -112,10 +112,11 @@ class AffineLoad:
     rhs : [sys_dim, *ch]
         The RHS affine load vector. The size of the `sys_dim` depends on the
         type of Hodge system in question. For an `AffineGaugeFixedSystem` of
-        degree $k$, the `sys_dim` is `k_splx+b_k`; for an `AffineMixedGaugeFixedSystem`
-        of degree $k$, the `sys_dim` is `km1_splx+k_splx+b_k`.
+        degree $k$, the `sys_dim` is `retained_k_splx+b_k`; for an
+        `AffineMixedGaugeFixedSystem` of degree $k$, the `sys_dim` is
+        `retained_km1_splx+retained_k_splx+b_k`.
     compatibility
-        The primary load vector incompatibility report.
+        The primary load vector compatibility report.
     primary_lift : [k_splx, *ch]
         A chosen coefficient lift of the primary essential boundary coefficients.
     aux_lift : [km1_splx, *ch]
@@ -245,7 +246,7 @@ class AffineGaugeFixedSystem:
             )
         else:
             primary_load = torch.zeros(
-                self.mass_k.size(-1),
+                self.bc_sel.n_retained_splx[self.k],
                 dtype=self.gauge_sys.dtype,
                 device=self.gauge_sys.device,
             )
@@ -311,13 +312,13 @@ class AffineGaugeFixedSystem:
 
 @dataclass(frozen=True)
 class AffineMixedGaugeFixedSystem:
-    """
+    r"""
     Construct a KKT gauge-fixed Hodge system with inhomogeneous boundary data.
 
     Parameters
     ----------
     k
-        The degree of the original linear system.
+        The degree of the original linear system; $k \le 0$ is not supported.
     bc_sel
         Specification of the tangential boundary subcomplex.
     gauge_sys : [retained_km1_splx+retained_k_splx+b_k, retained_km1_splx+retained_k_splx+b_k]
@@ -410,7 +411,7 @@ class AffineMixedGaugeFixedSystem:
 
         if self.down_only and (bc_data.primary_natural_bd_load is not None):
             raise ValueError(
-                "A non-trivial Primary natural boundary load is incompatible with "
+                "A non-trivial primary natural boundary load is incompatible with "
                 "a weak down Hodge Laplacian system."
             )
 
@@ -456,9 +457,10 @@ class AffineMixedGaugeFixedSystem:
             for attr in bc_data.__dict__.values():
                 if isinstance(attr, Tensor):
                     ch_dims = attr.shape[1:]
+                    break
 
             primary_load = torch.zeros(
-                (self.mass_k.size(-1), *ch_dims),
+                (self.bc_sel.n_retained_splx[self.k], *ch_dims),
                 dtype=self.gauge_sys.dtype,
                 device=self.gauge_sys.device,
             )
