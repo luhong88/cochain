@@ -427,11 +427,16 @@ class AffineMixedGaugeFixedSystem:
             primary_load_terms.append(bc_data.primary_natural_bd_load)
         if resolved_aux_lift is not None:
             primary_load_terms.append(
-                -(self.mass_k @ (self.cbd_km1 @ resolved_aux_lift))
+                -self.gauge_sys.mixed_block.down_scale
+                * (self.mass_k @ (self.cbd_km1 @ resolved_aux_lift))
             )
         if (not self.down_only) and (resolved_primary_lift is not None):
             primary_load_terms.append(
-                -(self.cbd_k.T @ (self.mass_kp1 @ (self.cbd_k @ resolved_primary_lift)))
+                -self.gauge_sys.mixed_block.up_scale
+                * (
+                    self.cbd_k.T
+                    @ (self.mass_kp1 @ (self.cbd_k @ resolved_primary_lift))
+                )
             )
 
         if len(primary_load_terms) > 0:
@@ -517,8 +522,7 @@ class AffineMixedGaugeFixedSystem:
             system.
         aux_sol : [full_km1_splx, *ch]
             The codifferential of the `primary_sol` when the auxiliary load
-            vector is zero, or the shifted auxiliary correction with nonzero
-            inhomogeneous auxiliary load vector.
+            vector is zero, or the reconstructed full auxiliary cochain.
         kernel_proj : [b_k, *ch]
             The KKT Lagrange multiplier; when the kernel basis is $M_k$-orthonormal,
             this is also the projection of the primary load onto the kernel basis.
