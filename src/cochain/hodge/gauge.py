@@ -19,8 +19,8 @@ from .laplacians import MixedWeakLaplacianBlocks
 # TODO: consider similar convergence report for LOBPCG
 @dataclass(frozen=True)
 class LoadCompatibility:
-    """
-    Primary load vector incompatibility report.
+    r"""
+    Primary load compatibility report.
 
     Parameters
     ----------
@@ -29,14 +29,15 @@ class LoadCompatibility:
     norm : [*ch,]
         The Euclidean norm of the column vectors of `kernel_proj`.
     tol : [*ch,]
-        The tolerance thresholds for the column vectors of `kernel_proj`.
+        The effective compatibility tolerance threshold(s) for `norm`.
     compatible : [*ch,]
-        Whether the column vector norms of `kernel_proj` are at or below `tol`.
+        Boolean mask indicating whether each channel's `norm` is at or below
+        `tol`.
 
     Attributes
     ----------
     all_compatible : [,]
-        Whether all column vectors of `kernel_proj` are at or below `tol`.
+        Whether every channel's `norm` is at or below `tol`.
     """
 
     kernel_proj: Float[Tensor, " b_k *ch"]
@@ -46,7 +47,7 @@ class LoadCompatibility:
 
     @property
     def all_compatible(self) -> Bool[Tensor, ""]:
-        """Whether all column vectors of `kernel_proj` are at or below `tol`."""
+        """Whether all channels' `norm`s are at or below `tol`."""
         return torch.all(self.compatible)
 
 
@@ -58,7 +59,7 @@ def _check_primary_load_compatibility(
     rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
     incompatibility: Literal["raise", "warn", "project"] = "warn",
 ) -> LoadCompatibility:
-    """Check whether the operator + the load vector constitute a consistent linear system."""
+    """Check compatibility of the primary load against the operator kernel basis."""
     if incompatibility not in ("raise", "warn", "project"):
         raise ValueError(f"Unknown 'incompatibility' argument '{incompatibility}'.")
 
@@ -117,20 +118,20 @@ def _check_primary_load_compatibility(
 
 @dataclass(frozen=True)
 class GaugeFixedSystem:
-    """
-    Construct a KKT gauge fixing system for a symmetric positive semidefinite operator.
+    r"""
+    Construct a KKT gauge-fixed linear system for a symmetric positive semidefinite operator.
 
     Parameters
     ----------
     op : [k_splx, k_splx]
         A real, symmetric positive semidefinite square matrix.
     mass : [k_splx, k_splx]
-        A real, symmetric positive definite square matrix that induces an inner
-        product on the column space of `op`.
+        A real, symmetric positive definite mass matrix defining an inner product
+        on the primal cochain space.
     kernel : [k_splx, b_k]
         A matrix whose column vectors form a basis set for the kernel of `op`
         that is orthonormal w.r.t. the inner product induced by `mass`. Note that
-        the `GaugeFixedSystem` class always stores a detached copy of the input
+        the `GaugeFixedSystem` class always stores a detached view of the input
         `kernel` tensor.
     """
 
@@ -189,33 +190,36 @@ class GaugeFixedSystem:
         rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
         incompatibility: Literal["raise", "warn", "project"] = "warn",
     ) -> tuple[Float[Tensor, " k_splx+b_k *ch"], LoadCompatibility]:
-        """
+        r"""
         Construct the RHS load vector of the KKT system.
 
         Parameters
         ----------
         primary_load : [k_splx, *ch]
-            The primary load vector.
+            The weak primary load vector.
         gauge_constraint : [b_k, *ch]
-            The gauge-constraint target for the kernel basis.
+            Optional target for the gauge constraint; defaults to zeros, which
+            selects the minimum-norm representative). This argument is ignored if
+            `b_k` is zero.
         atol : [*ch,]
-            Absolute tolerance for checking linear system consistency.
+            Absolute tolerance for checking load compatibility.
         rtol : [*ch,]
-            Relative tolerance for checking linear system consistency; if set to
-            "auto", use the square root of the `primary_load` dtype machine epsilon.
+            Relative tolerance for checking load compatibility, scaled by the
+            norms of the kernel basis and primary load vectors; if `'auto'`, uses
+            the square root of the `primary_load` dtype machine epsilon.
         incompatibility
-            What to do if the input `primary_load` produces an inconsistent
-            linear system in conjunction with the `self.op` operator: raise a
-            `ValueError` if `'raise'`, print a warning if `'warn'`, or ignore
-            the inconsistency if `'project'`.
+            Policy when `primary_load` is incompatible with `self.op`: raise a
+            `ValueError` if `'raise'`, emit a `UserWarning` if `'warn'`, or
+            proceed silently if `'project'` (the KKT system then solves the
+            range-projected linear system).
 
         Returns
         -------
         rhs : [k_splx+b_k, *ch]
-            The RHS load vector.
+            The assembled KKT RHS vector.
         load_compatibility
-            A `LoadCompatibility` object that documents how much of the
-            `primary_load` is inside the kernel of the operator.
+            A `LoadCompatibility` report quantifying the incompatible kernel
+            component of `primary_load`.
         """
         load_compatibility = _check_primary_load_compatibility(
             b_k=self.b_k,
@@ -242,24 +246,22 @@ class GaugeFixedSystem:
     def unpack_sol(
         self, sol: Float[Tensor, " k_splx+b_k *ch"]
     ) -> tuple[Float[Tensor, " k_splx *ch"], Float[Tensor, " b_k *ch"]]:
-        """
-        Unpack a solution to the KKT system.
+        r"""
+        Unpack a solution of the KKT system.
 
         Parameters
         ----------
         sol : [k_splx+b_k, *ch]
-            A solution to the KKT system.
+            A solution vector of the KKT system.
 
         Returns
         -------
         primary_sol : [k_splx, *ch]
-            The solution to the original linear system; if the primary load is
-            incompatible, this is the solution to the range-projected linear
-            system.
+            The primal solution satisfying the gauge constraint target; if the
+            primary load is incompatible, this is the solution to the range-projected
+            linear system.
         kernel_proj : [b_k, *ch]
-            The KKT Lagrange multiplier; when the kernel basis is orthonormal
-            with respect to the mass, this is also the projection of the primary
-            load onto the kernel basis.
+            The KKT Lagrange multiplier.
         """
         n_k_splx = self.op.size(-1)
         return sol[:n_k_splx], sol[n_k_splx:]
@@ -267,17 +269,17 @@ class GaugeFixedSystem:
 
 @dataclass(frozen=True)
 class MixedGaugeFixedSystem:
-    """
-    Construct a KKT gauge fixing system for a `MixedWeakLaplacianBlocks` object.
+    r"""
+    Construct a KKT gauge-fixed mixed system for a `MixedWeakLaplacianBlocks` object.
 
     Parameters
     ----------
     mixed_block : [k_splx, k_splx]
-        A mixed formulation representation for a weak $k$-Laplacian.
+        A mixed formulation representation of a weak $k$-Laplacian.
     kernel : [k_splx, b_k]
-        A matrix whose column vectors form an $M_k$-orthonormal basis set for the
-        kernel of the weak $k$-Laplacian. Note that the `MixedGaugeFixedSystem`
-        class always stores a detached copy of the input `kernel` tensor.
+        A matrix whose columns form an $M_k$-orthonormal basis for the
+        kernel of the weak $k$-Laplacian. Note that `MixedGaugeFixedSystem` always
+        stores a detached view of `kernel`.
     """
 
     mixed_block: Float[MixedWeakLaplacianBlocks, "k_splx k_splx"]
@@ -319,12 +321,12 @@ class MixedGaugeFixedSystem:
         self,
     ) -> Float[SparseDecoupledTensor, "km1_splx+k_splx+b_k km1_splx+k_splx+b_k"]:
         """
-        Construct the LHS block matrix of the KKT system.
+        Construct the LHS block matrix of the mixed KKT system.
 
         Returns
         -------
         lhs : [km1_splx+k_splx+b_k, km1_splx+k_splx+b_k]
-            The LHS block matrix of the KKT system.
+            The LHS block matrix of the mixed KKT system.
         """
         if self.b_k == 0:
             return self.mixed_block._mixed_k_laplacian
@@ -347,35 +349,38 @@ class MixedGaugeFixedSystem:
         rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
         incompatibility: Literal["raise", "warn", "project"] = "warn",
     ) -> tuple[Float[Tensor, " km1_splx+k_splx+b_k *ch"], LoadCompatibility]:
-        """
-        Construct the RHS load vector of the KKT system.
+        r"""
+        Construct the RHS load vector of the mixed KKT system.
 
         Parameters
         ----------
         primary_load : [k_splx, *ch]
-            The primary degree-$k$ load vector.
+            The weak primary degree-$k$ load vector.
         aux_load : [km1_splx, *ch]
-            The auxiliary degree-$k-1$ load vector.
+            Optional weak auxiliary degree-$(k-1)$ load vector; defaults to zeros.
         gauge_constraint : [b_k, *ch]
-            The gauge-constraint target for the kernel basis.
+            Optional target for the gauge constraint; defaults to zeros, which
+            select the minimum-norm representative. This argument is ignored if
+            `b_k` is zero.
         atol : [*ch,]
-            Absolute tolerance for checking linear system consistency.
+            Absolute tolerance for checking load compatibility.
         rtol : [*ch,]
-            Relative tolerance for checking linear system consistency; if set to
-            "auto", use the square root of the `primary_load` dtype machine epsilon.
+            Relative tolerance for checking load compatibility, scaled by the
+            norms of the kernel basis and primary load vectors. If `'auto'`, uses
+            the square root of the `primary_load` dtype machine epsilon.
         incompatibility
-            What to do if the input `primary_load` produces an inconsistent
-            linear system in conjunction with the `self.mixed_block` operator:
-            raise a `ValueError` if `'raise'`, print a warning if `'warn'`, or
-            ignore the inconsistency if `'project'`.
+            Policy when `primary_load` is incompatible with `self.mixed_block`:
+            raise a `ValueError` if `'raise'`, emit a `UserWarning` if `'warn'`,
+            or proceed silently if `'project'` (the KKT system then solves the
+            range-projected primary equation).
 
         Returns
         -------
         rhs : [km1_splx+k_splx+b_k, *ch]
-            The RHS load vector.
+            The assembled mixed KKT RHS vector.
         load_compatibility
-            A `LoadCompatibility` object that documents how much of the
-            `primary_load` is inside the kernel of the operator.
+            A `LoadCompatibility` report quantifying the incompatible kernel
+            component of `primary_load`.
         """
         load_compatibility = _check_primary_load_compatibility(
             b_k=self.b_k,
@@ -413,27 +418,25 @@ class MixedGaugeFixedSystem:
         Float[Tensor, " km1_splx *ch"],
         Float[Tensor, " b_k *ch"],
     ]:
-        """
-        Unpack a solution to the KKT system.
+        r"""
+        Unpack a solution of the mixed KKT system.
 
         Parameters
         ----------
         sol : [km1_splx+k_splx+b_k, *ch]
-            A solution to the KKT system.
+            A solution vector of the mixed KKT system.
 
         Returns
         -------
         primary_sol : [k_splx, *ch]
-            The solution to the original linear system; if the primary load is
-            incompatible, this is the solution to the range-projected linear
-            system.
+            The primal degree-$k$ solution satisfying the gauge constraint
+            target; solves the range-projected primary equation if `primary_load`
+            is incompatible.
         aux_sol : [km1_splx, *ch]
-            The codifferential of the `primary_sol` when the auxiliary load
-            vector is zero, or the shifted auxiliary correction with nonzero
-            inhomogeneous auxiliary load vector.
+            The auxiliary degree-$(k-1)$ solution ; equal to the
+            codifferential of the `primary_sol` when the auxiliary load is zero.
         kernel_proj : [b_k, *ch]
-            The KKT Lagrange multiplier; when the kernel basis is $M_k$-orthonormal,
-            this is also the projection of the primary load onto the kernel basis.
+            The KKT Lagrange multiplier.
         """
         n_km1_splx = self.mixed_block.mass_km1.size(-1)
         n_k_splx = self.mixed_block.mass_k.size(-1)

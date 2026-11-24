@@ -15,8 +15,11 @@ from .gauge import GaugeFixedSystem, LoadCompatibility, MixedGaugeFixedSystem
 
 @dataclass(frozen=True)
 class HodgeBoundaryData:
-    """
-    Boundary data for Hodge linear systems.
+    r"""
+    Coefficient-level inhomogeneous boundary data for Hodge linear systems.
+
+    All the fields of this dataclass default to `None`, which represents homogeneous
+    (zero) boundary data.
 
     Parameters
     ----------
@@ -27,15 +30,17 @@ class HodgeBoundaryData:
         Prescribed essential boundary coefficients of the auxiliary $(k-1)$-cochain
         on the tangential boundary subcomplex.
     primary_natural_bd_load : [k_splx, *ch]
-        Natural boundary load in the degree-$k$ primary equation.
+        Preassembled weak natural boundary load in the degree-$k$ primary equation.
     aux_natural_bd_load : [km1_splx, *ch]
-        Natural boundary load in the degree-$k-1$ auxiliary equation.
+        Preassembled weak natural boundary load in the degree-$(k-1)$ auxiliary equation.
     primary_lift : [k_splx, *ch]
-        A chosen coefficient lift of `primary_essential_bd_coef` from the tangential
-        boundary subcomplex to the full complex.
+        Optional full-complex coefficient lift matching `primary_essential_bd_coef`
+        on the tangential boundary subcomplex. If omitted when `primary_essential_bd_coef`
+        is provided, a zero-interior lift is constructed automatically.
     aux_lift : [km1_splx, *ch]
-        A chosen coefficient lift of `aux_essential_bd_coef` from the tangential
-        boundary subcomplex to the full complex.
+        Optional full-complex coefficient lift matching `aux_essential_bd_coef`
+        on the tangential boundary subcomplex. If omitted when `aux_essential_bd_coef`
+        is provided, a zero-interior lift is constructed automatically.
     """
 
     primary_essential_bd_coef: Float[Tensor, " constrained_k_splx *ch"] | None = None
@@ -52,26 +57,28 @@ class HodgeBoundaryData:
         essential_bd_coef: Float[Tensor, " constrained_k_splx *ch"] | None,
         lift: Float[Tensor, " k_splx *ch"] | None,
     ) -> Float[Tensor, " k_splx *ch"] | None:
-        """
-        Resolve a coefficient lift based on the boundary data specification.
+        r"""
+        Resolve a full-complex coefficient lift from essential boundary data.
 
         Parameters
         ----------
         k
-            The degree of the boundary data.
+            Cochain degree of the boundary data.
         bc_sel
-            The specification of the tangential boundary subcomplex.
+            Specification of the tangential boundary subcomplex.
         essential_bd_coef : [constrained_k_splx, *ch]
             Prescribed essential boundary coefficients on the tangential boundary
             subcomplex.
         lift : [k_splx, *ch]
-            A chosen coefficient lift of `essential_bd_coef` from the tangential
-            boundary subcomplex to the full complex.
+            Optional full-complex coefficient lift of `essential_bd_coef`. If
+            both `essential_bd_coef` and `lift` are provided, their agreement on
+            constrained simplices is validated.
 
         Returns
         -------
         resolved_lift : [k_splx, *ch]
-            The resolved coefficient lift.
+            The resolved full-complex coefficient lift, or `None` if both inputs
+            are `None`, which represents the homogeneous essential boundary condition.
         """
         match essential_bd_coef, lift:
             case Tensor(), Tensor():
@@ -104,23 +111,24 @@ class HodgeBoundaryData:
 
 @dataclass(frozen=True)
 class AffineLoad:
-    """
-    Prepared affine right-hand side load information.
+    r"""
+    Prepared affine right-hand side bundle for a shifted KKT Hodge solve.
 
     Parameters
     ----------
     rhs : [sys_dim, *ch]
-        The RHS affine load vector. The size of the `sys_dim` depends on the
-        type of Hodge system in question. For an `AffineGaugeFixedSystem` of
-        degree $k$, the `sys_dim` is `retained_k_splx+b_k`; for an
-        `AffineMixedGaugeFixedSystem` of degree $k$, the `sys_dim` is
-        `retained_km1_splx+retained_k_splx+b_k`.
+        The assembled RHS vector for the reduced KKT system. `sys_dim` is
+        `retained_k_splx + b_k` for `AffineGaugeFixedSystem` and
+        `retained_km1_splx + retained_k_splx + b_k` for
+        `AffineMixedGaugeFixedSystem`.
     compatibility
-        The primary load vector compatibility report.
+        Compatibility report for the complete shifted primary load.
     primary_lift : [k_splx, *ch]
-        A chosen coefficient lift of the primary essential boundary coefficients.
+        The resolved full-complex primary lift used to form `rhs`, or `None` for
+        homogeneous primary essential boundary conditions.
     aux_lift : [km1_splx, *ch]
-        A chosen coefficient lift of the auxiliary essential boundary coefficients.
+        The resolved full-complex auxiliary lift used to form `rhs`, or `None`
+        when unused or homogeneous.
     """
 
     rhs: Float[Tensor, " sys_dim *ch"]
@@ -145,23 +153,23 @@ class AffineLoad:
 
 @dataclass(frozen=True)
 class AffineGaugeFixedSystem:
-    """
-    Construct a KKT gauge-fixed Hodge up Laplacian system with inhomogeneous boundary data.
+    r"""
+    Construct a KKT gauge-fixed weak up-Laplacian system with inhomogeneous boundary data.
 
     Parameters
     ----------
     k
-        The degree of the original linear system.
+        Cochain degree of the primary unknown.
     bc_sel
         Specification of the tangential boundary subcomplex.
     gauge_sys : [retained_k_splx+b_k, retained_k_splx+b_k]
-        The KKT gauge fixing system.
+        The restricted KKT gauge-fixed system.
     cbd_k : [kp1_splx, k_splx]
-        The $k$-th coboundary operator.
+        The full-complex $k$-coboundary operator.
     mass_k : [k_splx, k_splx]
-        The $k$-mass matrix.
+        The full-complex $k$-mass matrix.
     mass_kp1 : [kp1_splx, kp1_splx]
-        The $(k+1)$-mass matrix.
+        The full-complex $(k+1)$-mass matrix.
     """
 
     k: int
@@ -187,28 +195,33 @@ class AffineGaugeFixedSystem:
         rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
         incompatibility: Literal["raise", "warn", "project"] = "warn",
     ) -> Float[AffineLoad, " retained_k_splx+b_k *ch"]:
-        """
-        Construct the RHS load vector of the KKT system.
+        r"""
+        Construct the shifted KKT RHS bundle from volume and boundary data.
 
         Parameters
         ----------
         volume_load : [k_splx, *ch]
-            The volume load vector.
+            Optional full-complex weak volume/domain load; defaults to zero.
         bc_data
-            Boundary data for the system.
+            Optional boundary data for the system; defaults to homogeneous boundary
+            conditions.
         atol : [*ch,]
-            Absolute tolerance for checking linear system consistency.
+            Absolute tolerance for checking compatibility of the shifted primary
+            load.
         rtol : [*ch,]
-            Relative tolerance for checking linear system consistency.
+            Relative tolerance for checking compatibility of the shifted primary
+            load; if `'auto'`, uses the square root of the `primary_load` dtype
+            machine epsilon.
         incompatibility
-            What to do if the primary load produces an inconsistent linear system:
-            raise a `ValueError` if `'raise'`, print a warning if `'warn'`, or
-            ignore the inconsistency if `'project'`.
+            Policy when the shifted primary load is incompatible with `self.gauge_sys`:
+            raise a `ValueError` if `'raise'`, emit a `UserWarning` if `'warn'`,
+            or proceed silently if `'project'`.
 
         Returns
         -------
         affine_load : [retained_k_splx+b_k, *ch]
-            The prepared affine right-hand side load information.
+            Prepared `AffineLoad` containing the shifted KKT RHS, compatibility
+            report, and resolved primary lift.
         """
         if bc_data is None:
             bc_data = HodgeBoundaryData()
@@ -276,26 +289,24 @@ class AffineGaugeFixedSystem:
         sol: Float[Tensor, " retained_k_splx+b_k *ch"],
         affine_load: Float[AffineLoad, " retained_k_splx+b_k *ch"],
     ) -> tuple[Float[Tensor, " k_splx *ch"], Float[Tensor, " b_k *ch"]]:
-        """
-        Reconstruct the full solution to the KKT system.
+        r"""
+        Reconstruct the full-complex primary solution from the reduced KKT solution.
 
         Parameters
         ----------
         sol : [retained_k_splx+b_k, *ch]
-            A solution to the shifted KKT system.
+            Solution vector of the reduced shifted KKT system.
         affine_load : [retained_k_splx+b_k, *ch]
-            The prepared affine right-hand side load information.
+            The `AffineLoad` returned by `build_rhs()` for the solved system.
 
         Returns
         -------
         primary_sol : [k_splx, *ch]
-            The solution to the original linear system; if the primary load is
-            incompatible, this is the solution to the range-projected linear
-            system.
+            The reconstructed full-complex primary solution satisfying the prescribed
+            essential boundary values and total-field gauge condition; solves the
+            range-projected equation if the shifted primary load was incompatible.
         kernel_proj : [b_k, *ch]
-            The KKT Lagrange multiplier; when the kernel basis is orthonormal
-            with respect to the mass, this is also the projection of the primary
-            load onto the kernel basis.
+            The KKT Lagrange multiplier.
         """
         primary_sol, kernel_proj = self.gauge_sys.unpack_sol(sol)
 
@@ -313,26 +324,28 @@ class AffineGaugeFixedSystem:
 @dataclass(frozen=True)
 class AffineMixedGaugeFixedSystem:
     r"""
-    Construct a KKT gauge-fixed Hodge system with inhomogeneous boundary data.
+    Construct a KKT gauge-fixed mixed Hodge system with inhomogeneous boundary data.
 
     Parameters
     ----------
     k
-        The degree of the original linear system; $k \le 0$ is not supported.
+        Cochain degree of the primary unknown ($k \ge 1$).
     bc_sel
         Specification of the tangential boundary subcomplex.
     gauge_sys : [retained_km1_splx+retained_k_splx+b_k, retained_km1_splx+retained_k_splx+b_k]
-        The KKT gauge-fixed Hodge system.
-    cbd_km1: [k_splx, km1_splx]
-        The $(k-1)$-coboundary operator.
-    cbd_k: [kp1_splx, k_splx]
-        The $k$-coboundary operator.
-    mass_km1: [km1_splx, km1_splx]
-        The consistent mass matrix for discrete $(k-1)$-forms.
-    mass_k: [k_splx, k_splx]
-        The consistent mass matrix or diagonal Hodge star for discrete $k$-forms.
-    mass_kp1: [kp1_splx, kp1_splx]
-        The consistent mass matrix or diagonal Hodge star for discrete $(k+1)$-forms.
+        The restricted mixed KKT gauge-fixed Hodge system.
+    cbd_km1 : [k_splx, km1_splx]
+        The full-complex $(k-1)$-coboundary operator.
+    cbd_k : [kp1_splx, k_splx]
+        The full-complex $k$-coboundary operator.
+    mass_km1 : [km1_splx, km1_splx]
+        The full-complex consistent mass matrix for discrete $(k-1)$-forms.
+    mass_k : [k_splx, k_splx]
+        The full-complex consistent mass matrix or diagonal Hodge star for discrete
+        $k$-forms.
+    mass_kp1 : [kp1_splx, kp1_splx]
+        The full-complex consistent mass matrix or diagonal Hodge star for discrete
+        $(k+1)$-forms.
     """
 
     k: int
@@ -383,28 +396,33 @@ class AffineMixedGaugeFixedSystem:
         rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
         incompatibility: Literal["raise", "warn", "project"] = "warn",
     ) -> Float[AffineLoad, " retained_km1_splx+retained_k_splx+b_k *ch"]:
-        """
-        Construct the RHS load vector of the KKT system.
+        r"""
+        Construct the shifted mixed KKT RHS bundle from volume and boundary data.
 
         Parameters
         ----------
         volume_load : [k_splx, *ch]
-            The volume load vector.
+            Optional full-complex weak volume/domain load. Defaults to zero.
         bc_data
-            Boundary data for the system.
+            Optional boundary data for the system; defaults to homogeneous boundary
+            condition.
         atol : [*ch,]
-            Absolute tolerance for checking linear system consistency.
+            Absolute tolerance for checking compatibility of the shifted primary
+            load.
         rtol : [*ch,]
-            Relative tolerance for checking linear system consistency.
+            Relative tolerance for checking compatibility of the shifted primary
+            load; if `'auto'`, uses the square root of the `primary_load` dtype
+            machine epsilon.
         incompatibility
-            What to do if the primary load produces an inconsistent linear system:
-            raise a `ValueError` if `'raise'`, print a warning if `'warn'`, or
-            ignore the inconsistency if `'project'`.
+            Policy when the shifted primary load is incompatible with `self.gauge_sys`:
+            raise a `ValueError` if `'raise'`, emit a `UserWarning` if `'warn'`,
+            or proceed silently if `'project'`.
 
         Returns
         -------
         affine_load : [retained_km1_splx+retained_k_splx+b_k, *ch]
-            The prepared affine right-hand side load information.
+            Prepared `AffineLoad` containing the shifted mixed KKT RHS,
+            compatibility report, and resolved primary and auxiliary lifts.
         """
         if bc_data is None:
             bc_data = HodgeBoundaryData()
@@ -514,28 +532,29 @@ class AffineMixedGaugeFixedSystem:
         Float[Tensor, " km1_splx *ch"],
         Float[Tensor, " b_k *ch"],
     ]:
-        """
-        Reconstruct the full solution to the KKT system.
+        r"""
+        Reconstruct the full-complex primary and auxiliary solutions from the reduced KKT solution.
 
         Parameters
         ----------
         sol : [retained_km1_splx+retained_k_splx+b_k, *ch]
-            A solution to the shifted KKT system.
+            Solution vector of the reduced shifted mixed KKT system.
         affine_load : [retained_km1_splx+retained_k_splx+b_k, *ch]
-            The prepared affine right-hand side load information.
+            The `AffineLoad` returned by `build_rhs()` for the solved system.
 
         Returns
         -------
         primary_sol : [k_splx, *ch]
-            The solution to the original linear system; if the primary load is
-            incompatible, this is the solution to the range-projected linear
-            system.
+            The reconstructed full-complex primary solution satisfying the prescribed
+            primary essential boundary values and total-field gauge condition; solves
+            the range-projected primary equation if the shifted primary load was
+            incompatible.
         aux_sol : [km1_splx, *ch]
-            The codifferential of the `primary_sol` when the auxiliary load
-            vector is zero, or the reconstructed full auxiliary cochain.
+            The reconstructed full-complex auxiliary solution satisfying the
+            prescribed auxiliary essential boundary values and weak codifferential
+            relation.
         kernel_proj : [b_k, *ch]
-            The KKT Lagrange multiplier; when the kernel basis is $M_k$-orthonormal,
-            this is also the projection of the primary load onto the kernel basis.
+            The KKT Lagrange multiplier.
         """
         primary_sol, aux_sol, kernel_proj = self.gauge_sys.unpack_sol(sol)
 
