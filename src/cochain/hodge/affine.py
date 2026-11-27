@@ -188,6 +188,7 @@ class AffineGaugeFixedSystem:
         self,
         volume_load: Float[Tensor, " k_splx *ch"] | None = None,
         bc_data: HodgeBoundaryData | None = None,
+        gauge_constraint: Float[Tensor, " b_k *ch"] | None = None,
         *,
         atol: Float[Tensor, "*ch"] | float = 0.0,
         rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
@@ -203,6 +204,10 @@ class AffineGaugeFixedSystem:
         bc_data
             Optional boundary data for the system; defaults to homogeneous boundary
             conditions.
+        gauge_constraint : [b_k, *ch]
+            Optional target for the gauge constraint; defaults to zeros, which
+            select the minimum-norm representative. This argument is ignored if
+            `b_k` is zero.
         atol : [*ch,]
             Absolute tolerance for checking compatibility of the shifted primary
             load.
@@ -266,7 +271,7 @@ class AffineGaugeFixedSystem:
 
         # Construct the gauge constraint.
         if (resolved_primary_lift is not None) and (self.gauge_sys.b_k > 0):
-            gauge_constraint = -einsum(
+            lift_proj = -einsum(
                 self.gauge_sys.kernel,
                 self.bc_sel.extract_retained(
                     self.k, self.mass_k @ resolved_primary_lift
@@ -274,7 +279,20 @@ class AffineGaugeFixedSystem:
                 "retained_k_splx b_k, retained_k_splx ... -> b_k ...",
             )
         else:
+            lift_proj = None
+
+        if self.gauge_sys.b_k == 0:
             gauge_constraint = None
+
+        match gauge_constraint, lift_proj:
+            case Tensor(), Tensor():
+                gauge_constraint = gauge_constraint + lift_proj
+            case Tensor(), None:
+                pass
+            case None, Tensor():
+                gauge_constraint = lift_proj
+            case None, None:
+                pass
 
         # Construct the RHS.
         rhs, load_compatibility = self.gauge_sys.build_rhs(
@@ -372,6 +390,7 @@ class AffineMixedGaugeFixedSystem:
         self,
         volume_load: Float[Tensor, " k_splx *ch"] | None = None,
         bc_data: HodgeBoundaryData | None = None,
+        gauge_constraint: Float[Tensor, " b_k *ch"] | None = None,
         *,
         atol: Float[Tensor, "*ch"] | float = 0.0,
         rtol: Float[Tensor, "*ch"] | float | Literal["auto"] = "auto",
@@ -387,6 +406,10 @@ class AffineMixedGaugeFixedSystem:
         bc_data
             Optional boundary data for the system; defaults to homogeneous boundary
             condition.
+        gauge_constraint : [b_k, *ch]
+            Optional target for the gauge constraint; defaults to zeros, which
+            select the minimum-norm representative. This argument is ignored if
+            `b_k` is zero.
         atol : [*ch,]
             Absolute tolerance for checking compatibility of the shifted primary
             load.
@@ -483,7 +506,7 @@ class AffineMixedGaugeFixedSystem:
 
         # Construct the gauge constraint
         if (resolved_primary_lift is not None) and (self.gauge_sys.b_k > 0):
-            gauge_constraint = -einsum(
+            lift_proj = -einsum(
                 self.gauge_sys.kernel,
                 self.bc_sel.extract_retained(
                     self.k, self.mass_k @ resolved_primary_lift
@@ -491,7 +514,20 @@ class AffineMixedGaugeFixedSystem:
                 "retained_k_splx b_k, retained_k_splx ... -> b_k ...",
             )
         else:
+            lift_proj = None
+
+        if self.gauge_sys.b_k == 0:
             gauge_constraint = None
+
+        match gauge_constraint, lift_proj:
+            case Tensor(), Tensor():
+                gauge_constraint = gauge_constraint + lift_proj
+            case Tensor(), None:
+                pass
+            case None, Tensor():
+                gauge_constraint = lift_proj
+            case None, None:
+                pass
 
         # Assemble the RHS.
         rhs, load_compatibility = self.gauge_sys.build_rhs(
