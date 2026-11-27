@@ -176,9 +176,6 @@ class AffineGaugeFixedSystem:
     k: int
     bc_sel: BoundarySelection
     gauge_sys: Float[GaugeFixedSystem, "retained_k_splx+b_k retained_k_splx+b_k"]
-    cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"]
-    mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
-    mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"]
 
     @property
     def lhs(
@@ -246,18 +243,20 @@ class AffineGaugeFixedSystem:
         # Construct the primary load.
         primary_load_terms = []
         if volume_load is not None:
-            primary_load_terms.append(volume_load)
+            primary_load_terms.append(self.bc_sel.extract_retained(self.k, volume_load))
         if bc_data.primary_natural_bd_load is not None:
-            primary_load_terms.append(bc_data.primary_natural_bd_load)
-        if resolved_primary_lift is not None:
             primary_load_terms.append(
-                -(self.cbd_k.T @ (self.mass_kp1 @ (self.cbd_k @ resolved_primary_lift)))
+                self.bc_sel.extract_retained(self.k, bc_data.primary_natural_bd_load)
+            )
+        if resolved_primary_lift is not None:
+            # Note that gauge_sys.op is already restricted.
+            primary_load_terms.append(
+                -self.gauge_sys.op
+                @ self.bc_sel.extract_retained(self.k, resolved_primary_lift)
             )
 
         if len(primary_load_terms) > 0:
-            primary_load = self.bc_sel.extract_retained(
-                self.k, sum(primary_load_terms[1:], primary_load_terms[0])
-            )
+            primary_load = sum(primary_load_terms[1:], primary_load_terms[0])
         else:
             primary_load = torch.zeros(
                 self.bc_sel.n_retained_splx[self.k],
@@ -356,27 +355,8 @@ class AffineMixedGaugeFixedSystem:
         "retained_km1_splx+retained_k_splx+b_k retained_km1_splx+retained_k_splx+b_k",
     ]
     cbd_km1: Float[SparseDecoupledTensor, "k_splx km1_splx"]
-    cbd_k: Float[SparseDecoupledTensor, "kp1_splx k_splx"] | None
     mass_km1: Float[SparseDecoupledTensor, "km1_splx km1_splx"]
     mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
-    mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
-
-    def __post_init__(self):
-        null_cbd_k = self.cbd_k is None
-        null_mass_kp1 = self.mass_kp1 is None
-
-        if null_cbd_k != null_mass_kp1:
-            raise ValueError(
-                "'cbd_k' and 'mass_kp1' must both be None or neither be None."
-            )
-
-        object.__setattr__(self, "down_only", null_cbd_k)
-
-        if self.down_only != self.gauge_sys.mixed_block.down_only:
-            raise ValueError(
-                "The input 'cbd_k' and 'mass_kp1' arguments are inconsistent with "
-                "the underlying mixed Hodge Laplacian block system."
-            )
 
     @property
     def lhs(
@@ -450,27 +430,26 @@ class AffineMixedGaugeFixedSystem:
         # Construct the primary load.
         primary_load_terms = []
         if volume_load is not None:
-            primary_load_terms.append(volume_load)
+            primary_load_terms.append(self.bc_sel.extract_retained(self.k, volume_load))
         if bc_data.primary_natural_bd_load is not None:
-            primary_load_terms.append(bc_data.primary_natural_bd_load)
+            primary_load_terms.append(
+                self.bc_sel.extract_retained(self.k, bc_data.primary_natural_bd_load)
+            )
         if resolved_aux_lift is not None:
             primary_load_terms.append(
                 -self.gauge_sys.mixed_block.down_scale
                 * (self.mass_k @ (self.cbd_km1 @ resolved_aux_lift))
             )
-        if (not self.down_only) and (resolved_primary_lift is not None):
+        if (not self.gauge_sys.mixed_block.down_only) and (
+            resolved_primary_lift is not None
+        ):
             primary_load_terms.append(
-                -self.gauge_sys.mixed_block.up_scale
-                * (
-                    self.cbd_k.T
-                    @ (self.mass_kp1 @ (self.cbd_k @ resolved_primary_lift))
-                )
+                -self.gauge_sys.mixed_block._block_11
+                @ self.bc_sel.extract_retained(self.k, resolved_primary_lift)
             )
 
         if len(primary_load_terms) > 0:
-            primary_load = self.bc_sel.extract_retained(
-                self.k, sum(primary_load_terms[1:], primary_load_terms[0])
-            )
+            primary_load = sum(primary_load_terms[1:], primary_load_terms[0])
         else:
             ch_dims = ()
             for attr in bc_data.__dict__.values():
