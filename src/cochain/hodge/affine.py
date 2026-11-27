@@ -123,9 +123,8 @@ class AffineLoad:
     ----------
     rhs : [sys_dim, *ch]
         The assembled RHS vector for the reduced KKT system. `sys_dim` is
-        `retained_k_splx + b_k` for `AffineGaugeFixedSystem` and
-        `retained_km1_splx + retained_k_splx + b_k` for
-        `AffineMixedGaugeFixedSystem`.
+        `retained_k_splx + b_k` for `AffineUpGaugeFixedSystem` and `AffineSchurGaugeFixedSystem`,
+        and `retained_km1_splx + retained_k_splx + b_k` for `AffineMixedGaugeFixedSystem`.
     compatibility
         Compatibility report for the complete shifted primary load.
     primary_lift : [k_splx, *ch]
@@ -265,8 +264,14 @@ class AffineUpGaugeFixedSystem:
                 self.k, sum(primary_load_terms[1:], primary_load_terms[0])
             )
         else:
+            ch_dims = ()
+            for attr in list(bc_data.__dict__.values()) + [gauge_constraint]:
+                if hasattr(attr, "shape"):
+                    ch_dims = attr.shape[1:]
+                    break
+
             primary_load = torch.zeros(
-                self.bc_sel.n_retained_splx[self.k],
+                (self.bc_sel.n_retained_splx[self.k], *ch_dims),
                 dtype=self.gauge_sys.dtype,
                 device=self.gauge_sys.device,
             )
@@ -351,20 +356,30 @@ def _build_weak_laplacian_rhs(
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None,
     down_scale: float,
     up_scale: float,
-    kernel: Float[Tensor, " b_k *ch"],
+    kernel: Float[Tensor, "retained_k_splx b_k"],
     bc_sel: BoundarySelection,
     volume_load: Float[Tensor, " k_splx *ch"] | None,
     bc_data: HodgeBoundaryData | None,
     gauge_constraint: Float[Tensor, " b_k *ch"] | None,
 ) -> tuple[
-    Float[Tensor, " k_splx *ch"],
-    Float[Tensor, " km1_splx *ch"],
+    Float[Tensor, " k_splx *ch"] | None,
+    Float[Tensor, " km1_splx *ch"] | None,
     Float[Tensor, " retained_k_splx *ch"],
-    Float[Tensor, " retained_km1_splx *ch"],
-    Float[Tensor, " b_k *ch"],
+    Float[Tensor, " retained_km1_splx *ch"] | None,
+    Float[Tensor, " b_k *ch"] | None,
 ]:
     if bc_data is None:
         bc_data = HodgeBoundaryData()
+
+    if (
+        (cbd_k is None)
+        and (mass_kp1 is None)
+        and (bc_data.primary_natural_bd_load is not None)
+    ):
+        raise ValueError(
+            "A non-trivial primary natural boundary load is incompatible with "
+            "a weak down Hodge Laplacian system."
+        )
 
     resolved_primary_lift = bc_data.resolve_lift(
         k,
@@ -404,8 +419,8 @@ def _build_weak_laplacian_rhs(
         )
     else:
         ch_dims = ()
-        for attr in bc_data.__dict__.values():
-            if isinstance(attr, Tensor):
+        for attr in list(bc_data.__dict__.values()) + [gauge_constraint]:
+            if hasattr(attr, "shape"):
                 ch_dims = attr.shape[1:]
                 break
 
@@ -483,14 +498,12 @@ class AffineSchurGaugeFixedSystem:
     cbd_k : [kp1_splx, k_splx]
         The full-complex $k$-coboundary operator.
     mass_km1 : [km1_splx, km1_splx]
-        The full-complex consistent mass matrix for discrete $(k-1)$-forms.
+        The full-complex diagonal mass matrix or Hodge star for discrete $(k-1)$-forms.
     mass_km1_restricted : [retained_km1_splx, retained_km1_splx]
         The restricted $(k-1)$-mass matrix.
     mass_k : [k_splx, k_splx]
         The full-complex consistent mass matrix or diagonal Hodge star for discrete
         $k$-forms.
-    mass_k_restricted : [retained_k_splx, retained_k_splx]
-        The restricted $k$-mass matrix/diagonal Hodge star.
     mass_kp1 : [kp1_splx, kp1_splx]
         The full-complex consistent mass matrix or diagonal Hodge star for discrete
         $(k+1)$-forms.
@@ -505,8 +518,21 @@ class AffineSchurGaugeFixedSystem:
     mass_km1: Float[DiagDecoupledTensor, "km1_splx km1_splx"]
     mass_km1_retained: Float[DiagDecoupledTensor, "retained_km1_splx retained_km1_splx"]
     mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
-    mass_k_restricted: Float[BaseDecoupledTensor, "retained_k_splx retained_k_splx"]
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
+    down_scale: float = 1.0
+    up_scale: float = 1.0
+
+    def __post_init__(self):
+        null_cbd_k = self.cbd_k is None
+        null_mass_kp1 = self.mass_kp1 is None
+
+        if null_cbd_k != null_mass_kp1:
+            raise ValueError(
+                "'cbd_k' and 'mass_kp1' must both be None or neither be None."
+            )
+
+        if (self.down_scale <= 0) or (self.up_scale <= 0):
+            raise ValueError("'down_scale' and 'up_scale' must be positive floats.")
 
     @property
     def lhs(
@@ -571,8 +597,8 @@ class AffineSchurGaugeFixedSystem:
             mass_km1=self.mass_km1,
             mass_k=self.mass_k,
             mass_kp1=self.mass_kp1,
-            down_scale=1.0,
-            up_scale=1.0,
+            down_scale=self.down_scale,
+            up_scale=self.up_scale,
             kernel=self.gauge_sys.kernel,
             bc_sel=self.bc_sel,
             volume_load=volume_load,
@@ -580,9 +606,16 @@ class AffineSchurGaugeFixedSystem:
             gauge_constraint=gauge_constraint,
         )
 
-        combined_primary_load = primary_load + self.mass_k_restricted @ (
-            self.cbd_km1_retained @ (self.mass_km1_retained.inv @ aux_load)
-        )
+        if (aux_load is None) or (self.bc_sel.n_retained_splx[self.k - 1] == 0):
+            combined_primary_load = primary_load
+        else:
+            # mass_k_restricted is already stored as gauge_sys.mass
+            combined_primary_load = (
+                primary_load
+                + self.down_scale
+                * self.gauge_sys.mass
+                @ (self.cbd_km1_retained @ (self.mass_km1_retained.inv @ aux_load))
+            )
 
         # Assemble the RHS.
         rhs, load_compatibility = self.gauge_sys.build_rhs(
@@ -604,7 +637,6 @@ class AffineSchurGaugeFixedSystem:
         affine_load: Float[AffineLoad, " retained_k_splx+b_k *ch"],
     ) -> tuple[
         Float[Tensor, " k_splx *ch"],
-        Float[Tensor, " km1_splx *ch"],
         Float[Tensor, " b_k *ch"],
     ]:
         r"""
@@ -687,8 +719,7 @@ class AffineMixedGaugeFixedSystem:
                 "'cbd_k' and 'mass_kp1' must both be None or neither be None."
             )
 
-        down_only = null_cbd_k
-        if down_only != self.gauge_sys.mixed_block.down_only:
+        if null_cbd_k != self.gauge_sys.mixed_block.down_only:
             raise ValueError(
                 "The input 'cbd_k' and 'mass_kp1' arguments are inconsistent with "
                 "the underlying mixed Hodge Laplacian block system."
@@ -746,12 +777,6 @@ class AffineMixedGaugeFixedSystem:
             Prepared `AffineLoad` containing the shifted mixed KKT RHS,
             compatibility report, and resolved primary and auxiliary lifts.
         """
-        if self.down_only and (bc_data.primary_natural_bd_load is not None):
-            raise ValueError(
-                "A non-trivial primary natural boundary load is incompatible with "
-                "a weak down Hodge Laplacian system."
-            )
-
         (
             resolved_primary_lift,
             resolved_aux_lift,
