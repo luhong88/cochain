@@ -1,6 +1,7 @@
 import math
 import warnings
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import torch
@@ -166,7 +167,7 @@ class GaugeFixedSystem:
         else:
             return self.shape[dim]
 
-    @property
+    @cached_property
     def lhs(self) -> Float[SparseDecoupledTensor, "k_splx+b_k k_splx+b_k"]:
         """
         Construct the LHS block matrix of the KKT system.
@@ -316,7 +317,7 @@ class MixedGaugeFixedSystem:
         else:
             return self.shape[dim]
 
-    @property
+    @cached_property
     def lhs(
         self,
     ) -> Float[SparseDecoupledTensor, "km1_splx+k_splx+b_k km1_splx+k_splx+b_k"]:

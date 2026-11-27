@@ -8,6 +8,7 @@ from torch import Tensor
 
 from ..boundary import BoundarySelection
 from ..sparse.decoupled_tensor import BaseDecoupledTensor, SparseDecoupledTensor
+from ..utils.parsing import dtype_allclose
 from .gauge import GaugeFixedSystem, LoadCompatibility, MixedGaugeFixedSystem
 
 # TODO: revisit docstring to flesh out theory
@@ -87,7 +88,7 @@ class HodgeBoundaryData:
                 # subcomplex, and then return the lift as is.
                 lift_constrained = bc_sel.extract_constrained(k, lift)
                 if (lift_constrained.shape != essential_bd_coef.shape) or (
-                    not torch.allclose(lift_constrained, essential_bd_coef)
+                    not dtype_allclose(lift_constrained, essential_bd_coef)
                 ):
                     raise ValueError(
                         "The essential boundary coefficient is inconsistent with the "
