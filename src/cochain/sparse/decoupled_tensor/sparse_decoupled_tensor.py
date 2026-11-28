@@ -9,6 +9,7 @@ import torch
 from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 
+from ...utils.parsing import dtype_allclose
 from ._matmul import dense_sp_mm, sp_dense_mm, sp_mv, sp_sp_mm, sp_vm
 from ._spgemm_plan import (
     SpSpMMPlan,
@@ -545,7 +546,7 @@ class SparseDecoupledTensor(BaseDecoupledTensor):
                 "constrain() is only applicable to (batched) sparse square matrices."
             )
 
-        if not torch.allclose(self.values, self.values[self.pattern.csc_to_coo_map]):
+        if not dtype_allclose(self.values, self.values[self.pattern.csc_to_coo_map]):
             raise ValueError("constrain() is only applicable to symmetric matrices.")
 
         r_idx = self.pattern.idx_coo[-2]

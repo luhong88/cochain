@@ -126,3 +126,11 @@ def to_col_major(tensor: Tensor, *, batch_first: bool = False) -> Tensor:
     strided_tensor = output_tensor.as_strided(tensor.shape, expected_stride)
 
     return strided_tensor
+
+
+def dtype_allclose(actual, expected, **kwargs) -> bool:
+    try:
+        torch.testing.assert_close(actual, expected, **kwargs)
+        return True
+    except AssertionError:
+        return False
