@@ -1,3 +1,5 @@
+__all__ = ["LoadCompatibility", "GaugeFixedSystem", "MixedGaugeFixedSystem"]
+
 import math
 import warnings
 from dataclasses import dataclass
@@ -142,6 +144,9 @@ class GaugeFixedSystem:
 
     def __post_init__(self):
         object.__setattr__(self, "kernel", self.kernel.detach())
+
+        if (self.kernel.ndim != 2) or (self.kernel.size(0) != self.op.size(0)):
+            raise ValueError("Inconsistent 'kernel' shape.")
 
     @property
     def dtype(self) -> torch.dtype:
@@ -288,6 +293,9 @@ class MixedGaugeFixedSystem:
 
     def __post_init__(self):
         object.__setattr__(self, "kernel", self.kernel.detach())
+
+        if (self.kernel.ndim != 2) or (self.kernel.size(0) != self.mixed_block.size(0)):
+            raise ValueError("Inconsistent 'kernel' shape.")
 
     @property
     def dtype(self) -> torch.dtype:

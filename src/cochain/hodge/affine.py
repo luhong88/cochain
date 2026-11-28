@@ -1,3 +1,11 @@
+__all__ = [
+    "HodgeBoundaryData",
+    "AffineLoad",
+    "AffineUpGaugeFixedSystem",
+    "AffineSchurGaugeFixedSystem",
+    "AffineMixedGaugeFixedSystem",
+]
+
 from dataclasses import dataclass
 from typing import Literal
 
@@ -180,6 +188,10 @@ class AffineUpGaugeFixedSystem:
     full_op: Float[SparseDecoupledTensor, "k_splx k_splx"]
     mass_k: Float[BaseDecoupledTensor, "k_splx k_splx"]
 
+    def __post_init__(self):
+        if self.k < 0:
+            raise ValueError("k must be a nonnegative integer.")
+
     @property
     def lhs(
         self,
@@ -238,7 +250,7 @@ class AffineUpGaugeFixedSystem:
             or (bc_data.aux_lift is not None)
         ):
             raise ValueError(
-                "Auxiliary boundary data is not supported for an AffineGaugeFixedSystem."
+                "Auxiliary boundary data is not supported for an AffineUpGaugeFixedSystem."
             )
 
         resolved_primary_lift = bc_data.resolve_lift(
@@ -490,7 +502,7 @@ class AffineSchurGaugeFixedSystem:
     bc_sel
         Specification of the tangential boundary subcomplex.
     gauge_sys : [retained_k_splx+b_k, retained_k_splx+b_k]
-        The restricted mixed KKT gauge-fixed Schur-complement Hodge system.
+        The restricted Schur-complement KKT gauge-fixed Schur-complement Hodge system.
     cbd_km1 : [k_splx, km1_splx]
         The full-complex $(k-1)$-coboundary operator.
     cbd_km1_retained : [retained_k_splx, retained_km1_splx]
@@ -499,7 +511,7 @@ class AffineSchurGaugeFixedSystem:
         The full-complex $k$-coboundary operator.
     mass_km1 : [km1_splx, km1_splx]
         The full-complex diagonal mass matrix or Hodge star for discrete $(k-1)$-forms.
-    mass_km1_restricted : [retained_km1_splx, retained_km1_splx]
+    mass_km1_retained : [retained_km1_splx, retained_km1_splx]
         The restricted $(k-1)$-mass matrix.
     mass_k : [k_splx, k_splx]
         The full-complex consistent mass matrix or diagonal Hodge star for discrete
@@ -507,6 +519,10 @@ class AffineSchurGaugeFixedSystem:
     mass_kp1 : [kp1_splx, kp1_splx]
         The full-complex consistent mass matrix or diagonal Hodge star for discrete
         $(k+1)$-forms.
+    down_scale
+        An optional positive scalar that multiplies the down component of the Laplacian.
+    up_scale
+        An optional positive scalar that multiplies the up component of the Laplacian.
     """
 
     k: int
@@ -523,6 +539,9 @@ class AffineSchurGaugeFixedSystem:
     up_scale: float = 1.0
 
     def __post_init__(self):
+        if self.k < 1:
+            raise ValueError("k must be a positive integer.")
+
         null_cbd_k = self.cbd_k is None
         null_mass_kp1 = self.mass_kp1 is None
 
@@ -552,7 +571,7 @@ class AffineSchurGaugeFixedSystem:
         incompatibility: Literal["raise", "warn", "project"] = "warn",
     ) -> Float[AffineLoad, " retained_k_splx+b_k *ch"]:
         r"""
-        Construct the shifted mixed KKT RHS bundle from volume and boundary data.
+        Construct the shifted Schur-complement KKT RHS bundle from volume and boundary data.
 
         Parameters
         ----------
@@ -610,10 +629,8 @@ class AffineSchurGaugeFixedSystem:
             combined_primary_load = primary_load
         else:
             # mass_k_restricted is already stored as gauge_sys.mass
-            combined_primary_load = (
-                primary_load
-                + self.down_scale
-                * self.gauge_sys.mass
+            combined_primary_load = primary_load + self.down_scale * (
+                self.gauge_sys.mass
                 @ (self.cbd_km1_retained @ (self.mass_km1_retained.inv @ aux_load))
             )
 
@@ -711,6 +728,9 @@ class AffineMixedGaugeFixedSystem:
     mass_kp1: Float[BaseDecoupledTensor, "kp1_splx kp1_splx"] | None
 
     def __post_init__(self):
+        if self.k < 1:
+            raise ValueError("k must be a positive integer.")
+
         null_cbd_k = self.cbd_k is None
         null_mass_kp1 = self.mass_kp1 is None
 
